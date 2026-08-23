@@ -1,0 +1,52 @@
+@import "tailwindcss";
+
+/* Enable class-based dark mode (toggled via the `dark` class on <html>). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-saffron: #FF9933;
+  --color-charcoal: #111111;
+  --color-paper: #F5EFE3;
+  --color-ember: #D35400;
+  --color-jungle: #138808;
+
+  --font-anton: 'Anton', sans-serif;
+  --font-inter: 'Inter', sans-serif;
+}
+
+@layer base {
+  body {
+    background-color: var(--color-paper);
+    color: var(--color-charcoal);
+    font-family: var(--font-inter);
+    /* Subtle dot grid and film grain */
+    background-image: 
+      radial-gradient(#111111 0.5px, transparent 0.5px),
+      url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.05'/%3E%3C/svg%3E");
+    background-size: 20px 20px, 100px 100px;
+  }
+}
+
+@layer utilities {
+  .hard-shadow {
+    box-shadow: 4px 4px 0px 0px var(--color-charcoal);
+  }
+  .hard-shadow-hover:hover {
+    box-shadow: 6px 6px 0px 0px var(--color-charcoal);
+    transform: translate(-2px, -2px);
+  }
+  .hard-border {
+    border: 2px solid var(--color-charcoal);
+  }
+}
+
+/* Continuous marquee/ticker loop. Content is duplicated (2x) in the markup,
+   so translating by -50% produces a seamless, infinite scroll. */
+@keyframes scroll {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
