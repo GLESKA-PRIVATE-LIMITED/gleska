@@ -94,3 +94,9 @@ async def test_worker_profile_save_and_followup_get_persist_trade_and_completion
 def test_worker_profile_rejects_blank_trade():
     with pytest.raises(ValidationError):
         UpdateWorkerProfileSchema(trade_id="   ")
+
+
+@pytest.mark.parametrize("field", ["experience_years", "expected_daily_wage"])
+def test_worker_profile_rejects_negative_numeric_values(field):
+    with pytest.raises(ValidationError):
+        UpdateWorkerProfileSchema(**{field: -1})

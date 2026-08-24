@@ -45,6 +45,8 @@ const REQUIRED_FIELDS: Record<EmployerType, string[]> = {
   INDIVIDUAL: ["address", "company_email", "company_phone", "city", "state", "pincode", "work_location"],
 };
 
+const LEGAL_VERIFICATION_TYPES = new Set(["CIN", "GSTIN", "PAN", "REGISTRATION_NUMBER", "UDYAM", "AADHAAR"]);
+
 function requiredFieldsFor(type: EmployerType): string[] {
   return REQUIRED_FIELDS[type];
 }
@@ -74,6 +76,13 @@ function maskAadhaar(value: string): string {
   return digits.length === 12 ? `XXXX XXXX ${digits.slice(-4)}` : "Masked";
 }
 
+function hasVerifiedLegalIdentity(verification: VerificationState): boolean {
+  const requiredIdentityTypes = verification.required.filter((type) => LEGAL_VERIFICATION_TYPES.has(type));
+  return requiredIdentityTypes.length === 0 || requiredIdentityTypes.every((type) =>
+    verification.records.some((record) => record.verification_type === type && record.status === "VERIFIED"),
+  );
+}
+
 const ONBOARDING_FIELDS = [
   "business_name",
   "business_type",
@@ -86,6 +95,9 @@ const ONBOARDING_FIELDS = [
   "pincode",
   "gstin",
   "registration_number",
+  "cin_number",
+  "pan_number",
+  "udyam_number",
   "nature_of_business",
   "number_of_proprietors",
   "company_email",
@@ -106,7 +118,7 @@ export default function EmployerOnboarding() {
   const router = useRouter();
   const { user, isLoading, nextStep, logout, refreshUser } = useAuth();
 
-  const [step, setStep] = useState<"type" | "details" | "verification" | "review">("type");
+  const [step, setStep] = useState<"type" | "identity" | "details" | "verification" | "review">("type");
   const [employerType, setEmployerType] = useState<EmployerType | "">("");
   const [formData, setFormData] = useState<OnboardingFormData>({});
   const [formError, setFormError] = useState("");
@@ -159,8 +171,12 @@ export default function EmployerOnboarding() {
             records: savedVerification.records || [],
           });
           const selectedType = employer.employer_type as EmployerType;
+          const loadedVerification = {
+            required: savedVerification.required || [],
+            records: savedVerification.records || [],
+          };
           const savedDetailsComplete = hasCompleteDetails(selectedType, details);
-          const requiredTypes = savedVerification.required || [];
+          const requiredTypes = loadedVerification.required;
           const savedVerificationComplete = requiredTypes.length === 0
             || requiredTypes.every((type: string) => savedVerification.records?.some(
               (record: VerificationRecord) => record.verification_type === type && record.status === "VERIFIED",
@@ -168,6 +184,8 @@ export default function EmployerOnboarding() {
           setStep(
             nextStep === "DASHBOARD"
               ? "type"
+              : !hasVerifiedLegalIdentity(loadedVerification) && selectedType !== "INDIVIDUAL"
+                ? "identity"
               : !savedDetailsComplete
                 ? "details"
                 : savedVerificationComplete
@@ -214,13 +232,16 @@ export default function EmployerOnboarding() {
       await apiClient.post("/api/v1/employers/onboarding/type", {
         employer_type: type as EmployerType,
       });
+      const verificationResponse = await apiClient.get("/api/v1/employers/onboarding/verifications", { withCredentials: true });
+      const nextVerification = { required: verificationResponse.data?.required || [], records: verificationResponse.data?.records || [] };
+      setVerification(nextVerification);
       setEmployerType(type as EmployerType);
       setFormData((current) => ({
         ...current,
         company_email: user.email || current.company_email || "",
         company_phone: user.mobile || current.company_phone || "",
       }));
-      setStep("details");
+      setStep(type !== "INDIVIDUAL" && !hasVerifiedLegalIdentity(nextVerification) ? "identity" : "details");
       toast.success("Employer type selected");
     } catch (err: unknown) {
       const message = getErrorDetail(err, "Failed to select type");
@@ -252,6 +273,24 @@ export default function EmployerOnboarding() {
     if (missingField) return `${missingField.replaceAll("_", " ")} is required`;
     if (!/^\d{6}$/.test(formData.pincode || "")) return "pincode must be a valid 6-digit number";
     return "";
+  };
+
+  const validateIdentity = () => {
+    if (employerType === "REGISTERED_INDUSTRY") {
+      if (!formData.business_name?.trim()) return "Legal / company name is required before verification";
+      if (!formData.cin_number?.trim()) return "CIN is required before verification";
+    }
+    const missingType = verification.required.find((type) => {
+      if (!LEGAL_VERIFICATION_TYPES.has(type)) return false;
+      const field = type === "CIN" ? "cin_number"
+        : type === "GSTIN" ? "gstin"
+          : type === "PAN" ? "pan_number"
+            : type === "UDYAM" ? "udyam_number"
+              : type === "AADHAAR" ? "proprietor_aadhaar"
+                : "registration_number";
+      return !formData[field]?.trim();
+    });
+    return missingType ? `${missingType.replaceAll("_", " ")} is required before verification` : "";
   };
 
   const buildPayload = () => Object.fromEntries(
@@ -295,6 +334,31 @@ export default function EmployerOnboarding() {
     }
   };
 
+  const handleSaveIdentity = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (isSubmitting) return;
+    const validationError = validateIdentity();
+    if (validationError) {
+      setFormError(validationError);
+      toast.error(validationError);
+      return;
+    }
+    setIsSubmitting(true);
+    setFormError("");
+    try {
+      await apiClient.put("/api/v1/employers/onboarding/legal-identity", buildPayload(), { withCredentials: true });
+      const response = await apiClient.get("/api/v1/employers/onboarding/verifications", { withCredentials: true });
+      setVerification({ required: response.data?.required || [], records: response.data?.records || [] });
+      setStep("verification");
+    } catch (err: unknown) {
+      const message = getErrorDetail(err, "Unable to save legal identity");
+      setFormError(message);
+      toast.error(message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const getVerificationRecord = (type: string) =>
     verification.records.find((record) => record.verification_type === type);
 
@@ -314,6 +378,11 @@ export default function EmployerOnboarding() {
           record,
         ],
       }));
+      const nextRecords = [
+        ...verification.records.filter((item) => item.verification_type !== type),
+        record,
+      ];
+      if (hasVerifiedLegalIdentity({ ...verification, records: nextRecords })) setStep("details");
       toast.success(`${type.replaceAll("_", " ")} verification ${record.status.toLowerCase()}`);
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { detail?: unknown } } }).response?.data?.detail;
@@ -534,6 +603,7 @@ export default function EmployerOnboarding() {
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               {employerType === "REGISTERED_INDUSTRY" && (
                 <>
+                  <FormField label="Legal / company name" field="business_name" value={formData.business_name} onChange={updateField} />
                   <FormField label="Industry type" field="industry_type" value={formData.industry_type} onChange={updateField} />
                   <FormField label="Industry category" field="industry_category" value={formData.industry_category} onChange={updateField} />
                   <FormField label="Registered address" field="registered_address" value={formData.registered_address} onChange={updateField} wide />
@@ -544,6 +614,7 @@ export default function EmployerOnboarding() {
                 <>
                   <FormField label="Business name" field="business_name" value={formData.business_name} onChange={updateField} />
                   <FormField label="Business type" field="business_type" value={formData.business_type} onChange={updateField} />
+                  <FormField label="Business category" field="business_category" value={formData.business_category} onChange={updateField} />
                   <FormField label="Industry category" field="industry_category" value={formData.industry_category} onChange={updateField} />
                   <FormField label={employerType === "REGISTERED_BUSINESS" ? "Registered address" : "Address"} field={employerType === "REGISTERED_BUSINESS" ? "registered_address" : "address"} value={formData[employerType === "REGISTERED_BUSINESS" ? "registered_address" : "address"]} onChange={updateField} wide />
                 </>
@@ -559,6 +630,14 @@ export default function EmployerOnboarding() {
                   <FormField label="Number of proprietors" field="number_of_proprietors" value={formData.number_of_proprietors} onChange={updateField} />
                   <FormField label="Proprietor name" field="proprietor_name" value={formData.proprietor_name} onChange={updateField} />
                   <FormField label="Proprietor Aadhaar" field="proprietor_aadhaar" value={formData.proprietor_aadhaar} onChange={updateField} />
+                </>
+              )}
+
+              {(employerType === "REGISTERED_BUSINESS" || employerType === "UNREGISTERED_BUSINESS") && (
+                <>
+                  <FormField label="Website" field="website_url" value={formData.website_url} onChange={updateField} />
+                  <FormField label="Annual revenue" field="annual_revenue" value={formData.annual_revenue} onChange={updateField} />
+                  <FormField label="Business description" field="description" value={formData.description} onChange={updateField} wide />
                 </>
               )}
 
@@ -582,15 +661,22 @@ export default function EmployerOnboarding() {
 
               {employerType === "REGISTERED_INDUSTRY" && (
                 <>
-                  <FormField label="GSTIN (optional)" field="gstin" value={formData.gstin} onChange={updateField} />
-                  <FormField label="Registration number (optional)" field="registration_number" value={formData.registration_number} onChange={updateField} />
+                  <FormField label="GSTIN" field="gstin" value={formData.gstin} onChange={updateField} />
+                  <FormField label="CIN" field="cin_number" value={formData.cin_number} onChange={updateField} />
+                  <FormField label="PAN" field="pan_number" value={formData.pan_number} onChange={updateField} />
+                  <FormField label="Registration number" field="registration_number" value={formData.registration_number} onChange={updateField} />
                 </>
               )}
               {employerType === "REGISTERED_BUSINESS" && (
                 <>
-                  <FormField label="GSTIN (optional)" field="gstin" value={formData.gstin} onChange={updateField} />
-                  <FormField label="Registration number (optional)" field="registration_number" value={formData.registration_number} onChange={updateField} />
+                  <FormField label="GSTIN" field="gstin" value={formData.gstin} onChange={updateField} />
+                  <FormField label="CIN" field="cin_number" value={formData.cin_number} onChange={updateField} />
+                  <FormField label="PAN" field="pan_number" value={formData.pan_number} onChange={updateField} />
+                  <FormField label="Registration number" field="registration_number" value={formData.registration_number} onChange={updateField} />
                 </>
+              )}
+              {employerType === "UNREGISTERED_BUSINESS" && (
+                <FormField label="Udyam number" field="udyam_number" value={formData.udyam_number} onChange={updateField} />
               )}
             </div>
 
@@ -604,6 +690,28 @@ export default function EmployerOnboarding() {
                 {isSubmitting ? <><Loader2 size={16} className="animate-spin" /> Saving...</> : <>Next: Review <ArrowRight size={16} /></>}
               </button>
             </div>
+          </form>
+        )}
+
+        {step === "identity" && employerType && employerType !== "INDIVIDUAL" && (
+          <form onSubmit={handleSaveIdentity} className="space-y-8 rounded-2xl border border-slate-200 bg-white p-8 dark:border-slate-800 dark:bg-slate-900">
+            <div>
+              <h2 className="font-(--font-anton) text-2xl uppercase text-slate-900 dark:text-white">Legal / company identity</h2>
+              <p className="mt-2 text-slate-600 dark:text-slate-400">Verify the legal identity before completing the remaining onboarding details.</p>
+            </div>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <FormField label="Legal / company name" field="business_name" value={formData.business_name} onChange={updateField} />
+              {employerType === "REGISTERED_INDUSTRY" && <FormField label="CIN" field="cin_number" value={formData.cin_number} onChange={updateField} />}
+              {(employerType === "REGISTERED_INDUSTRY" || verification.required.includes("GSTIN")) && <FormField label="GSTIN (optional)" field="gstin" value={formData.gstin} onChange={updateField} />}
+              {verification.required.includes("PAN") && <FormField label="PAN" field="pan_number" value={formData.pan_number} onChange={updateField} />}
+              {verification.required.includes("REGISTRATION_NUMBER") && <FormField label="Registration number" field="registration_number" value={formData.registration_number} onChange={updateField} />}
+              {verification.required.includes("UDYAM") && <FormField label="Udyam number" field="udyam_number" value={formData.udyam_number} onChange={updateField} />}
+              {verification.required.includes("AADHAAR") && <FormField label="Proprietor Aadhaar" field="proprietor_aadhaar" value={formData.proprietor_aadhaar} onChange={updateField} />}
+            </div>
+            {formError && <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{formError}</p>}
+            <button type="submit" disabled={isSubmitting} className="inline-flex items-center justify-center gap-2 rounded-lg bg-linear-to-r from-blue-600 to-blue-700 px-6 py-3 font-bold text-white disabled:opacity-50">
+              {isSubmitting ? <><Loader2 size={16} className="animate-spin" /> Saving...</> : <>Continue to verification <ArrowRight size={16} /></>}
+            </button>
           </form>
         )}
 

@@ -99,7 +99,7 @@ class OnboardingService:
                 "work_location",
             ]
             for field in required_fields:
-                if not data.get(field):
+                if OnboardingService._missing_required_value(data.get(field)):
                     return False, f"{field} is required for registered industry"
 
         elif employer_type == "REGISTERED_BUSINESS":
@@ -116,7 +116,7 @@ class OnboardingService:
                 "work_location",
             ]
             for field in required_fields:
-                if not data.get(field):
+                if OnboardingService._missing_required_value(data.get(field)):
                     return False, f"{field} is required for registered business"
 
         elif employer_type == "UNREGISTERED_BUSINESS":
@@ -137,7 +137,7 @@ class OnboardingService:
                 "work_location",
             ]
             for field in required_fields:
-                if not data.get(field):
+                if OnboardingService._missing_required_value(data.get(field)):
                     return False, f"{field} is required for unregistered business"
 
         elif employer_type == "INDIVIDUAL":
@@ -151,7 +151,7 @@ class OnboardingService:
                 "work_location",
             ]
             for field in required_fields:
-                if not data.get(field):
+                if OnboardingService._missing_required_value(data.get(field)):
                     return False, f"{field} is required for individual employer"
 
         pincode = str(data.get("pincode", "")).strip()
@@ -159,3 +159,7 @@ class OnboardingService:
             return False, "pincode must be a valid 6-digit number"
 
         return True, ""
+
+    @staticmethod
+    def _missing_required_value(value: object) -> bool:
+        return value is None or (isinstance(value, str) and not value.strip())

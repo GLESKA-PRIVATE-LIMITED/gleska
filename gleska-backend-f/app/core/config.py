@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     # Frontend
     FRONTEND_URL: str = Field(default="http://localhost:3000", validation_alias=AliasChoices("FRONTEND_URL", "frontend_url"))
     SITE_URL: str = Field(default="http://localhost:3000", validation_alias=AliasChoices("SITE_URL", "site_url"))
+    CORS_ORIGINS: str = Field(
+        default="http://localhost:3000,https://goleska.in,https://www.goleska.in",
+        validation_alias=AliasChoices("CORS_ORIGINS", "cors_origins"),
+    )
 
     # API
     API_V1_PREFIX: str = Field(default="/api/v1", validation_alias=AliasChoices("API_V1_PREFIX", "api_v1_prefix"))

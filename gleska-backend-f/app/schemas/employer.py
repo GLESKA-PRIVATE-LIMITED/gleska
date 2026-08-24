@@ -28,12 +28,31 @@ class SelectEmployerTypeSchema(BaseModel):
     )
 
 
+class LegalIdentityOnboardingSchema(BaseModel):
+    """Identity fields saved before the rest of employer onboarding unlocks."""
+    business_name: Optional[str] = None
+    gstin: Optional[str] = None
+    cin_number: Optional[str] = None
+    pan_number: Optional[str] = None
+    registration_number: Optional[str] = None
+    udyam_number: Optional[str] = None
+    proprietor_name: Optional[str] = None
+    proprietor_aadhaar: Optional[str] = None
+    director_name: Optional[str] = None
+    director_aadhaar: Optional[str] = None
+
+
 class EmployerOnboardingDetailsResponse(BaseModel):
     """Employer onboarding details response."""
     id: str
     employer_id: str
     business_name: Optional[str] = None
     business_type: Optional[str] = None
+    business_category: Optional[str] = None
+    website_url: Optional[str] = None
+    annual_revenue: Optional[str] = None
+    description: Optional[str] = None
+    services_required: Optional[list] = None
     industry_category: Optional[str] = None
     industry_type: Optional[str] = None
     registered_address: Optional[str] = None
@@ -43,18 +62,22 @@ class EmployerOnboardingDetailsResponse(BaseModel):
     pincode: Optional[str] = None
     gstin: Optional[str] = None
     registration_number: Optional[str] = None
+    cin_number: Optional[str] = None
+    udyam_number: Optional[str] = None
+    director_data: Optional[list] = None
     nature_of_business: Optional[str] = None
-    number_of_proprietors: Optional[int] = None
+    number_of_proprietors: Optional[int] = Field(default=None, ge=1)
     company_email: Optional[str] = None
     company_phone: Optional[str] = None
     proprietor_name: Optional[str] = None
-    proprietor_aadhaar: Optional[str] = None
     director_name: Optional[str] = None
     director_phone: Optional[str] = None
     director_email: Optional[str] = None
     director_address: Optional[str] = None
-    director_aadhaar: Optional[str] = None
     work_location: Optional[str] = None
+    bank_ifsc: Optional[str] = None
+    bank_account_holder_name: Optional[str] = None
+    hiring_mode: str = "MANUAL"
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     created_at: datetime
@@ -68,12 +91,22 @@ class RegisteredIndustryOnboardingSchema(BaseModel):
     """Onboarding schema for registered industry."""
     industry_type: str
     industry_category: str
+    business_name: Optional[str] = None
+    business_category: Optional[str] = None
     registered_address: str
     city: str
     state: str
     pincode: str
     gstin: Optional[str] = None
     registration_number: Optional[str] = None
+    cin_number: Optional[str] = None
+    pan_number: Optional[str] = None
+    website_url: Optional[str] = None
+    annual_revenue: Optional[str] = None
+    description: Optional[str] = None
+    services_required: Optional[list] = None
+    director_data: Optional[list] = None
+    hiring_mode: Optional[str] = None
     work_location: str
     latitude: Optional[float] = None
     longitude: Optional[float] = None
@@ -91,12 +124,21 @@ class RegisteredBusinessOnboardingSchema(BaseModel):
     business_name: str
     business_type: str
     industry_category: str
+    business_category: Optional[str] = None
     registered_address: str
     city: str
     state: str
     pincode: str
     gstin: Optional[str] = None
     registration_number: Optional[str] = None
+    cin_number: Optional[str] = None
+    pan_number: Optional[str] = None
+    website_url: Optional[str] = None
+    annual_revenue: Optional[str] = None
+    description: Optional[str] = None
+    services_required: Optional[list] = None
+    director_data: Optional[list] = None
+    hiring_mode: Optional[str] = None
     work_location: str
     latitude: Optional[float] = None
     longitude: Optional[float] = None
@@ -113,6 +155,7 @@ class UnregisteredBusinessOnboardingSchema(BaseModel):
     """Onboarding schema for unregistered business."""
     business_name: str
     business_type: str
+    business_category: Optional[str] = None
     industry_category: str
     address: str
     city: str
@@ -122,11 +165,16 @@ class UnregisteredBusinessOnboardingSchema(BaseModel):
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     nature_of_business: Optional[str] = None
-    number_of_proprietors: Optional[int] = None
+    number_of_proprietors: Optional[int] = Field(default=None, ge=1)
     company_email: Optional[str] = None
     company_phone: Optional[str] = None
     proprietor_name: Optional[str] = None
     proprietor_aadhaar: Optional[str] = None
+    udyam_number: Optional[str] = None
+    website_url: Optional[str] = None
+    description: Optional[str] = None
+    services_required: Optional[list] = None
+    hiring_mode: Optional[str] = None
 
 
 class IndividualOnboardingSchema(BaseModel):

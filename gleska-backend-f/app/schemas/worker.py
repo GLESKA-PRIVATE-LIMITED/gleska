@@ -29,14 +29,13 @@ class WorkerProfileResponse(BaseModel):
 class UpdateWorkerProfileSchema(BaseModel):
     """Schema for updating worker profile."""
     trade_id: Optional[str] = Field(default=None, min_length=1, max_length=120)
-    experience_years: Optional[int] = None
-    expected_daily_wage: Optional[float] = None
+    experience_years: Optional[int] = Field(default=None, ge=0)
+    expected_daily_wage: Optional[float] = Field(default=None, ge=0)
     availability_status: Optional[str] = None
     city: Optional[str] = None
     state: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
-    profile_completed: Optional[bool] = None
 
     @field_validator("trade_id")
     @classmethod

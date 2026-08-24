@@ -97,6 +97,35 @@ async def test_cashfree_http_200_invalid_result_is_failed(monkeypatch):
     assert reason == "GSTIN Doesn't Exist"
 
 
+def test_provider_business_name_mismatch_fails_comparison():
+    reason = VerificationService._comparison_error(
+        "CIN",
+        "U12345678901234567890",
+        {"valid": True, "company_name": "Different Company"},
+        {"business_name": "Expected Company"},
+    )
+
+    assert reason == "Provider business name does not match onboarding business name"
+
+
+def test_cin_comparison_requires_provider_identifier_and_company_name():
+    reason = VerificationService._comparison_error(
+        "CIN",
+        "U12345678901234567890",
+        {"valid": True},
+        {"business_name": "Example Company"},
+    )
+
+    assert reason == "Provider response did not include the verified CIN"
+
+
+def test_identity_change_is_detected_without_comparing_sensitive_values():
+    assert VerificationService.identity_changed(
+        {"business_name": "Example Company", "cin_number": "U12345678901234567890"},
+        {"business_name": "Other Company", "cin_number": "U12345678901234567890"},
+    )
+
+
 @pytest.mark.asyncio
 async def test_cashfree_auth_error_is_failed(monkeypatch):
     monkeypatch.setattr(settings, "EMPLOYER_VERIFICATION_PROVIDER", "cashfree")
@@ -113,3 +142,91 @@ async def test_cashfree_auth_error_is_failed(monkeypatch):
 
     assert status == "FAILED"
     assert reason == "CASHFREE_AUTHENTICATION_FAILED"
+
+
+@pytest.mark.asyncio
+async def test_cashfree_cin_requires_matching_identifier_and_company_name(monkeypatch):
+    monkeypatch.setattr(settings, "EMPLOYER_VERIFICATION_PROVIDER", "cashfree")
+    monkeypatch.setattr(settings, "CASHFREE_ENV", "sandbox")
+    monkeypatch.setattr(settings, "EMPLOYER_VERIFICATION_API_BASE_URL", "https://sandbox.cashfree.com/verification")
+    monkeypatch.setattr(settings, "CASHFREE_CLIENT_ID", "client")
+    monkeypatch.setattr(settings, "CASHFREE_CLIENT_SECRET", "secret")
+    calls = []
+    response = SimpleNamespace(
+        status_code=200,
+        content=b"{}",
+        json=lambda: {
+            "valid": True,
+            "status": "VALID",
+            "cin": "U12345678901234567890",
+            "companyName": "Example Industries",
+        },
+    )
+    monkeypatch.setattr(verification_service.httpx, "AsyncClient", lambda **kwargs: FakeClient(response, calls))
+
+    result = await VerificationService._verify_cashfree_identifier(
+        "CIN",
+        "U12345678901234567890",
+        {"business_name": "Example Industries"},
+    )
+
+    assert result[0] == "VERIFIED"
+    assert calls[0][0][0] == "https://sandbox.cashfree.com/verification/cin"
+    assert "x-api-version" not in calls[0][1]["headers"]
+    assert calls[0][1]["json"]["cin"] == "U12345678901234567890"
+
+
+def test_registered_industry_does_not_require_empty_gstin(monkeypatch):
+    monkeypatch.setattr(settings, "EMPLOYER_REQUIRED_VERIFICATIONS", "REGISTERED_INDUSTRY:CIN|GSTIN")
+
+    assert VerificationService.required_for("REGISTERED_INDUSTRY", {"gstin": ""}) == ["CIN"]
+    assert VerificationService.required_for("REGISTERED_INDUSTRY", {"gstin": "27AAAAA0000A1Z5"}) == ["CIN", "GSTIN"]
+
+
+@pytest.mark.asyncio
+async def test_cashfree_cin_ambiguous_response_is_not_verified(monkeypatch):
+    monkeypatch.setattr(settings, "EMPLOYER_VERIFICATION_PROVIDER", "cashfree")
+    monkeypatch.setattr(settings, "CASHFREE_CLIENT_ID", "client")
+    monkeypatch.setattr(settings, "CASHFREE_CLIENT_SECRET", "secret")
+    response = SimpleNamespace(status_code=200, content=b"{}", json=lambda: {"message": "processing"})
+    monkeypatch.setattr(verification_service.httpx, "AsyncClient", lambda **kwargs: FakeClient(response))
+
+    result = await VerificationService._verify_cashfree_identifier(
+        "CIN",
+        "U12345678901234567890",
+        {"business_name": "Example Industries"},
+    )
+
+    assert result[0] == "PENDING"
+
+
+@pytest.mark.asyncio
+async def test_cashfree_cin_legacy_company_name_and_cin_number_shape_is_verified(monkeypatch):
+    monkeypatch.setattr(settings, "EMPLOYER_VERIFICATION_PROVIDER", "cashfree")
+    monkeypatch.setattr(settings, "CASHFREE_CLIENT_ID", "client")
+    monkeypatch.setattr(settings, "CASHFREE_CLIENT_SECRET", "secret")
+    response = SimpleNamespace(
+        status_code=200,
+        content=b"{}",
+        json=lambda: {
+            "valid": True,
+            "status": "VALID",
+            "cin_number": "U12345678901234567890",
+            "companyName": "Example Industries",
+        },
+    )
+    monkeypatch.setattr(verification_service.httpx, "AsyncClient", lambda **kwargs: FakeClient(response))
+
+    result = await VerificationService._verify_cashfree_identifier(
+        "CIN",
+        "U12345678901234567890",
+        {"business_name": "Example Industries"},
+    )
+
+    assert result[0] == "VERIFIED"
+
+
+def test_cin_is_a_supported_verification_type():
+    from app.schemas.verification import VERIFICATION_TYPES
+
+    assert "CIN" in VERIFICATION_TYPES

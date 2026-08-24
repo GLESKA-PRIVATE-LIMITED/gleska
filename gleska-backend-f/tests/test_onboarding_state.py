@@ -62,6 +62,24 @@ def test_unregistered_business_requires_proprietor_and_contact_details():
     assert message == ""
 
 
+def test_employer_required_string_fields_reject_whitespace():
+    valid, message = OnboardingService.validate_onboarding_fields(
+        "INDIVIDUAL",
+        {
+            "address": "   ",
+            "company_email": "account@example.com",
+            "company_phone": "919876543210",
+            "city": "Pune",
+            "state": "Maharashtra",
+            "pincode": "411001",
+            "work_location": "Pune",
+        },
+    )
+
+    assert valid is False
+    assert message == "address is required for individual employer"
+
+
 def test_individual_requires_separate_address_and_preserves_location_fields():
     valid, message = OnboardingService.validate_onboarding_fields(
         "INDIVIDUAL",

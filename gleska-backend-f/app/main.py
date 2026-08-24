@@ -15,17 +15,30 @@ app = FastAPI(
 )
 
 # Configure CORS for local development and deployment.
-allowed_origins = {
-    settings.FRONTEND_URL,
+cors_origins = []
+for raw_origin in settings.CORS_ORIGINS.split(","):
+    origin = raw_origin.strip().rstrip("/")
+    if origin:
+        cors_origins.append(origin)
+
+for origin in (settings.FRONTEND_URL, settings.SITE_URL):
+    normalized = origin.strip().rstrip("/") if origin else ""
+    if normalized and normalized not in cors_origins:
+        cors_origins.append(normalized)
+
+# Keep local dev origins available while allowing the production domains for HTTPS deployment.
+cors_origins.extend([
     "http://localhost:3000",
     "http://localhost:3001",
     "http://127.0.0.1:3000",
     "http://127.0.0.1:3001",
-}
+])
+
+allowed_origins = list(dict.fromkeys(cors_origins))
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=list(allowed_origins),
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -5,17 +5,18 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { CheckCircle2, Zap } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { getRouteForNextStep } from "@/lib/auth-routing";
 import LanguageSelector from "@/components/landing/LanguageSelector";
 import ThemeToggle from "@/components/landing/ThemeToggle";
 import AuthMethodPanel from "@/components/auth/AuthMethodPanel";
 
 export default function WorkerAuthPage() {
   const router = useRouter();
-  const { user, isLoading: authLoading } = useAuth();
+  const { user, isLoading: authLoading, nextStep } = useAuth();
 
   useEffect(() => {
-    if (!authLoading && user) router.push(user.role === "WORKER" ? "/worker/dashboard" : "/");
-  }, [authLoading, user, router]);
+    if (!authLoading && user) router.push(getRouteForNextStep(user.role, nextStep));
+  }, [authLoading, user, nextStep, router]);
 
   return (
     <div className="relative min-h-screen bg-[#040d1e] font-sans text-slate-50">
