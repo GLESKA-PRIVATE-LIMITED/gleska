@@ -114,25 +114,25 @@ export default function ContactPage() {
     {
       icon: Phone,
       label: "Call Us",
-      value: "+91 98765 43210",
-      href: "tel:+919876543210",
+      value: "+91 7372888875",
+      href: "tel:+917372888875",
       description: "Mon – Sat, 9 AM – 7 PM IST",
       color: "from-emerald-500 to-teal-600",
     },
     {
       icon: Mail,
       label: "Email Us",
-      value: "hello@goleska.com",
-      href: "mailto:hello@goleska.com",
-      description: "We reply within 4 hours",
+      value: "office@goleska.in",
+      href: "mailto:office@goleska.in",
+      description: "We reply within 24 hours",
       color: "from-blue-600 to-indigo-600",
     },
     {
       icon: MapPin,
       label: "Visit Us",
-      value: "Mumbai, Maharashtra",
+      value: "MALVIYA NAGAR, SOUTH DELHI",
       href: "https://maps.google.com",
-      description: "Andheri East, BKC Road",
+      description: "NEW MARKET,BULDING NO. 16",
       color: "from-amber-500 to-orange-600",
     },
   ];
@@ -438,7 +438,7 @@ export default function ContactPage() {
                 <div>
                   <h3 className="text-base font-bold text-slate-900 dark:text-white">Ready to get started?</h3>
                   <p className="mt-1 text-sm font-medium text-slate-500 dark:text-slate-400">
-                    Join thousands of employers and workers already using GO LESKA.
+                    Join Businesses and Industries already using GO LESKA AI.
                   </p>
                   <Link
                     href="#contact-form"
@@ -478,7 +478,7 @@ export default function ContactPage() {
                 Contact
               </Link>
             </div>
-            <p className="text-amber-300">Made with ❤️ in India</p>
+            <p className="text-amber-300"> BHARAT </p>
           </div>
         </div>
       </footer>

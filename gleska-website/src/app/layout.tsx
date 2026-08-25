@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "GO LESKA — Kaam Milega. Turant.",
-  description: "AI-powered hiring for India's blue-collar workforce.",
+  title: "GO LESKA AI",
+  description: "AI FOR BUSINESSES AND INDUSTRIES.",
 };
 
 import { LanguageProvider } from "@/context/LanguageContext";

@@ -43,7 +43,7 @@ export default function EmployerAuthPage() {
             <div className="mb-8 space-y-3">
               <div className="inline-flex items-center rounded-full border border-blue-400/40 bg-blue-500/10 px-3.5 py-1 text-[11px] font-semibold uppercase tracking-wider text-blue-100">Employer Registration</div>
               <h1 className="font-[var(--font-anton)] text-3xl uppercase leading-tight text-white">I need workers</h1>
-              <p className="text-sm font-medium text-slate-300">Hire verified workers in 60 seconds</p>
+              <p className="text-sm font-medium text-slate-300">Hire verified workers </p>
             </div>
 
             <AuthMethodPanel role="EMPLOYER" />
