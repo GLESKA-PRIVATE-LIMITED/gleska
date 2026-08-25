@@ -127,6 +127,10 @@ class Settings(BaseSettings):
     )
     MSG91_TIMEOUT_SECONDS: int = Field(default=15, validation_alias=AliasChoices("MSG91_TIMEOUT_SECONDS", "msg91_timeout_seconds"))
     MSG91_OTP_LENGTH: int = Field(default=6, validation_alias=AliasChoices("MSG91_OTP_LENGTH", "msg91_otp_length"))
+    PASSWORD_RESET_OTP_TTL_SECONDS: int = Field(default=600, validation_alias=AliasChoices("PASSWORD_RESET_OTP_TTL_SECONDS", "password_reset_otp_ttl_seconds"))
+    PASSWORD_RESET_MAX_ATTEMPTS: int = Field(default=5, validation_alias=AliasChoices("PASSWORD_RESET_MAX_ATTEMPTS", "password_reset_max_attempts"))
+    PASSWORD_RESET_RESEND_COOLDOWN_SECONDS: int = Field(default=30, validation_alias=AliasChoices("PASSWORD_RESET_RESEND_COOLDOWN_SECONDS", "password_reset_resend_cooldown_seconds"))
+    PASSWORD_RESET_AUTH_TTL_SECONDS: int = Field(default=600, validation_alias=AliasChoices("PASSWORD_RESET_AUTH_TTL_SECONDS", "password_reset_auth_ttl_seconds"))
 
     # Gemini extraction provider
     GEMINI_API_KEY: str = Field(default="", validation_alias=AliasChoices("GEMINI_API_KEY", "gemini_api_key"))

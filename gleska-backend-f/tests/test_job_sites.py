@@ -104,11 +104,11 @@ def test_create_job_site_uses_authenticated_employer_and_normalizes_text(monkeyp
 
     result = JobSiteService.create(USER, site_request)
 
-    assert result.employer_id == "employer-id"
+    assert result.employer_id == "profile-id"
     assert result.name == "Main site"
     assert fake.tables["job_sites"].payload["id"]
-    assert fake.tables["job_sites"].payload["employer_id"] == "employer-id"
-    assert ("supabase_auth_id", "user-id") in fake.tables["employers"].filters
+    assert fake.tables["job_sites"].payload["employer_id"] == "profile-id"
+    assert ("user_id", "user-id") in fake.tables["employer_profiles"].filters
     assert fake.tables["job_sites"].payload["location"] == "POINT(73.8567 18.5204)"
     assert fake.tables["job_sites"].payload["created_at"]
 
@@ -125,7 +125,7 @@ def test_list_job_sites_is_owner_scoped(monkeypatch):
     result = JobSiteService.list_for_user(USER)
 
     assert [site.id for site in result] == ["site-id"]
-    assert ("employer_id", "employer-id") in fake.tables["job_sites"].filters
+    assert ("employer_id", "profile-id") in fake.tables["job_sites"].filters
 
 
 def test_delete_rejects_site_with_jobs(monkeypatch):
@@ -156,18 +156,18 @@ def test_site_creation_requires_completed_onboarding(monkeypatch, site_request):
 
 def test_missing_employer_is_rejected(monkeypatch, site_request):
     fake = FakeSupabase()
-    fake.tables["employers"].rows = []
+    fake.tables["employer_profiles"].rows = []
     monkeypatch.setattr(job_site_service, "supabase", fake)
 
     with pytest.raises(JobSiteNotFound, match="EMPLOYER_NOT_FOUND"):
         JobSiteService.create(USER, site_request)
 
 
-@pytest.mark.parametrize("changes", [{"is_active": False}, {"is_deleted": True}])
+@pytest.mark.parametrize("changes", [{"onboarding_status": "IN_PROGRESS"}])
 def test_inactive_or_deleted_employer_is_rejected(monkeypatch, site_request, changes):
     fake = FakeSupabase()
-    fake.tables["employers"].rows[0].update(changes)
+    fake.tables["employer_profiles"].rows[0].update(changes)
     monkeypatch.setattr(job_site_service, "supabase", fake)
 
-    with pytest.raises(PermissionError, match="EMPLOYER_INACTIVE"):
+    with pytest.raises(PermissionError, match="EMPLOYER_ONBOARDING_INCOMPLETE"):
         JobSiteService.create(USER, site_request)

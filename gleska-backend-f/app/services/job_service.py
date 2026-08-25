@@ -29,28 +29,10 @@ class JobService:
             .single()
             .execute()
         )
-        employer_response = (
-            supabase.table("employers")
-            .select("id, supabase_auth_id, is_active, is_deleted")
-            .eq("supabase_auth_id", user.id)
-            .single()
-            .execute()
-        )
-        employer = employer_response.data or {}
+        employer = response.data or {}
         if not employer.get("id"):
             raise JobNotFound("EMPLOYER_NOT_FOUND")
-        if not employer.get("is_active", False) or employer.get("is_deleted", False):
-            raise PermissionError("EMPLOYER_INACTIVE")
-
-        profile_response = (
-            supabase.table("employer_profiles")
-            .select("onboarding_status")
-            .eq("user_id", user.id)
-            .single()
-            .execute()
-        )
-        profile = profile_response.data or {}
-        if profile.get("onboarding_status") != "COMPLETED":
+        if employer.get("onboarding_status") != "COMPLETED":
             raise PermissionError("EMPLOYER_ONBOARDING_INCOMPLETE")
         return str(employer["id"])
 

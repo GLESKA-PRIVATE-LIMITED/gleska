@@ -13,7 +13,7 @@ type OTPTransaction = { name: string; email: string; password: string; mobile: s
 
 export default function AuthMethodPanel({ role }: { role: Role }) {
   const router = useRouter();
-  const { signInWithEmail, signInWithGoogle, provisionSession, signupPreflight, requestOTP, resendOTP, completeEmailSignup, loginWithMobile, refreshUser } = useAuth();
+  const { signInWithEmail, signInWithGoogle, resolveGoogleSession, signupPreflight, requestOTP, resendOTP, completeEmailSignup, loginWithMobile, refreshUser, isLoading: authLoading } = useAuth();
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [loginMethod, setLoginMethod] = useState<"email" | "mobile">("email");
   const [email, setEmail] = useState("");
@@ -44,17 +44,16 @@ export default function AuthMethodPanel({ role }: { role: Role }) {
 
   useEffect(() => {
     const oauthRole = sessionStorage.getItem("goleska_oauth_role");
-    if (oauthRole !== role || oauthHandled.current) return;
+    if (authLoading || oauthRole !== role || oauthHandled.current) return;
     oauthHandled.current = true;
-    provisionSession(role)
-      .then(async () => {
-        const nextStep = await refreshUser();
+    resolveGoogleSession(role)
+      .then(({ role: authenticatedRole, nextStep }) => {
         sessionStorage.removeItem("goleska_oauth_role");
-        router.push(getRouteForNextStep(role, nextStep));
+        router.replace(getRouteForNextStep(authenticatedRole, nextStep));
       })
       .catch((error: Error) => toast.error(error.message || "Google authentication failed"))
       .finally(() => setSubmitting(false));
-  }, [role, provisionSession, refreshUser, router]);
+  }, [authLoading, role, resolveGoogleSession, router]);
 
   const submitEmail = async (event: FormEvent) => {
     event.preventDefault();

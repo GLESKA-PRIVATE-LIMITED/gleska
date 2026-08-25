@@ -1,6 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState } from "react";
+import type { Session } from "@supabase/supabase-js";
 import apiClient from "@/lib/api";
 import { supabase } from "@/lib/supabase";
 import { initializeMSG91Widget, retryOTP, sendOTP, verifyOTP } from "@/lib/msg91";
@@ -43,9 +44,12 @@ interface AuthContextType {
   resendOTP: () => Promise<void>;
   signInWithEmail: (email: string, password: string, role: "WORKER" | "EMPLOYER") => Promise<void>;
   signInWithGoogle: (role: "WORKER" | "EMPLOYER") => Promise<void>;
+  resolveGoogleSession: (role: "WORKER" | "EMPLOYER") => Promise<{ role: "WORKER" | "EMPLOYER"; nextStep: NextStep | null }>;
   provisionSession: (role: "WORKER" | "EMPLOYER", name?: string) => Promise<void>;
   completeEmailSignup: (email: string, password: string, name: string, mobile: string, otp: string, role: "WORKER" | "EMPLOYER") => Promise<void>;
-  requestPasswordReset: (email: string) => Promise<void>;
+  requestPasswordReset: (phone: string) => Promise<void>;
+  verifyPasswordResetOTP: (phone: string, msg91AccessToken: string) => Promise<string>;
+  completePasswordReset: (resetAuthorization: string, password: string, confirmPassword: string) => Promise<void>;
   signupPreflight: (name: string, email: string, mobile: string, password: string, confirmPassword: string, role: "WORKER" | "EMPLOYER") => Promise<void>;
 }
 
@@ -63,9 +67,12 @@ const AuthContext = createContext<AuthContextType>({
   resendOTP: async () => {},
   signInWithEmail: async () => {},
   signInWithGoogle: async () => {},
+  resolveGoogleSession: async () => ({ role: "WORKER", nextStep: null }),
   provisionSession: async () => {},
   completeEmailSignup: async () => {},
   requestPasswordReset: async () => {},
+  verifyPasswordResetOTP: async () => "",
+  completePasswordReset: async () => {},
   signupPreflight: async () => {},
 });
 
@@ -167,16 +174,64 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     sessionStorage.setItem("goleska_oauth_role", role);
     const { error: oauthError } = await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: { redirectTo: `${window.location.origin}/${role.toLowerCase()}/auth` },
+      options: { redirectTo: `${window.location.origin}/auth/callback` },
     });
     if (oauthError) throw oauthError;
   };
 
-  const requestPasswordReset = async (email: string) => {
-    const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
-      redirectTo: `${window.location.origin}/auth/reset-password`,
-    });
-    if (resetError) throw resetError;
+  const resolveGoogleSession = async (role: "WORKER" | "EMPLOYER") => {
+    let { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      session = await new Promise<Session | null>((resolve) => {
+        let settled = false;
+        const finish = (value: NonNullable<typeof session> | null) => {
+          if (settled) return;
+          settled = true;
+          subscription.subscription.unsubscribe();
+          resolve(value);
+        };
+        const { data: subscription } = supabase.auth.onAuthStateChange((event, nextSession) => {
+          if (nextSession || event === "SIGNED_OUT") finish(nextSession);
+        });
+        window.setTimeout(() => finish(null), 10000);
+      });
+    }
+    if (!session) {
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, 500));
+        const sessionResult = await supabase.auth.getSession();
+        if (sessionResult.data.session) {
+          session = sessionResult.data.session;
+          break;
+        }
+      }
+    }
+    if (!session) throw new Error("Google authentication session was not created");
+    await provisionSession(role, session.user.user_metadata?.full_name || session.user.user_metadata?.name || "");
+    const response = await apiClient.get("/api/v1/auth/me", { withCredentials: true });
+    const authenticatedRole = response.data?.user?.role;
+    if (authenticatedRole !== "WORKER" && authenticatedRole !== "EMPLOYER") throw new Error("Unable to determine account role");
+    return { role: authenticatedRole, nextStep: response.data?.next_step || null };
+  };
+
+  const requestPasswordReset = async (phone: string) => {
+    await apiClient.post("/api/v1/auth/forgot-password/request-otp", { phone: phone.trim() }, { skipSupabaseAuth: true });
+  };
+
+  const verifyPasswordResetOTP = async (phone: string, msg91AccessToken: string) => {
+    const response = await apiClient.post("/api/v1/auth/forgot-password/verify-otp", {
+      phone: phone.trim(),
+      msg91_access_token: msg91AccessToken,
+    }, { skipSupabaseAuth: true });
+    return response.data.reset_authorization as string;
+  };
+
+  const completePasswordReset = async (resetAuthorization: string, password: string, confirmPassword: string) => {
+    await apiClient.post("/api/v1/auth/forgot-password/reset", {
+      reset_authorization: resetAuthorization,
+      password,
+      confirm_password: confirmPassword,
+    }, { skipSupabaseAuth: true });
   };
 
   const completeEmailSignup = async (email: string, password: string, name: string, mobile: string, otp: string, role: "WORKER" | "EMPLOYER") => {
@@ -308,9 +363,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         resendOTP,
         signInWithEmail,
         signInWithGoogle,
+        resolveGoogleSession,
         provisionSession,
         completeEmailSignup,
         requestPasswordReset,
+        verifyPasswordResetOTP,
+        completePasswordReset,
         signupPreflight,
       }}
     >

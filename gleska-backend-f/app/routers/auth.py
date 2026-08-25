@@ -9,10 +9,39 @@ from app.core.supabase import supabase
 from app.services.auth_service import AuthService
 from app.services.msg91_service import MSG91Service
 from app.services.onboarding_service import OnboardingService
-from app.schemas.auth import UserResponse, ProvisionUserSchema, SignupPreflightSchema, MobileVerifiedSignupSchema
+from app.schemas.auth import UserResponse, ProvisionUserSchema, SignupPreflightSchema, MobileVerifiedSignupSchema, PasswordResetRequestSchema, PasswordResetVerifySchema, PasswordResetCompleteSchema
+from app.services.password_reset_service import PasswordResetService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 logger = logging.getLogger(__name__)
+
+
+@router.post("/forgot-password/request-otp")
+async def request_password_reset_otp(request: PasswordResetRequestSchema):
+    try:
+        await PasswordResetService.request_otp(request.phone)
+    except ValueError:
+        pass
+    return {"message": "If an account exists for this phone number, we have sent a verification code."}
+
+
+@router.post("/forgot-password/verify-otp")
+async def verify_password_reset_otp(request: PasswordResetVerifySchema):
+    try:
+        authorization = await PasswordResetService.verify_provider_token(request.phone, request.msg91_access_token)
+    except ValueError as exc:
+        code = str(exc)
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS if code == "OTP_ATTEMPTS_EXCEEDED" else status.HTTP_400_BAD_REQUEST, detail=code) from exc
+    return {"reset_authorization": authorization}
+
+
+@router.post("/forgot-password/reset")
+def reset_password(request: PasswordResetCompleteSchema):
+    try:
+        PasswordResetService.complete(request.reset_authorization, request.password)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return {"success": True, "message": "Password reset successfully. Please log in with your new password."}
 
 
 @router.post("/signup-preflight")

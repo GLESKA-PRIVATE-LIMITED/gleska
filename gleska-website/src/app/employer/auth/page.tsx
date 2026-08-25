@@ -8,16 +8,17 @@ import { CheckCircle2, Zap } from "lucide-react";
 import LanguageSelector from "@/components/landing/LanguageSelector";
 import ThemeToggle from "@/components/landing/ThemeToggle";
 import AuthMethodPanel from "@/components/auth/AuthMethodPanel";
+import { getRouteForNextStep } from "@/lib/auth-routing";
 
 export default function EmployerAuthPage() {
   const router = useRouter();
-  const { user, isLoading: authLoading } = useAuth();
+  const { user, isLoading: authLoading, nextStep } = useAuth();
 
   useEffect(() => {
     if (!authLoading && user) {
-      router.push("/employer/onboarding");
+      router.replace(getRouteForNextStep(user.role, nextStep));
     }
-  }, [authLoading, user, router]);
+  }, [authLoading, user, nextStep, router]);
 
   return (
     <div className="relative min-h-screen bg-[#040d1e] font-sans text-slate-50">

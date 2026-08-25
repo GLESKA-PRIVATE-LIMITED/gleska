@@ -1,3 +1,5 @@
+CREATE EXTENSION IF NOT EXISTS postgis;
+
 -- Create ENUM types for roles and status fields when they do not exist.
 DO $$
 BEGIN
@@ -42,6 +44,10 @@ CREATE TABLE IF NOT EXISTS public.worker_profiles (
   state TEXT,
   latitude NUMERIC,
   longitude NUMERIC,
+  account_type TEXT NOT NULL DEFAULT 'EMPLOYEE',
+  is_verified BOOLEAN NOT NULL DEFAULT FALSE,
+  overall_rating NUMERIC NOT NULL DEFAULT 5.0,
+  total_jobs INTEGER NOT NULL DEFAULT 0,
   profile_completed BOOLEAN DEFAULT FALSE,
   onboarding_status onboarding_status DEFAULT 'NOT_STARTED',
   created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -58,6 +64,43 @@ CREATE TABLE IF NOT EXISTS public.employer_profiles (
   contact_person_name TEXT NOT NULL,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Canonical job tables used by the active backend and matching RPCs.
+CREATE TABLE IF NOT EXISTS public.job_sites (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  employer_id UUID NOT NULL REFERENCES public.employer_profiles(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  location geometry(Point, 4326) NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.jobs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  employer_id UUID NOT NULL REFERENCES public.employer_profiles(id) ON DELETE CASCADE,
+  job_site_id UUID NOT NULL REFERENCES public.job_sites(id) ON DELETE RESTRICT,
+  title TEXT NOT NULL,
+  headcount_required INTEGER NOT NULL CHECK (headcount_required > 0),
+  max_daily_salary NUMERIC,
+  min_experience INTEGER,
+  status TEXT NOT NULL DEFAULT 'SEARCHING',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.job_matches (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  job_id UUID NOT NULL REFERENCES public.jobs(id) ON DELETE CASCADE,
+  worker_profile_id UUID NOT NULL REFERENCES public.worker_profiles(id) ON DELETE CASCADE,
+  composite_score NUMERIC NOT NULL,
+  expires_at TIMESTAMPTZ NOT NULL,
+  status TEXT NOT NULL DEFAULT 'PENDING',
+  arrival_otp TEXT,
+  completion_otp TEXT,
+  completed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  CONSTRAINT job_matches_profile_job_unique UNIQUE (job_id, worker_profile_id)
 );
 
 -- Create the public.employer_onboarding_details table
@@ -88,6 +131,11 @@ CREATE INDEX IF NOT EXISTS idx_users_role ON public.users(role);
 CREATE INDEX IF NOT EXISTS idx_worker_profiles_user_id ON public.worker_profiles(user_id);
 CREATE INDEX IF NOT EXISTS idx_employer_profiles_user_id ON public.employer_profiles(user_id);
 CREATE INDEX IF NOT EXISTS idx_employer_onboarding_employer_id ON public.employer_onboarding_details(employer_id);
+CREATE INDEX IF NOT EXISTS idx_job_sites_location ON public.job_sites USING GIST (location);
+CREATE INDEX IF NOT EXISTS idx_job_sites_employer_id ON public.job_sites(employer_id);
+CREATE INDEX IF NOT EXISTS idx_jobs_employer_id ON public.jobs(employer_id);
+CREATE INDEX IF NOT EXISTS idx_jobs_job_site_id ON public.jobs(job_site_id);
+CREATE INDEX IF NOT EXISTS idx_job_matches_worker_profile_id ON public.job_matches(worker_profile_id);
 
 -- Create updated_at trigger function
 CREATE OR REPLACE FUNCTION update_updated_at_column()

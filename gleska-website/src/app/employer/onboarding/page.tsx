@@ -726,12 +726,15 @@ export default function EmployerOnboarding() {
               {verification.required.map((type) => {
                 const record = getVerificationRecord(type);
                 const verified = record?.status === "VERIFIED";
+                const failureMessage = record?.failure_reason === "CASHFREE_AUTHENTICATION_FAILED"
+                  ? "Cashfree credentials were rejected. Contact the administrator."
+                  : record?.failure_reason;
                 return (
                   <div key={type} className="flex flex-col gap-3 rounded-xl border border-slate-200 p-4 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                      <p className="font-bold text-slate-900">{type.replaceAll("_", " ")}</p>
+                      <p className="font-bold text-slate-300">Document: {type.replaceAll("_", " ")}</p>
                       <p className={`text-sm ${verified ? "text-emerald-600" : record?.status === "FAILED" ? "text-red-600" : record?.status === "NOT_CONFIGURED" ? "text-amber-700" : "text-slate-500"}`}>
-                        {record?.status === "NOT_CONFIGURED" ? "Verification is not configured; success cannot be claimed" : record?.status || "PENDING"}{record?.failure_reason && record?.status !== "NOT_CONFIGURED" ? ` - ${record.failure_reason}` : ""}
+                        {record?.status === "NOT_CONFIGURED" ? "Verification is not configured; success cannot be claimed" : record?.status || "PENDING"}{failureMessage && record?.status !== "NOT_CONFIGURED" ? ` - ${failureMessage}` : ""}
                       </p>
                     </div>
                     {!verified && record?.status !== "NOT_CONFIGURED" && (

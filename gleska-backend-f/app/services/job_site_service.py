@@ -23,27 +23,16 @@ class JobSiteService:
     @staticmethod
     def _employer_id(user: UserResponse) -> str:
         employer_response = (
-            supabase.table("employers")
-            .select("id, supabase_auth_id, is_active, is_deleted")
-            .eq("supabase_auth_id", user.id)
+            supabase.table("employer_profiles")
+            .select("id, user_id, onboarding_status")
+            .eq("user_id", user.id)
             .single()
             .execute()
         )
         employer = employer_response.data or {}
         if not employer.get("id"):
             raise JobSiteNotFound("EMPLOYER_NOT_FOUND")
-        if not employer.get("is_active", False) or employer.get("is_deleted", False):
-            raise PermissionError("EMPLOYER_INACTIVE")
-
-        response = (
-            supabase.table("employer_profiles")
-            .select("onboarding_status")
-            .eq("user_id", user.id)
-            .single()
-            .execute()
-        )
-        profile = response.data or {}
-        if profile.get("onboarding_status") != "COMPLETED":
+        if employer.get("onboarding_status") != "COMPLETED":
             raise PermissionError("EMPLOYER_ONBOARDING_INCOMPLETE")
         return str(employer["id"])
 

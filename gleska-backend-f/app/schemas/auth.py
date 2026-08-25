@@ -84,6 +84,27 @@ class MobileVerifiedSignupSchema(SignupPreflightSchema):
     msg91_access_token: str = Field(..., min_length=1)
 
 
+class PasswordResetRequestSchema(BaseModel):
+    phone: str = Field(..., min_length=10, max_length=32)
+
+
+class PasswordResetVerifySchema(BaseModel):
+    phone: str = Field(..., min_length=10, max_length=32)
+    msg91_access_token: str = Field(..., min_length=1)
+
+
+class PasswordResetCompleteSchema(BaseModel):
+    reset_authorization: str = Field(..., min_length=32, max_length=256)
+    password: str = Field(..., min_length=8, max_length=128)
+    confirm_password: str = Field(..., min_length=8, max_length=128)
+
+    @model_validator(mode="after")
+    def passwords_match(self):
+        if self.password != self.confirm_password:
+            raise ValueError("Passwords do not match")
+        return self
+
+
 class ErrorResponse(BaseModel):
     """Error response."""
     success: bool = False

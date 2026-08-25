@@ -85,13 +85,13 @@ def test_create_job_uses_authenticated_employer_and_searching_status(monkeypatch
     result = JobService.create(USER, request)
 
     UUID(result.id)
-    assert result.employer_id == "employer-id"
+    assert result.employer_id == "profile-id"
     assert result.status == "SEARCHING"
     assert fake.tables["jobs"].payload["id"]
-    assert fake.tables["jobs"].payload["employer_id"] == "employer-id"
+    assert fake.tables["jobs"].payload["employer_id"] == "profile-id"
     assert fake.tables["jobs"].payload["max_daily_salary"] == "800"
     assert fake.tables["jobs"].payload["created_at"]
-    assert ("supabase_auth_id", "user-id") in fake.tables["employers"].filters
+    assert ("user_id", "user-id") in fake.tables["employer_profiles"].filters
 
 
 def test_create_job_rejects_non_owned_site(monkeypatch):
@@ -135,4 +135,4 @@ def test_list_jobs_is_scoped_to_authenticated_employer(monkeypatch):
     assert len(result) == 1
     assert result[0].title == "Construction Worker"
     assert result[0].status == "SEARCHING"
-    assert ("employer_id", "employer-id") in fake.tables["jobs"].filters
+    assert ("employer_id", "profile-id") in fake.tables["jobs"].filters
