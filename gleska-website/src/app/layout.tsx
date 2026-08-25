@@ -4,6 +4,11 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "GO LESKA AI",
   description: "AI FOR BUSINESSES AND INDUSTRIES.",
+  icons: {
+    icon: "/favicon.ico",
+    shortcut: "/favicon.ico",
+    apple: "/icon.png",
+  },
 };
 
 import { LanguageProvider } from "@/context/LanguageContext";
