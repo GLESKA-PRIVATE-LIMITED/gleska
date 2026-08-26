@@ -1,14 +1,37 @@
--- Deterministic matching on the canonical users/worker_profiles model.
+-- Keep matching creation and worker retrieval aligned with the matched-job inbox.
+-- Existing NULL statuses are treated as pending at read time for compatibility
+-- with legacy rows; new rows always receive the explicit PENDING status.
+
+BEGIN;
+
+-- The original worker_profiles CREATE TABLE used IF NOT EXISTS, so older
+-- deployments may be missing columns required by the canonical matcher.
+ALTER TABLE public.worker_profiles
+  ADD COLUMN IF NOT EXISTS availability_status worker_availability DEFAULT 'OFFLINE',
+  ADD COLUMN IF NOT EXISTS latitude NUMERIC,
+  ADD COLUMN IF NOT EXISTS longitude NUMERIC,
+  ADD COLUMN IF NOT EXISTS account_type TEXT NOT NULL DEFAULT 'EMPLOYEE',
+  ADD COLUMN IF NOT EXISTS is_verified BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS overall_rating NUMERIC NOT NULL DEFAULT 5.0,
+  ADD COLUMN IF NOT EXISTS total_jobs INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS profile_completed BOOLEAN DEFAULT FALSE;
+
 ALTER TABLE public.job_matches
-  ADD COLUMN IF NOT EXISTS worker_profile_id uuid
-  REFERENCES public.worker_profiles(id);
+  ALTER COLUMN status SET DEFAULT 'PENDING';
 
-CREATE INDEX IF NOT EXISTS idx_job_matches_worker_profile_id
-  ON public.job_matches(worker_profile_id);
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_job_matches_profile_job_unique
-  ON public.job_matches(job_id, worker_profile_id)
-  WHERE worker_profile_id IS NOT NULL;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conrelid = 'public.job_matches'::regclass
+      AND conname = 'job_matches_status_not_null'
+  ) THEN
+    ALTER TABLE public.job_matches
+      ADD CONSTRAINT job_matches_status_not_null
+      CHECK (status IS NOT NULL) NOT VALID;
+  END IF;
+END $$;
 
 CREATE OR REPLACE FUNCTION public.create_job_matches_for_profiles(p_job_id uuid)
 RETURNS TABLE (
@@ -26,11 +49,7 @@ AS $$
     SELECT
       profile.id AS worker_profile_id,
       distance.distance_m,
-      (
-        (1.0 - (distance.distance_m / 30000.0)) * 0.5
-        + (profile.overall_rating / 5.0) * 0.3
-        + (LEAST(profile.total_jobs, 50) / 50.0) * 0.2
-      ) AS composite_score
+      (1.0 - (distance.distance_m / 30000.0))::numeric AS composite_score
     FROM jobs AS job
     JOIN job_sites AS site ON site.id = job.job_site_id
     JOIN worker_profiles AS profile ON TRUE
@@ -57,8 +76,9 @@ AS $$
     LIMIT (SELECT headcount_required * 3 FROM jobs WHERE id = p_job_id)
   ),
   inserted_matches AS (
-    INSERT INTO job_matches (id, job_id, worker_profile_id, composite_score, expires_at)
-    SELECT gen_random_uuid(), p_job_id, worker_profile_id, composite_score, NOW() + INTERVAL '2 minutes'
+    INSERT INTO job_matches (id, job_id, worker_profile_id, composite_score, expires_at, status)
+    SELECT gen_random_uuid(), p_job_id, worker_profile_id, composite_score,
+           NOW() + INTERVAL '2 minutes', 'PENDING'
     FROM ranked_profiles
     RETURNING id AS match_id, worker_profile_id, composite_score, expires_at
   )
@@ -68,9 +88,6 @@ AS $$
   JOIN ranked_profiles AS ranked ON ranked.worker_profile_id = inserted.worker_profile_id
   ORDER BY inserted.composite_score DESC;
 $$;
-
-REVOKE ALL ON FUNCTION public.create_job_matches_for_profiles(uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.create_job_matches_for_profiles(uuid) TO service_role;
 
 CREATE OR REPLACE FUNCTION public.find_available_jobs_for_worker(
   p_worker_id uuid,
@@ -102,6 +119,9 @@ AS $$
   FROM worker_profiles AS profile
   JOIN job_sites AS site ON site.location IS NOT NULL
   JOIN jobs AS job ON job.job_site_id = site.id
+  JOIN job_matches AS worker_match
+    ON worker_match.job_id = job.id
+   AND worker_match.worker_profile_id = profile.id
   JOIN employer_profiles AS employer ON employer.id = job.employer_id
   CROSS JOIN LATERAL (
     SELECT ST_DistanceSphere(
@@ -110,19 +130,19 @@ AS $$
     ) AS distance_m
   ) AS distance
   WHERE profile.id = p_worker_id
+    AND profile.profile_completed = TRUE
     AND profile.availability_status = 'AVAILABLE'
     AND profile.latitude IS NOT NULL
     AND profile.longitude IS NOT NULL
     AND job.status = 'SEARCHING'
+    AND COALESCE(worker_match.status, 'PENDING') = 'PENDING'
     AND distance.distance_m <= p_max_radius
-    AND NOT EXISTS (
-      SELECT 1
-      FROM job_matches AS existing_match
-      WHERE existing_match.job_id = job.id
-        AND existing_match.worker_profile_id = profile.id
-    )
   ORDER BY distance.distance_m ASC;
 $$;
 
+REVOKE ALL ON FUNCTION public.create_job_matches_for_profiles(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.create_job_matches_for_profiles(uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.find_available_jobs_for_worker(uuid, integer) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.find_available_jobs_for_worker(uuid, integer) TO service_role;
+
+COMMIT;
