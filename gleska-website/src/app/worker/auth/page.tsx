@@ -24,8 +24,10 @@ export default function WorkerAuthPage() {
       <div className="sticky top-4 z-50 px-4 sm:px-8">
         <nav className="mx-auto flex max-w-[1360px] items-center justify-between rounded-full border border-slate-700/80 bg-slate-950/95 px-8 py-4 shadow-xl shadow-black/40 backdrop-blur-md">
           <Link href="/" className="flex items-center gap-3.5">
-            <img src="/favicon.ico" alt="GO LESKA" className="h-9 w-9 rounded-lg object-contain" />
-            <span className="font-[var(--font-anton)] text-2xl sm:text-3xl uppercase tracking-wider text-white">GO LESKA</span>
+            <img src="/favicon.ico" alt="GO LESKA AI" className="h-9 w-9 rounded-lg object-contain" />
+            <span className="font-[var(--font-anton)] text-2xl sm:text-3xl uppercase tracking-wider bg-[linear-gradient(180deg,#E86100_0%,#FFF5EA_48%,#128807_100%)] bg-clip-text text-transparent select-none">
+              GO LESKA AI
+            </span>
           </Link>
           <div className="flex items-center gap-4"><LanguageSelector /></div>
         </nav>

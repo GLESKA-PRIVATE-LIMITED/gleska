@@ -18,8 +18,10 @@ export default function LandingPage() {
       <div className="sticky top-4 z-50 px-4 sm:px-8">
         <nav className="mx-auto flex max-w-[1360px] items-center justify-between rounded-full border border-slate-200/80 bg-white/95 px-8 py-4 shadow-xl shadow-slate-900/5 backdrop-blur-md dark:border-slate-800/80 dark:bg-slate-900/95 dark:shadow-black/20">
           <Link href="/" className="flex items-center gap-3.5">
-            <img src="/favicon.ico" alt="GO LESKA" className="h-9 w-9 rounded-lg object-contain" />
-            <span className="font-[var(--font-anton)] text-2xl sm:text-3xl uppercase tracking-wider text-slate-900 dark:text-white">GO LESKA</span>
+            <img src="/favicon.ico" alt="GO LESKA AI" className="h-9 w-9 rounded-lg object-contain" />
+            <span className="font-[var(--font-anton)] text-2xl sm:text-3xl uppercase tracking-wider bg-[linear-gradient(180deg,#E86100_0%,#FFF5EA_48%,#128807_100%)] bg-clip-text text-transparent select-none">
+              GO LESKA AI
+            </span>
           </Link>
           <div className="hidden items-center gap-9 text-base font-bold tracking-wide text-slate-700 md:flex dark:text-slate-200">
             <Link href="/contact" className="transition-all hover:text-indigo-600 dark:hover:text-indigo-400">Contact us</Link>
@@ -34,11 +36,10 @@ export default function LandingPage() {
       {/* HERO SECTION */}
       <section className="relative mx-auto flex max-w-7xl flex-col items-center gap-10 px-6 py-16 sm:py-24 md:flex-row md:gap-12 md:py-28">
         <div className="relative z-10 w-full flex-1 space-y-7">
-          <div className="inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-3.5 py-1 text-[11px] font-semibold uppercase tracking-wider text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-300">
-            {t('hero.badge')}
-          </div>
           <h1 className="font-[var(--font-anton)] text-5xl uppercase leading-[0.95] tracking-wide text-slate-900 sm:text-6xl md:text-8xl dark:text-white">
-            {t('hero.titleLine1')}<br /><span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">{t('hero.titleLine2')}</span>
+            {t('hero.titleLine1')}<br />
+            {t('hero.titleLine2')}<br />
+            <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">{t('hero.titleLine3')}</span>
           </h1>
           <p className="max-w-xl text-lg font-medium leading-relaxed text-slate-600 md:text-xl dark:text-slate-300">
             {t('hero.subtitle')}
