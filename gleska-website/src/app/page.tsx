@@ -9,7 +9,7 @@ import { useLanguage } from '@/context/LanguageContext';
 export default function LandingPage() {
   const { t } = useLanguage();
 
-  const tickerKeys = ['ticker.aiDispatch', 'ticker.match60s', 'ticker.aadhaarVerified', 'ticker.dailyPayouts', 'ticker.languages12'];
+
 
   const tradesList = [
     { key: 'trade.welder', defaultText: 'Welder' },
@@ -41,7 +41,6 @@ export default function LandingPage() {
           </Link>
           <div className="hidden items-center gap-9 text-base font-bold tracking-wide text-slate-700 md:flex dark:text-slate-200">
             <Link href="#worker" className="transition-all hover:text-indigo-600 dark:hover:text-indigo-400">{t('nav.forWorkers')}</Link>
-            <Link href="#employer" className="transition-all hover:text-indigo-600 dark:hover:text-indigo-400">{t('nav.forEmployers')}</Link>
             <Link href="/contact" className="transition-all hover:text-indigo-600 dark:hover:text-indigo-400">Contact us</Link>
             <Link href="/about" className="transition-all hover:text-indigo-600 dark:hover:text-indigo-400">About Us</Link>
           </div>
@@ -88,16 +87,6 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* TICKER - seamless auto-sliding marquee */}
-      <div className="relative flex w-full overflow-hidden bg-gradient-to-r from-blue-600 to-indigo-600 py-4">
-        <div className="flex w-max shrink-0 animate-[scroll_20s_linear_infinite] items-center whitespace-nowrap font-[var(--font-anton)] text-2xl uppercase tracking-widest text-white">
-          {[...tickerKeys, ...tickerKeys].map((key, i) => (
-            <span key={i} className="mx-8 flex items-center gap-2">
-              <span className="text-amber-300">&#9733;</span> {t(key)}
-            </span>
-          ))}
-        </div>
-      </div>
 
       {/* FOR WORKERS */}
       <section id="worker" className="relative overflow-hidden bg-gradient-to-br from-indigo-600 via-blue-600 to-indigo-700 text-white">
@@ -139,44 +128,6 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* FOR EMPLOYERS */}
-      <section id="employer" className="mx-auto flex max-w-7xl flex-col items-center gap-14 px-6 py-20 sm:py-24 lg:flex-row-reverse">
-        <div className="flex-1 space-y-5">
-          <h2 className="font-[var(--font-anton)] text-5xl uppercase leading-none text-slate-900 sm:text-6xl lg:text-7xl dark:text-white">{t('employer.titleLine1')}<br />{t('employer.titleLine2')}<br />{t('employer.titleLine3')}</h2>
-          <p className="text-lg font-medium text-slate-600 dark:text-slate-400">{t('employer.desc')}</p>
-        </div>
-
-        <div className="w-full flex-1">
-          {/* AI NLP Prompt Card */}
-          <div className="relative rounded-2xl border border-slate-200 bg-white p-6 shadow-xl shadow-slate-200 dark:border-slate-800 dark:bg-slate-900 dark:shadow-none">
-            <div className="absolute -top-3 left-6 rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-1 text-xs font-semibold uppercase tracking-wider text-white">LLM Dispatch Engine</div>
-            <p className="mt-4 rounded-xl border-l-4 border-indigo-500 bg-slate-50 p-4 text-base italic text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-              {t('employer.demoPrompt')}
-            </p>
-            <div className="mt-6 grid grid-cols-2 gap-3">
-              <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3">
-                <span className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400">{t('employer.roleLabel')}</span>
-                <span className="font-[var(--font-anton)] text-xl text-slate-900">{t('employer.roleVal')}</span>
-              </div>
-              <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3">
-                <span className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400">{t('employer.headcountLabel')}</span>
-                <span className="font-[var(--font-anton)] text-xl text-slate-900">{t('employer.headcountVal')}</span>
-              </div>
-              <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3">
-                <span className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400">{t('employer.salaryLabel')}</span>
-                <span className="font-[var(--font-anton)] text-xl text-slate-900">&#8377;800/day</span>
-              </div>
-              <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3">
-                <span className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400">{t('employer.radiusLabel')}</span>
-                <span className="font-[var(--font-anton)] text-xl text-slate-900">10 km</span>
-              </div>
-            </div>
-            <button className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 py-3.5 text-sm font-bold uppercase tracking-wider text-white shadow-lg shadow-indigo-500/25 transition hover:from-blue-700 hover:to-indigo-700">
-              <Zap size={18} className="fill-amber-300 text-amber-300" /> {t('employer.dispatchBtn')}
-            </button>
-          </div>
-        </div>
-      </section>
 
       {/* TRADES WALL */}
       <section id="trades" className="border-y border-slate-200 bg-white px-6 py-20 sm:py-24 dark:border-slate-800 dark:bg-slate-900">

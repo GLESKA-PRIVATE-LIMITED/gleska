@@ -40,13 +40,3 @@
   }
 }
 
-/* Continuous marquee/ticker loop. Content is duplicated (2x) in the markup,
-   so translating by -50% produces a seamless, infinite scroll. */
-@keyframes scroll {
-  from {
-    transform: translateX(0);
-  }
-  to {
-    transform: translateX(-50%);
-  }
-}
