@@ -6,7 +6,6 @@ import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { CheckCircle2, Zap } from "lucide-react";
 import LanguageSelector from "@/components/landing/LanguageSelector";
-import ThemeToggle from "@/components/landing/ThemeToggle";
 import AuthMethodPanel from "@/components/auth/AuthMethodPanel";
 import { getRouteForNextStep } from "@/lib/auth-routing";
 
@@ -25,18 +24,17 @@ export default function EmployerAuthPage() {
       <div className="pointer-events-none fixed -right-40 -top-40 h-[500px] w-[500px] rounded-full bg-blue-600/10 blur-[120px]" />
       <div className="pointer-events-none fixed -bottom-32 -left-32 h-[400px] w-[400px] rounded-full bg-indigo-500/10 blur-[100px]" />
 
-      <nav className="sticky top-0 z-50 flex items-center justify-between border-b border-slate-700 bg-slate-950/80 px-6 py-4 backdrop-blur">
-        <Link href="/" className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600">
-            <Zap size={18} className="text-white" fill="currentColor" />
+      <div className="sticky top-4 z-50 px-4 sm:px-8">
+        <nav className="mx-auto flex max-w-[1360px] items-center justify-between rounded-full border border-slate-700/80 bg-slate-950/95 px-8 py-4 shadow-xl shadow-black/40 backdrop-blur-md">
+          <Link href="/" className="flex items-center gap-3.5">
+            <img src="/favicon.ico" alt="GO LESKA" className="h-9 w-9 rounded-lg object-contain" />
+            <span className="font-[var(--font-anton)] text-2xl sm:text-3xl uppercase tracking-wider text-white">GO LESKA</span>
+          </Link>
+          <div className="flex items-center gap-4">
+            <LanguageSelector />
           </div>
-          <span className="font-[var(--font-anton)] text-2xl uppercase tracking-wide text-white">GO LESKA</span>
-        </Link>
-        <div className="flex items-center gap-3">
-          <LanguageSelector />
-          <ThemeToggle />
-        </div>
-      </nav>
+        </nav>
+      </div>
 
       <div className="relative z-10 flex min-h-[calc(100vh-80px)] items-center justify-center px-6 py-12">
         <div className="w-full max-w-md">

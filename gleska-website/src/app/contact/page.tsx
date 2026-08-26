@@ -19,7 +19,6 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import LanguageSelector from "@/components/landing/LanguageSelector";
-import ThemeToggle from "@/components/landing/ThemeToggle";
 
 /* ------------------------------------------------------------------ */
 /*  Shared Tailwind class-strings (mirrors login page conventions)    */
@@ -140,36 +139,33 @@ export default function ContactPage() {
   return (
     <div className="relative min-h-screen overflow-x-hidden bg-[#eef1fb] font-sans text-slate-900 selection:bg-indigo-500 selection:text-white dark:bg-slate-950 dark:text-slate-100">
       {/* ── NAV ── */}
-      <nav className="sticky top-0 z-50 flex items-center justify-between border-b border-slate-200 bg-white/80 px-6 py-4 backdrop-blur dark:border-slate-800 dark:bg-slate-900/80">
-        <div className="flex items-center gap-3">
-          <Link href="/" className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600">
-              <Zap size={18} className="text-white" fill="currentColor" />
-            </div>
-            <span className="font-[var(--font-anton)] text-2xl uppercase tracking-wide text-slate-900 dark:text-white">
+      <div className="sticky top-4 z-50 px-4 sm:px-8">
+        <nav className="mx-auto flex max-w-[1360px] items-center justify-between rounded-full border border-slate-200/80 bg-white/95 px-8 py-4 shadow-xl shadow-slate-900/5 backdrop-blur-md dark:border-slate-800/80 dark:bg-slate-900/95 dark:shadow-black/20">
+          <Link href="/" className="flex items-center gap-3.5">
+            <img src="/favicon.ico" alt="GO LESKA" className="h-9 w-9 rounded-lg object-contain" />
+            <span className="font-[var(--font-anton)] text-2xl sm:text-3xl uppercase tracking-wider text-slate-900 dark:text-white">
               GO LESKA
             </span>
           </Link>
-        </div>
-        <div className="flex items-center gap-3 sm:gap-4">
-          <div className="hidden gap-8 text-sm font-semibold text-slate-600 md:flex dark:text-slate-300">
-            <Link href="/#how" className="transition-colors hover:text-indigo-600 dark:hover:text-indigo-400">
+          <div className="hidden items-center gap-9 text-base font-bold tracking-wide text-slate-700 md:flex dark:text-slate-200">
+            <Link href="/#how" className="transition-all hover:text-indigo-600 dark:hover:text-indigo-400">
               How It Works
             </Link>
-            <Link href="/#worker" className="transition-colors hover:text-indigo-600 dark:hover:text-indigo-400">
+            <Link href="/#worker" className="transition-all hover:text-indigo-600 dark:hover:text-indigo-400">
               For Workers
             </Link>
-            <Link href="/#employer" className="transition-colors hover:text-indigo-600 dark:hover:text-indigo-400">
+            <Link href="/#employer" className="transition-all hover:text-indigo-600 dark:hover:text-indigo-400">
               For Employers
             </Link>
             <Link href="/contact" className="text-indigo-600 dark:text-indigo-400">
               Contact Us
             </Link>
           </div>
-          <LanguageSelector />
-          <ThemeToggle />
-        </div>
-      </nav>
+          <div className="flex items-center gap-4">
+            <LanguageSelector />
+          </div>
+        </nav>
+      </div>
 
       {/* ── HERO HEADER ── */}
       <section className="relative overflow-hidden bg-gradient-to-br from-indigo-600 via-blue-600 to-indigo-700 text-white">
