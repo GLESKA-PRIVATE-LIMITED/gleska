@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { ArrowRight, Clock, ShieldCheck, MapPin, Zap, IndianRupee, Mail, Phone, Send, User, Building2, ChevronDown, Loader2, CheckCircle2, MessageCircle, Brain, Network, Eye, Layers, TrendingUp, Factory, Sparkles, Globe, Target } from 'lucide-react';
+import { ArrowRight, ShieldCheck, Mail, Phone, Send, User, Building2, ChevronDown, Loader2, CheckCircle2, MessageCircle, Brain, Network, Eye, Layers, TrendingUp, Factory, Sparkles, Globe, Target, Zap, MapPin, Clock } from 'lucide-react';
 import LanguageSelector from '@/components/landing/LanguageSelector';
 import { useLanguage } from '@/context/LanguageContext';
 
@@ -10,24 +10,6 @@ export default function LandingPage() {
   const { t } = useLanguage();
 
 
-
-  const tradesList = [
-    { key: 'trade.welder', defaultText: 'Welder' },
-    { key: 'trade.fitter', defaultText: 'Fitter' },
-    { key: 'trade.cnc', defaultText: 'CNC Operator' },
-    { key: 'trade.forklift', defaultText: 'Forklift Driver' },
-    { key: 'trade.electrician', defaultText: 'Electrician' },
-    { key: 'trade.plumber', defaultText: 'Plumber' },
-    { key: 'trade.mason', defaultText: 'Mason' },
-    { key: 'trade.painter', defaultText: 'Painter' },
-    { key: 'trade.carpenter', defaultText: 'Carpenter' },
-    { key: 'trade.machine', defaultText: 'Machine Operator' },
-    { key: 'trade.packer', defaultText: 'Packer' },
-    { key: 'trade.loader', defaultText: 'Loader' },
-    { key: 'trade.guard', defaultText: 'Security Guard' },
-    { key: 'trade.housekeeping', defaultText: 'Housekeeping' },
-    { key: 'trade.cook', defaultText: 'Cook' },
-  ];
 
   return (
     <div className="relative min-h-screen overflow-x-clip bg-[#eef1fb] font-sans text-slate-900 selection:bg-indigo-500 selection:text-white dark:bg-slate-950 dark:text-slate-100">
@@ -40,7 +22,6 @@ export default function LandingPage() {
             <span className="font-[var(--font-anton)] text-2xl sm:text-3xl uppercase tracking-wider text-slate-900 dark:text-white">GO LESKA</span>
           </Link>
           <div className="hidden items-center gap-9 text-base font-bold tracking-wide text-slate-700 md:flex dark:text-slate-200">
-            <Link href="#worker" className="transition-all hover:text-indigo-600 dark:hover:text-indigo-400">{t('nav.forWorkers')}</Link>
             <Link href="/contact" className="transition-all hover:text-indigo-600 dark:hover:text-indigo-400">Contact us</Link>
             <Link href="/about" className="transition-all hover:text-indigo-600 dark:hover:text-indigo-400">About Us</Link>
           </div>
@@ -83,65 +64,6 @@ export default function LandingPage() {
               <ShieldCheck size={18} />
             </div>
             <span className="text-sm font-bold text-slate-900">{t('hero.verifiedBadge')}</span>
-          </div>
-        </div>
-      </section>
-
-
-      {/* FOR WORKERS */}
-      <section id="worker" className="relative overflow-hidden bg-gradient-to-br from-indigo-600 via-blue-600 to-indigo-700 text-white">
-        <div className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-white/10 blur-3xl" />
-        <div className="pointer-events-none absolute -bottom-24 -left-16 h-72 w-72 rounded-full bg-indigo-400/20 blur-3xl" />
-
-        <div className="relative z-10 mx-auto flex max-w-7xl flex-col items-center gap-14 px-6 py-20 sm:py-24 lg:flex-row">
-          <div className="flex-1 space-y-6">
-            <h2 className="font-[var(--font-anton)] text-5xl uppercase leading-none text-amber-300 sm:text-6xl lg:text-7xl">{t('worker.titleLine1')}<br />{t('worker.titleLine2')}</h2>
-            <p className="text-lg font-medium text-white/80">{t('worker.desc')}</p>
-            <ul className="space-y-3.5 pt-2 text-base font-semibold text-white/90">
-              <li className="flex items-center gap-3"><span className="text-amber-300">&#9656;</span> {t('worker.bullet1')}</li>
-              <li className="flex items-center gap-3"><span className="text-amber-300">&#9656;</span> {t('worker.bullet2')}</li>
-              <li className="flex items-center gap-3"><span className="text-amber-300">&#9656;</span> {t('worker.bullet3')}</li>
-            </ul>
-          </div>
-
-          <div className="relative flex w-full flex-1 justify-center">
-            {/* Phone Mockup Card */}
-            <div className="w-full max-w-[320px] rounded-2xl bg-white p-5 text-slate-900 shadow-2xl">
-              <div className="mb-3 flex items-center justify-between border-b border-slate-100 pb-3">
-                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">{t('worker.pingTitle')}</span>
-                <Zap size={16} className="fill-amber-500 text-amber-500" />
-              </div>
-              <h3 className="font-[var(--font-anton)] text-2xl uppercase leading-tight text-slate-900">{t('worker.jobTitle')}</h3>
-              <div className="mt-2 inline-flex w-max items-center gap-1 rounded-lg bg-amber-100 px-2.5 py-1 text-sm font-bold text-amber-700">
-                <IndianRupee size={16} /> {t('worker.jobRate')}
-              </div>
-              <div className="mt-4 space-y-2 text-sm font-medium text-slate-600">
-                <p className="flex items-center gap-2"><MapPin size={16} /> {t('worker.jobDistance')}</p>
-                <p className="flex items-center gap-2"><Clock size={16} /> {t('worker.jobTimer')}</p>
-              </div>
-              <div className="mt-5 flex gap-2">
-                <button className="flex-1 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 py-2.5 text-sm font-bold uppercase text-white">{t('worker.btnAccept')}</button>
-                <button className="flex-1 rounded-xl bg-slate-100 py-2.5 text-sm font-bold uppercase text-slate-500">{t('worker.btnPass')}</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-
-      {/* TRADES WALL */}
-      <section id="trades" className="border-y border-slate-200 bg-white px-6 py-20 sm:py-24 dark:border-slate-800 dark:bg-slate-900">
-        <div className="mx-auto max-w-7xl">
-          <h2 className="mb-10 text-center font-[var(--font-anton)] text-4xl uppercase text-slate-900 sm:text-5xl md:text-6xl dark:text-white">{t('trades.title')}</h2>
-          <div className="flex flex-wrap justify-center gap-3">
-            {tradesList.map((item) => (
-              <div key={item.key} className="cursor-default rounded-full border border-slate-200 bg-slate-50 px-5 py-2.5 font-[var(--font-anton)] text-lg uppercase text-slate-700 transition hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:border-indigo-500 dark:hover:bg-indigo-950/50 dark:hover:text-indigo-300">
-                {t(item.key)}
-              </div>
-            ))}
-            <div className="cursor-default rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 px-5 py-2.5 font-[var(--font-anton)] text-lg uppercase text-white">
-              {t('trades.more')}
-            </div>
           </div>
         </div>
       </section>
