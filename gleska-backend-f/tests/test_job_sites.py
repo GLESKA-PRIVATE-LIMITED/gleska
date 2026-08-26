@@ -40,6 +40,9 @@ class Query:
     def single(self):
         return self
 
+    def maybe_single(self):
+        return self
+
     def order(self, *_args, **_kwargs):
         return self
 
@@ -161,6 +164,17 @@ def test_missing_employer_is_rejected(monkeypatch, site_request):
 
     with pytest.raises(JobSiteNotFound, match="EMPLOYER_NOT_FOUND"):
         JobSiteService.create(USER, site_request)
+
+
+@pytest.mark.parametrize("coordinates", [(91, 0), (-91, 0), (0, 181), (0, -181)])
+def test_invalid_coordinates_are_rejected(coordinates):
+    with pytest.raises(ValueError):
+        JobSiteCreate(name="Site", latitude=coordinates[0], longitude=coordinates[1])
+
+
+def test_blank_name_is_rejected():
+    with pytest.raises(ValueError):
+        JobSiteCreate(name="   ", latitude=18.5, longitude=73.8)
 
 
 @pytest.mark.parametrize("changes", [{"onboarding_status": "IN_PROGRESS"}])

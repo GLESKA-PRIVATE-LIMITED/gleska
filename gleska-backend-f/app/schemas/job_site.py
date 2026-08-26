@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class JobSiteCreate(BaseModel):
@@ -11,6 +11,13 @@ class JobSiteCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=160)
     latitude: float = Field(..., ge=-90, le=90)
     longitude: float = Field(..., ge=-180, le=180)
+
+    @field_validator("name")
+    @classmethod
+    def name_must_not_be_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("name must not be blank")
+        return value
 
 
 class JobSiteResponse(BaseModel):

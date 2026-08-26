@@ -26,7 +26,7 @@ class JobSiteService:
             supabase.table("employer_profiles")
             .select("id, user_id, onboarding_status")
             .eq("user_id", user.id)
-            .single()
+            .maybe_single()
             .execute()
         )
         employer = employer_response.data or {}
