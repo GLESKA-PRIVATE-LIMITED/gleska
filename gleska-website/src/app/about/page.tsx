@@ -79,7 +79,7 @@ const INDUSTRIES = [
 /* ------------------------------------------------------------------ */
 export default function AboutPage() {
   return (
-    <div className="relative min-h-screen overflow-x-hidden bg-[#eef1fb] font-sans text-slate-900 selection:bg-indigo-500 selection:text-white dark:bg-slate-950 dark:text-slate-100">
+    <div className="relative min-h-screen overflow-x-clip bg-[#eef1fb] font-sans text-slate-900 selection:bg-indigo-500 selection:text-white dark:bg-slate-950 dark:text-slate-100">
       {/* ── NAV ── */}
       <div className="sticky top-4 z-50 px-4 sm:px-8">
         <nav className="mx-auto flex max-w-[1360px] items-center justify-between rounded-full border border-slate-200/80 bg-white/95 px-8 py-4 shadow-xl shadow-slate-900/5 backdrop-blur-md dark:border-slate-800/80 dark:bg-slate-900/95 dark:shadow-black/20">
@@ -90,9 +90,6 @@ export default function AboutPage() {
             </span>
           </Link>
           <div className="hidden items-center gap-9 text-base font-bold tracking-wide text-slate-700 md:flex dark:text-slate-200">
-            <Link href="/#how" className="transition-all hover:text-indigo-600 dark:hover:text-indigo-400">
-              How It Works
-            </Link>
             <Link href="/#worker" className="transition-all hover:text-indigo-600 dark:hover:text-indigo-400">
               For Workers
             </Link>

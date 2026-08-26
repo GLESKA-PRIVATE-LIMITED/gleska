@@ -30,7 +30,7 @@ export default function LandingPage() {
   ];
 
   return (
-    <div className="relative min-h-screen overflow-x-hidden bg-[#eef1fb] font-sans text-slate-900 selection:bg-indigo-500 selection:text-white dark:bg-slate-950 dark:text-slate-100">
+    <div className="relative min-h-screen overflow-x-clip bg-[#eef1fb] font-sans text-slate-900 selection:bg-indigo-500 selection:text-white dark:bg-slate-950 dark:text-slate-100">
 
       {/* FLOATING PILL NAV */}
       <div className="sticky top-4 z-50 px-4 sm:px-8">
@@ -40,7 +40,6 @@ export default function LandingPage() {
             <span className="font-[var(--font-anton)] text-2xl sm:text-3xl uppercase tracking-wider text-slate-900 dark:text-white">GO LESKA</span>
           </Link>
           <div className="hidden items-center gap-9 text-base font-bold tracking-wide text-slate-700 md:flex dark:text-slate-200">
-            <Link href="#how" className="transition-all hover:text-indigo-600 dark:hover:text-indigo-400">{t('nav.howItWorks')}</Link>
             <Link href="#worker" className="transition-all hover:text-indigo-600 dark:hover:text-indigo-400">{t('nav.forWorkers')}</Link>
             <Link href="#employer" className="transition-all hover:text-indigo-600 dark:hover:text-indigo-400">{t('nav.forEmployers')}</Link>
             <Link href="/contact" className="transition-all hover:text-indigo-600 dark:hover:text-indigo-400">Contact us</Link>
@@ -99,30 +98,6 @@ export default function LandingPage() {
           ))}
         </div>
       </div>
-
-      {/* HOW IT WORKS */}
-      <section id="how" className="mx-auto max-w-7xl px-6 py-20 sm:py-24">
-        <div className="mb-14 text-center">
-          <h2 className="font-[var(--font-anton)] text-4xl uppercase tracking-wide text-slate-900 sm:text-5xl md:text-6xl dark:text-white">{t('how.title')}</h2>
-          <p className="mx-auto mt-4 max-w-2xl text-lg font-medium text-slate-600 dark:text-slate-400">{t('how.subtitle')}</p>
-        </div>
-
-        <div className="grid grid-cols-1 gap-5 md:grid-cols-5">
-          {[
-            { step: "1", titleKey: "how.step1Title", descKey: "how.step1Desc" },
-            { step: "2", titleKey: "how.step2Title", descKey: "how.step2Desc" },
-            { step: "3", titleKey: "how.step3Title", descKey: "how.step3Desc" },
-            { step: "4", titleKey: "how.step4Title", descKey: "how.step4Desc" },
-            { step: "5", titleKey: "how.step5Title", descKey: "how.step5Desc" }
-          ].map((s, i) => (
-            <div key={i} className="group relative rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-lg dark:border-slate-800 dark:bg-slate-900">
-              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 font-[var(--font-anton)] text-xl text-white">{s.step}</span>
-              <h3 className="mt-4 text-lg font-bold text-slate-900 dark:text-white">{t(s.titleKey)}</h3>
-              <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{t(s.descKey)}</p>
-            </div>
-          ))}
-        </div>
-      </section>
 
       {/* FOR WORKERS */}
       <section id="worker" className="relative overflow-hidden bg-gradient-to-br from-indigo-600 via-blue-600 to-indigo-700 text-white">
