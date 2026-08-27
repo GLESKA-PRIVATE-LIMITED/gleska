@@ -52,15 +52,6 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* MANIFESTO */}
-      <section className="mx-auto max-w-4xl space-y-6 px-6 py-24 text-center sm:py-28">
-        <p className="font-[var(--font-anton)] text-4xl uppercase leading-[0.95] text-slate-900 sm:text-5xl md:text-7xl dark:text-white">
-          {t('manifesto.line1')}
-        </p>
-        <p className="mx-auto inline-block max-w-2xl rounded-2xl bg-indigo-50 px-6 py-4 text-xl font-medium leading-relaxed text-indigo-900/80 dark:bg-indigo-950/40 dark:text-indigo-200">
-          {t('manifesto.line2')}
-        </p>
-      </section>
 
       {/* CONTACT SECTION (SHARED SINGLE SOURCE OF TRUTH) */}
       <ContactUsSection />
