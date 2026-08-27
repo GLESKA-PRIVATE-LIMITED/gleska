@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { ArrowRight, ShieldCheck, Mail, Phone, Send, User, Building2, ChevronDown, Loader2, CheckCircle2, MessageCircle, Brain, Network, Eye, Layers, TrendingUp, Factory, Sparkles, Globe, Target, Zap, MapPin, Clock } from 'lucide-react';
-import LanguageSelector from '@/components/landing/LanguageSelector';
+import Navbar from '@/components/landing/Navbar';
 import { useLanguage } from '@/context/LanguageContext';
 
 export default function LandingPage() {
@@ -15,23 +15,7 @@ export default function LandingPage() {
     <div className="relative min-h-screen overflow-x-clip bg-[#eef1fb] font-sans text-slate-900 selection:bg-indigo-500 selection:text-white dark:bg-slate-950 dark:text-slate-100">
 
       {/* FLOATING PILL NAV */}
-      <div className="sticky top-4 z-50 px-4 sm:px-8">
-        <nav className="mx-auto flex max-w-[1360px] items-center justify-between rounded-full border border-slate-200/80 bg-white/95 px-8 py-4 shadow-xl shadow-slate-900/5 backdrop-blur-md dark:border-slate-800/80 dark:bg-slate-900/95 dark:shadow-black/20">
-          <Link href="/" className="flex items-center gap-3.5">
-            <img src="/favicon.ico" alt="GO LESKA AI" className="h-9 w-9 rounded-lg object-contain" />
-            <span className="font-[var(--font-anton)] text-2xl sm:text-3xl uppercase tracking-wider bg-[linear-gradient(180deg,#E86100_0%,#FFF5EA_48%,#128807_100%)] bg-clip-text text-transparent select-none">
-              GO LESKA AI
-            </span>
-          </Link>
-          <div className="hidden items-center gap-9 text-base font-bold tracking-wide text-slate-700 md:flex dark:text-slate-200">
-            <Link href="/contact" className="transition-all hover:text-indigo-600 dark:hover:text-indigo-400">Contact us</Link>
-            <Link href="/about" className="transition-all hover:text-indigo-600 dark:hover:text-indigo-400">About Us</Link>
-          </div>
-          <div className="flex items-center gap-4">
-            <LanguageSelector />
-          </div>
-        </nav>
-      </div>
+      <Navbar />
 
       {/* HERO SECTION */}
       <section className="relative mx-auto flex max-w-7xl flex-col items-center gap-10 px-6 py-16 sm:py-24 md:flex-row md:gap-12 md:py-28">
