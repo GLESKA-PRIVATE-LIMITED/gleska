@@ -16,6 +16,8 @@ import {
   User,
   Loader2,
   CheckCircle2,
+  HelpCircle,
+  X,
 } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
@@ -97,6 +99,7 @@ export default function ContactUsSection({ showHeader = true }: { showHeader?: b
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
+  const [faqDrawerOpen, setFaqDrawerOpen] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -134,7 +137,7 @@ export default function ContactUsSection({ showHeader = true }: { showHeader?: b
   ];
 
   return (
-    <section id="contact" className="border-y border-slate-200 bg-white px-6 py-20 sm:py-24 dark:border-slate-800 dark:bg-slate-900">
+    <section id="contact" className="relative border-y border-slate-200 bg-white px-6 py-20 sm:py-24 dark:border-slate-800 dark:bg-slate-900">
       <div className="mx-auto max-w-7xl">
         {/* Optional Section header */}
         {showHeader && (
@@ -185,210 +188,243 @@ export default function ContactUsSection({ showHeader = true }: { showHeader?: b
           ))}
         </div>
 
-        {/* Form + FAQ grid */}
-        <div className="grid grid-cols-1 items-start gap-10 lg:grid-cols-5">
-          {/* Form */}
-          <div className="lg:col-span-3">
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xl shadow-slate-200/40 sm:p-8 dark:border-slate-800 dark:bg-slate-900 dark:shadow-none">
-              <div className="mb-7">
-                <h3 className="font-[var(--font-anton)] text-2xl uppercase tracking-wide text-slate-900 sm:text-3xl dark:text-white">
-                  Send us a message
-                </h3>
-                <p className="mt-2 text-sm font-medium text-slate-500 dark:text-slate-400">
-                  Fill in the form below and we&apos;ll get back to you within 4 hours.
-                </p>
-              </div>
-
-              {submitted ? (
-                <div className="flex flex-col items-center justify-center py-16 text-center">
-                  <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 shadow-lg shadow-emerald-500/30">
-                    <CheckCircle2 size={32} className="text-white" />
-                  </div>
-                  <h3 className="text-xl font-extrabold text-slate-900 dark:text-white">Message Sent!</h3>
-                  <p className="mt-2 max-w-sm text-sm font-medium text-slate-500 dark:text-slate-400">
-                    Thank you for reaching out. Our team will respond to your inquiry within 4 hours during business
-                    hours.
-                  </p>
-                  <button
-                    onClick={() => {
-                      setSubmitted(false);
-                      setName("");
-                      setEmail("");
-                      setPhone("");
-                      setSubject("");
-                      setMessage("");
-                    }}
-                    className="mt-6 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-5 py-2.5 text-sm font-bold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-                  >
-                    Send another message
-                  </button>
-                </div>
-              ) : (
-                <form onSubmit={handleSubmit} className="space-y-5" id="contact-form">
-                  <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-                    <div>
-                      <label htmlFor="contact-name" className={labelCls}>
-                        Full Name
-                      </label>
-                      <div className="relative">
-                        <User
-                          size={18}
-                          className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
-                        />
-                        <input
-                          id="contact-name"
-                          type="text"
-                          value={name}
-                          onChange={(e) => setName(e.target.value)}
-                          className={inputCls + " pl-11"}
-                          placeholder="Your name"
-                          required
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <label htmlFor="contact-email" className={labelCls}>
-                        Email
-                      </label>
-                      <div className="relative">
-                        <Mail
-                          size={18}
-                          className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
-                        />
-                        <input
-                          id="contact-email"
-                          type="email"
-                          value={email}
-                          onChange={(e) => setEmail(e.target.value)}
-                          className={inputCls + " pl-11"}
-                          placeholder="you@company.com"
-                          required
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-                    <div>
-                      <label htmlFor="contact-phone" className={labelCls}>
-                        Phone (optional)
-                      </label>
-                      <div className="flex">
-                        <span className="inline-flex items-center rounded-l-xl border border-r-0 border-slate-200 bg-slate-100 px-4 text-sm font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
-                          +91
-                        </span>
-                        <input
-                          id="contact-phone"
-                          type="tel"
-                          value={phone}
-                          onChange={(e) => setPhone(e.target.value)}
-                          className={inputCls + " rounded-l-none"}
-                          placeholder="9999999999"
-                          maxLength={10}
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <label htmlFor="contact-subject" className={labelCls}>
-                        Subject
-                      </label>
-                      <div className="relative">
-                        <Building2
-                          size={18}
-                          className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
-                        />
-                        <select
-                          id="contact-subject"
-                          value={subject}
-                          onChange={(e) => setSubject(e.target.value)}
-                          className={inputCls + " appearance-none pl-11 pr-10"}
-                          required
-                        >
-                          <option value="">Select a topic</option>
-                          <option value="hiring">I want to hire workers</option>
-                          <option value="work">I'm looking for work</option>
-                          <option value="partnership">Business partnership</option>
-                          <option value="support">Technical support</option>
-                          <option value="other">Other</option>
-                        </select>
-                        <ChevronDown
-                          size={16}
-                          className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label htmlFor="contact-message" className={labelCls}>
-                      Message
-                    </label>
-                    <textarea
-                      id="contact-message"
-                      rows={5}
-                      value={message}
-                      onChange={(e) => setMessage(e.target.value)}
-                      className={inputCls + " resize-none"}
-                      placeholder="Tell us how we can help you..."
-                      required
-                    />
-                  </div>
-
-                  <button type="submit" disabled={submitting} className={primaryBtnCls} id="contact-submit-btn">
-                    {submitting ? (
-                      <Loader2 className="animate-spin" size={18} />
-                    ) : (
-                      <>
-                        <Send size={16} /> Send Message
-                      </>
-                    )}
-                  </button>
-                </form>
-              )}
-            </div>
-          </div>
-
-          {/* FAQ sidebar */}
-          <div className="lg:col-span-2">
-            <div className="mb-6">
-              <h3 className="font-[var(--font-anton)] text-2xl uppercase tracking-wide text-slate-900 sm:text-4xl dark:text-white">
-                FAQs
+        {/* Form Container */}
+        <div className="mx-auto max-w-3xl">
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xl shadow-slate-200/40 sm:p-8 dark:border-slate-800 dark:bg-slate-900 dark:shadow-none">
+            <div className="mb-7">
+              <h3 className="font-[var(--font-anton)] text-2xl uppercase tracking-wide text-slate-900 sm:text-3xl dark:text-white">
+                Send us a message
               </h3>
               <p className="mt-2 text-sm font-medium text-slate-500 dark:text-slate-400">
-                Quick answers to common questions.
+                Fill in the form below and we&apos;ll get back to you within 4 hours.
               </p>
             </div>
-            <div className="space-y-3" id="faq-section">
-              {FAQ_ITEMS.map((item, i) => (
-                <FaqItem
-                  key={i}
-                  q={item.q}
-                  a={item.a}
-                  open={openFaq === i}
-                  toggle={() => setOpenFaq(openFaq === i ? null : i)}
-                />
-              ))}
-            </div>
 
-            {/* Extra CTA card */}
-            <div className="mt-6 rounded-2xl border border-indigo-200 bg-gradient-to-br from-indigo-50 to-blue-50 p-6 dark:border-indigo-900/50 dark:from-indigo-950/40 dark:to-blue-950/40">
-              <div className="flex items-start gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600">
-                  <Zap size={18} className="text-white" fill="currentColor" />
+            {submitted ? (
+              <div className="flex flex-col items-center justify-center py-16 text-center">
+                <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 shadow-lg shadow-emerald-500/30">
+                  <CheckCircle2 size={32} className="text-white" />
                 </div>
-                <div>
-                  <h3 className="text-base font-bold text-slate-900 dark:text-white">Ready to get started?</h3>
-                  <p className="mt-1 text-sm font-medium text-slate-500 dark:text-slate-400">
-                    Join Businesses and Industries already using GO LESKA AI.
-                  </p>
-                  <Link
-                    href="#contact-form"
-                    className="mt-4 inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-indigo-500/25 transition hover:from-blue-700 hover:to-indigo-700"
-                  >
-                    Start now <ArrowRight size={16} />
-                  </Link>
-                </div>
+                <h3 className="text-xl font-extrabold text-slate-900 dark:text-white">Message Sent!</h3>
+                <p className="mt-2 max-w-sm text-sm font-medium text-slate-500 dark:text-slate-400">
+                  Thank you for reaching out. Our team will respond to your inquiry within 4 hours during business
+                  hours.
+                </p>
+                <button
+                  onClick={() => {
+                    setSubmitted(false);
+                    setName("");
+                    setEmail("");
+                    setPhone("");
+                    setSubject("");
+                    setMessage("");
+                  }}
+                  className="mt-6 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-5 py-2.5 text-sm font-bold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                >
+                  Send another message
+                </button>
               </div>
+            ) : (
+              <form onSubmit={handleSubmit} className="space-y-5" id="contact-form">
+                <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                  <div>
+                    <label htmlFor="contact-name" className={labelCls}>
+                      Full Name
+                    </label>
+                    <div className="relative">
+                      <User
+                        size={18}
+                        className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
+                      />
+                      <input
+                        id="contact-name"
+                        type="text"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        className={inputCls + " pl-11"}
+                        placeholder="Your name"
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label htmlFor="contact-email" className={labelCls}>
+                      Email
+                    </label>
+                    <div className="relative">
+                      <Mail
+                        size={18}
+                        className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
+                      />
+                      <input
+                        id="contact-email"
+                        type="email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        className={inputCls + " pl-11"}
+                        placeholder="you@company.com"
+                        required
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                  <div>
+                    <label htmlFor="contact-phone" className={labelCls}>
+                      Phone (optional)
+                    </label>
+                    <div className="flex">
+                      <span className="inline-flex items-center rounded-l-xl border border-r-0 border-slate-200 bg-slate-100 px-4 text-sm font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
+                        +91
+                      </span>
+                      <input
+                        id="contact-phone"
+                        type="tel"
+                        value={phone}
+                        onChange={(e) => setPhone(e.target.value)}
+                        className={inputCls + " rounded-l-none"}
+                        placeholder="9999999999"
+                        maxLength={10}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label htmlFor="contact-subject" className={labelCls}>
+                      Subject
+                    </label>
+                    <div className="relative">
+                      <Building2
+                        size={18}
+                        className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
+                      />
+                      <select
+                        id="contact-subject"
+                        value={subject}
+                        onChange={(e) => setSubject(e.target.value)}
+                        className={inputCls + " appearance-none pl-11 pr-10"}
+                        required
+                      >
+                        <option value="">Select a topic</option>
+                        <option value="hiring">I want to hire workers</option>
+                        <option value="work">I'm looking for work</option>
+                        <option value="partnership">Business partnership</option>
+                        <option value="support">Technical support</option>
+                        <option value="other">Other</option>
+                      </select>
+                      <ChevronDown
+                        size={16}
+                        className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label htmlFor="contact-message" className={labelCls}>
+                    Message
+                  </label>
+                  <textarea
+                    id="contact-message"
+                    rows={5}
+                    value={message}
+                    onChange={(e) => setMessage(e.target.value)}
+                    className={inputCls + " resize-none"}
+                    placeholder="Tell us how we can help you..."
+                    required
+                  />
+                </div>
+
+                <button type="submit" disabled={submitting} className={primaryBtnCls} id="contact-submit-btn">
+                  {submitting ? (
+                    <Loader2 className="animate-spin" size={18} />
+                  ) : (
+                    <>
+                      <Send size={16} /> Send Message
+                    </>
+                  )}
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Floating FAQs Button */}
+      <button
+        onClick={() => setFaqDrawerOpen(true)}
+        className="fixed bottom-6 right-6 z-40 flex items-center gap-2.5 rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 px-5 py-3.5 text-sm font-bold text-white shadow-xl shadow-indigo-500/30 transition-all hover:scale-105 hover:from-blue-700 hover:to-indigo-700 active:scale-95"
+        id="open-faq-drawer-btn"
+        aria-label="Open FAQs"
+      >
+        <HelpCircle size={20} />
+        <span>FAQs</span>
+      </button>
+
+      {/* FAQ Drawer Backdrop */}
+      <div
+        onClick={() => setFaqDrawerOpen(false)}
+        className={`fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs transition-opacity duration-300 ${
+          faqDrawerOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+        }`}
+      />
+
+      {/* FAQ Slide-in Drawer */}
+      <div
+        className={`fixed top-0 right-0 z-50 flex h-full w-full max-w-md flex-col justify-between overflow-y-auto bg-white p-6 shadow-2xl transition-transform duration-300 ease-in-out sm:p-8 dark:bg-slate-900 ${
+          faqDrawerOpen ? "translate-x-0" : "translate-x-full"
+        }`}
+      >
+        <div>
+          {/* Drawer Header */}
+          <div className="flex items-center justify-between border-b border-slate-100 pb-5 dark:border-slate-800">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-400">
+                <HelpCircle size={22} />
+              </div>
+              <div>
+                <h3 className="font-[var(--font-anton)] text-xl uppercase tracking-wide text-slate-900 dark:text-white">
+                  FAQs
+                </h3>
+                <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                  Quick answers to common questions
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setFaqDrawerOpen(false)}
+              className="rounded-full p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+              aria-label="Close FAQs"
+            >
+              <X size={20} />
+            </button>
+          </div>
+
+          {/* Accordion List */}
+          <div className="mt-6 space-y-3" id="faq-section">
+            {FAQ_ITEMS.map((item, i) => (
+              <FaqItem
+                key={i}
+                q={item.q}
+                a={item.a}
+                open={openFaq === i}
+                toggle={() => setOpenFaq(openFaq === i ? null : i)}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* Drawer Footer CTA */}
+        <div className="mt-8 rounded-2xl border border-indigo-200 bg-gradient-to-br from-indigo-50 to-blue-50 p-5 dark:border-indigo-900/50 dark:from-indigo-950/40 dark:to-blue-950/40">
+          <div className="flex items-start gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600">
+              <Zap size={16} className="text-white" fill="currentColor" />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-slate-900 dark:text-white">Have more questions?</h4>
+              <p className="mt-0.5 text-xs font-medium text-slate-500 dark:text-slate-400">
+                Our team is available 24/7 to assist you. Fill out the form to get in touch.
+              </p>
             </div>
           </div>
         </div>
