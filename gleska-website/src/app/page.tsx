@@ -17,17 +17,17 @@ export default function LandingPage() {
       {/* FLOATING PILL NAV */}
       <Navbar />
 
-      {/* GET HIRED / HERO SECTION (SINGLE CANONICAL SOURCE OF TRUTH) */}
-      <GetHiredSection />
-
-      {/* SERVICES SECTION */}
+      {/* 1. SERVICES SECTION */}
       <ServicesSection />
 
-      {/* ABOUT SECTION */}
-      <AboutSection />
+      {/* 2. GET HIRED / JOIN AS WORKING PARTNER SECTION */}
+      <GetHiredSection />
 
-      {/* CONTACT SECTION */}
+      {/* 3. CONTACT US SECTION */}
       <ContactUsSection />
+
+      {/* 4. ABOUT SECTION */}
+      <AboutSection />
 
       {/* FOOTER CTA */}
       <footer className="bg-gradient-to-br from-indigo-700 via-blue-700 to-indigo-800 px-6 pb-8 pt-20 text-white">
