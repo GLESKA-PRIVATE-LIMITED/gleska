@@ -1,34 +1,28 @@
 "use client";
 
 import React, { useState } from "react";
-import Link from "next/link";
 import {
   ArrowRight,
   Mail,
   Phone,
   MapPin,
   Send,
-  Zap,
   Clock,
-  ChevronDown,
   MessageCircle,
-  Building2,
-  User,
   Loader2,
   CheckCircle2,
   HelpCircle,
   X,
+  Zap,
 } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
 /*  Shared Tailwind class-strings                                     */
 /* ------------------------------------------------------------------ */
 const labelCls =
-  "mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400";
+  "mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500";
 const inputCls =
-  "w-full rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-3 text-sm font-medium text-slate-900 placeholder:text-slate-400 outline-none transition focus:border-indigo-400 focus:bg-white focus:ring-2 focus:ring-indigo-100 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:placeholder:text-slate-500 dark:focus:border-indigo-500 dark:focus:bg-slate-900 dark:focus:ring-indigo-900/40";
-const primaryBtnCls =
-  "inline-flex w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-3.5 text-sm font-bold text-white shadow-lg shadow-indigo-500/25 transition hover:from-blue-700 hover:to-indigo-700 disabled:cursor-not-allowed disabled:opacity-60";
+  "w-full rounded-xl border border-slate-200 bg-white/90 px-4 py-3 text-sm font-medium text-slate-900 placeholder:text-slate-400 outline-none transition focus:border-indigo-400 focus:bg-white focus:ring-2 focus:ring-indigo-100 dark:border-slate-700/80 dark:bg-slate-800/90 dark:text-white dark:placeholder:text-slate-500 dark:focus:border-indigo-500 dark:focus:ring-indigo-900/40";
 
 /* ------------------------------------------------------------------ */
 /*  FAQ data                                                          */
@@ -67,10 +61,10 @@ export function FaqItem({ q, a, open, toggle }: { q: string; a: string; open: bo
     >
       <div className="flex items-start justify-between gap-4">
         <h3 className="text-base font-bold text-slate-900 dark:text-white">{q}</h3>
-        <ChevronDown
-          size={20}
+        <HelpCircle
+          size={18}
           className={`mt-0.5 shrink-0 text-slate-400 transition-transform duration-300 ${
-            open ? "rotate-180 text-indigo-600 dark:text-indigo-400" : ""
+            open ? "text-indigo-600 dark:text-indigo-400" : ""
           }`}
         />
       </div>
@@ -92,9 +86,8 @@ export function FaqItem({ q, a, open, toggle }: { q: string; a: string; open: bo
 /* ------------------------------------------------------------------ */
 export default function ContactUsSection({ showHeader = true }: { showHeader?: boolean }) {
   const [name, setName] = useState("");
+  const [company, setCompany] = useState("");
   const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
-  const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -131,222 +124,233 @@ export default function ContactUsSection({ showHeader = true }: { showHeader?: b
       label: "Visit Us",
       value: "MALVIYA NAGAR, SOUTH DELHI",
       href: "https://maps.google.com",
-      description: "NEW MARKET,BULDING NO. 16",
+      description: "NEW MARKET, BUILDING NO. 16",
       color: "from-amber-500 to-orange-600",
     },
   ];
 
+  const detailsList = [
+    { label: "EMAIL", value: "office@goleska.in", isLink: true, href: "mailto:office@goleska.in" },
+    { label: "COMPANY", value: "Gleska Private Limited" },
+    { label: "LOCATION", value: "Delhi, India" },
+    { label: "COVERAGE", value: "Delhi NCR industrial belt, expanding nationally" },
+  ];
+
   return (
-    <section id="contact" className="relative border-y border-slate-200 bg-white px-6 py-20 sm:py-24 dark:border-slate-800 dark:bg-slate-900">
+    <section id="contact" className="relative px-6 py-20 sm:py-24">
       <div className="mx-auto max-w-7xl">
-        {/* Optional Section header */}
-        {showHeader && (
-          <div className="mb-14 text-center">
-            <div className="mx-auto mb-4 inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-300">
-              <MessageCircle size={14} />
-              Get in touch
-            </div>
-            <h2 className="font-[var(--font-anton)] text-4xl uppercase tracking-wide text-slate-900 sm:text-5xl md:text-6xl dark:text-white">
-              Contact Us
-            </h2>
-            <p className="mx-auto mt-4 max-w-2xl text-lg font-medium text-slate-600 dark:text-slate-400">
-              Whether you&apos;re an employer looking to hire or a worker seeking opportunity — our team is ready to help you 24×7.
-            </p>
-          </div>
-        )}
-
-        {/* Contact info cards */}
-        <div className="mb-12 grid grid-cols-1 gap-4 sm:grid-cols-3">
-          {contactCards.map((card) => (
-            <a
-              key={card.label}
-              href={card.href}
-              target={card.label === "Visit Us" ? "_blank" : undefined}
-              rel={card.label === "Visit Us" ? "noopener noreferrer" : undefined}
-              id={`contact-card-${card.label.toLowerCase().replace(/\s/g, "-")}`}
-              className="group relative flex items-start gap-4 rounded-2xl border border-slate-200 bg-slate-50/60 p-5 transition hover:-translate-y-1 hover:shadow-lg dark:border-slate-800 dark:bg-slate-800/60 dark:hover:border-slate-700"
-            >
-              <div
-                className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ${card.color} shadow-md`}
-              >
-                <card.icon size={22} className="text-white" />
+        
+        {/* ========================================================= */}
+        {/* OUTER / MOTHER CONTACT CONTAINER                          */}
+        {/* ========================================================= */}
+        <div className="rounded-[2.5rem] border border-slate-200/80 bg-white/70 p-6 sm:p-10 md:p-12 shadow-2xl shadow-slate-900/5 backdrop-blur-xl dark:border-slate-800/80 dark:bg-slate-900/70">
+          
+          {/* 1. CONTACT US HEADER */}
+          {showHeader && (
+            <div className="mb-12 text-center">
+              <div className="mx-auto mb-4 inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-300">
+                <MessageCircle size={14} />
+                GET IN TOUCH
               </div>
-              <div className="min-w-0">
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                  {card.label}
-                </p>
-                <p className="mt-0.5 text-base font-bold text-slate-900 dark:text-white">{card.value}</p>
-                <p className="mt-1 flex items-center gap-1.5 text-xs font-medium text-slate-400 dark:text-slate-500">
-                  <Clock size={12} /> {card.description}
-                </p>
-              </div>
-              <ArrowRight
-                size={18}
-                className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 transition group-hover:translate-x-1 group-hover:text-indigo-500 dark:text-slate-600 dark:group-hover:text-indigo-400"
-              />
-            </a>
-          ))}
-        </div>
-
-        {/* Form Container */}
-        <div className="mx-auto max-w-3xl">
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xl shadow-slate-200/40 sm:p-8 dark:border-slate-800 dark:bg-slate-900 dark:shadow-none">
-            <div className="mb-7">
-              <h3 className="font-[var(--font-anton)] text-2xl uppercase tracking-wide text-slate-900 sm:text-3xl dark:text-white">
-                Send us a message
-              </h3>
-              <p className="mt-2 text-sm font-medium text-slate-500 dark:text-slate-400">
-                Fill in the form below and we&apos;ll get back to you within 4 hours.
+              <h2 className="font-[var(--font-anton)] text-4xl uppercase tracking-wide text-slate-900 sm:text-5xl md:text-6xl dark:text-white">
+                CONTACT US
+              </h2>
+              <p className="mx-auto mt-4 max-w-2xl text-lg font-medium text-slate-600 dark:text-slate-400">
+                Whether you&apos;re an employer looking to hire or a worker seeking opportunity — our team is ready to help you 24×7.
               </p>
             </div>
+          )}
 
-            {submitted ? (
-              <div className="flex flex-col items-center justify-center py-16 text-center">
-                <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 shadow-lg shadow-emerald-500/30">
-                  <CheckCircle2 size={32} className="text-white" />
+          {/* 2. THREE SMALL INFORMATION CARDS */}
+          <div className="mb-10 grid grid-cols-1 gap-4 sm:grid-cols-3">
+            {contactCards.map((card) => (
+              <a
+                key={card.label}
+                href={card.href}
+                target={card.label === "Visit Us" ? "_blank" : undefined}
+                rel={card.label === "Visit Us" ? "noopener noreferrer" : undefined}
+                className="group relative flex items-start gap-4 rounded-2xl border border-slate-200/80 bg-white/90 p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-md dark:border-slate-800 dark:bg-slate-800/90"
+              >
+                <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ${card.color} shadow-md`}>
+                  <card.icon size={22} className="text-white" />
                 </div>
-                <h3 className="text-xl font-extrabold text-slate-900 dark:text-white">Message Sent!</h3>
-                <p className="mt-2 max-w-sm text-sm font-medium text-slate-500 dark:text-slate-400">
-                  Thank you for reaching out. Our team will respond to your inquiry within 4 hours during business
-                  hours.
-                </p>
-                <button
-                  onClick={() => {
-                    setSubmitted(false);
-                    setName("");
-                    setEmail("");
-                    setPhone("");
-                    setSubject("");
-                    setMessage("");
-                  }}
-                  className="mt-6 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-5 py-2.5 text-sm font-bold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-                >
-                  Send another message
-                </button>
-              </div>
-            ) : (
-              <form onSubmit={handleSubmit} className="space-y-5" id="contact-form">
-                <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-                  <div>
-                    <label htmlFor="contact-name" className={labelCls}>
-                      Full Name
-                    </label>
-                    <div className="relative">
-                      <User
-                        size={18}
-                        className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
-                      />
-                      <input
-                        id="contact-name"
-                        type="text"
-                        value={name}
-                        onChange={(e) => setName(e.target.value)}
-                        className={inputCls + " pl-11"}
-                        placeholder="Your name"
-                        required
-                      />
-                    </div>
+                <div className="min-w-0">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                    {card.label}
+                  </p>
+                  <p className="mt-0.5 text-base font-bold text-slate-900 dark:text-white">{card.value}</p>
+                  <p className="mt-1 flex items-center gap-1.5 text-xs font-medium text-slate-400 dark:text-slate-500">
+                    <Clock size={12} /> {card.description}
+                  </p>
+                </div>
+                <ArrowRight
+                  size={18}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 transition group-hover:translate-x-1 group-hover:text-indigo-500 dark:text-slate-600 dark:group-hover:text-indigo-400"
+                />
+              </a>
+            ))}
+          </div>
+
+          {/* 3. DISTINCT INNER CONTAINER ("BRING YOUR BUSINESS ONLINE") */}
+          <div className="rounded-3xl border border-slate-200/90 bg-white/95 p-6 sm:p-10 md:p-12 shadow-xl backdrop-blur-md dark:border-slate-800/90 dark:bg-slate-900/95">
+            <div className="grid grid-cols-1 items-start gap-12 lg:grid-cols-12">
+              
+              {/* LEFT COLUMN */}
+              <div className="lg:col-span-5 space-y-8">
+                <div className="space-y-4">
+                  <div className="inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-300">
+                    <MessageCircle size={14} />
+                    CONTACT
                   </div>
-                  <div>
-                    <label htmlFor="contact-email" className={labelCls}>
-                      Email
-                    </label>
-                    <div className="relative">
-                      <Mail
-                        size={18}
-                        className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
-                      />
+
+                  <h3 className="font-[var(--font-anton)] text-3xl uppercase tracking-wide text-slate-900 sm:text-4xl md:text-5xl dark:text-white leading-[0.95]">
+                    Bring your business online.
+                  </h3>
+                </div>
+
+                <div className="space-y-5 pt-2">
+                  {detailsList.map((item, idx) => (
+                    <div
+                      key={item.label}
+                      className={`${
+                        idx !== detailsList.length - 1 ? "border-b border-slate-200/60 pb-4 dark:border-slate-800" : ""
+                      }`}
+                    >
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                        {item.label}
+                      </p>
+                      {item.isLink ? (
+                        <a
+                          href={item.href}
+                          className="mt-1 block text-base font-bold text-slate-900 underline transition hover:text-indigo-600 dark:text-white dark:hover:text-indigo-400"
+                        >
+                          {item.value}
+                        </a>
+                      ) : (
+                        <p className="mt-1 text-base font-bold text-slate-900 dark:text-white">
+                          {item.value}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* RIGHT COLUMN */}
+              <div className="lg:col-span-7 space-y-6">
+                <p className="text-base font-medium leading-relaxed text-slate-600 sm:text-lg dark:text-slate-300">
+                  Tell us what your business runs on — we&apos;ll tell you which deputy fits.
+                </p>
+
+                {submitted ? (
+                  <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200/80 bg-white/90 p-12 text-center shadow-sm dark:border-slate-800 dark:bg-slate-800/80">
+                    <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 shadow-lg shadow-emerald-500/30">
+                      <CheckCircle2 size={32} className="text-white" />
+                    </div>
+                    <h3 className="text-xl font-extrabold text-slate-900 dark:text-white">Message Sent!</h3>
+                    <p className="mt-2 max-w-sm text-sm font-medium text-slate-500 dark:text-slate-400">
+                      Thank you for reaching out. Our team will respond to your inquiry within 4 hours.
+                    </p>
+                    <button
+                      onClick={() => {
+                        setSubmitted(false);
+                        setName("");
+                        setCompany("");
+                        setEmail("");
+                        setMessage("");
+                      }}
+                      className="mt-6 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-5 py-2.5 text-sm font-bold text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                    >
+                      Send another message
+                    </button>
+                  </div>
+                ) : (
+                  <form onSubmit={handleSubmit} className="space-y-5" id="contact-form">
+                    
+                    <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                      <div>
+                        <label htmlFor="contact-name" className={labelCls}>
+                          NAME
+                        </label>
+                        <input
+                          id="contact-name"
+                          type="text"
+                          value={name}
+                          onChange={(e) => setName(e.target.value)}
+                          className={inputCls}
+                          placeholder="Your name"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="contact-company" className={labelCls}>
+                          COMPANY
+                        </label>
+                        <input
+                          id="contact-company"
+                          type="text"
+                          value={company}
+                          onChange={(e) => setCompany(e.target.value)}
+                          className={inputCls}
+                          placeholder="Business name"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label htmlFor="contact-email" className={labelCls}>
+                        EMAIL
+                      </label>
                       <input
                         id="contact-email"
                         type="email"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
-                        className={inputCls + " pl-11"}
+                        className={inputCls}
                         placeholder="you@company.com"
                         required
                       />
                     </div>
-                  </div>
-                </div>
 
-                <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-                  <div>
-                    <label htmlFor="contact-phone" className={labelCls}>
-                      Phone (optional)
-                    </label>
-                    <div className="flex">
-                      <span className="inline-flex items-center rounded-l-xl border border-r-0 border-slate-200 bg-slate-100 px-4 text-sm font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
-                        +91
-                      </span>
-                      <input
-                        id="contact-phone"
-                        type="tel"
-                        value={phone}
-                        onChange={(e) => setPhone(e.target.value)}
-                        className={inputCls + " rounded-l-none"}
-                        placeholder="9999999999"
-                        maxLength={10}
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <label htmlFor="contact-subject" className={labelCls}>
-                      Subject
-                    </label>
-                    <div className="relative">
-                      <Building2
-                        size={18}
-                        className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
-                      />
-                      <select
-                        id="contact-subject"
-                        value={subject}
-                        onChange={(e) => setSubject(e.target.value)}
-                        className={inputCls + " appearance-none pl-11 pr-10"}
+                    <div>
+                      <label htmlFor="contact-message" className={labelCls}>
+                        WHAT DOES YOUR BUSINESS NEED?
+                      </label>
+                      <textarea
+                        id="contact-message"
+                        rows={4}
+                        value={message}
+                        onChange={(e) => setMessage(e.target.value)}
+                        className={inputCls + " resize-none"}
+                        placeholder="e.g. we need help filling government tenders"
                         required
-                      >
-                        <option value="">Select a topic</option>
-                        <option value="hiring">I want to hire workers</option>
-                        <option value="work">I'm looking for work</option>
-                        <option value="partnership">Business partnership</option>
-                        <option value="support">Technical support</option>
-                        <option value="other">Other</option>
-                      </select>
-                      <ChevronDown
-                        size={16}
-                        className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400"
                       />
                     </div>
-                  </div>
-                </div>
 
-                <div>
-                  <label htmlFor="contact-message" className={labelCls}>
-                    Message
-                  </label>
-                  <textarea
-                    id="contact-message"
-                    rows={5}
-                    value={message}
-                    onChange={(e) => setMessage(e.target.value)}
-                    className={inputCls + " resize-none"}
-                    placeholder="Tell us how we can help you..."
-                    required
-                  />
-                </div>
+                    <div className="pt-2">
+                      <button
+                        type="submit"
+                        disabled={submitting}
+                        className="inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-orange-500 via-pink-500 to-indigo-600 px-8 py-3.5 text-base font-bold text-white shadow-lg shadow-orange-500/25 transition hover:opacity-95 active:scale-95 disabled:opacity-60"
+                        id="contact-submit-btn"
+                      >
+                        {submitting ? (
+                          <Loader2 className="animate-spin" size={18} />
+                        ) : (
+                          <>
+                            Send Message <ArrowRight size={18} />
+                          </>
+                        )}
+                      </button>
+                    </div>
 
-                <button type="submit" disabled={submitting} className={primaryBtnCls} id="contact-submit-btn">
-                  {submitting ? (
-                    <Loader2 className="animate-spin" size={18} />
-                  ) : (
-                    <>
-                      <Send size={16} /> Send Message
-                    </>
-                  )}
-                </button>
-              </form>
-            )}
+                  </form>
+                )}
+              </div>
+
+            </div>
           </div>
+
         </div>
       </div>
 
