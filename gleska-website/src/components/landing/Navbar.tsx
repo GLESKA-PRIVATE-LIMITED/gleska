@@ -40,6 +40,14 @@ export default function Navbar() {
           >
             About
           </Link>
+          <Link
+            href="/terms"
+            className={`transition-all hover:text-indigo-600 dark:hover:text-indigo-400 ${
+              pathname === "/terms" ? "text-indigo-600 dark:text-indigo-400" : ""
+            }`}
+          >
+            Terms
+          </Link>
         </div>
         <div className="flex items-center gap-4">
           <LanguageSelector />
