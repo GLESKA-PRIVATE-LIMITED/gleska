@@ -19,12 +19,18 @@ export default function Navbar() {
         </Link>
         <div className="hidden items-center gap-9 text-base font-bold tracking-wide text-slate-700 md:flex dark:text-slate-200">
           <Link
+            href="/#services"
+            className="transition-all hover:text-indigo-600 dark:hover:text-indigo-400"
+          >
+            Services
+          </Link>
+          <Link
             href="/contact"
             className={`transition-all hover:text-indigo-600 dark:hover:text-indigo-400 ${
               pathname === "/contact" ? "text-indigo-600 dark:text-indigo-400" : ""
             }`}
           >
-            Contact Us
+            Contact
           </Link>
           <Link
             href="/about"
@@ -32,7 +38,7 @@ export default function Navbar() {
               pathname === "/about" ? "text-indigo-600 dark:text-indigo-400" : ""
             }`}
           >
-            About Us
+            About
           </Link>
         </div>
         <div className="flex items-center gap-4">
