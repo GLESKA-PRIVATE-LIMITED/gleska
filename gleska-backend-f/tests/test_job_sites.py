@@ -64,6 +64,7 @@ class Query:
                 "id": "site-id",
                 "employer_id": self.payload["employer_id"],
                 "name": self.payload["name"],
+                "address": self.payload["address"],
                 "location": {"type": "Point", "coordinates": [73.8567, 18.5204]},
                 "created_at": now,
                 "updated_at": now,
@@ -98,7 +99,7 @@ class FakeSupabase:
 
 @pytest.fixture
 def site_request():
-    return JobSiteCreate(name="  Main site  ", latitude=18.5204, longitude=73.8567)
+    return JobSiteCreate(name="  Main site  ", address="Main Road, Pune", latitude=18.5204, longitude=73.8567)
 
 
 def test_create_job_site_uses_authenticated_employer_and_normalizes_text(monkeypatch, site_request):
@@ -120,7 +121,7 @@ def test_list_job_sites_is_owner_scoped(monkeypatch):
     fake = FakeSupabase()
     fake.tables["job_sites"].rows = [{
         "id": "site-id", "employer_id": "employer-id", "name": "Site",
-        "location": {"type": "Point", "coordinates": [73.8, 18.5]},
+        "address": "Main Road, Pune", "location": {"type": "Point", "coordinates": [73.8, 18.5]},
         "created_at": datetime.now(timezone.utc), "updated_at": None,
     }]
     monkeypatch.setattr(job_site_service, "supabase", fake)
@@ -169,12 +170,12 @@ def test_missing_employer_is_rejected(monkeypatch, site_request):
 @pytest.mark.parametrize("coordinates", [(91, 0), (-91, 0), (0, 181), (0, -181)])
 def test_invalid_coordinates_are_rejected(coordinates):
     with pytest.raises(ValueError):
-        JobSiteCreate(name="Site", latitude=coordinates[0], longitude=coordinates[1])
+        JobSiteCreate(name="Site", address="Main Road", latitude=coordinates[0], longitude=coordinates[1])
 
 
 def test_blank_name_is_rejected():
     with pytest.raises(ValueError):
-        JobSiteCreate(name="   ", latitude=18.5, longitude=73.8)
+        JobSiteCreate(name="   ", address="Main Road", latitude=18.5, longitude=73.8)
 
 
 @pytest.mark.parametrize("changes", [{"onboarding_status": "IN_PROGRESS"}])

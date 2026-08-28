@@ -7,7 +7,7 @@ from app.core.security import require_employer
 from app.schemas.auth import UserResponse
 from app.schemas.job import JobCreate, JobResponse
 from app.schemas.job_extraction import JobExtractionRequest, JobExtractionResponse
-from app.services.job_service import JobNotFound, JobService
+from app.services.job_service import JobNotFound, JobPaymentRequired, JobService
 from app.services.matching_service import MatchingError
 from app.services.gemini_service import (
     GeminiConfigurationError,
@@ -28,6 +28,8 @@ async def get_my_jobs(user: UserResponse = Depends(require_employer)):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     except JobNotFound as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except JobPaymentRequired as exc:
+        raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail=str(exc)) from exc
 
 
 @router.post("", response_model=JobResponse, status_code=status.HTTP_201_CREATED)

@@ -17,6 +17,10 @@ class JobNotFound(Exception):
     """The employer profile or selected job site was not found."""
 
 
+class JobPaymentRequired(Exception):
+    """The employer has no active subscription or free dispatch available."""
+
+
 class JobService:
     """Owns job validation context and persistence boundary."""
 
@@ -24,7 +28,7 @@ class JobService:
     def _employer_id(user: UserResponse) -> str:
         response = (
             supabase.table("employer_profiles")
-            .select("id, onboarding_status")
+            .select("id, onboarding_status, subscription_valid_until, has_availed_free_dispatch")
             .eq("user_id", user.id)
             .single()
             .execute()
@@ -34,6 +38,25 @@ class JobService:
             raise JobNotFound("EMPLOYER_NOT_FOUND")
         if employer.get("onboarding_status") != "COMPLETED":
             raise PermissionError("EMPLOYER_ONBOARDING_INCOMPLETE")
+        subscription_until = employer.get("subscription_valid_until")
+        if isinstance(subscription_until, str):
+            subscription_until = datetime.fromisoformat(subscription_until.replace("Z", "+00:00"))
+        if subscription_until and subscription_until.tzinfo is None:
+            subscription_until = subscription_until.replace(tzinfo=timezone.utc)
+        if subscription_until and subscription_until > datetime.now(timezone.utc):
+            return str(employer["id"])
+
+        if employer.get("has_availed_free_dispatch", False):
+            raise JobPaymentRequired("SUBSCRIPTION_REQUIRED")
+        free_dispatch = (
+            supabase.table("employer_profiles")
+            .update({"has_availed_free_dispatch": True})
+            .eq("id", employer["id"])
+            .eq("has_availed_free_dispatch", False)
+            .execute()
+        )
+        if not free_dispatch.data:
+            raise JobPaymentRequired("SUBSCRIPTION_REQUIRED")
         return str(employer["id"])
 
     @classmethod

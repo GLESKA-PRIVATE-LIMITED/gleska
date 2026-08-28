@@ -15,10 +15,19 @@ import {
   Plus,
   Sparkles,
   Trash2,
+  CreditCard,
 } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
 import apiClient from "@/lib/api";
+
+declare global {
+  interface Window {
+    Cashfree?: (options: { mode: "sandbox" | "production" }) => {
+      checkout: (options: { paymentSessionId: string; redirectTarget: "_self" }) => Promise<void> | void;
+    };
+  }
+}
 
 interface EmployerProfile {
   employer_type?: string | null;
@@ -26,11 +35,14 @@ interface EmployerProfile {
   verification_status?: string;
   contact_person_name?: string;
   created_at?: string;
+  subscription_valid_until?: string | null;
+  has_availed_free_dispatch?: boolean;
 }
 
 interface JobSite {
   id: string;
   name: string;
+  address: string | null;
   latitude: number;
   longitude: number;
 }
@@ -60,7 +72,7 @@ export default function EmployerDashboard() {
   const [employerProfile, setEmployerProfile] = React.useState<EmployerProfile | null>(null);
   const [profileError, setProfileError] = React.useState("");
   const [jobSites, setJobSites] = React.useState<JobSite[]>([]);
-  const [siteForm, setSiteForm] = React.useState({ name: "", latitude: "", longitude: "" });
+  const [siteForm, setSiteForm] = React.useState({ name: "", address: "", latitude: "", longitude: "" });
   const [siteError, setSiteError] = React.useState("");
   const [isSiteLoading, setIsSiteLoading] = React.useState(false);
   const [isSiteSaving, setIsSiteSaving] = React.useState(false);
@@ -71,6 +83,8 @@ export default function EmployerDashboard() {
   const [aiPrompt, setAiPrompt] = React.useState("");
   const [aiError, setAiError] = React.useState("");
   const [isExtracting, setIsExtracting] = React.useState(false);
+  const [isPaymentLoading, setIsPaymentLoading] = React.useState(false);
+  const [paymentMessage, setPaymentMessage] = React.useState("");
 
   const scrollToJobForm = () => {
     document.getElementById("create-job")?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -139,6 +153,21 @@ export default function EmployerDashboard() {
     loadJobs();
   }, [isLoading, user]);
 
+  useEffect(() => {
+    if (isLoading || !user || user.role !== "EMPLOYER") return;
+    const orderId = new URLSearchParams(window.location.search).get("order_id");
+    if (!orderId) return;
+    setPaymentMessage("Confirming payment with Cashfree...");
+    apiClient.post(`/api/v1/payments/verify/${encodeURIComponent(orderId)}`)
+      .then((response) => {
+        setEmployerProfile((current) => current ? { ...current, subscription_valid_until: response.data.subscription_valid_until } : current);
+        setPaymentMessage(response.data.status === "SUCCESS" ? "Subscription active for 30 days." : `Payment status: ${response.data.status}`);
+      })
+      .catch((error: any) => {
+        setPaymentMessage(error.response?.data?.detail || "Unable to confirm payment. Please try again.");
+      });
+  }, [isLoading, user]);
+
   if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#eef1fb] dark:bg-slate-950">
@@ -164,6 +193,39 @@ export default function EmployerDashboard() {
     }
   };
 
+  const loadCashfree = async () => {
+    if (window.Cashfree) return window.Cashfree;
+    await new Promise<void>((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = "https://sdk.cashfree.com/js/v3/cashfree.js";
+      script.async = true;
+      script.onload = () => resolve();
+      script.onerror = () => reject(new Error("Unable to load Cashfree checkout"));
+      document.head.appendChild(script);
+    });
+    if (!window.Cashfree) throw new Error("Cashfree checkout is unavailable");
+    return window.Cashfree;
+  };
+
+  const handleSubscribe = async () => {
+    if (isPaymentLoading) return;
+    setIsPaymentLoading(true);
+    setPaymentMessage("");
+    try {
+      const response = await apiClient.post("/api/v1/payments/create-subscription-order");
+      const cashfree = await loadCashfree();
+      const mode = process.env.NEXT_PUBLIC_CASHFREE_ENV === "production" ? "production" : "sandbox";
+      await cashfree({ mode }).checkout({
+        paymentSessionId: response.data.payment_session_id,
+        redirectTarget: "_self",
+      });
+    } catch (error: any) {
+      setPaymentMessage(error.response?.data?.detail || error.message || "Unable to start payment");
+    } finally {
+      setIsPaymentLoading(false);
+    }
+  };
+
   const handleSiteSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setIsSiteSaving(true);
@@ -171,11 +233,12 @@ export default function EmployerDashboard() {
     try {
       const response = await apiClient.post<JobSite>("/api/v1/job-sites/", {
         name: siteForm.name,
+        address: siteForm.address,
         latitude: Number(siteForm.latitude),
         longitude: Number(siteForm.longitude),
       }, { withCredentials: true });
       setJobSites((current) => [response.data, ...current]);
-      setSiteForm({ name: "", latitude: "", longitude: "" });
+      setSiteForm({ name: "", address: "", latitude: "", longitude: "" });
       toast.success("Work site added");
     } catch (err: any) {
       const message = err.response?.data?.detail || "Unable to add work site";
@@ -325,6 +388,24 @@ export default function EmployerDashboard() {
             </div>
           </div>
 
+          {/* Subscription Card */}
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <div className="mb-4 flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50 dark:bg-blue-950">
+                <CreditCard size={20} className="text-blue-600 dark:text-blue-400" />
+              </div>
+              <h3 className="text-sm font-bold uppercase text-slate-600 dark:text-slate-400">Subscription</h3>
+            </div>
+            <p className="text-sm font-semibold text-slate-900 dark:text-white">
+              {employerProfile?.subscription_valid_until ? `Active until ${new Date(employerProfile.subscription_valid_until).toLocaleDateString()}` : "No active subscription"}
+            </p>
+            <button type="button" onClick={handleSubscribe} disabled={isPaymentLoading} className="mt-4 inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60">
+              {isPaymentLoading ? <Loader2 size={16} className="animate-spin" /> : <CreditCard size={16} />}
+              {isPaymentLoading ? "Opening checkout..." : "Subscribe ₹2,000"}
+            </button>
+            {paymentMessage && <p className="mt-3 text-xs text-slate-600 dark:text-slate-400">{paymentMessage}</p>}
+          </div>
+
           {/* Active Jobs Card */}
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
             <div className="mb-4 flex items-center gap-3">
@@ -436,6 +517,7 @@ export default function EmployerDashboard() {
 
           <form onSubmit={handleSiteSubmit} className="grid gap-3 md:grid-cols-2 lg:grid-cols-5">
             <input required maxLength={160} value={siteForm.name} onChange={(event) => setSiteForm({ ...siteForm, name: event.target.value })} placeholder="Site name" className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-800" />
+            <input required maxLength={500} value={siteForm.address} onChange={(event) => setSiteForm({ ...siteForm, address: event.target.value })} placeholder="Human-readable address" className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-800" />
             <input required type="number" min={-90} max={90} step="any" value={siteForm.latitude} onChange={(event) => setSiteForm({ ...siteForm, latitude: event.target.value })} placeholder="Latitude" className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-800" />
             <input required type="number" min={-180} max={180} step="any" value={siteForm.longitude} onChange={(event) => setSiteForm({ ...siteForm, longitude: event.target.value })} placeholder="Longitude" className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-800" />
             <button type="submit" disabled={isSiteSaving} className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60">
@@ -454,6 +536,7 @@ export default function EmployerDashboard() {
               <div key={site.id} className="flex items-center justify-between gap-4 py-4">
                 <div className="min-w-0">
                   <p className="font-semibold text-slate-900 dark:text-white">{site.name}</p>
+                  {site.address && <p className="truncate text-sm text-slate-500 dark:text-slate-400">{site.address}</p>}
                   <p className="truncate text-sm text-slate-500 dark:text-slate-400">{site.latitude}, {site.longitude}</p>
                 </div>
                 <button type="button" title={`Remove ${site.name}`} aria-label={`Remove ${site.name}`} onClick={() => handleSiteDelete(site.id)} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:border-rose-200 hover:text-rose-600 dark:border-slate-700 dark:text-slate-400 dark:hover:border-rose-800 dark:hover:text-rose-400">

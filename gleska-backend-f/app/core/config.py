@@ -137,5 +137,18 @@ class Settings(BaseSettings):
     GEMINI_MODEL: str = Field(default="gemini-2.0-flash", validation_alias=AliasChoices("GEMINI_MODEL", "gemini_model"))
     GEMINI_TIMEOUT_SECONDS: int = Field(default=30, validation_alias=AliasChoices("GEMINI_TIMEOUT_SECONDS", "gemini_timeout_seconds"))
 
+    # Google Routes / road routing
+    GOOGLE_ROUTES_API_KEY: str = Field(default="", validation_alias=AliasChoices("GOOGLE_ROUTES_API_KEY", "google_routes_api_key"))
+    GOOGLE_ROUTES_TIMEOUT_SECONDS: int = Field(default=15, validation_alias=AliasChoices("GOOGLE_ROUTES_TIMEOUT_SECONDS", "google_routes_timeout_seconds"))
+    NOMINATIM_BASE_URL: str = Field(default="https://nominatim.openstreetmap.org", validation_alias=AliasChoices("NOMINATIM_BASE_URL", "nominatim_base_url"))
+    NOMINATIM_USER_AGENT: str = Field(default="GLESKA/1.0 (contact: admin@goleska.in)", validation_alias=AliasChoices("NOMINATIM_USER_AGENT", "nominatim_user_agent"))
+    NOMINATIM_TIMEOUT_SECONDS: int = Field(default=10, validation_alias=AliasChoices("NOMINATIM_TIMEOUT_SECONDS", "nominatim_timeout_seconds"))
+    CASHFREE_PG_CLIENT_ID: str = Field(default="", validation_alias=AliasChoices("CASHFREE_PG_CLIENT_ID", "cashfree_pg_client_id"))
+    CASHFREE_PG_CLIENT_SECRET: str = Field(default="", validation_alias=AliasChoices("CASHFREE_PG_CLIENT_SECRET", "cashfree_pg_client_secret"))
+    CASHFREE_ENV: str = Field(default="SANDBOX", validation_alias=AliasChoices("CASHFREE_ENV", "cashfree_env"))
+    CASHFREE_PG_API_VERSION: str = Field(default="2023-08-01", validation_alias=AliasChoices("CASHFREE_PG_API_VERSION", "cashfree_pg_api_version"))
+    CASHFREE_PAYMENT_TIMEOUT_SECONDS: int = Field(default=15, validation_alias=AliasChoices("CASHFREE_PAYMENT_TIMEOUT_SECONDS", "cashfree_payment_timeout_seconds"))
+    WEBHOOK_URL: str = Field(default="", validation_alias=AliasChoices("WEBHOOK_URL", "webhook_url"))
+
 
 settings = Settings()

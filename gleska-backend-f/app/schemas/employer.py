@@ -15,6 +15,8 @@ class EmployerProfileResponse(BaseModel):
     contact_person_name: str
     created_at: datetime
     updated_at: datetime
+    subscription_valid_until: datetime | None = None
+    has_availed_free_dispatch: bool = False
 
     class Config:
         from_attributes = True

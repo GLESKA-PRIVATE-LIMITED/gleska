@@ -33,10 +33,20 @@ class Query:
     def single(self): return self
     def order(self, *_args, **_kwargs): return self
     def insert(self, payload): self.payload = payload; return self
+    def update(self, payload):
+        self.payload = payload
+        return self
+    def update(self, payload):
+        self.payload = payload
+        return self
 
     def execute(self):
         if self.payload is not None:
             now = datetime.now(timezone.utc)
+            if self.table == "employer_profiles":
+                for row in self.rows:
+                    row.update(self.payload)
+                return SimpleNamespace(data=self.rows)
             row = {"id": "job-id", **self.payload, "created_at": now, "updated_at": now}
             self.rows[:] = [row]
             return SimpleNamespace(data=[row])
@@ -49,7 +59,7 @@ class FakeSupabase:
     def __init__(self, site_rows=None):
         self.tables = {
             "employers": Query("employers", [{"id": "employer-id", "supabase_auth_id": "user-id", "is_active": True, "is_deleted": False}]),
-            "employer_profiles": Query("employer_profiles", [{"id": "profile-id", "onboarding_status": "COMPLETED"}]),
+            "employer_profiles": Query("employer_profiles", [{"id": "profile-id", "onboarding_status": "COMPLETED", "has_availed_free_dispatch": False, "subscription_valid_until": None}]),
             "job_sites": Query("job_sites", site_rows if site_rows is not None else [{"id": SITE_ID}]),
             "jobs": Query("jobs", []),
         }
