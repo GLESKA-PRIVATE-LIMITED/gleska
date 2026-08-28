@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { ArrowRight, ShieldCheck } from 'lucide-react';
 import Navbar from '@/components/landing/Navbar';
 import ServicesSection from '@/components/landing/ServicesSection';
+import AboutSection from '@/components/landing/AboutSection';
 import ContactUsSection from '@/components/landing/ContactUsSection';
 import { useLanguage } from '@/context/LanguageContext';
 
@@ -55,6 +56,9 @@ export default function LandingPage() {
 
       {/* SERVICES SECTION */}
       <ServicesSection />
+
+      {/* ABOUT SECTION */}
+      <AboutSection />
 
       {/* CONTACT SECTION (SHARED SINGLE SOURCE OF TRUTH) */}
       <ContactUsSection />

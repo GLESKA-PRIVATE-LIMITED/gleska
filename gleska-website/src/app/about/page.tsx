@@ -2,41 +2,18 @@
 
 import React from "react";
 import Link from "next/link";
-import { ArrowRight, Zap } from "lucide-react";
+import { Zap } from "lucide-react";
 import Navbar from "@/components/landing/Navbar";
+import AboutSection from "@/components/landing/AboutSection";
 
-/* ------------------------------------------------------------------ */
-/*  Page                                                              */
-/* ------------------------------------------------------------------ */
 export default function AboutPage() {
   return (
     <div className="relative min-h-screen overflow-x-clip bg-[#eef1fb] font-sans text-slate-900 selection:bg-indigo-500 selection:text-white dark:bg-slate-950 dark:text-slate-100">
       {/* ── NAV ── */}
       <Navbar />
 
-      {/* ── CTA ── */}
-      <section className="mx-auto max-w-4xl px-6 py-20 text-center sm:py-24">
-        <h2 className="font-[var(--font-anton)] text-3xl uppercase tracking-wide text-slate-900 sm:text-4xl md:text-5xl dark:text-white">
-          Ready to experience the future?
-        </h2>
-        <p className="mx-auto mt-4 max-w-xl text-lg font-medium text-slate-500 dark:text-slate-400">
-          Join businesses already building with Gleska&apos;s intelligent infrastructure.
-        </p>
-        <div className="mt-8 flex flex-col items-center justify-center gap-4 sm:flex-row">
-          <Link
-            href="/#contact"
-            className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 px-8 py-4 text-base font-bold text-white shadow-lg shadow-indigo-500/25 transition hover:from-blue-700 hover:to-indigo-700"
-          >
-            Get in Touch <ArrowRight size={20} />
-          </Link>
-          <Link
-            href="/"
-            className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-8 py-4 text-base font-bold text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-          >
-            Back to Home
-          </Link>
-        </div>
-      </section>
+      {/* ── ABOUT SECTION ── */}
+      <AboutSection />
 
       {/* ── FOOTER ── */}
       <footer className="bg-gradient-to-br from-indigo-700 via-blue-700 to-indigo-800 px-6 pb-8 pt-16 text-white">
@@ -56,18 +33,17 @@ export default function AboutPage() {
               <Link href="#" className="transition-colors hover:text-white">
                 Privacy Policy
               </Link>
-              <Link href="#" className="transition-colors hover:text-white">
+              <Link href="/terms" className="transition-colors hover:text-white">
                 Terms of Service
               </Link>
               <Link href="/#contact" className="transition-colors hover:text-white">
                 Contact
               </Link>
             </div>
-            <p className="text-amber-300">Made with ❤️ in India</p>
+            <p className="text-amber-300"> BHARAT </p>
           </div>
         </div>
       </footer>
     </div>
   );
 }
-
