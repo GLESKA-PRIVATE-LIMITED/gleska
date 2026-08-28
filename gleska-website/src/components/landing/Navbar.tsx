@@ -25,6 +25,14 @@ export default function Navbar() {
             Services
           </Link>
           <Link
+            href="/get-hired"
+            className={`transition-all hover:text-indigo-600 dark:hover:text-indigo-400 ${
+              pathname === "/get-hired" ? "text-indigo-600 dark:text-indigo-400" : ""
+            }`}
+          >
+            Get Hired
+          </Link>
+          <Link
             href="/contact"
             className={`transition-all hover:text-indigo-600 dark:hover:text-indigo-400 ${
               pathname === "/contact" ? "text-indigo-600 dark:text-indigo-400" : ""
