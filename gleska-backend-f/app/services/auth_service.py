@@ -42,6 +42,8 @@ class AuthService:
         name: str,
         mobile: str,
         role: str,
+        terms_accepted: bool | None = None,
+        terms_accepted_at: str | None = None,
     ) -> dict:
         normalized_mobile = AuthService.normalize_mobile(mobile)
         existing = AuthService.get_user_by_mobile(normalized_mobile)
@@ -51,15 +53,19 @@ class AuthService:
 
         if not user_id:
             logger.info("Creating Supabase Auth user for mobile_suffix=%s", normalized_mobile[-4:])
+            user_metadata = {
+                "name": name,
+                "mobile": normalized_mobile,
+                "role": role,
+            }
+            if terms_accepted is not None:
+                user_metadata["terms_accepted"] = terms_accepted
+                user_metadata["terms_accepted_at"] = terms_accepted_at
             try:
                 auth_response = supabase.auth.admin.create_user({
                     "phone": f"+{normalized_mobile}",
                     "phone_confirm": True,
-                    "user_metadata": {
-                        "name": name,
-                        "mobile": normalized_mobile,
-                        "role": role,
-                    },
+                    "user_metadata": user_metadata,
                 })
                 user_id = auth_response.user.id
             except Exception:
@@ -72,6 +78,17 @@ class AuthService:
 
         logger.info("Upserting users row for mobile_suffix=%s role=%s", normalized_mobile[-4:], role)
 
+        resolved_terms_accepted = (
+            terms_accepted
+            if terms_accepted is not None
+            else (existing or {}).get("terms_accepted")
+        )
+        resolved_terms_accepted_at = (
+            terms_accepted_at
+            if terms_accepted_at is not None
+            else (existing or {}).get("terms_accepted_at")
+        )
+
         user_data = {
             "id": user_id,
             "name": name or existing.get("name") if existing else name,
@@ -80,17 +97,37 @@ class AuthService:
             "is_mobile_verified": True,
             "is_active": True,
         }
+        if resolved_terms_accepted is not None:
+            user_data["terms_accepted"] = resolved_terms_accepted
+        if resolved_terms_accepted_at is not None:
+            user_data["terms_accepted_at"] = resolved_terms_accepted_at
 
-        response = (
-            supabase.table("users")
-            .upsert(user_data, on_conflict="id")
-            .execute()
-        )
+        try:
+            response = (
+                supabase.table("users")
+                .upsert(user_data, on_conflict="id")
+                .execute()
+            )
+        except Exception as db_exc:
+            if "terms_accepted" in str(db_exc):
+                fallback_data = {
+                    k: v for k, v in user_data.items() if k not in {"terms_accepted", "terms_accepted_at"}
+                }
+                response = (
+                    supabase.table("users")
+                    .upsert(fallback_data, on_conflict="id")
+                    .execute()
+                )
+            else:
+                raise
 
         if not response.data:
             raise Exception("Failed to create/update user")
 
         user = response.data[0]
+        if "terms_accepted" not in user and resolved_terms_accepted is not None:
+            user["terms_accepted"] = resolved_terms_accepted
+            user["terms_accepted_at"] = resolved_terms_accepted_at
 
         if role == "WORKER":
             logger.info("Checking worker profile for user_id_suffix=%s", user_id[-4:])
@@ -166,6 +203,8 @@ class AuthService:
         role: str,
         email: str | None = None,
         mobile: str | None = None,
+        terms_accepted: bool | None = None,
+        terms_accepted_at: str | None = None,
     ) -> dict:
         """Create or restore the application row for a Supabase Auth identity."""
         normalized_email = email.strip().lower() if email and email.strip() else None
@@ -182,6 +221,17 @@ class AuthService:
         elif email_user or mobile_user:
             raise ValueError("ACCOUNT_IDENTIFIER_CONFLICT")
 
+        resolved_terms_accepted = (
+            terms_accepted
+            if terms_accepted is not None
+            else (existing or {}).get("terms_accepted")
+        )
+        resolved_terms_accepted_at = (
+            terms_accepted_at
+            if terms_accepted_at is not None
+            else (existing or {}).get("terms_accepted_at")
+        )
+
         user_data = {
             "id": user_id,
             "name": name.strip() or (existing or {}).get("name") or "GO LESKA user",
@@ -191,9 +241,29 @@ class AuthService:
             "is_mobile_verified": bool(normalized_mobile) or (existing or {}).get("is_mobile_verified", False),
             "is_active": True,
         }
-        response = supabase.table("users").upsert(user_data, on_conflict="id").execute()
+        if resolved_terms_accepted is not None:
+            user_data["terms_accepted"] = resolved_terms_accepted
+        if resolved_terms_accepted_at is not None:
+            user_data["terms_accepted_at"] = resolved_terms_accepted_at
+
+        try:
+            response = supabase.table("users").upsert(user_data, on_conflict="id").execute()
+        except Exception as db_exc:
+            if "terms_accepted" in str(db_exc):
+                fallback_data = {
+                    k: v for k, v in user_data.items() if k not in {"terms_accepted", "terms_accepted_at"}
+                }
+                response = supabase.table("users").upsert(fallback_data, on_conflict="id").execute()
+            else:
+                raise
+
         if not response.data:
             raise RuntimeError("Failed to provision application user")
+
+        user_record = response.data[0]
+        if "terms_accepted" not in user_record and resolved_terms_accepted is not None:
+            user_record["terms_accepted"] = resolved_terms_accepted
+            user_record["terms_accepted_at"] = resolved_terms_accepted_at
 
         if role == "WORKER":
             profile = supabase.table("worker_profiles").select("id").eq("user_id", user_id).execute()
@@ -204,4 +274,4 @@ class AuthService:
             if not profile.data:
                 supabase.table("employer_profiles").insert({"user_id": user_id, "contact_person_name": user_data["name"], "onboarding_status": "NOT_STARTED", "verification_status": "PENDING"}).execute()
 
-        return response.data[0]
+        return user_record
