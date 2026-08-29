@@ -39,6 +39,8 @@ class UserResponse(BaseModel):
     role: str  # WORKER, EMPLOYER, ADMIN
     is_mobile_verified: bool
     is_active: bool
+    terms_accepted: Optional[bool] = None
+    terms_accepted_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
     onboarding_status: Optional[str] = None
@@ -72,11 +74,14 @@ class SignupPreflightSchema(BaseModel):
     name: str = Field(..., min_length=2, max_length=120)
     password: str = Field(..., min_length=8, max_length=128)
     confirm_password: str = Field(..., min_length=8, max_length=128)
+    terms_accepted: bool = Field(..., description="Must explicitly accept Terms & Conditions")
 
     @model_validator(mode="after")
-    def passwords_match(self):
+    def validate_fields(self):
         if self.password != self.confirm_password:
             raise ValueError("Passwords do not match")
+        if not self.terms_accepted:
+            raise ValueError("Terms & Conditions must be accepted before creating an account.")
         return self
 
 

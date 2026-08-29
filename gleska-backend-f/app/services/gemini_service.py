@@ -109,24 +109,48 @@ class GeminiService:
                     json=payload,
                 )
         except httpx.TimeoutException as exc:
+            logger.exception("Gemini request timed out for model=%s timeout_seconds=%s", model, timeout)
             raise GeminiProviderError("GEMINI_TIMEOUT") from exc
         except httpx.HTTPError as exc:
+            logger.exception("Gemini request failed for model=%s timeout_seconds=%s", model, timeout)
             raise GeminiProviderError("GEMINI_SERVICE_UNAVAILABLE") from exc
-
-        if response.status_code in {401, 403}:
-            raise GeminiProviderError("GEMINI_AUTHENTICATION_FAILED")
-        if response.status_code == 429:
-            raise GeminiProviderError("GEMINI_RATE_LIMITED")
-        if response.status_code >= 400:
-            raise GeminiProviderError("GEMINI_PROVIDER_ERROR")
 
         try:
             body = response.json()
+        except ValueError:
+            body = {}
+
+        if response.status_code in {401, 403}:
+            logger.error("Gemini authentication failed for model=%s status_code=%s", model, response.status_code)
+            raise GeminiProviderError("GEMINI_AUTHENTICATION_FAILED")
+        if response.status_code == 429:
+            logger.warning("Gemini rate limit reached for model=%s status_code=%s", model, response.status_code)
+            raise GeminiProviderError("GEMINI_RATE_LIMITED")
+        if response.status_code >= 400:
+            error_message = body.get("error", {}).get("message") if isinstance(body, dict) else None
+            error_code = body.get("error", {}).get("code") if isinstance(body, dict) else None
+            logger.error(
+                "Gemini provider error model=%s status_code=%s error_code=%s error_message=%s",
+                model,
+                response.status_code,
+                error_code,
+                error_message,
+            )
+            message_text = error_message.lower() if isinstance(error_message, str) else ""
+            if "not found" in message_text or "unsupported" in message_text:
+                raise GeminiConfigurationError("GEMINI_CONFIGURATION_ERROR")
+            raise GeminiProviderError("GEMINI_PROVIDER_ERROR")
+
+        try:
             raw_text = body["candidates"][0]["content"]["parts"][0]["text"]
             data = json.loads(raw_text)
             if not isinstance(data, dict):
                 raise TypeError("Gemini extraction must be an object")
             return JobExtraction.model_validate(data)
         except (ValueError, KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
-            logger.warning("Gemini returned an invalid job extraction response")
+            logger.warning(
+                "Gemini returned invalid extraction model=%s response=%s",
+                model,
+                body,
+            )
             raise GeminiProviderError("GEMINI_INVALID_RESPONSE") from exc

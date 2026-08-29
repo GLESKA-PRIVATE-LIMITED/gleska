@@ -46,11 +46,11 @@ interface AuthContextType {
   signInWithGoogle: (role: "WORKER" | "EMPLOYER") => Promise<void>;
   resolveGoogleSession: (role: "WORKER" | "EMPLOYER") => Promise<{ role: "WORKER" | "EMPLOYER"; nextStep: NextStep | null }>;
   provisionSession: (role: "WORKER" | "EMPLOYER", name?: string) => Promise<void>;
-  completeEmailSignup: (email: string, password: string, name: string, mobile: string, otp: string, role: "WORKER" | "EMPLOYER") => Promise<void>;
+  completeEmailSignup: (email: string, password: string, name: string, mobile: string, otp: string, role: "WORKER" | "EMPLOYER", termsAccepted?: boolean) => Promise<void>;
   requestPasswordReset: (phone: string) => Promise<void>;
   verifyPasswordResetOTP: (phone: string, msg91AccessToken: string) => Promise<string>;
   completePasswordReset: (resetAuthorization: string, password: string, confirmPassword: string) => Promise<void>;
-  signupPreflight: (name: string, email: string, mobile: string, password: string, confirmPassword: string, role: "WORKER" | "EMPLOYER") => Promise<void>;
+  signupPreflight: (name: string, email: string, mobile: string, password: string, confirmPassword: string, role: "WORKER" | "EMPLOYER", termsAccepted?: boolean) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -122,8 +122,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const signupPreflight = async (name: string, email: string, mobile: string, password: string, confirmPassword: string, role: "WORKER" | "EMPLOYER") => {
-    await apiClient.post("/api/v1/auth/signup-preflight", { name: name.trim(), email: email.trim().toLowerCase(), mobile, password, confirm_password: confirmPassword, role });
+  const signupPreflight = async (name: string, email: string, mobile: string, password: string, confirmPassword: string, role: "WORKER" | "EMPLOYER", termsAccepted = true) => {
+    await apiClient.post("/api/v1/auth/signup-preflight", {
+      name: name.trim(),
+      email: email.trim().toLowerCase(),
+      mobile,
+      password,
+      confirm_password: confirmPassword,
+      role,
+      terms_accepted: termsAccepted,
+    });
   };
 
   const resendOTP = async () => {
@@ -234,7 +242,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }, { skipSupabaseAuth: true });
   };
 
-  const completeEmailSignup = async (email: string, password: string, name: string, mobile: string, otp: string, role: "WORKER" | "EMPLOYER") => {
+  const completeEmailSignup = async (email: string, password: string, name: string, mobile: string, otp: string, role: "WORKER" | "EMPLOYER", termsAccepted = true) => {
     setError(null);
     setIsLoading(true);
     try {
@@ -248,6 +256,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         confirm_password: password,
         role,
         msg91_access_token: msg91Result.accessToken,
+        terms_accepted: termsAccepted,
       }, { skipSupabaseAuth: true });
 
       const { error: signInError } = await supabase.auth.signInWithPassword({

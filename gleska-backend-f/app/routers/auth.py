@@ -47,6 +47,11 @@ def reset_password(request: PasswordResetCompleteSchema):
 @router.post("/signup-preflight")
 async def signup_preflight(request: SignupPreflightSchema):
     """Check application identity conflicts before sending a signup OTP."""
+    if not request.terms_accepted:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Terms & Conditions must be accepted before creating an account.",
+        )
     try:
         normalized_mobile = AuthService.normalize_mobile(request.mobile)
     except ValueError as exc:
@@ -93,7 +98,13 @@ async def provision_authenticated_user(
 
 @router.post("/signup-mobile-verified", response_model=UserResponse)
 async def signup_mobile_verified(request: MobileVerifiedSignupSchema):
-    """Create a confirmed Supabase email identity only after MSG91 verification."""
+    """Create a confirmed Supabase email identity only after MSG91 verification and Terms acceptance."""
+    if not request.terms_accepted:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Terms & Conditions must be accepted before creating an account.",
+        )
+
     try:
         normalized_mobile = AuthService.normalize_mobile(request.mobile)
         await MSG91Service().verify_access_token(request.msg91_access_token)
@@ -105,11 +116,19 @@ async def signup_mobile_verified(request: MobileVerifiedSignupSchema):
 
     auth_user_id = None
     try:
+        from datetime import datetime, timezone
+        now_iso = datetime.now(timezone.utc).isoformat()
         auth_response = supabase.auth.admin.create_user({
             "email": str(request.email).lower(),
             "password": request.password,
             "email_confirm": True,
-            "user_metadata": {"name": request.name.strip(), "role": request.role, "mobile": normalized_mobile},
+            "user_metadata": {
+                "name": request.name.strip(),
+                "role": request.role,
+                "mobile": normalized_mobile,
+                "terms_accepted": True,
+                "terms_accepted_at": now_iso,
+            },
         })
         auth_user_id = str(auth_response.user.id)
         user = AuthService.provision_supabase_user(
@@ -118,6 +137,8 @@ async def signup_mobile_verified(request: MobileVerifiedSignupSchema):
             role=request.role,
             email=str(request.email).lower(),
             mobile=normalized_mobile,
+            terms_accepted=True,
+            terms_accepted_at=now_iso,
         )
         return UserResponse(**user)
     except ValueError as exc:
