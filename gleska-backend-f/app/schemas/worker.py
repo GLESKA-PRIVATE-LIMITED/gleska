@@ -1,6 +1,6 @@
 """Pydantic schemas for worker profiles and related data."""
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Optional
 from datetime import datetime
 
@@ -15,6 +15,10 @@ class WorkerProfileResponse(BaseModel):
     availability_status: str = "OFFLINE"  # AVAILABLE, ON_JOB, OFFLINE
     city: Optional[str] = None
     state: Optional[str] = None
+    address: Optional[str] = None
+    pincode: Optional[str] = None
+    location_source: Optional[str] = None
+    location_updated_at: Optional[datetime] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     profile_completed: bool = False
@@ -34,8 +38,11 @@ class UpdateWorkerProfileSchema(BaseModel):
     availability_status: Optional[str] = None
     city: Optional[str] = None
     state: Optional[str] = None
-    latitude: Optional[float] = None
-    longitude: Optional[float] = None
+    address: Optional[str] = Field(default=None, max_length=500)
+    pincode: Optional[str] = Field(default=None, min_length=6, max_length=6)
+    latitude: Optional[float] = Field(default=None, ge=-90, le=90)
+    longitude: Optional[float] = Field(default=None, ge=-180, le=180)
+    location_source: Optional[str] = None
 
     @field_validator("trade_id")
     @classmethod
@@ -53,3 +60,46 @@ class WorkerLocationUpdate(BaseModel):
 
     latitude: float = Field(..., ge=-90, le=90)
     longitude: float = Field(..., ge=-180, le=180)
+    accuracy_m: float = Field(..., gt=0, le=1000)
+
+    @model_validator(mode="after")
+    def coordinates_must_not_be_null_island(self) -> "WorkerLocationUpdate":
+        if self.latitude == 0 and self.longitude == 0:
+            raise ValueError("latitude and longitude cannot both be zero")
+        return self
+
+
+class WorkerCurrentLocationResponse(BaseModel):
+    """The latest GPS location saved for a worker."""
+
+    latitude: float
+    longitude: float
+    accuracy_m: float
+    address: Optional[str] = None
+    updated_at: datetime
+
+
+class WorkerRouteOrigin(BaseModel):
+    latitude: float
+    longitude: float
+
+
+class WorkerRouteDestination(BaseModel):
+    latitude: float
+    longitude: float
+    name: str
+
+
+class WorkerRouteSummary(BaseModel):
+    distance_meters: int
+    distance_km: float
+    duration_seconds: int
+    duration_minutes: int
+    encoded_polyline: str
+
+
+class WorkerJobRouteResponse(BaseModel):
+    job_id: str
+    origin: WorkerRouteOrigin
+    destination: WorkerRouteDestination
+    route: WorkerRouteSummary

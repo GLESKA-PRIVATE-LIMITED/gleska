@@ -70,3 +70,23 @@ def test_worker_matching_migrations_do_not_use_verification_as_eligibility():
 
     assert "profile.is_verified" not in historical_migration
     assert "profile.account_type" not in historical_migration
+
+
+def test_current_location_migration_uses_live_location_for_available_jobs():
+    migration = (
+        Path(__file__).resolve().parents[2]
+        / "gleska-website"
+        / "supabase"
+        / "migrations"
+        / "018_current_location_accuracy_and_freshness.sql"
+    ).read_text(encoding="utf-8")
+
+    start = migration.index("CREATE OR REPLACE FUNCTION public.find_available_jobs_for_worker")
+    sql = migration[start:migration.index("$$;", start)]
+    assert "JOIN worker_current_locations AS current_location" in sql
+    assert "current_location.longitude" in sql
+    assert "current_location.latitude" in sql
+    assert "current_location.updated_at >= NOW() - INTERVAL '10 minutes'" in sql
+    assert "current_location.accuracy_m <= 1000" in sql
+    assert "profile.latitude" not in sql
+    assert "profile.longitude" not in sql

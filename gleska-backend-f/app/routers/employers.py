@@ -594,10 +594,14 @@ async def complete_onboarding(
                 detail=str(exc),
             ) from exc
 
+        completion_update = {"onboarding_status": "COMPLETED"}
+        if employer_type == "INDIVIDUAL":
+            completion_update["verification_status"] = "VERIFIED"
+
         # Update to completed
         response = (
             supabase.table("employer_profiles")
-            .update({"onboarding_status": "COMPLETED"})
+            .update(completion_update)
             .eq("user_id", user.id)
             .execute()
         )

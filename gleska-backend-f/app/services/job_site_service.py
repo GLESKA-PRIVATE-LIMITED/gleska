@@ -49,6 +49,7 @@ class JobSiteService:
             id=str(row["id"]),
             employer_id=str(row["employer_id"]),
             name=row["name"],
+            address=row.get("address"),
             latitude=float(latitude),
             longitude=float(longitude),
             created_at=row["created_at"],
@@ -62,6 +63,7 @@ class JobSiteService:
             "id": str(uuid4()),
             "employer_id": employer_id,
             "name": request.name.strip(),
+            "address": request.address,
             "location": f"POINT({request.longitude} {request.latitude})",
             "created_at": datetime.now(timezone.utc).isoformat(),
         }

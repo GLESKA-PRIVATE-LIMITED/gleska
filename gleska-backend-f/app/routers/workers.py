@@ -1,16 +1,176 @@
 """Worker-specific endpoints."""
 
 import logging
+from datetime import datetime, timedelta, timezone
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, status, Depends
 from app.core.security import get_current_user, require_worker
 from app.core.supabase import supabase
 from app.schemas.auth import UserResponse
-from app.schemas.worker import WorkerLocationUpdate, WorkerProfileResponse, UpdateWorkerProfileSchema
+from app.schemas.worker import (
+    WorkerCurrentLocationResponse,
+    WorkerJobRouteResponse,
+    WorkerLocationUpdate,
+    WorkerProfileResponse,
+    UpdateWorkerProfileSchema,
+)
+from app.services.geocoding_service import GeocodingError, GeocodingService
+from app.services.google_routes_service import GoogleRoutesError, GoogleRoutesService
 from app.services.matching_service import MatchingError, MatchingService
 
 router = APIRouter(prefix="/workers", tags=["workers"])
 logger = logging.getLogger(__name__)
+CURRENT_LOCATION_MAX_AGE = timedelta(minutes=10)
+
+
+def _is_current_location_fresh(updated_at: Any) -> bool:
+    if not updated_at:
+        return False
+    if isinstance(updated_at, str):
+        updated_at = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
+    if updated_at.tzinfo is None:
+        updated_at = updated_at.replace(tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) - updated_at <= CURRENT_LOCATION_MAX_AGE
+
+
+def _parse_location_coordinates(value: Any) -> tuple[float, float] | None:
+    if value is None:
+        return None
+    if isinstance(value, dict):
+        coordinates = value.get("coordinates") or []
+        if len(coordinates) >= 2:
+            try:
+                return float(coordinates[0]), float(coordinates[1])
+            except (TypeError, ValueError):
+                return None
+        return None
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        if text.startswith("POINT(") and text.endswith(")"):
+            inner = text[len("POINT("):-1].strip()
+            parts = inner.split()
+            if len(parts) >= 2:
+                try:
+                    return float(parts[0]), float(parts[1])
+                except ValueError:
+                    return None
+    return None
+
+
+async def get_worker_job_route(job_id: str, user: UserResponse):
+    """Return the best road route from the worker's current location to the selected job site."""
+    profile_response = (
+        supabase.table("worker_profiles")
+        .select("id, latitude, longitude")
+        .eq("user_id", user.id)
+        .single()
+        .execute()
+    )
+    profile_data = profile_response.data or {}
+    if isinstance(profile_data, list):
+        profile = profile_data[0] if profile_data else {}
+    else:
+        profile = profile_data
+    if not profile:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Worker profile not found")
+
+    location_response = (
+        supabase.table("worker_current_locations")
+        .select("latitude, longitude, accuracy_m, updated_at")
+        .eq("worker_profile_id", profile["id"])
+        .maybe_single()
+        .execute()
+    )
+    current_location = location_response.data or {}
+    if isinstance(current_location, list):
+        current_location = current_location[0] if current_location else {}
+    use_current = (
+        current_location.get("latitude") is not None
+        and current_location.get("longitude") is not None
+        and current_location.get("accuracy_m", 0) <= 1000
+        and _is_current_location_fresh(current_location.get("updated_at"))
+    )
+    worker_latitude = current_location.get("latitude") if use_current else profile.get("latitude")
+    worker_longitude = current_location.get("longitude") if use_current else profile.get("longitude")
+    if worker_latitude is None or worker_longitude is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="CURRENT_LOCATION_REQUIRED")
+
+    available_jobs = MatchingService.available_jobs(str(profile["id"]))
+    available_ids = {str(job.get("job_id") or job.get("id")) for job in available_jobs}
+    if job_id not in available_ids:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="JOB_NOT_AVAILABLE_FOR_WORKER")
+
+    job_response = (
+        supabase.table("jobs")
+        .select("id, title, job_site_id, status")
+        .eq("id", job_id)
+        .single()
+        .execute()
+    )
+    job_data = job_response.data or {}
+    if isinstance(job_data, list):
+        job = job_data[0] if job_data else {}
+    else:
+        job = job_data
+    if not job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+
+    site_response = (
+        supabase.table("job_sites")
+        .select("id, name, location")
+        .eq("id", job.get("job_site_id"))
+        .single()
+        .execute()
+    )
+    site_data = site_response.data or {}
+    if isinstance(site_data, list):
+        site = site_data[0] if site_data else {}
+    else:
+        site = site_data
+    if not site:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job site not found")
+
+    site_coordinates = _parse_location_coordinates(site.get("location"))
+    if site_coordinates is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="JOB_LOCATION_UNAVAILABLE")
+
+    destination_lng, destination_lat = site_coordinates
+    origin_lat = float(worker_latitude)
+    origin_lng = float(worker_longitude)
+
+    try:
+        route_result = await GoogleRoutesService.compute_route(origin_lat, origin_lng, destination_lat, destination_lng)
+    except GoogleRoutesError as exc:
+        if str(exc) == "NO_ROUTE_FOUND":
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No drivable route could be found between your location and this work site.") from exc
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="ROUTE_CALCULATION_FAILED") from exc
+
+    distance_km = round((route_result["distance_meters"] / 1000.0), 1)
+    duration_minutes = max(1, round(route_result["duration_seconds"] / 60.0)) if route_result["duration_seconds"] else 0
+    return {
+        "job_id": str(job["id"]),
+        "origin": {"latitude": origin_lat, "longitude": origin_lng},
+        "destination": {"latitude": destination_lat, "longitude": destination_lng, "name": site.get("name") or "Work site"},
+        "route": {
+            "distance_meters": route_result["distance_meters"],
+            "distance_km": distance_km,
+            "duration_seconds": route_result["duration_seconds"],
+            "duration_minutes": duration_minutes,
+            "encoded_polyline": route_result["encoded_polyline"],
+        },
+    }
+
+
+@router.get("/me/jobs/{job_id}/route", response_model=WorkerJobRouteResponse)
+async def get_worker_job_route_endpoint(
+    job_id: str,
+    user: UserResponse = Depends(require_worker),
+):
+    """Compute the driving route for the selected available job."""
+    return await get_worker_job_route(job_id, user)
 
 
 @router.get("/me", response_model=WorkerProfileResponse)
@@ -56,6 +216,13 @@ async def update_worker_profile(
 
         if update_data.availability_status and update_data.availability_status not in {"AVAILABLE", "ON_JOB", "OFFLINE"}:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid availability status")
+
+        if update_data.location_source and update_data.location_source not in {"PROFILE", "GPS", "SEARCH", "MAP"}:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid location source")
+        if ("latitude" in update_dict) != ("longitude" in update_dict):
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Location coordinates must be provided together")
+        if "latitude" in update_dict:
+            update_dict["location_updated_at"] = datetime.now(timezone.utc).isoformat()
 
         if {"trade_id", "experience_years", "expected_daily_wage", "city", "state"} & update_dict.keys():
             current_response = supabase.table("worker_profiles").select("*").eq("user_id", user.id).single().execute()
@@ -103,22 +270,45 @@ async def update_worker_profile(
         )
 
 
-@router.put("/me/location", response_model=WorkerProfileResponse)
+@router.put("/me/location", response_model=WorkerCurrentLocationResponse)
 async def update_worker_location(
     location: WorkerLocationUpdate,
     user: UserResponse = Depends(require_worker),
 ):
-    """Store browser-provided coordinates on the authenticated worker profile."""
+    """Reverse geocode and upsert the browser-provided current location."""
     try:
-        response = (
+        profile_response = (
             supabase.table("worker_profiles")
-            .update({"latitude": location.latitude, "longitude": location.longitude})
+            .select("id")
             .eq("user_id", user.id)
+            .single()
+            .execute()
+        )
+        profile = profile_response.data or {}
+        if isinstance(profile, list):
+            profile = profile[0] if profile else {}
+        if not profile.get("id"):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Worker profile not found")
+        try:
+            address = await GeocodingService.reverse_geocode(location.latitude, location.longitude)
+        except GeocodingError:
+            address = None
+        response = (
+            supabase.table("worker_current_locations")
+            .upsert({
+                "worker_profile_id": profile["id"],
+                "latitude": location.latitude,
+                "longitude": location.longitude,
+                "accuracy_m": location.accuracy_m,
+                "address": address,
+            }, on_conflict="worker_profile_id")
             .execute()
         )
         if not response.data:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Worker profile not found")
-        return WorkerProfileResponse(**response.data[0])
+        return WorkerCurrentLocationResponse(**response.data[0])
+    except GeocodingError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
     except HTTPException:
         raise
     except Exception as exc:
@@ -135,14 +325,37 @@ async def get_available_jobs(
     try:
         worker_response = (
             supabase.table("worker_profiles")
-            .select("id, latitude, longitude, profile_completed, availability_status")
+            .select("id, profile_completed, availability_status, latitude, longitude")
             .eq("user_id", user.id)
+            .single()
             .execute()
         )
-        workers = worker_response.data or []
-        if not workers:
-            return {"jobs": []}
-        jobs = MatchingService.available_jobs(str(workers[0]["id"]), max_radius)
+        worker = worker_response.data or {}
+        if isinstance(worker, list):
+            worker = worker[0] if worker else {}
+        if not worker:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Worker profile not found")
+        current_location = (
+            supabase.table("worker_current_locations")
+            .select("id, latitude, longitude, accuracy_m, updated_at")
+            .eq("worker_profile_id", worker["id"])
+            .maybe_single()
+            .execute()
+        )
+        current_data = current_location.data or {}
+        if isinstance(current_location.data, list):
+            current_data = current_location.data[0] if current_location.data else {}
+        has_current = (
+            current_data.get("latitude") is not None
+            and current_data.get("longitude") is not None
+            and current_data.get("accuracy_m", 0) <= 1000
+            and _is_current_location_fresh(current_data.get("updated_at"))
+        )
+        if not has_current and (worker.get("latitude") is None or worker.get("longitude") is None):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="CURRENT_LOCATION_REQUIRED")
+        jobs = MatchingService.available_jobs(str(worker["id"]), max_radius)
+    except HTTPException:
+        raise
     except MatchingError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
     except Exception as exc:

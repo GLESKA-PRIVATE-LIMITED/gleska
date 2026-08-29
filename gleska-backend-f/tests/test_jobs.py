@@ -33,10 +33,20 @@ class Query:
     def single(self): return self
     def order(self, *_args, **_kwargs): return self
     def insert(self, payload): self.payload = payload; return self
+    def update(self, payload):
+        self.payload = payload
+        return self
+    def update(self, payload):
+        self.payload = payload
+        return self
 
     def execute(self):
         if self.payload is not None:
             now = datetime.now(timezone.utc)
+            if self.table == "employer_profiles":
+                for row in self.rows:
+                    row.update(self.payload)
+                return SimpleNamespace(data=self.rows)
             row = {"id": "job-id", **self.payload, "created_at": now, "updated_at": now}
             self.rows[:] = [row]
             return SimpleNamespace(data=[row])
@@ -49,12 +59,27 @@ class FakeSupabase:
     def __init__(self, site_rows=None):
         self.tables = {
             "employers": Query("employers", [{"id": "employer-id", "supabase_auth_id": "user-id", "is_active": True, "is_deleted": False}]),
-            "employer_profiles": Query("employer_profiles", [{"id": "profile-id", "onboarding_status": "COMPLETED"}]),
+            "employer_profiles": Query("employer_profiles", [{"id": "profile-id", "onboarding_status": "COMPLETED", "has_availed_free_dispatch": False, "subscription_valid_until": None}]),
             "job_sites": Query("job_sites", site_rows if site_rows is not None else [{"id": SITE_ID}]),
             "jobs": Query("jobs", []),
         }
 
     def table(self, name): return self.tables[name]
+
+    def rpc(self, name, params):
+        assert name == "create_job_for_employer"
+        query = self.tables["jobs"]
+        query.payload = {
+            "id": "22222222-2222-2222-2222-222222222222",
+            "employer_id": params["p_employer_id"],
+            "job_site_id": params["p_job_site_id"],
+            "title": params["p_title"],
+            "headcount_required": params["p_headcount_required"],
+            "max_daily_salary": params["p_max_daily_salary"],
+            "min_experience": params["p_min_experience"],
+            "status": "SEARCHING",
+        }
+        return query
 
 
 def test_job_schema_applies_defaults_and_normalizes_title():
@@ -90,7 +115,7 @@ def test_create_job_uses_authenticated_employer_and_searching_status(monkeypatch
     assert fake.tables["jobs"].payload["id"]
     assert fake.tables["jobs"].payload["employer_id"] == "profile-id"
     assert fake.tables["jobs"].payload["max_daily_salary"] == "800"
-    assert fake.tables["jobs"].payload["created_at"]
+    assert result.created_at
     assert ("user_id", "user-id") in fake.tables["employer_profiles"].filters
 
 
