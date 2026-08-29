@@ -59,6 +59,22 @@ class JobService:
             raise JobPaymentRequired("SUBSCRIPTION_REQUIRED")
         return str(employer["id"])
 
+    @staticmethod
+    def _employer_profile(user: UserResponse) -> dict[str, Any]:
+        response = (
+            supabase.table("employer_profiles")
+            .select("id, onboarding_status")
+            .eq("user_id", user.id)
+            .single()
+            .execute()
+        )
+        employer = response.data or {}
+        if not employer.get("id"):
+            raise JobNotFound("EMPLOYER_NOT_FOUND")
+        if employer.get("onboarding_status") != "COMPLETED":
+            raise PermissionError("EMPLOYER_ONBOARDING_INCOMPLETE")
+        return employer
+
     @classmethod
     def _owned_site(cls, employer_id: str, site_id: str) -> None:
         response = (
@@ -89,22 +105,29 @@ class JobService:
 
     @classmethod
     def create(cls, user: UserResponse, request: JobCreate) -> JobResponse:
-        employer_id = cls._employer_id(user)
-        cls._owned_site(employer_id, str(request.job_site_id))
-        response = supabase.table("jobs").insert({
-            "id": str(uuid4()),
-            "employer_id": employer_id,
-            "job_site_id": str(request.job_site_id),
-            "title": request.title,
-            "headcount_required": request.headcount_required,
-            "max_daily_salary": str(request.max_daily_salary) if request.max_daily_salary is not None else None,
-            "min_experience": request.min_experience,
-            "status": "SEARCHING",
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        }).execute()
-        if not response.data:
+        employer = cls._employer_profile(user)
+        cls._owned_site(str(employer["id"]), str(request.job_site_id))
+        try:
+            response = supabase.rpc("create_job_for_employer", {
+                "p_employer_id": employer["id"],
+                "p_job_site_id": str(request.job_site_id),
+                "p_title": request.title,
+                "p_headcount_required": request.headcount_required,
+                "p_max_daily_salary": str(request.max_daily_salary) if request.max_daily_salary is not None else None,
+                "p_min_experience": request.min_experience,
+            }).execute()
+        except Exception as exc:
+            message = str(exc)
+            if "SUBSCRIPTION_REQUIRED" in message:
+                raise JobPaymentRequired("SUBSCRIPTION_REQUIRED") from exc
+            if "JOB_SITE_NOT_FOUND" in message:
+                raise JobNotFound("JOB_SITE_NOT_FOUND") from exc
+            if "EMPLOYER_ONBOARDING_INCOMPLETE" in message:
+                raise PermissionError("EMPLOYER_ONBOARDING_INCOMPLETE") from exc
+            raise
+        job = response.data[0] if isinstance(response.data, list) and response.data else response.data
+        if not job:
             raise RuntimeError("JOB_CREATE_FAILED")
-        job = response.data[0]
         try:
             MatchingService.create_matches(str(job["id"]))
         except MatchingError:
@@ -113,7 +136,7 @@ class JobService:
 
     @classmethod
     def list_for_user(cls, user: UserResponse) -> list[JobResponse]:
-        employer_id = cls._employer_id(user)
+        employer_id = cls._employer_profile(user)["id"]
         response = (
             supabase.table("jobs")
             .select("*")

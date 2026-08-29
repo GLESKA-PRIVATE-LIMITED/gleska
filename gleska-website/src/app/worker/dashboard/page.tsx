@@ -46,19 +46,6 @@ type RouteResponse = {
   };
 };
 
-const MAX_LOCATION_ACCURACY_METERS = 1000;
-const LOCATION_ATTEMPTS = 3;
-
-class InaccurateLocationError extends Error {
-  code = "INACCURATE";
-  accuracy: number;
-
-  constructor(accuracy: number) {
-    super("Your current location could not be determined accurately enough. Please enable precise location and try again.");
-    this.accuracy = accuracy;
-  }
-}
-
 function GoogleRouteMap({ route }: { route: RouteResponse }) {
   const mapRef = useRef<HTMLDivElement | null>(null);
   const [mapError, setMapError] = useState("");
@@ -187,74 +174,26 @@ function GoogleRouteMap({ route }: { route: RouteResponse }) {
 export default function WorkerDashboard() {
   const router = useRouter();
   const { user, isLoading, nextStep, logout } = useAuth();
-  const [profile, setProfile] = React.useState<{ profile_completed: boolean; availability_status: string; expected_daily_wage?: number | null }>({ profile_completed: false, availability_status: "OFFLINE" });
+  const [profile, setProfile] = React.useState<{ profile_completed: boolean; availability_status: string; expected_daily_wage?: number | null; latitude?: number | null; longitude?: number | null; address?: string | null }>({ profile_completed: false, availability_status: "OFFLINE" });
   const [availableJobs, setAvailableJobs] = React.useState<AvailableJob[]>([]);
   const [selectedJob, setSelectedJob] = React.useState<AvailableJob | null>(null);
   const [routeData, setRouteData] = React.useState<RouteResponse | null>(null);
-  const [jobsLoading, setJobsLoading] = React.useState(true);
+  const [jobsLoading, setJobsLoading] = React.useState(false);
   const [jobsError, setJobsError] = React.useState("");
   const [routeError, setRouteError] = React.useState("");
-  const [locationSaving, setLocationSaving] = React.useState(false);
   const [routeLoading, setRouteLoading] = React.useState(false);
-  const [currentLocation, setCurrentLocation] = React.useState<{ address: string | null; accuracy_m: number } | null>(null);
-
-  const requestCurrentLocation = async () => {
-    if (!navigator.geolocation) {
-      throw new Error("Location is not supported by this browser.");
-    }
-
-    let bestPosition: GeolocationPosition | null = null;
-    for (let attempt = 0; attempt < LOCATION_ATTEMPTS; attempt += 1) {
-      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject, {
-          enableHighAccuracy: true,
-          maximumAge: 0,
-          timeout: 20000,
-        });
-      });
-      if (!bestPosition || position.coords.accuracy < bestPosition.coords.accuracy) {
-        bestPosition = position;
-      }
-      if (position.coords.accuracy <= MAX_LOCATION_ACCURACY_METERS) break;
-    }
-    if (!bestPosition) {
-      throw new Error("Unable to determine your current location. Please try again.");
-    }
-    const { latitude, longitude, accuracy } = bestPosition.coords;
-    if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || !Number.isFinite(accuracy) || accuracy <= 0 || accuracy > MAX_LOCATION_ACCURACY_METERS || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
-      throw new InaccurateLocationError(accuracy);
-    }
-
-    const response = await apiClient.put("/api/v1/workers/me/location", {
-      latitude,
-      longitude,
-      accuracy_m: accuracy,
-    });
-    setCurrentLocation({ address: response.data.address, accuracy_m: response.data.accuracy_m });
-    return response.data;
-  };
 
   useEffect(() => {
     if (!user || user.role !== "WORKER") return;
-    apiClient.get("/api/v1/workers/me").then((response) => setProfile(response.data)).catch(() => undefined);
-    requestCurrentLocation()
-      .then(() => apiClient.get("/api/v1/workers/me/available-jobs"))
-      .then((response) => setAvailableJobs(response.data.jobs || []))
-      .catch((error: unknown) => {
-        const code = typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
-        const detail = axios.isAxiosError(error) ? error.response?.data?.detail : undefined;
-        const message = code === "INACCURATE"
-          ? `Your current location is too coarse (about ${Math.round((error as InaccurateLocationError).accuracy / 1000)} km accuracy). Please enable precise location, enable GPS, and try again.`
-          : code === 1
-          ? "Location access is required to find jobs near you. Please allow location access in your browser settings."
-          : code === 2
-            ? "Unable to determine your current location. Please try again."
-            : code === 3
-              ? "Location request timed out. Please try again."
-              : detail || (error instanceof Error ? error.message : undefined) || "Unable to determine your current location. Please try again.";
-        setJobsError(message);
-      })
-      .finally(() => setJobsLoading(false));
+    apiClient.get("/api/v1/workers/me").then((response) => {
+      setProfile(response.data);
+      if (response.data.latitude == null || response.data.longitude == null) {
+        setJobsError("Add your location to your profile to see nearby jobs.");
+        return;
+      }
+      setJobsLoading(true);
+      return apiClient.get("/api/v1/workers/me/available-jobs").then((jobsResponse) => setAvailableJobs(jobsResponse.data.jobs || [])).catch(() => setJobsError("Unable to load nearby jobs right now. Please try again.")).finally(() => setJobsLoading(false));
+    }).catch(() => setJobsError("Unable to load your profile right now."));
   }, [user]);
 
   useEffect(() => {
@@ -291,28 +230,6 @@ export default function WorkerDashboard() {
     } catch {
       toast.error("Logout failed");
     }
-  };
-
-  const handleUseCurrentLocation = () => {
-    setLocationSaving(true);
-    setJobsError("");
-    setAvailableJobs([]);
-    setJobsLoading(true);
-    requestCurrentLocation()
-      .then(() => apiClient.get("/api/v1/workers/me/available-jobs"))
-      .then((response) => {
-        setAvailableJobs(response.data.jobs || []);
-        toast.success("Location updated");
-      })
-      .catch((error: unknown) => {
-        const code = typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
-        const detail = axios.isAxiosError(error) ? error.response?.data?.detail : undefined;
-        setJobsError(code === "INACCURATE" ? `Your current location is too coarse (about ${Math.round((error as InaccurateLocationError).accuracy / 1000)} km accuracy). Please enable precise location, enable GPS, and try again.` : code === 1 ? "Location access is required to find jobs near you. Please allow location access in your browser settings." : code === 3 ? "Location request timed out. Please try again." : code === 2 ? "Unable to determine your current location. Please try again." : detail || (error instanceof Error ? error.message : undefined) || "Unable to update your location");
-      })
-      .finally(() => {
-        setLocationSaving(false);
-        setJobsLoading(false);
-      });
   };
 
   const handleViewRoute = async (job: AvailableJob) => {
@@ -475,16 +392,8 @@ export default function WorkerDashboard() {
         <div className="mt-12">
           <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
             <h2 className="font-(--font-anton) text-2xl uppercase text-slate-900 dark:text-white">Jobs Near You</h2>
-            <button type="button" onClick={handleUseCurrentLocation} disabled={locationSaving} className="inline-flex items-center gap-2 rounded-xl border border-blue-200 bg-white px-4 py-2 text-sm font-bold text-blue-700 transition hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-blue-900 dark:bg-slate-900 dark:text-blue-300 dark:hover:bg-blue-950/30">
-              {locationSaving ? <Loader2 size={16} className="animate-spin" /> : <MapPin size={16} />}
-              {locationSaving ? "Updating location..." : "Use current location"}
-            </button>
+            {!profile.latitude || !profile.longitude ? <Link href="/worker/profile" className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white">Add Location</Link> : profile.address ? <p className="text-sm text-slate-600 dark:text-slate-400">Using {profile.address}</p> : null}
           </div>
-          {currentLocation && !jobsError && (
-            <p className="mb-4 text-sm text-slate-600 dark:text-slate-400">
-              Current location: {currentLocation.address} (accuracy {Math.round(currentLocation.accuracy_m)} m)
-            </p>
-          )}
           {jobsLoading ? (
             <div className="flex items-center justify-center rounded-2xl border border-slate-200 bg-white p-12 dark:border-slate-800 dark:bg-slate-900"><Loader2 className="animate-spin text-blue-600" /></div>
           ) : jobsError ? (

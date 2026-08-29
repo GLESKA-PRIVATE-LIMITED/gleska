@@ -66,6 +66,21 @@ class FakeSupabase:
 
     def table(self, name): return self.tables[name]
 
+    def rpc(self, name, params):
+        assert name == "create_job_for_employer"
+        query = self.tables["jobs"]
+        query.payload = {
+            "id": "22222222-2222-2222-2222-222222222222",
+            "employer_id": params["p_employer_id"],
+            "job_site_id": params["p_job_site_id"],
+            "title": params["p_title"],
+            "headcount_required": params["p_headcount_required"],
+            "max_daily_salary": params["p_max_daily_salary"],
+            "min_experience": params["p_min_experience"],
+            "status": "SEARCHING",
+        }
+        return query
+
 
 def test_job_schema_applies_defaults_and_normalizes_title():
     job = JobCreate(job_site_id=SITE_ID, title="  Plumber   ", headcount_required=2)
@@ -100,7 +115,7 @@ def test_create_job_uses_authenticated_employer_and_searching_status(monkeypatch
     assert fake.tables["jobs"].payload["id"]
     assert fake.tables["jobs"].payload["employer_id"] == "profile-id"
     assert fake.tables["jobs"].payload["max_daily_salary"] == "800"
-    assert fake.tables["jobs"].payload["created_at"]
+    assert result.created_at
     assert ("user_id", "user-id") in fake.tables["employer_profiles"].filters
 
 

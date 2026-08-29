@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
+import LocationPicker, { LocationSelection } from "@/components/LocationPicker";
 
 type EmployerType =
   | "REGISTERED_INDUSTRY"
@@ -125,6 +126,10 @@ export default function EmployerOnboarding() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isHydrating, setIsHydrating] = useState(true);
   const [verification, setVerification] = useState<VerificationState>({ required: [], records: [] });
+
+  const selectWorkLocation = (location: LocationSelection) => {
+    setFormData((current) => ({ ...current, work_location: location.address, city: location.city || current.city || "", state: location.state || current.state || "", pincode: location.pincode || current.pincode || "", latitude: String(location.latitude), longitude: String(location.longitude) }));
+  };
 
   useEffect(() => {
     if (!isLoading && !user) {
@@ -657,7 +662,7 @@ export default function EmployerOnboarding() {
               <FormField label="City" field="city" value={formData.city} onChange={updateField} />
               <FormField label="State" field="state" value={formData.state} onChange={updateField} />
               <FormField label="Pincode" field="pincode" value={formData.pincode} onChange={updateField} />
-              <FormField label="Work location" field="work_location" value={formData.work_location} onChange={updateField} />
+              <div className="sm:col-span-2"><label className="mb-2 block text-sm font-semibold">Work location</label><LocationPicker value={formData.work_location} onSelect={selectWorkLocation} /></div>
 
               {employerType === "REGISTERED_INDUSTRY" && (
                 <>

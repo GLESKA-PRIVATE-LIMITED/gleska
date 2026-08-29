@@ -64,7 +64,7 @@ async def get_worker_job_route(job_id: str, user: UserResponse):
     """Return the best road route from the worker's current location to the selected job site."""
     profile_response = (
         supabase.table("worker_profiles")
-        .select("id")
+        .select("id, latitude, longitude")
         .eq("user_id", user.id)
         .single()
         .execute()
@@ -87,12 +87,16 @@ async def get_worker_job_route(job_id: str, user: UserResponse):
     current_location = location_response.data or {}
     if isinstance(current_location, list):
         current_location = current_location[0] if current_location else {}
-    worker_latitude = current_location.get("latitude")
-    worker_longitude = current_location.get("longitude")
-    if worker_latitude is None or worker_longitude is None or current_location.get("accuracy_m", 0) > 1000:
+    use_current = (
+        current_location.get("latitude") is not None
+        and current_location.get("longitude") is not None
+        and current_location.get("accuracy_m", 0) <= 1000
+        and _is_current_location_fresh(current_location.get("updated_at"))
+    )
+    worker_latitude = current_location.get("latitude") if use_current else profile.get("latitude")
+    worker_longitude = current_location.get("longitude") if use_current else profile.get("longitude")
+    if worker_latitude is None or worker_longitude is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="CURRENT_LOCATION_REQUIRED")
-    if not _is_current_location_fresh(current_location.get("updated_at")):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="CURRENT_LOCATION_STALE")
 
     available_jobs = MatchingService.available_jobs(str(profile["id"]))
     available_ids = {str(job.get("job_id") or job.get("id")) for job in available_jobs}
@@ -213,6 +217,13 @@ async def update_worker_profile(
         if update_data.availability_status and update_data.availability_status not in {"AVAILABLE", "ON_JOB", "OFFLINE"}:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid availability status")
 
+        if update_data.location_source and update_data.location_source not in {"PROFILE", "GPS", "SEARCH", "MAP"}:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid location source")
+        if ("latitude" in update_dict) != ("longitude" in update_dict):
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Location coordinates must be provided together")
+        if "latitude" in update_dict:
+            update_dict["location_updated_at"] = datetime.now(timezone.utc).isoformat()
+
         if {"trade_id", "experience_years", "expected_daily_wage", "city", "state"} & update_dict.keys():
             current_response = supabase.table("worker_profiles").select("*").eq("user_id", user.id).single().execute()
             current_profile = current_response.data or {}
@@ -268,7 +279,7 @@ async def update_worker_location(
     try:
         profile_response = (
             supabase.table("worker_profiles")
-            .select("id, accuracy_m, updated_at")
+            .select("id")
             .eq("user_id", user.id)
             .single()
             .execute()
@@ -314,7 +325,7 @@ async def get_available_jobs(
     try:
         worker_response = (
             supabase.table("worker_profiles")
-            .select("id, profile_completed, availability_status")
+            .select("id, profile_completed, availability_status, latitude, longitude")
             .eq("user_id", user.id)
             .single()
             .execute()
@@ -326,19 +337,22 @@ async def get_available_jobs(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Worker profile not found")
         current_location = (
             supabase.table("worker_current_locations")
-            .select("id")
+            .select("id, latitude, longitude, accuracy_m, updated_at")
             .eq("worker_profile_id", worker["id"])
             .maybe_single()
             .execute()
         )
-        if not current_location.data:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="CURRENT_LOCATION_REQUIRED")
+        current_data = current_location.data or {}
         if isinstance(current_location.data, list):
-            current_location.data = current_location.data[0] if current_location.data else {}
-        if current_location.data.get("accuracy_m", 0) > 1000:
+            current_data = current_location.data[0] if current_location.data else {}
+        has_current = (
+            current_data.get("latitude") is not None
+            and current_data.get("longitude") is not None
+            and current_data.get("accuracy_m", 0) <= 1000
+            and _is_current_location_fresh(current_data.get("updated_at"))
+        )
+        if not has_current and (worker.get("latitude") is None or worker.get("longitude") is None):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="CURRENT_LOCATION_REQUIRED")
-        if not _is_current_location_fresh(current_location.data.get("updated_at")):
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="CURRENT_LOCATION_STALE")
         jobs = MatchingService.available_jobs(str(worker["id"]), max_radius)
     except HTTPException:
         raise

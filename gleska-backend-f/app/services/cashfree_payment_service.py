@@ -3,13 +3,17 @@
 import base64
 import hashlib
 import hmac
+import logging
 import time
 import uuid
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class CashfreePaymentError(Exception):
@@ -58,7 +62,27 @@ class CashfreePaymentService:
         }
         try:
             async with httpx.AsyncClient(timeout=settings.CASHFREE_PAYMENT_TIMEOUT_SECONDS) as client:
-                response = await client.post(f"{cls._base_url()}/orders", headers=cls._headers(), json=payload)
+                endpoint = f"{cls._base_url()}/orders"
+                response = await client.post(endpoint, headers=cls._headers(), json=payload)
+                if getattr(response, "is_error", False):
+                    try:
+                        error_response = response.json()
+                    except ValueError:
+                        error_response = {}
+                    error_response = error_response if isinstance(error_response, dict) else {}
+                    parsed_endpoint = urlsplit(endpoint)
+                    logger.error(
+                        "Cashfree PG /orders diagnostic: endpoint=%s status=%s error_code=%s error_type=%s error_message=%s CASHFREE_ENV=%s client_id_present=%s client_secret_present=%s api_version=%s",
+                        f"{parsed_endpoint.hostname}{parsed_endpoint.path}",
+                        response.status_code,
+                        error_response.get("code"),
+                        error_response.get("type"),
+                        error_response.get("message"),
+                        settings.CASHFREE_ENV,
+                        bool(settings.CASHFREE_PG_CLIENT_ID.strip()),
+                        bool(settings.CASHFREE_PG_CLIENT_SECRET.strip()),
+                        settings.CASHFREE_PG_API_VERSION,
+                    )
                 response.raise_for_status()
                 data = response.json()
         except CashfreePaymentError:

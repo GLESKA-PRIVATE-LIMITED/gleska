@@ -15,6 +15,10 @@ class WorkerProfileResponse(BaseModel):
     availability_status: str = "OFFLINE"  # AVAILABLE, ON_JOB, OFFLINE
     city: Optional[str] = None
     state: Optional[str] = None
+    address: Optional[str] = None
+    pincode: Optional[str] = None
+    location_source: Optional[str] = None
+    location_updated_at: Optional[datetime] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     profile_completed: bool = False
@@ -34,6 +38,11 @@ class UpdateWorkerProfileSchema(BaseModel):
     availability_status: Optional[str] = None
     city: Optional[str] = None
     state: Optional[str] = None
+    address: Optional[str] = Field(default=None, max_length=500)
+    pincode: Optional[str] = Field(default=None, min_length=6, max_length=6)
+    latitude: Optional[float] = Field(default=None, ge=-90, le=90)
+    longitude: Optional[float] = Field(default=None, ge=-180, le=180)
+    location_source: Optional[str] = None
 
     @field_validator("trade_id")
     @classmethod

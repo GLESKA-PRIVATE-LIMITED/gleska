@@ -20,6 +20,7 @@ import {
 import { toast } from "sonner";
 import Link from "next/link";
 import apiClient from "@/lib/api";
+import LocationPicker, { LocationSelection } from "@/components/LocationPicker";
 
 declare global {
   interface Window {
@@ -64,6 +65,17 @@ interface JobExtractionResponse {
     max_daily_salary: number | null;
     min_experience: number;
   };
+}
+
+function isActiveSubscription(subscriptionValidUntil?: string | null) {
+  return Boolean(subscriptionValidUntil && new Date(subscriptionValidUntil).getTime() > Date.now());
+}
+
+function formatSubscriptionDate(subscriptionValidUntil: string) {
+  const date = new Date(subscriptionValidUntil);
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  return `${day}/${month}/${date.getUTCFullYear()}`;
 }
 
 export default function EmployerDashboard() {
@@ -159,9 +171,13 @@ export default function EmployerDashboard() {
     if (!orderId) return;
     setPaymentMessage("Confirming payment with Cashfree...");
     apiClient.post(`/api/v1/payments/verify/${encodeURIComponent(orderId)}`)
-      .then((response) => {
-        setEmployerProfile((current) => current ? { ...current, subscription_valid_until: response.data.subscription_valid_until } : current);
+      .then(async (response) => {
+        const profileResponse = await apiClient.get("/api/v1/employers/me", { withCredentials: true });
+        setEmployerProfile(profileResponse.data);
         setPaymentMessage(response.data.status === "SUCCESS" ? "Subscription active for 30 days." : `Payment status: ${response.data.status}`);
+        if (response.data.status === "SUCCESS") {
+          router.replace(window.location.pathname, { scroll: false });
+        }
       })
       .catch((error: any) => {
         setPaymentMessage(error.response?.data?.detail || "Unable to confirm payment. Please try again.");
@@ -247,6 +263,10 @@ export default function EmployerDashboard() {
     } finally {
       setIsSiteSaving(false);
     }
+  };
+
+  const selectSiteLocation = (location: LocationSelection) => {
+    setSiteForm((current) => ({ ...current, address: location.address, latitude: String(location.latitude), longitude: String(location.longitude) }));
   };
 
   const handleSiteDelete = async (siteId: string) => {
@@ -370,7 +390,7 @@ export default function EmployerDashboard() {
                 <Building2 size={20} className="text-emerald-600 dark:text-emerald-400" />
               </div>
               <h3 className="text-sm font-bold uppercase text-slate-600 dark:text-slate-400">
-                Account Status
+                Verification Status
               </h3>
             </div>
             <div className="space-y-2">
@@ -397,11 +417,17 @@ export default function EmployerDashboard() {
               <h3 className="text-sm font-bold uppercase text-slate-600 dark:text-slate-400">Subscription</h3>
             </div>
             <p className="text-sm font-semibold text-slate-900 dark:text-white">
-              {employerProfile?.subscription_valid_until ? `Active until ${new Date(employerProfile.subscription_valid_until).toLocaleDateString()}` : "No active subscription"}
+              {employerProfile?.subscription_valid_until && isActiveSubscription(employerProfile.subscription_valid_until)
+                ? `Active until ${formatSubscriptionDate(employerProfile.subscription_valid_until)}`
+                : "No active subscription"}
             </p>
             <button type="button" onClick={handleSubscribe} disabled={isPaymentLoading} className="mt-4 inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60">
               {isPaymentLoading ? <Loader2 size={16} className="animate-spin" /> : <CreditCard size={16} />}
-              {isPaymentLoading ? "Opening checkout..." : "Subscribe ₹2,000"}
+              {isPaymentLoading
+                ? "Opening checkout..."
+                : isActiveSubscription(employerProfile?.subscription_valid_until)
+                  ? "Renew Subscription"
+                  : "Subscribe ₹2,000"}
             </button>
             {paymentMessage && <p className="mt-3 text-xs text-slate-600 dark:text-slate-400">{paymentMessage}</p>}
           </div>
@@ -518,8 +544,7 @@ export default function EmployerDashboard() {
           <form onSubmit={handleSiteSubmit} className="grid gap-3 md:grid-cols-2 lg:grid-cols-5">
             <input required maxLength={160} value={siteForm.name} onChange={(event) => setSiteForm({ ...siteForm, name: event.target.value })} placeholder="Site name" className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-800" />
             <input required maxLength={500} value={siteForm.address} onChange={(event) => setSiteForm({ ...siteForm, address: event.target.value })} placeholder="Human-readable address" className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-800" />
-            <input required type="number" min={-90} max={90} step="any" value={siteForm.latitude} onChange={(event) => setSiteForm({ ...siteForm, latitude: event.target.value })} placeholder="Latitude" className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-800" />
-            <input required type="number" min={-180} max={180} step="any" value={siteForm.longitude} onChange={(event) => setSiteForm({ ...siteForm, longitude: event.target.value })} placeholder="Longitude" className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-800" />
+            <div className="sm:col-span-2"><LocationPicker value={siteForm.address} onSelect={selectSiteLocation} /></div>
             <button type="submit" disabled={isSiteSaving} className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60">
               {isSiteSaving ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
               Add site
@@ -537,7 +562,7 @@ export default function EmployerDashboard() {
                 <div className="min-w-0">
                   <p className="font-semibold text-slate-900 dark:text-white">{site.name}</p>
                   {site.address && <p className="truncate text-sm text-slate-500 dark:text-slate-400">{site.address}</p>}
-                  <p className="truncate text-sm text-slate-500 dark:text-slate-400">{site.latitude}, {site.longitude}</p>
+                  <p className="truncate text-sm text-slate-500 dark:text-slate-400">{site.address || "Location selected"}</p>
                 </div>
                 <button type="button" title={`Remove ${site.name}`} aria-label={`Remove ${site.name}`} onClick={() => handleSiteDelete(site.id)} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:border-rose-200 hover:text-rose-600 dark:border-slate-700 dark:text-slate-400 dark:hover:border-rose-800 dark:hover:text-rose-400">
                   <Trash2 size={16} />
