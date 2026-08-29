@@ -38,5 +38,19 @@
   .hard-border {
     border: 2px solid var(--color-charcoal);
   }
+  .animate-ken-burns {
+    animation: heroKenBurns 20s ease-in-out infinite;
+    will-change: transform;
+  }
 }
+
+@keyframes heroKenBurns {
+  0%, 100% {
+    transform: scale(1.04) translate(0%, 0%);
+  }
+  50% {
+    transform: scale(1.10) translate(-1.5%, -1%);
+  }
+}
+
 
