@@ -114,7 +114,7 @@ def test_create_job_uses_authenticated_employer_and_searching_status(monkeypatch
     assert result.status == "SEARCHING"
     assert fake.tables["jobs"].payload["id"]
     assert fake.tables["jobs"].payload["employer_id"] == "profile-id"
-    assert fake.tables["jobs"].payload["max_daily_salary"] == "800"
+    assert fake.tables["jobs"].payload["max_daily_salary"] == 800.0
     assert result.created_at
     assert ("user_id", "user-id") in fake.tables["employer_profiles"].filters
 

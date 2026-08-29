@@ -76,16 +76,19 @@ async def _employer(user: UserResponse, fields: str = "id") -> dict[str, Any]:
 @router.post("/create-subscription-order", response_model=SubscriptionOrderResponse)
 async def create_subscription_order(user: UserResponse = Depends(require_employer)):
     employer = await _employer(user)
+    
+    # Mark any stale PENDING payments as EXPIRED before creating a fresh order.
+    # This ensures renewal always creates a valid, current payment session.
     pending = (
         supabase.table("payment_transactions")
-        .select("order_id, cf_order_id, payment_session_id")
+        .select("id")
         .eq("employer_id", employer["id"])
         .eq("status", "PENDING")
-        .limit(1)
         .execute()
     )
     if pending.data:
-        return SubscriptionOrderResponse(**pending.data[0])
+        for stale in pending.data:
+            supabase.table("payment_transactions").update({"status": "EXPIRED"}).eq("id", stale["id"]).execute()
 
     try:
         order = await CashfreePaymentService.create_subscription_order(

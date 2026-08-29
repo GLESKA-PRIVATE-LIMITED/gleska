@@ -22,11 +22,41 @@ import Link from "next/link";
 import apiClient from "@/lib/api";
 import LocationPicker, { LocationSelection } from "@/components/LocationPicker";
 
+/**
+ * Supported languages for job description input.
+ * Mapped to browser Web Speech Recognition language codes.
+ */
+const SUPPORTED_LANGUAGES = {
+  MARATHI: { label: "Marathi", code: "mr-IN" as const },
+  HINDI: { label: "Hindi", code: "hi-IN" as const },
+  TAMIL: { label: "Tamil", code: "ta-IN" as const },
+  ENGLISH: { label: "English", code: "en-IN" as const },
+  HINGLISH: { label: "Hinglish", code: "en-IN" as const },
+};
+
+const LANGUAGE_OPTIONS = Object.values(SUPPORTED_LANGUAGES);
+const DEFAULT_LANGUAGE: string = "en-IN";
+
+interface SpeechRecognitionLike {
+  lang: string;
+  interimResults: boolean;
+  maxAlternatives: number;
+  onstart: (() => void) | null;
+  onresult: ((event: any) => void) | null;
+  onerror: ((event: any) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+  abort: () => void;
+}
+
 declare global {
   interface Window {
     Cashfree?: (options: { mode: "sandbox" | "production" }) => {
       checkout: (options: { paymentSessionId: string; redirectTarget: "_self" }) => Promise<void> | void;
     };
+    SpeechRecognition?: new () => SpeechRecognitionLike;
+    webkitSpeechRecognition?: new () => SpeechRecognitionLike;
   }
 }
 
@@ -95,6 +125,10 @@ export default function EmployerDashboard() {
   const [aiPrompt, setAiPrompt] = React.useState("");
   const [aiError, setAiError] = React.useState("");
   const [isExtracting, setIsExtracting] = React.useState(false);
+  const [selectedLanguageCode, setSelectedLanguageCode] = React.useState(DEFAULT_LANGUAGE);
+  const [isListening, setIsListening] = React.useState(false);
+  const [voiceError, setVoiceError] = React.useState("");
+  const speechRecognitionRef = React.useRef<SpeechRecognitionLike | null>(null);
   const [isPaymentLoading, setIsPaymentLoading] = React.useState(false);
   const [paymentMessage, setPaymentMessage] = React.useState("");
 
@@ -183,6 +217,79 @@ export default function EmployerDashboard() {
         setPaymentMessage(error.response?.data?.detail || "Unable to confirm payment. Please try again.");
       });
   }, [isLoading, user]);
+
+  const handleVoiceInput = React.useCallback(() => {
+    const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognitionCtor) {
+      setVoiceError("Speech recognition is not supported in this browser. Please type your description instead.");
+      return;
+    }
+
+    if (speechRecognitionRef.current) {
+      speechRecognitionRef.current.stop();
+      speechRecognitionRef.current = null;
+      setIsListening(false);
+      return;
+    }
+
+    const recognition = new SpeechRecognitionCtor() as SpeechRecognitionLike;
+    recognition.lang = selectedLanguageCode;
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    recognition.onstart = () => {
+      setVoiceError("");
+      setIsListening(true);
+    };
+
+    recognition.onresult = (event: any) => {
+      const transcript = Array.from(event.results)
+        .map((result: any) => result[0]?.transcript ?? "")
+        .join(" ")
+        .trim();
+
+      if (!transcript) {
+        setVoiceError("No speech was captured. Please try again.");
+        setIsListening(false);
+        return;
+      }
+
+      setAiPrompt((current) => (current ? `${current} ${transcript}` : transcript));
+      setVoiceError("");
+      setIsListening(false);
+    };
+
+    recognition.onerror = (event: any) => {
+      const code = event?.error ?? "unknown";
+      const friendlyMessage =
+        code === "not-allowed"
+          ? "Microphone permission was denied. Please allow microphone access and try again."
+          : code === "no-speech"
+            ? "No speech was detected. Please try again."
+            : code === "not-supported"
+              ? "Speech recognition is not supported in this browser. Please type your description instead."
+              : "Could not capture voice input. Please try again.";
+      setVoiceError(friendlyMessage);
+      setIsListening(false);
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+      speechRecognitionRef.current = null;
+    };
+
+    speechRecognitionRef.current = recognition;
+    recognition.start();
+  }, [selectedLanguageCode]);
+
+  React.useEffect(() => {
+    return () => {
+      if (speechRecognitionRef.current) {
+        speechRecognitionRef.current.stop();
+        speechRecognitionRef.current = null;
+      }
+    };
+  }, []);
 
   if (isLoading) {
     return (
@@ -561,7 +668,6 @@ export default function EmployerDashboard() {
               <div key={site.id} className="flex items-center justify-between gap-4 py-4">
                 <div className="min-w-0">
                   <p className="font-semibold text-slate-900 dark:text-white">{site.name}</p>
-                  {site.address && <p className="truncate text-sm text-slate-500 dark:text-slate-400">{site.address}</p>}
                   <p className="truncate text-sm text-slate-500 dark:text-slate-400">{site.address || "Location selected"}</p>
                 </div>
                 <button type="button" title={`Remove ${site.name}`} aria-label={`Remove ${site.name}`} onClick={() => handleSiteDelete(site.id)} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:border-rose-200 hover:text-rose-600 dark:border-slate-700 dark:text-slate-400 dark:hover:border-rose-800 dark:hover:text-rose-400">
@@ -596,15 +702,26 @@ export default function EmployerDashboard() {
                 placeholder="I need 2 construction workers in Nanded with at least 1 year of experience. Salary is ₹800 per day."
                 className="resize-y rounded-lg border border-blue-100 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-800"
               />
-              <button
-                type="button"
-                onClick={handleExtractWithAI}
-                disabled={isExtracting || isJobSaving || !aiPrompt.trim()}
-                className="inline-flex w-fit items-center justify-center gap-2 rounded-lg border border-blue-600 px-4 py-2 text-sm font-bold text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60 dark:text-blue-300 dark:hover:bg-blue-950/50"
-              >
-                {isExtracting ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
-                {isExtracting ? "Extracting..." : "Extract with AI"}
-              </button>
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={handleVoiceInput}
+                  className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+                >
+                  {isListening ? <Loader2 size={16} className="animate-spin text-rose-500" /> : <span aria-hidden="true">🎤</span>}
+                  {isListening ? "Listening..." : "Speak"}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExtractWithAI}
+                  disabled={isExtracting || isJobSaving || !aiPrompt.trim()}
+                  className="inline-flex w-fit items-center justify-center gap-2 rounded-lg border border-blue-600 px-4 py-2 text-sm font-bold text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60 dark:text-blue-300 dark:hover:bg-blue-950/50"
+                >
+                  {isExtracting ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+                  {isExtracting ? "Extracting..." : "Extract with AI"}
+                </button>
+              </div>
+              {voiceError && <p role="alert" className="text-sm text-amber-600 dark:text-amber-400">{voiceError}</p>}
               {aiError && <p role="alert" className="text-sm text-rose-600 dark:text-rose-400">{aiError}</p>}
             </div>
             <select required value={jobForm.job_site_id} onChange={(event) => setJobForm({ ...jobForm, job_site_id: event.target.value })} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-800">

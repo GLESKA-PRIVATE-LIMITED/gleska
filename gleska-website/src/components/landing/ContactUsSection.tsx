@@ -14,7 +14,9 @@ import {
   HelpCircle,
   X,
   Zap,
+  AlertCircle,
 } from "lucide-react";
+import apiClient from "@/lib/api";
 
 /* ------------------------------------------------------------------ */
 /*  Shared Tailwind class-strings                                     */
@@ -91,15 +93,34 @@ export default function ContactUsSection({ showHeader = true }: { showHeader?: b
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [faqDrawerOpen, setFaqDrawerOpen] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
     setSubmitting(true);
-    await new Promise((r) => setTimeout(r, 1500));
-    setSubmitting(false);
-    setSubmitted(true);
+
+    try {
+      const response = await apiClient.post("/api/v1/contact", {
+        name: name.trim(),
+        company: company.trim() || null,
+        email: email.trim(),
+        message: message.trim(),
+      });
+
+      if (response.data && response.data.success) {
+        setSubmitted(true);
+      } else {
+        setError("Failed to submit inquiry. Please try again.");
+      }
+    } catch (err: any) {
+      const errorMessage = err?.response?.data?.detail || err?.message || "Unable to send your message. Please try again.";
+      setError(errorMessage);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const contactCards = [
@@ -258,6 +279,7 @@ export default function ContactUsSection({ showHeader = true }: { showHeader?: b
                         setCompany("");
                         setEmail("");
                         setMessage("");
+                        setError(null);
                       }}
                       className="mt-6 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-5 py-2.5 text-sm font-bold text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
                     >
@@ -266,6 +288,16 @@ export default function ContactUsSection({ showHeader = true }: { showHeader?: b
                   </div>
                 ) : (
                   <form onSubmit={handleSubmit} className="space-y-5" id="contact-form">
+                    
+                    {error && (
+                      <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50/90 p-4 dark:border-red-900/60 dark:bg-red-950/20">
+                        <AlertCircle size={18} className="mt-0.5 shrink-0 text-red-600 dark:text-red-400" />
+                        <div>
+                          <p className="text-sm font-semibold text-red-700 dark:text-red-300">Error</p>
+                          <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+                        </div>
+                      </div>
+                    )}
                     
                     <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
                       <div>

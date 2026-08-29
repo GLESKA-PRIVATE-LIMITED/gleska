@@ -113,11 +113,12 @@ class JobService:
                 "p_job_site_id": str(request.job_site_id),
                 "p_title": request.title,
                 "p_headcount_required": request.headcount_required,
-                "p_max_daily_salary": str(request.max_daily_salary) if request.max_daily_salary is not None else None,
+                "p_max_daily_salary": float(request.max_daily_salary) if request.max_daily_salary is not None else None,
                 "p_min_experience": request.min_experience,
             }).execute()
         except Exception as exc:
             message = str(exc)
+            logger.error("Job creation RPC failed: error_type=%s message=%s", type(exc).__name__, message)
             if "SUBSCRIPTION_REQUIRED" in message:
                 raise JobPaymentRequired("SUBSCRIPTION_REQUIRED") from exc
             if "JOB_SITE_NOT_FOUND" in message:

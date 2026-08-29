@@ -134,7 +134,7 @@ class Settings(BaseSettings):
 
     # Gemini extraction provider
     GEMINI_API_KEY: str = Field(default="", validation_alias=AliasChoices("GEMINI_API_KEY", "gemini_api_key"))
-    GEMINI_MODEL: str = Field(default="gemini-2.0-flash", validation_alias=AliasChoices("GEMINI_MODEL", "gemini_model"))
+    GEMINI_MODEL: str = Field(default="gemini-3.6-flash", validation_alias=AliasChoices("GEMINI_MODEL", "gemini_model"))
     GEMINI_TIMEOUT_SECONDS: int = Field(default=30, validation_alias=AliasChoices("GEMINI_TIMEOUT_SECONDS", "gemini_timeout_seconds"))
 
     # Google Routes / road routing
@@ -145,10 +145,35 @@ class Settings(BaseSettings):
     NOMINATIM_TIMEOUT_SECONDS: int = Field(default=10, validation_alias=AliasChoices("NOMINATIM_TIMEOUT_SECONDS", "nominatim_timeout_seconds"))
     CASHFREE_PG_CLIENT_ID: str = Field(default="", validation_alias=AliasChoices("CASHFREE_PG_CLIENT_ID", "cashfree_pg_client_id"))
     CASHFREE_PG_CLIENT_SECRET: str = Field(default="", validation_alias=AliasChoices("CASHFREE_PG_CLIENT_SECRET", "cashfree_pg_client_secret"))
-    CASHFREE_ENV: str = Field(default="SANDBOX", validation_alias=AliasChoices("CASHFREE_ENV", "cashfree_env"))
     CASHFREE_PG_API_VERSION: str = Field(default="2023-08-01", validation_alias=AliasChoices("CASHFREE_PG_API_VERSION", "cashfree_pg_api_version"))
     CASHFREE_PAYMENT_TIMEOUT_SECONDS: int = Field(default=15, validation_alias=AliasChoices("CASHFREE_PAYMENT_TIMEOUT_SECONDS", "cashfree_payment_timeout_seconds"))
     WEBHOOK_URL: str = Field(default="", validation_alias=AliasChoices("WEBHOOK_URL", "webhook_url"))
+
+    # Contact inquiry / Email notification
+    CONTACT_RECIPIENT_EMAIL: str = Field(
+        default="admin@goleska.in",
+        validation_alias=AliasChoices("CONTACT_RECIPIENT_EMAIL", "contact_recipient_email"),
+    )
+    EMAIL_PROVIDER: str = Field(
+        default="resend",
+        validation_alias=AliasChoices("EMAIL_PROVIDER", "email_provider"),
+    )
+    RESEND_API_KEY: str = Field(
+        default="",
+        validation_alias=AliasChoices("RESEND_API_KEY", "resend_api_key"),
+    )
+    EMAIL_FROM_ADDRESS: str = Field(
+        default="onboarding@resend.dev",
+        validation_alias=AliasChoices("EMAIL_FROM_ADDRESS", "email_from_address"),
+    )
+    EMAIL_FROM_NAME: str = Field(
+        default="GO LESKA",
+        validation_alias=AliasChoices("EMAIL_FROM_NAME", "email_from_name"),
+    )
+    EMAIL_TIMEOUT_SECONDS: int = Field(
+        default=15,
+        validation_alias=AliasChoices("EMAIL_TIMEOUT_SECONDS", "email_timeout_seconds"),
+    )
 
 
 settings = Settings()
