@@ -3,6 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { User } from "lucide-react";
 import LanguageSelector from "@/components/landing/LanguageSelector";
 
 export default function Navbar() {
@@ -57,8 +58,17 @@ export default function Navbar() {
             Terms
           </Link>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3 sm:gap-4">
           <LanguageSelector />
+          <Link
+            href="/auth/signin"
+            className={`flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-600 transition hover:border-indigo-300 hover:text-indigo-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:border-indigo-500 dark:hover:text-indigo-400 ${
+              pathname === "/auth/signin" ? "border-indigo-500 text-indigo-600 dark:border-indigo-500 dark:text-indigo-400" : ""
+            }`}
+          >
+            <User size={16} />
+            <span>Sign In</span>
+          </Link>
         </div>
       </nav>
     </div>
