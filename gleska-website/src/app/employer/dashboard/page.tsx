@@ -77,6 +77,7 @@ interface EmployerProfile {
   created_at?: string;
   subscription_valid_until?: string | null;
   has_availed_free_dispatch?: boolean;
+  logo_url?: string;
 }
 
 interface JobSite {
@@ -1090,13 +1091,13 @@ export default function EmployerDashboard() {
                       <CreditCard size={17} className="text-slate-500 dark:text-slate-400 shrink-0" />
                       <span>Subscription</span>
                     </button>
-                    <button
-                      type="button"
+                    <Link
+                      href="/employer/company-profile"
                       className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800 transition"
                     >
                       <User size={17} className="text-slate-500 dark:text-slate-400 shrink-0" />
                       <span>Profile</span>
-                    </button>
+                    </Link>
                     <button
                       type="button"
                       className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800 transition"
@@ -1175,9 +1176,20 @@ export default function EmployerDashboard() {
                   {employerProfile?.employer_type?.replaceAll("_", " ") || "Employer profile"}
                 </p>
               </div>
-              <div className="flex h-24 w-24 items-center justify-center rounded-2xl bg-linear-to-br from-blue-400 to-blue-500 shadow-lg">
-                <Building2 size={40} className="text-white" />
-              </div>
+              <Link
+                href="/employer/company-profile"
+                className="group relative flex h-24 w-24 items-center justify-center overflow-hidden rounded-2xl bg-linear-to-br from-blue-500 to-indigo-600 shadow-lg transition hover:shadow-xl hover:scale-105"
+                title="View Company Profile"
+              >
+                {employerProfile?.logo_url ? (
+                  <img src={employerProfile.logo_url} alt="Company Logo" className="h-full w-full object-cover" />
+                ) : (
+                  <div className="flex h-full w-full flex-col items-center justify-center text-white">
+                    <Building2 size={40} />
+                    <span className="text-[10px] font-semibold mt-1 opacity-0 group-hover:opacity-100 transition">Profile</span>
+                  </div>
+                )}
+              </Link>
             </div>
           </div>
 
