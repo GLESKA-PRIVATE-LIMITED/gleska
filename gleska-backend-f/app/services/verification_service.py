@@ -103,6 +103,44 @@ class VerificationService:
         return response.data or []
 
     @staticmethod
+    def calculate_overall_status(
+        employer_type: str,
+        employer_id: str,
+        details: dict[str, Any] | None = None
+    ) -> str:
+        """
+        Calculate the overall verification status for an employer based on required verifications.
+        
+        Returns:
+            "VERIFIED" if all required verifications are VERIFIED
+            "FAILED" if any required verification is FAILED
+            "PENDING" if any required verification is PENDING or missing
+        """
+        required_types = VerificationService.required_for(employer_type, details)
+        if not required_types:
+            # No verifications required for this employer type
+            return "VERIFIED"
+        
+        records = VerificationService.list_for_employer(employer_id)
+        records_by_type = {r.get("verification_type"): r for r in records}
+        
+        for required_type in required_types:
+            record = records_by_type.get(required_type)
+            if not record:
+                # Required verification missing
+                return "PENDING"
+            
+            status = record.get("status")
+            if status == "FAILED":
+                return "FAILED"
+            elif status != "VERIFIED":
+                # Any status other than VERIFIED or FAILED is treated as PENDING
+                return "PENDING"
+        
+        # All required verifications are VERIFIED
+        return "VERIFIED"
+
+    @staticmethod
     def _save_state(
         employer_id: str,
         verification_type: str,

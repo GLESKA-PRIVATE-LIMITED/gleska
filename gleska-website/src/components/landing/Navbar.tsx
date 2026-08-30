@@ -3,11 +3,20 @@
 import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { User } from "lucide-react";
+import { User, LayoutDashboard } from "lucide-react";
 import LanguageSelector from "@/components/landing/LanguageSelector";
+import { useAuth } from "@/context/AuthContext";
+import { getRouteForNextStep } from "@/lib/auth-routing";
 
 export default function Navbar() {
   const pathname = usePathname();
+  const { user, nextStep } = useAuth();
+
+  const dashboardHref = user ? getRouteForNextStep(user.role, nextStep) : "/auth/signin";
+  const isDashboardActive =
+    pathname.startsWith("/employer") ||
+    pathname.startsWith("/worker") ||
+    pathname === dashboardHref;
 
   return (
     <div className="sticky top-4 z-50 px-4 sm:px-8">
@@ -60,15 +69,27 @@ export default function Navbar() {
         </div>
         <div className="flex items-center gap-2 sm:gap-4">
           <LanguageSelector />
-          <Link
-            href="/auth/signin"
-            className={`flex items-center justify-center gap-1.5 rounded-full border border-slate-200 bg-white p-2 sm:px-3.5 sm:py-2 text-sm font-semibold text-slate-600 transition hover:border-indigo-300 hover:text-indigo-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:border-indigo-500 dark:hover:text-indigo-400 ${
-              pathname === "/auth/signin" ? "border-indigo-500 text-indigo-600 dark:border-indigo-500 dark:text-indigo-400" : ""
-            }`}
-          >
-            <User size={16} />
-            <span className="hidden sm:inline whitespace-nowrap">Sign In</span>
-          </Link>
+          {user ? (
+            <Link
+              href={dashboardHref}
+              className={`flex items-center justify-center gap-1.5 rounded-full border border-slate-200 bg-white p-2 sm:px-3.5 sm:py-2 text-sm font-semibold text-slate-600 transition hover:border-indigo-300 hover:text-indigo-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:border-indigo-500 dark:hover:text-indigo-400 ${
+                isDashboardActive ? "border-indigo-500 text-indigo-600 dark:border-indigo-500 dark:text-indigo-400" : ""
+              }`}
+            >
+              <LayoutDashboard size={16} />
+              <span className="hidden sm:inline whitespace-nowrap">Dashboard</span>
+            </Link>
+          ) : (
+            <Link
+              href="/auth/signin"
+              className={`flex items-center justify-center gap-1.5 rounded-full border border-slate-200 bg-white p-2 sm:px-3.5 sm:py-2 text-sm font-semibold text-slate-600 transition hover:border-indigo-300 hover:text-indigo-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:border-indigo-500 dark:hover:text-indigo-400 ${
+                pathname === "/auth/signin" ? "border-indigo-500 text-indigo-600 dark:border-indigo-500 dark:text-indigo-400" : ""
+              }`}
+            >
+              <User size={16} />
+              <span className="hidden sm:inline whitespace-nowrap">Sign In</span>
+            </Link>
+          )}
         </div>
       </nav>
     </div>

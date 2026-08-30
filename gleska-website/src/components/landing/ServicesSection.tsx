@@ -2,10 +2,80 @@
 
 import React from "react";
 import Link from "next/link";
-import { ArrowRight, Sparkles, Zap } from "lucide-react";
+import { ArrowRight, LayoutDashboard, Sparkles, Zap } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
+import { getRouteForNextStep } from "@/lib/auth-routing";
+
+interface AgentCard {
+  id: string;
+  title: string;
+  status: string;
+  description: string;
+  badgeColor: string;
+  statusColor: string;
+  topBorder: string;
+  ctaColor: string;
+  dashboardCtaColor: string;
+}
+
+function AgentCardsGrid({ agentCards }: { agentCards: AgentCard[] }) {
+  const { user, isSubscribed, nextStep } = useAuth();
+  const dashboardHref = user ? getRouteForNextStep(user.role, nextStep) : "/employer/dashboard";
+
+  return (
+    <div className="grid grid-cols-1 gap-6 md:grid-cols-3 sm:gap-8">
+      {agentCards.map((agent) => (
+        <div
+          key={agent.title}
+          className={`flex flex-col justify-between rounded-2xl border border-slate-200/80 bg-white/95 p-6 sm:p-8 shadow-lg shadow-slate-900/5 backdrop-blur-md transition-all duration-300 hover:-translate-y-1 hover:shadow-xl dark:border-slate-800/80 dark:bg-slate-900/90 ${agent.topBorder}`}
+        >
+          <div>
+            {/* Top Bar: Number ID & Status Badge */}
+            <div className="flex items-center justify-between">
+              <span className={`flex h-10 w-12 items-center justify-center rounded-xl font-mono text-sm font-bold ${agent.badgeColor}`}>
+                {agent.id}
+              </span>
+              <span className={`rounded-full px-3 py-1 text-[11px] font-bold uppercase tracking-wider ${agent.statusColor}`}>
+                {agent.status}
+              </span>
+            </div>
+
+            {/* Title & Description */}
+            <h3 className="mt-6 text-xl font-bold tracking-tight text-slate-900 sm:text-2xl dark:text-white">
+              {agent.title}
+            </h3>
+            <p className="mt-3 text-sm font-medium leading-relaxed text-slate-600 sm:text-base dark:text-slate-300">
+              {agent.description}
+            </p>
+          </div>
+
+          {/* Footer / CTA */}
+          <div className="mt-8 flex items-center justify-between border-t border-slate-100 pt-5 text-sm font-semibold text-slate-500 dark:border-slate-800 dark:text-slate-400">
+            <span className="font-mono text-xs uppercase tracking-wider">Custom pricing</span>
+            {isSubscribed ? (
+              <Link
+                href={dashboardHref}
+                className={`inline-flex items-center gap-1.5 font-bold transition-colors ${agent.dashboardCtaColor}`}
+              >
+                Dashboard <LayoutDashboard size={16} />
+              </Link>
+            ) : (
+              <Link
+                href="/#contact"
+                className={`inline-flex items-center gap-1.5 font-bold transition-colors ${agent.ctaColor}`}
+              >
+                Subscribe <ArrowRight size={16} />
+              </Link>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export default function ServicesSection() {
-  const agentCards = [
+  const agentCards: AgentCard[] = [
     {
       id: "01",
       title: "Hiring Agent",
@@ -16,6 +86,7 @@ export default function ServicesSection() {
       statusColor: "bg-blue-50 text-blue-600 border border-blue-200/60",
       topBorder: "border-t-4 border-t-blue-600",
       ctaColor: "text-blue-600 hover:text-blue-700",
+      dashboardCtaColor: "text-blue-600 hover:text-blue-700",
     },
     {
       id: "02",
@@ -27,6 +98,7 @@ export default function ServicesSection() {
       statusColor: "bg-emerald-50 text-emerald-600 border border-emerald-200/60",
       topBorder: "border-t-4 border-t-emerald-500",
       ctaColor: "text-emerald-600 hover:text-emerald-700",
+      dashboardCtaColor: "text-emerald-600 hover:text-emerald-700",
     },
     {
       id: "03",
@@ -38,6 +110,7 @@ export default function ServicesSection() {
       statusColor: "bg-amber-50 text-amber-600 border border-amber-200/60",
       topBorder: "border-t-4 border-t-amber-500",
       ctaColor: "text-amber-600 hover:text-amber-700",
+      dashboardCtaColor: "text-amber-600 hover:text-amber-700",
     },
   ];
 
@@ -86,45 +159,7 @@ export default function ServicesSection() {
           </div>
 
           {/* Three Agent Cards Grid */}
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-3 sm:gap-8">
-            {agentCards.map((agent) => (
-              <div
-                key={agent.title}
-                className={`flex flex-col justify-between rounded-2xl border border-slate-200/80 bg-white/95 p-6 sm:p-8 shadow-lg shadow-slate-900/5 backdrop-blur-md transition-all duration-300 hover:-translate-y-1 hover:shadow-xl dark:border-slate-800/80 dark:bg-slate-900/90 ${agent.topBorder}`}
-              >
-                <div>
-                  {/* Top Bar: Number ID & Status Badge */}
-                  <div className="flex items-center justify-between">
-                    <span className={`flex h-10 w-12 items-center justify-center rounded-xl font-mono text-sm font-bold ${agent.badgeColor}`}>
-                      {agent.id}
-                    </span>
-                    <span className={`rounded-full px-3 py-1 text-[11px] font-bold uppercase tracking-wider ${agent.statusColor}`}>
-                      {agent.status}
-                    </span>
-                  </div>
-
-                  {/* Title & Description */}
-                  <h3 className="mt-6 text-xl font-bold tracking-tight text-slate-900 sm:text-2xl dark:text-white">
-                    {agent.title}
-                  </h3>
-                  <p className="mt-3 text-sm font-medium leading-relaxed text-slate-600 sm:text-base dark:text-slate-300">
-                    {agent.description}
-                  </p>
-                </div>
-
-                {/* Footer / CTA */}
-                <div className="mt-8 flex items-center justify-between border-t border-slate-100 pt-5 text-sm font-semibold text-slate-500 dark:border-slate-800 dark:text-slate-400">
-                  <span className="font-mono text-xs uppercase tracking-wider">Custom pricing</span>
-                  <Link
-                    href="/#contact"
-                    className={`inline-flex items-center gap-1.5 font-bold transition-colors ${agent.ctaColor}`}
-                  >
-                    Subscribe <ArrowRight size={16} />
-                  </Link>
-                </div>
-              </div>
-            ))}
-          </div>
+          <AgentCardsGrid agentCards={agentCards} />
 
         </div>
 

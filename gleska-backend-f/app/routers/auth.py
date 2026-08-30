@@ -292,11 +292,12 @@ async def get_current_user_info(user: UserResponse = Depends(get_current_user)):
             "profile_completed": profile.get("profile_completed", False),
         })
     elif user.role == "EMPLOYER":
-        profile_response = supabase.table("employer_profiles").select("employer_type, onboarding_status").eq("user_id", user.id).single().execute()
+        profile_response = supabase.table("employer_profiles").select("employer_type, onboarding_status, subscription_valid_until").eq("user_id", user.id).single().execute()
         profile = profile_response.data or {}
         application_user.update({
             "employer_type": profile.get("employer_type"),
             "onboarding_status": profile.get("onboarding_status", "NOT_STARTED"),
+            "subscription_valid_until": profile.get("subscription_valid_until"),
         })
     return {
         "success": True,

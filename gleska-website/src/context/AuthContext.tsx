@@ -18,6 +18,7 @@ export interface AuthUser {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  subscription_valid_until?: string | null;
 }
 
 export type NextStep =
@@ -32,6 +33,7 @@ export type NextStep =
 interface AuthContextType {
   user: AuthUser | null;
   isAuthenticated: boolean;
+  isSubscribed: boolean;
   isLoading: boolean;
   nextStep: NextStep | null;
   error: string | null;
@@ -54,6 +56,7 @@ interface AuthContextType {
 export const AuthContext = createContext<AuthContextType>({
   user: null,
   isAuthenticated: false,
+  isSubscribed: false,
   isLoading: true,
   nextStep: null,
   error: null,
@@ -349,11 +352,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return null;
   };
 
+  const isSubscribed = Boolean(
+    user?.subscription_valid_until &&
+      new Date(user.subscription_valid_until).getTime() > Date.now()
+  );
+
   return (
     <AuthContext.Provider
       value={{
         user,
         isAuthenticated: !!user,
+        isSubscribed,
         isLoading,
         nextStep,
         error,

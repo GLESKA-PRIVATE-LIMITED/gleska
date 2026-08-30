@@ -46,6 +46,7 @@ class UserResponse(BaseModel):
     onboarding_status: Optional[str] = None
     employer_type: Optional[str] = None
     profile_completed: Optional[bool] = None
+    subscription_valid_until: Optional[datetime] = None
 
     class Config:
         from_attributes = True

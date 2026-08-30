@@ -172,6 +172,7 @@ export default function EmployerDashboardPreviewPage() {
     () => ({
       user: mockUser,
       isAuthenticated: true,
+      isSubscribed: false,
       isLoading: false,
       nextStep: "DASHBOARD" as const,
       error: null,
