@@ -241,3 +241,44 @@ async def test_identity_change_invalidates_cin_and_blocks_details(fake_supabase,
             RegisteredIndustryOnboardingSchema(**onboarding_details()), USER,
         )
     assert error.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_registered_business_requires_and_keeps_cin_verification(fake_supabase, monkeypatch):
+    fake_supabase.database["employer_profiles"][0]["employer_type"] = "REGISTERED_BUSINESS"
+
+    await employers.update_legal_identity(
+        LegalIdentityOnboardingSchema(business_name="Example Business Pvt Ltd", cin_number=CIN),
+        USER,
+    )
+
+    async def verify(*args, **kwargs):
+        return VerificationService._save_state(
+            args[0], "CIN", "VERIFIED", "", "provider-id", provider="test", verified=True,
+        )
+
+    monkeypatch.setattr(VerificationService, "request_verification", verify)
+    verification = await employers.request_onboarding_verification("CIN", VerificationRequestSchema(), USER)
+    listing = await employers.get_onboarding_verifications(USER)
+
+    from app.schemas.employer import RegisteredBusinessOnboardingSchema
+    saved = await employers.update_registered_business_onboarding(
+        RegisteredBusinessOnboardingSchema(
+            business_name="Example Business Pvt Ltd",
+            business_type="Private Limited",
+            industry_category="Technology",
+            registered_address="12 IT Park",
+            city="Pune",
+            state="Maharashtra",
+            pincode="411001",
+            work_location="Pune",
+            company_email="biz@example.com",
+            company_phone="919876543210",
+        ),
+        USER,
+    )
+
+    assert verification.verification_type == listing.records[0].verification_type == "CIN"
+    assert listing.records[0].status == "VERIFIED"
+    assert saved.employer_id == "employer-id"
+    assert fake_supabase.database["employer_verifications"][0]["status"] == "VERIFIED"

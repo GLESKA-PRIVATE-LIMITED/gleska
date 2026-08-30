@@ -47,12 +47,13 @@ async def test_unregistered_aadhaar_requires_real_provider_and_uses_saved_propri
     monkeypatch.setattr(
         employers.VerificationService,
         "required_for",
-        staticmethod(lambda employer_type: ["AADHAAR"]),
+        staticmethod(lambda employer_type, details=None: ["AADHAAR"]),
     )
     captured = {}
 
-    async def request_verification(*args):
+    async def request_verification(*args, **kwargs):
         captured["args"] = args
+        captured["kwargs"] = kwargs
         return {
             "id": "verification-id",
             "employer_id": "employer-id",

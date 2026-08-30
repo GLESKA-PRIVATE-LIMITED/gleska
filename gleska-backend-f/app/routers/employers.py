@@ -236,7 +236,7 @@ async def update_legal_identity(
     data = {key: value for key, value in request.dict().items() if value is not None}
     if not data:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="At least one legal identity field is required")
-    if employer.get("employer_type") == "REGISTERED_INDUSTRY":
+    if employer.get("employer_type") in {"REGISTERED_INDUSTRY", "REGISTERED_BUSINESS"}:
         if not str(data.get("business_name") or "").strip():
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Legal / company name is required")
         if not str(data.get("cin_number") or "").strip():
@@ -426,15 +426,22 @@ async def _update_onboarding(
         account = account_response.data or {}
         primary_email = str(account.get("email") or "").strip().lower()
         primary_phone = str(account.get("mobile") or "").strip()
-        if not primary_email or not primary_phone:
+
+        # Prefer user-provided company email/phone; fall back to account profile defaults
+        provided_email = str(data.get("company_email") or "").strip().lower()
+        provided_phone = str(data.get("company_phone") or "").strip()
+
+        effective_email = provided_email or primary_email
+        effective_phone = provided_phone or primary_phone
+
+        if not effective_email or not effective_phone:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Account profile must contain email and mobile before employer onboarding can continue",
+                detail="Employer email and phone number are required before onboarding can continue",
             )
 
-        # Account identity is authoritative; client contact values are ignored.
-        data["company_email"] = primary_email
-        data["company_phone"] = primary_phone
+        data["company_email"] = effective_email
+        data["company_phone"] = effective_phone
 
         existing_details_response = (
             supabase.table("employer_onboarding_details")
@@ -445,7 +452,7 @@ async def _update_onboarding(
         previous_details = existing_details_response.data[0] if existing_details_response.data else {}
         merged_details = {**previous_details, **data}
         identity_for_comparison = merged_details
-        if employer_type == "REGISTERED_INDUSTRY":
+        if employer_type in {"REGISTERED_INDUSTRY", "REGISTERED_BUSINESS"}:
             identity_for_comparison = {
                 **previous_details,
                 **{
