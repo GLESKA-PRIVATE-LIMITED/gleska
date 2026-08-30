@@ -11,10 +11,10 @@ export default function Navbar() {
 
   return (
     <div className="sticky top-4 z-50 px-4 sm:px-8">
-      <nav className="mx-auto flex max-w-[1360px] items-center justify-between rounded-full border border-slate-200/80 bg-white/95 px-8 py-4 shadow-xl shadow-slate-900/5 backdrop-blur-md dark:border-slate-800/80 dark:bg-slate-900/95 dark:shadow-black/20">
-        <Link href="/" className="flex items-center gap-3.5">
-          <img src="/favicon.ico" alt="GO LESKA AI" className="h-9 w-9 rounded-lg object-contain" />
-          <span className="font-[var(--font-anton)] text-2xl sm:text-3xl uppercase tracking-wider bg-[linear-gradient(180deg,#E86100_0%,#FFF5EA_48%,#128807_100%)] bg-clip-text text-transparent select-none">
+      <nav className="mx-auto flex max-w-[1360px] items-center justify-between rounded-full border border-slate-200/80 bg-white/95 px-4 py-3 sm:px-8 sm:py-4 shadow-xl shadow-slate-900/5 backdrop-blur-md dark:border-slate-800/80 dark:bg-slate-900/95 dark:shadow-black/20">
+        <Link href="/" className="flex items-center gap-2 sm:gap-3.5">
+          <img src="/favicon.ico" alt="GO LESKA AI" className="h-8 w-8 sm:h-9 sm:w-9 rounded-lg object-contain" />
+          <span className="font-[var(--font-anton)] text-xl sm:text-3xl uppercase tracking-wider bg-[linear-gradient(180deg,#E86100_0%,#FFF5EA_48%,#128807_100%)] bg-clip-text text-transparent select-none whitespace-nowrap">
             GO LESKA AI
           </span>
         </Link>
@@ -58,16 +58,16 @@ export default function Navbar() {
             Terms
           </Link>
         </div>
-        <div className="flex items-center gap-3 sm:gap-4">
+        <div className="flex items-center gap-2 sm:gap-4">
           <LanguageSelector />
           <Link
             href="/auth/signin"
-            className={`flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-600 transition hover:border-indigo-300 hover:text-indigo-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:border-indigo-500 dark:hover:text-indigo-400 ${
+            className={`flex items-center justify-center gap-1.5 rounded-full border border-slate-200 bg-white p-2 sm:px-3.5 sm:py-2 text-sm font-semibold text-slate-600 transition hover:border-indigo-300 hover:text-indigo-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:border-indigo-500 dark:hover:text-indigo-400 ${
               pathname === "/auth/signin" ? "border-indigo-500 text-indigo-600 dark:border-indigo-500 dark:text-indigo-400" : ""
             }`}
           >
             <User size={16} />
-            <span>Sign In</span>
+            <span className="hidden sm:inline whitespace-nowrap">Sign In</span>
           </Link>
         </div>
       </nav>
