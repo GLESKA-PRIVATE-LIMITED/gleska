@@ -144,7 +144,7 @@ export default function ContactUsSection({ showHeader = true }: { showHeader?: b
       icon: MapPin,
       label: "Visit Us",
       value: "MALVIYA NAGAR, SOUTH DELHI",
-      href: "https://maps.google.com",
+      href: "https://www.google.com/maps/dir/?api=1&destination=28.5376510%2C77.2132260&utm_source=chatgpt.com",
       description: "NEW MARKET, BUILDING NO. 16",
       color: "from-amber-500 to-orange-600",
     },
@@ -270,7 +270,7 @@ export default function ContactUsSection({ showHeader = true }: { showHeader?: b
                     </div>
                     <h3 className="text-xl font-extrabold text-slate-900 dark:text-white">Message Sent!</h3>
                     <p className="mt-2 max-w-sm text-sm font-medium text-slate-500 dark:text-slate-400">
-                      Thank you for reaching out. Our team will respond to your inquiry within 4 hours.
+                      Thank you for reaching out. Our team will respond to your inquiry within 24 hours.
                     </p>
                     <button
                       onClick={() => {
