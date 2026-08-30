@@ -140,6 +140,14 @@ class OnboardingService:
                 if OnboardingService._missing_required_value(data.get(field)):
                     return False, f"{field} is required for unregistered business"
 
+            num_proprietors = data.get("number_of_proprietors")
+            if num_proprietors is not None:
+                try:
+                    if int(num_proprietors) < 1:
+                        return False, "number_of_proprietors must be at least 1"
+                except (ValueError, TypeError):
+                    return False, "number_of_proprietors must be a valid number"
+
         elif employer_type == "INDIVIDUAL":
             required_fields = [
                 "address",

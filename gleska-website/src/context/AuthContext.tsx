@@ -1,7 +1,6 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState } from "react";
-import type { Session } from "@supabase/supabase-js";
 import apiClient from "@/lib/api";
 import { supabase } from "@/lib/supabase";
 import { initializeMSG91Widget, retryOTP, sendOTP, verifyOTP } from "@/lib/msg91";
@@ -44,7 +43,6 @@ interface AuthContextType {
   resendOTP: () => Promise<void>;
   signInWithEmail: (email: string, password: string, role: "WORKER" | "EMPLOYER") => Promise<void>;
   signInWithGoogle: (role: "WORKER" | "EMPLOYER") => Promise<void>;
-  resolveGoogleSession: (role: "WORKER" | "EMPLOYER") => Promise<{ role: "WORKER" | "EMPLOYER"; nextStep: NextStep | null }>;
   provisionSession: (role: "WORKER" | "EMPLOYER", name?: string) => Promise<void>;
   completeEmailSignup: (email: string, password: string, name: string, mobile: string, otp: string, role: "WORKER" | "EMPLOYER", termsAccepted?: boolean) => Promise<void>;
   requestPasswordReset: (phone: string) => Promise<void>;
@@ -67,7 +65,6 @@ export const AuthContext = createContext<AuthContextType>({
   resendOTP: async () => {},
   signInWithEmail: async () => {},
   signInWithGoogle: async () => {},
-  resolveGoogleSession: async () => ({ role: "WORKER", nextStep: null }),
   provisionSession: async () => {},
   completeEmailSignup: async () => {},
   requestPasswordReset: async () => {},
@@ -115,10 +112,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     initAuth();
-    const { data: subscription } = supabase.auth.onAuthStateChange((event, session) => {
-      if (session?.user) {
-        setClientAuthCookie();
-      }
+    const { data: subscription } = supabase.auth.onAuthStateChange((event) => {
       if (event === "SIGNED_OUT") {
         setUser(null);
         setNextStep(null);
@@ -167,15 +161,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const provisionSession = async (role: "WORKER" | "EMPLOYER", name = "") => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) throw new Error("Authentication session was not created");
-    const response = await apiClient.post("/api/v1/auth/provision", {
+    await apiClient.post("/api/v1/auth/provision", {
       role,
       name,
       mobile: session.user.phone || undefined,
     });
-    setUser(response.data);
-    setClientAuthCookie();
     const state = await apiClient.get("/api/v1/auth/me");
-    setNextStep(state.data?.next_step || null);
+    if (!state.data?.user) {
+      throw new Error("Backend authentication could not be confirmed");
+    }
+    setUser(state.data.user);
+    setNextStep(state.data.next_step || null);
+    setClientAuthCookie();
   };
 
   const signInWithEmail = async (email: string, password: string, role: "WORKER" | "EMPLOYER") => {
@@ -203,61 +200,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem("goleska_oauth_role", role);
       document.cookie = `goleska_oauth_role=${role}; path=/; max-age=600; SameSite=Lax`;
     } catch {}
+    const redirectTo =
+      process.env.NODE_ENV === "development"
+        ? `${window.location.origin}/auth/callback`
+        : "https://www.goleska.in/auth/callback";
     const { error: oauthError } = await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
+      options: { redirectTo },
     });
     if (oauthError) throw oauthError;
-  };
-
-  const resolveGoogleSession = async (role: "WORKER" | "EMPLOYER") => {
-    // Get Supabase session (should already be established after code exchange in callback page)
-    let { data: { session } } = await supabase.auth.getSession();
-
-    // If no session yet, wait for auth state change (handles timing issues)
-    if (!session) {
-      session = await new Promise<Session | null>((resolve) => {
-        let settled = false;
-        const finish = (value: NonNullable<typeof session> | null) => {
-          if (settled) return;
-          settled = true;
-          subscription.subscription.unsubscribe();
-          resolve(value);
-        };
-        const { data: subscription } = supabase.auth.onAuthStateChange((event, nextSession) => {
-          if (nextSession || event === "SIGNED_OUT") finish(nextSession);
-        });
-        window.setTimeout(() => finish(null), 5000); // 5 second timeout
-      });
-    }
-
-    // If still no session after waiting, retry a few times
-    if (!session) {
-      for (let attempt = 0; attempt < 2; attempt += 1) {
-        await new Promise((resolve) => window.setTimeout(resolve, 300));
-        const sessionResult = await supabase.auth.getSession();
-        if (sessionResult.data.session) {
-          session = sessionResult.data.session;
-          break;
-        }
-      }
-    }
-
-    if (!session) {
-      throw new Error("Google authentication session was not established. Please try signing in again.");
-    }
-
-    // Provision the authenticated user in the backend
-    await provisionSession(role, session.user.user_metadata?.full_name || session.user.user_metadata?.name || "");
-
-    // Get the authenticated user's role and next step from backend
-    const response = await apiClient.get("/api/v1/auth/me", { withCredentials: true });
-    const authenticatedRole = response.data?.user?.role;
-    if (authenticatedRole !== "WORKER" && authenticatedRole !== "EMPLOYER") {
-      throw new Error("Unable to determine account role");
-    }
-
-    return { role: authenticatedRole, nextStep: response.data?.next_step || null };
   };
 
   const requestPasswordReset = async (phone: string) => {
@@ -414,7 +365,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         resendOTP,
         signInWithEmail,
         signInWithGoogle,
-        resolveGoogleSession,
         provisionSession,
         completeEmailSignup,
         requestPasswordReset,

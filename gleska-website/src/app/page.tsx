@@ -13,15 +13,6 @@ export default function LandingPage() {
   const { t } = useLanguage();
   const router = useRouter();
 
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const searchParams = new URLSearchParams(window.location.search);
-      if (searchParams.has("code")) {
-        router.replace(`/auth/callback${window.location.search}`);
-      }
-    }
-  }, [router]);
-
   return (
     <div className="relative min-h-screen overflow-x-clip bg-[#eef1fb] font-sans text-slate-900 selection:bg-indigo-500 selection:text-white dark:bg-slate-950 dark:text-slate-100">
 

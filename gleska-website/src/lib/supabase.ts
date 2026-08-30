@@ -9,13 +9,21 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     auth: {
-        // Use PKCE flow (default in v2). The redirectTo passed in signInWithOAuth
-        // must be present in the Supabase Dashboard → Authentication → URL Configuration
-        // → Redirect URLs allowlist for both local and production environments:
+        // PKCE flow: Authorization Code + Code Verifier exchange for security
+        // The callback page (/auth/callback) is the ONLY place that exchanges the code.
+        // detectSessionInUrl is DISABLED to avoid competing code exchange attempts.
+        //
+        // Required Supabase configuration:
+        // Authentication → URL Configuration → Redirect URLs:
         //   http://localhost:3000/auth/callback
         //   https://www.goleska.in/auth/callback
+        //   https://goleska.in/auth/callback
+        //
+        // Google OAuth requires redirectTo to match Supabase allowlist exactly.
         flowType: 'pkce',
-        detectSessionInUrl: true,
+        detectSessionInUrl: false,  // ✓ Disabled: callback page handles code exchange
+        persistSession: true,
+        autoRefreshToken: true,
     },
 });
 

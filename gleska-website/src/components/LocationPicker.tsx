@@ -45,7 +45,7 @@ export default function LocationPicker({ value = "", onSelect, onUseCurrentLocat
     }
   };
 
-  const useCurrent = async () => {
+  const handleUseCurrentLocation = async () => {
     if (!onUseCurrentLocation) return;
     setUsingCurrent(true);
     setMessage("");
@@ -71,7 +71,7 @@ export default function LocationPicker({ value = "", onSelect, onUseCurrentLocat
         </button>
       </div>
       {onUseCurrentLocation && (
-        <button type="button" onClick={() => void useCurrent()} disabled={usingCurrent} className="inline-flex items-center gap-2 text-sm font-semibold text-blue-700 dark:text-blue-300">
+        <button type="button" onClick={() => void handleUseCurrentLocation()} disabled={usingCurrent} className="inline-flex items-center gap-2 text-sm font-semibold text-blue-700 dark:text-blue-300">
           {usingCurrent ? <Loader2 size={16} className="animate-spin" /> : <MapPin size={16} />} Use my current location
         </button>
       )}

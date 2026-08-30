@@ -30,7 +30,9 @@ class VerificationService:
         "udyam_number",
         "registration_number",
         "proprietor_name",
+        "proprietor_aadhaar",
         "director_name",
+        "director_aadhaar",
     }
 
     @staticmethod

@@ -46,8 +46,6 @@ const REQUIRED_FIELDS: Record<EmployerType, string[]> = {
   INDIVIDUAL: ["address", "company_email", "company_phone", "city", "state", "pincode", "work_location"],
 };
 
-const LEGAL_VERIFICATION_TYPES = new Set(["CIN", "GSTIN", "PAN", "REGISTRATION_NUMBER", "UDYAM", "AADHAAR"]);
-
 function requiredFieldsFor(type: EmployerType): string[] {
   return REQUIRED_FIELDS[type];
 }
@@ -59,6 +57,12 @@ function getErrorDetail(error: unknown, fallback: string): string {
   };
   const detail = candidate.response?.data?.detail;
   if (typeof detail === "string") return detail;
+  if (Array.isArray(detail) && detail.length > 0) {
+    const msgs = detail
+      .map((item) => (typeof item === "object" && item && "msg" in item ? String(item.msg) : typeof item === "string" ? item : ""))
+      .filter(Boolean);
+    if (msgs.length > 0) return msgs.join(", ");
+  }
   if (detail && typeof detail === "object" && "code" in detail) {
     return String((detail as { code: unknown }).code);
   }
@@ -197,8 +201,8 @@ export default function EmployerOnboarding() {
               setStep("review"); // Step 4: Review
             }
           } else if (selectedType === "UNREGISTERED_BUSINESS") {
-            const unregVerificationComplete = currentVerification.required.length === 0 || currentVerification.required.every((t) =>
-              currentVerification.records.some((r) => r.verification_type === t && r.status === "VERIFIED")
+            const unregVerificationComplete = currentVerification.required.length === 0 || currentVerification.required.every((t: string) =>
+              currentVerification.records.some((r: VerificationRecord) => r.verification_type === t && r.status === "VERIFIED")
             );
             if (!savedDetailsComplete) {
               setStep("details");
@@ -282,7 +286,14 @@ export default function EmployerOnboarding() {
   };
 
   const updateField = (field: string, value: string) => {
-    setFormData((current) => ({ ...current, [field]: value }));
+    const formatted = ["cin_number", "pan_number", "gstin"].includes(field)
+      ? value.toUpperCase().replace(/\s+/g, "")
+      : field === "proprietor_aadhaar" || field === "director_aadhaar"
+        ? value.replace(/\D/g, "").slice(0, 12)
+        : field === "number_of_proprietors"
+          ? value.replace(/\D/g, "")
+          : value;
+    setFormData((current) => ({ ...current, [field]: formatted }));
     setFormError("");
   };
 
@@ -301,12 +312,24 @@ export default function EmployerOnboarding() {
     );
     if (missingField) return `${missingField.replaceAll("_", " ")} is required`;
     if (!/^\d{6}$/.test(formData.pincode || "")) return "pincode must be a valid 6-digit number";
+    if (employerType === "UNREGISTERED_BUSINESS") {
+      if (formData.proprietor_aadhaar && !/^\d{12}$/.test(formData.proprietor_aadhaar.trim())) {
+        return "Proprietor Aadhaar must be a valid 12-digit number";
+      }
+      if (formData.number_of_proprietors && (isNaN(Number(formData.number_of_proprietors)) || Number(formData.number_of_proprietors) < 1)) {
+        return "Number of proprietors must be at least 1";
+      }
+    }
     return "";
   };
 
   const validateIdentity = () => {
     if (!formData.business_name?.trim()) return "Legal / company name is required before verification";
-    if (!formData.cin_number?.trim()) return "CIN is required before verification";
+    const cin = formData.cin_number?.trim().toUpperCase();
+    if (!cin) return "CIN is required before verification";
+    if (!/^[A-Z][0-9]{5}[A-Z]{2}[0-9]{4}[A-Z]{3}[0-9]{6}$/.test(cin)) {
+      return "A valid 21-character CIN is required (e.g. U72200MH2020PTC123456)";
+    }
     return "";
   };
 
@@ -341,6 +364,16 @@ export default function EmployerOnboarding() {
         records: verificationResponse.data?.records || [],
       };
       setVerification(nextVer);
+      if (selectedType === "UNREGISTERED_BUSINESS" && nextVer.required.length > 0) {
+        const unregComplete = nextVer.required.every((t: string) =>
+          nextVer.records.some((r: VerificationRecord) => r.verification_type === t && r.status === "VERIFIED")
+        );
+        if (!unregComplete) {
+          setStep("verification");
+          toast.success("Details saved. Please complete document verification.");
+          return;
+        }
+      }
       setStep("review");
       toast.success("Details saved. Review before submitting.");
     } catch (err: unknown) {
@@ -364,12 +397,17 @@ export default function EmployerOnboarding() {
     setIsSubmitting(true);
     setFormError("");
     try {
+      const normalizedCin = formData.cin_number?.trim().toUpperCase();
+      const payload = {
+        ...buildPayload(),
+        cin_number: normalizedCin,
+      };
       // 1. Save legal identity fields
-      await apiClient.put("/api/v1/employers/onboarding/legal-identity", buildPayload(), { withCredentials: true });
+      await apiClient.put("/api/v1/employers/onboarding/legal-identity", payload, { withCredentials: true });
 
       // 2. Request CIN verification from backend / Cashfree
       const verifyRes = await apiClient.post("/api/v1/employers/onboarding/verifications/CIN", {
-        reference: formData.cin_number?.trim(),
+        reference: normalizedCin,
       }, { withCredentials: true });
 
       const record = verifyRes.data as VerificationRecord;
@@ -978,7 +1016,16 @@ export default function EmployerOnboarding() {
             </div>
 
             <div className="grid grid-cols-1 gap-3 rounded-xl bg-slate-50 p-5 md:grid-cols-2 dark:bg-slate-800/50">
-              {ONBOARDING_FIELDS.filter((field) => formData[field] && !(employerType === "INDIVIDUAL" && ["gstin", "registration_number", "cin_number", "pan_number"].includes(field))).map((field) => (
+              {ONBOARDING_FIELDS.filter((field) => {
+                if (!formData[field]) return false;
+                if (employerType === "INDIVIDUAL") {
+                  return ["address", "company_email", "company_phone", "city", "state", "pincode", "work_location", "latitude", "longitude"].includes(field);
+                }
+                if (employerType === "UNREGISTERED_BUSINESS") {
+                  return !["cin_number", "registered_address", "industry_type", "director_name", "director_phone", "director_email", "director_address", "director_aadhaar", "registration_number", "gstin", "pan_number"].includes(field);
+                }
+                return true;
+              }).map((field) => (
                 <div key={field} className="flex items-start justify-between gap-4 border-b border-slate-200 py-2 last:border-0 dark:border-slate-700">
                   <span className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">{field.replaceAll("_", " ")}</span>
                   <span className="text-right text-sm font-semibold text-slate-800 dark:text-slate-200">{field === "proprietor_aadhaar" || field === "director_aadhaar" ? maskAadhaar(formData[field]) : formData[field]}</span>
