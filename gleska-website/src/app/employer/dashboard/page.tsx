@@ -23,10 +23,12 @@ import {
   Settings,
   HelpCircle,
   ChevronUp,
+  History,
 } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
 import apiClient from "@/lib/api";
+import { supabase } from "@/lib/supabase";
 import LocationPicker, { LocationSelection } from "@/components/LocationPicker";
 
 /**
@@ -104,6 +106,53 @@ interface JobExtractionResponse {
   };
 }
 
+interface RecentItem {
+  id: string;
+  job_site_id: string;
+  site_name: string;
+  description: string;
+  created_at: string;
+  parsed_data?: {
+    title?: string;
+    headcount_required?: number;
+    max_daily_salary?: number | null;
+    min_experience?: number | null;
+  };
+}
+
+function formatRecentDateGroup(isoDateStr: string): string {
+  const date = new Date(isoDateStr);
+  const now = new Date();
+
+  const isToday =
+    date.getDate() === now.getDate() &&
+    date.getMonth() === now.getMonth() &&
+    date.getFullYear() === now.getFullYear();
+
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  const isYesterday =
+    date.getDate() === yesterday.getDate() &&
+    date.getMonth() === yesterday.getMonth() &&
+    date.getFullYear() === yesterday.getFullYear();
+
+  if (isToday) return "Today";
+  if (isYesterday) return "Yesterday";
+
+  const day = date.getDate();
+  const month = date.toLocaleString("en-US", { month: "long" });
+  const year = date.getFullYear();
+  return `${day} ${month} ${year}`;
+}
+
+function getRecentPreviewText(description: string, defaultTitle?: string): string {
+  const words = description.trim().split(/\s+/).filter(Boolean);
+  if (words.length > 0) {
+    return words.slice(0, 3).join(" ");
+  }
+  return defaultTitle || "Job Request";
+}
+
 function isActiveSubscription(subscriptionValidUntil?: string | null) {
   return Boolean(subscriptionValidUntil && new Date(subscriptionValidUntil).getTime() > Date.now());
 }
@@ -143,6 +192,83 @@ export default function EmployerDashboard() {
   const [isProfileMenuOpen, setIsProfileMenuOpen] = React.useState(false);
   const [isWorkSiteModalOpen, setIsWorkSiteModalOpen] = React.useState(false);
   const profileMenuRef = React.useRef<HTMLDivElement>(null);
+
+  const [recents, setRecents] = React.useState<RecentItem[]>([
+    {
+      id: "recent-1",
+      job_site_id: "site-1",
+      site_name: "Site Alpha",
+      description: "2 construction workers needed for site masonry",
+      created_at: new Date().toISOString(),
+      parsed_data: {
+        title: "Senior Mason Helper",
+        headcount_required: 2,
+        max_daily_salary: 850,
+        min_experience: 1,
+      },
+    },
+    {
+      id: "recent-2",
+      job_site_id: "site-2",
+      site_name: "Site Beta",
+      description: "Electrical wiring technician for panel installation",
+      created_at: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+      parsed_data: {
+        title: "Electrical Wiring Technician",
+        headcount_required: 1,
+        max_daily_salary: 950,
+        min_experience: 2,
+      },
+    },
+    {
+      id: "recent-3",
+      job_site_id: "site-1",
+      site_name: "Site Alpha",
+      description: "Mason required for tile fixing",
+      created_at: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+      parsed_data: {
+        title: "Mason Tile Layer",
+        headcount_required: 1,
+        max_daily_salary: 900,
+        min_experience: 3,
+      },
+    },
+  ]);
+
+  const groupedRecents = React.useMemo(() => {
+    const groups: { [dateLabel: string]: RecentItem[] } = {};
+    recents.forEach((item) => {
+      const label = formatRecentDateGroup(item.created_at);
+      if (!groups[label]) {
+        groups[label] = [];
+      }
+      groups[label].push(item);
+    });
+    return groups;
+  }, [recents]);
+
+  const handleSelectRecentItem = (item: RecentItem) => {
+    setAiPrompt(item.description);
+    if (item.job_site_id) {
+      setJobForm((prev) => ({
+        ...prev,
+        job_site_id: item.job_site_id,
+        ...(item.parsed_data?.title ? { title: item.parsed_data.title } : {}),
+        ...(item.parsed_data?.headcount_required
+          ? { headcount_required: String(item.parsed_data.headcount_required) }
+          : {}),
+        ...(item.parsed_data?.max_daily_salary != null
+          ? { max_daily_salary: String(item.parsed_data.max_daily_salary) }
+          : {}),
+        ...(item.parsed_data?.min_experience != null
+          ? { min_experience: String(item.parsed_data.min_experience) }
+          : {}),
+      }));
+    }
+    setIsMobileMenuOpen(false);
+    scrollToJobForm();
+    toast.info(`Loaded recent: "${getRecentPreviewText(item.description, item.parsed_data?.title)}"`);
+  };
 
   React.useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -230,6 +356,23 @@ export default function EmployerDashboard() {
     };
 
     loadJobs();
+
+    const loadRecentJobRequests = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("employer_job_requests")
+          .select("*")
+          .order("created_at", { ascending: false });
+
+        if (!error && data && data.length > 0) {
+          setRecents(data as RecentItem[]);
+        }
+      } catch (err) {
+        console.error("Error loading recent job requests:", err);
+      }
+    };
+
+    loadRecentJobRequests();
   }, [isLoading, user]);
 
   useEffect(() => {
@@ -434,6 +577,35 @@ export default function EmployerDashboard() {
         min_experience: jobForm.min_experience ? Number(jobForm.min_experience) : null,
       }, { withCredentials: true });
       setJobs((current) => [response.data, ...current]);
+      
+      // Save recent job request to Supabase
+      if (user?.id) {
+        const selectedSite = jobSites.find((s) => s.id === response.data.job_site_id);
+        const siteName = selectedSite?.name || "Work Site";
+        const descriptionText = aiPrompt.trim() || `${response.data.title} - ${response.data.headcount_required} workers needed`;
+
+        const { data: recentData, error: recentError } = await supabase
+          .from("employer_job_requests")
+          .insert({
+            user_id: user.id,
+            job_site_id: response.data.job_site_id || null,
+            site_name: siteName,
+            description: descriptionText,
+            parsed_data: {
+              title: response.data.title,
+              headcount_required: response.data.headcount_required,
+              max_daily_salary: response.data.max_daily_salary,
+              min_experience: response.data.min_experience,
+            },
+          })
+          .select()
+          .single();
+
+        if (!recentError && recentData) {
+          setRecents((current) => [recentData as RecentItem, ...current.filter((r) => r.id !== recentData.id)]);
+        }
+      }
+
       setJobForm({ job_site_id: jobForm.job_site_id, title: "", headcount_required: "1", max_daily_salary: "", min_experience: "" });
       toast.success("Job created");
     } catch (err: any) {
@@ -466,6 +638,38 @@ export default function EmployerDashboard() {
         max_daily_salary: extracted.max_daily_salary == null ? "" : String(extracted.max_daily_salary),
         min_experience: String(extracted.min_experience),
       }));
+
+      const selectedSite = jobSites.find((s) => s.id === jobForm.job_site_id);
+      const siteName = selectedSite?.name || "Work Site";
+
+      if (user?.id) {
+        const { data: recentData, error: recentError } = await supabase
+          .from("employer_job_requests")
+          .insert({
+            user_id: user.id,
+            job_site_id: jobForm.job_site_id || null,
+            site_name: siteName,
+            description: aiPrompt.trim(),
+            parsed_data: extracted,
+          })
+          .select()
+          .single();
+
+        if (!recentError && recentData) {
+          setRecents((current) => [recentData as RecentItem, ...current.filter((r) => r.id !== recentData.id)]);
+        } else {
+          const fallbackRecent: RecentItem = {
+            id: `recent-${Date.now()}`,
+            job_site_id: jobForm.job_site_id,
+            site_name: siteName,
+            description: aiPrompt.trim(),
+            created_at: new Date().toISOString(),
+            parsed_data: extracted,
+          };
+          setRecents((current) => [fallbackRecent, ...current.filter((r) => r.description !== fallbackRecent.description)]);
+        }
+      }
+
       toast.success("Job requirements extracted");
     } catch (err: any) {
       const message = err.response?.data?.detail;
@@ -574,6 +778,50 @@ export default function EmployerDashboard() {
               <MapPin size={20} className="shrink-0" />
               {isSidebarOpen && <span>Add Work Site</span>}
             </button>
+
+            {/* Sidebar Recents Section */}
+            <div className="pt-3 border-t border-slate-200/80 dark:border-slate-800/80 w-full">
+              {isSidebarOpen ? (
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between px-3 py-1 text-[11px] font-bold tracking-wider text-slate-400 dark:text-slate-500 uppercase">
+                    <span>Recents</span>
+                    <History size={14} className="text-slate-400 dark:text-slate-500" />
+                  </div>
+                  <div className="space-y-3 max-h-52 overflow-y-auto pr-1">
+                    {Object.keys(groupedRecents).length === 0 ? (
+                      <p className="px-3 text-xs text-slate-400 dark:text-slate-500 italic">No recent searches yet</p>
+                    ) : (
+                      Object.entries(groupedRecents).map(([dateLabel, items]) => (
+                        <div key={dateLabel} className="space-y-1">
+                          <div className="px-3 text-[10px] font-bold tracking-wider uppercase text-slate-400 dark:text-slate-500">
+                            {dateLabel}
+                          </div>
+                          {items.map((item) => (
+                            <button
+                              key={item.id}
+                              type="button"
+                              onClick={() => handleSelectRecentItem(item)}
+                              className="group flex flex-col w-full text-left rounded-xl px-3 py-1.5 transition hover:bg-slate-100 dark:hover:bg-slate-800/80"
+                            >
+                              <span className="truncate text-[11px] font-medium text-slate-400 dark:text-slate-500 group-hover:text-slate-600 dark:group-hover:text-slate-300 transition">
+                                {item.site_name || "Work Site"}
+                              </span>
+                              <span className="truncate text-xs font-semibold text-slate-700 dark:text-slate-200 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition">
+                                {getRecentPreviewText(item.description, item.parsed_data?.title)}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="flex justify-center py-2" title="Recents">
+                  <History size={20} className="text-slate-400 dark:text-slate-500" />
+                </div>
+              )}
+            </div>
           </nav>
         </div>
 
@@ -777,6 +1025,41 @@ export default function EmployerDashboard() {
                   <MapPin size={20} />
                   <span>Add Work Site</span>
                 </button>
+
+                <div className="pt-3 border-t border-slate-200/80 dark:border-slate-800/80 w-full space-y-1">
+                  <div className="flex items-center justify-between px-3 py-1 text-[11px] font-bold tracking-wider text-slate-400 dark:text-slate-500 uppercase">
+                    <span>Recents</span>
+                    <History size={14} className="text-slate-400 dark:text-slate-500" />
+                  </div>
+                  <div className="space-y-3 max-h-48 overflow-y-auto pr-1">
+                    {Object.keys(groupedRecents).length === 0 ? (
+                      <p className="px-3 text-xs text-slate-400 dark:text-slate-500 italic">No recent searches yet</p>
+                    ) : (
+                      Object.entries(groupedRecents).map(([dateLabel, items]) => (
+                        <div key={dateLabel} className="space-y-1">
+                          <div className="px-3 text-[10px] font-bold tracking-wider uppercase text-slate-400 dark:text-slate-500">
+                            {dateLabel}
+                          </div>
+                          {items.map((item) => (
+                            <button
+                              key={item.id}
+                              type="button"
+                              onClick={() => handleSelectRecentItem(item)}
+                              className="group flex flex-col w-full text-left rounded-xl px-3 py-1.5 transition hover:bg-slate-100 dark:hover:bg-slate-800/80"
+                            >
+                              <span className="truncate text-[11px] font-medium text-slate-400 dark:text-slate-500 group-hover:text-slate-600 dark:group-hover:text-slate-300 transition">
+                                {item.site_name || "Work Site"}
+                              </span>
+                              <span className="truncate text-xs font-semibold text-slate-700 dark:text-slate-200 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition">
+                                {getRecentPreviewText(item.description, item.parsed_data?.title)}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
               </nav>
             </div>
 
