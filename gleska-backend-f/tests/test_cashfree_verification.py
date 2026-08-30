@@ -101,7 +101,7 @@ def test_provider_business_name_mismatch_fails_comparison():
     reason = VerificationService._comparison_error(
         "CIN",
         "U12345678901234567890",
-        {"valid": True, "company_name": "Different Company"},
+        {"valid": True, "CIN": "U12345678901234567890", "company_name": "Different Company"},
         {"business_name": "Expected Company"},
     )
 

@@ -1,13 +1,24 @@
 "use client";
 
-import React from "react";
+import React, { useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Briefcase, UserCheck, ArrowRight } from "lucide-react";
 import LanguageSelector from "@/components/landing/LanguageSelector";
 import { useLanguage } from "@/context/LanguageContext";
+import { useAuth } from "@/context/AuthContext";
+import { getRouteForNextStep } from "@/lib/auth-routing";
 
 export default function SignInSelectionPage() {
   const { t } = useLanguage();
+  const { user, isLoading: authLoading, nextStep } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!authLoading && user) {
+      router.replace(getRouteForNextStep(user.role, nextStep));
+    }
+  }, [authLoading, user, nextStep, router]);
 
   return (
     <div className="relative min-h-screen bg-[#040d1e] font-sans text-slate-50">

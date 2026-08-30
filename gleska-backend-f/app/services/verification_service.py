@@ -63,12 +63,13 @@ class VerificationService:
     def required_for(employer_type: str, details: dict[str, Any] | None = None) -> list[str]:
         configured = settings.EMPLOYER_REQUIRED_VERIFICATIONS.strip()
         required: list[str] = []
-        if employer_type.upper() == "REGISTERED_INDUSTRY":
+        normalized_type = employer_type.upper()
+        if normalized_type in {"REGISTERED_INDUSTRY", "REGISTERED_BUSINESS"}:
             required.append("CIN")
             if details and str(details.get("gstin") or "").strip():
                 for mapping in configured.split(";"):
                     mapped_type, separator, mapped_verifications = mapping.partition(":")
-                    if separator and mapped_type.strip().upper() == employer_type.upper():
+                    if separator and mapped_type.strip().upper() == normalized_type:
                         configured_types = {
                             value.strip().upper()
                             for value in mapped_verifications.replace(",", "|").split("|")
@@ -81,7 +82,7 @@ class VerificationService:
             if not mapping.strip():
                 continue
             mapped_type, separator, mapped_verifications = mapping.partition(":")
-            if separator and mapped_type.strip().upper() == employer_type.upper():
+            if separator and mapped_type.strip().upper() == normalized_type:
                 required.extend(
                     value.strip().upper()
                     for value in mapped_verifications.replace(",", "|").split("|")

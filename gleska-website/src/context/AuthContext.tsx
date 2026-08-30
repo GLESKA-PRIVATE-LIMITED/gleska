@@ -76,6 +76,18 @@ export const AuthContext = createContext<AuthContextType>({
   signupPreflight: async () => {},
 });
 
+const setClientAuthCookie = () => {
+  if (typeof document !== "undefined") {
+    document.cookie = "goleska_client_auth=1; path=/; max-age=604800; SameSite=Lax";
+  }
+};
+
+const clearClientAuthCookie = () => {
+  if (typeof document !== "undefined") {
+    document.cookie = "goleska_client_auth=; path=/; max-age=0; SameSite=Lax";
+  }
+};
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -89,11 +101,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (response.data?.user) {
           setUser(response.data.user);
           setNextStep(response.data.next_step);
+          setClientAuthCookie();
         }
       } catch (err: any) {
         if (err.response?.status === 401) {
           setUser(null);
           setNextStep(null);
+          clearClientAuthCookie();
         }
       } finally {
         setIsLoading(false);
@@ -101,10 +115,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     initAuth();
-    const { data: subscription } = supabase.auth.onAuthStateChange((event) => {
+    const { data: subscription } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session?.user) {
+        setClientAuthCookie();
+      }
       if (event === "SIGNED_OUT") {
         setUser(null);
         setNextStep(null);
+        clearClientAuthCookie();
       }
     });
     return () => subscription.subscription.unsubscribe();
@@ -155,6 +173,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       mobile: session.user.phone || undefined,
     });
     setUser(response.data);
+    setClientAuthCookie();
     const state = await apiClient.get("/api/v1/auth/me");
     setNextStep(state.data?.next_step || null);
   };
@@ -180,6 +199,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signInWithGoogle = async (role: "WORKER" | "EMPLOYER") => {
     sessionStorage.setItem("goleska_oauth_role", role);
+    try {
+      localStorage.setItem("goleska_oauth_role", role);
+      document.cookie = `goleska_oauth_role=${role}; path=/; max-age=600; SameSite=Lax`;
+    } catch {}
     const { error: oauthError } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: { redirectTo: `${window.location.origin}/auth/callback` },
@@ -188,7 +211,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const resolveGoogleSession = async (role: "WORKER" | "EMPLOYER") => {
+    // Get Supabase session (should already be established after code exchange in callback page)
     let { data: { session } } = await supabase.auth.getSession();
+
+    // If no session yet, wait for auth state change (handles timing issues)
     if (!session) {
       session = await new Promise<Session | null>((resolve) => {
         let settled = false;
@@ -201,12 +227,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const { data: subscription } = supabase.auth.onAuthStateChange((event, nextSession) => {
           if (nextSession || event === "SIGNED_OUT") finish(nextSession);
         });
-        window.setTimeout(() => finish(null), 10000);
+        window.setTimeout(() => finish(null), 5000); // 5 second timeout
       });
     }
+
+    // If still no session after waiting, retry a few times
     if (!session) {
-      for (let attempt = 0; attempt < 3; attempt += 1) {
-        await new Promise((resolve) => window.setTimeout(resolve, 500));
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, 300));
         const sessionResult = await supabase.auth.getSession();
         if (sessionResult.data.session) {
           session = sessionResult.data.session;
@@ -214,11 +242,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
     }
-    if (!session) throw new Error("Google authentication session was not created");
+
+    if (!session) {
+      throw new Error("Google authentication session was not established. Please try signing in again.");
+    }
+
+    // Provision the authenticated user in the backend
     await provisionSession(role, session.user.user_metadata?.full_name || session.user.user_metadata?.name || "");
+
+    // Get the authenticated user's role and next step from backend
     const response = await apiClient.get("/api/v1/auth/me", { withCredentials: true });
     const authenticatedRole = response.data?.user?.role;
-    if (authenticatedRole !== "WORKER" && authenticatedRole !== "EMPLOYER") throw new Error("Unable to determine account role");
+    if (authenticatedRole !== "WORKER" && authenticatedRole !== "EMPLOYER") {
+      throw new Error("Unable to determine account role");
+    }
+
     return { role: authenticatedRole, nextStep: response.data?.next_step || null };
   };
 
@@ -316,6 +354,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }, { skipSupabaseAuth: true });
       setUser(response.data.user);
       setNextStep(response.data.next_step);
+      setClientAuthCookie();
     } catch (err: any) {
       const message = err.response?.data?.detail || err.message || "Mobile login failed";
       setError(message);
@@ -332,6 +371,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await supabase.auth.signOut();
       setUser(null);
       setNextStep(null);
+      clearClientAuthCookie();
     } catch (err) {
       console.error("Logout error:", err);
     } finally {
@@ -345,6 +385,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (response.data?.user) {
         setUser(response.data.user);
         setNextStep(response.data.next_step);
+        setClientAuthCookie();
         setError(null);
         return response.data.next_step || null;
       }
@@ -352,6 +393,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.error("Failed to refresh user:", err);
       setUser(null);
       setNextStep(null);
+      clearClientAuthCookie();
     }
     return null;
   };

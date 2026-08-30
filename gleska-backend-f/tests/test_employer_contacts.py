@@ -59,26 +59,41 @@ class FakeSupabase:
 
 
 @pytest.mark.asyncio
-async def test_employer_onboarding_uses_authenticated_account_contacts(monkeypatch):
+async def test_employer_onboarding_allows_custom_contacts_and_falls_back(monkeypatch):
     fake = FakeSupabase()
     monkeypatch.setattr(employers, "supabase", fake)
 
+    # 1. Custom contacts provided in form are saved
     request = IndividualOnboardingSchema(
         address="12 Main Road",
         city="Pune",
         state="Maharashtra",
         pincode="411001",
         work_location="Pune",
-        company_email="attacker@example.com",
+        company_email="custom@example.com",
         company_phone="9000000000",
     )
 
     result = await employers._update_onboarding(USER, "INDIVIDUAL", request.model_dump())
 
-    assert result.company_email == "account@example.com"
-    assert result.company_phone == "919876543210"
-    assert fake.queries["employer_onboarding_details"].payload["company_email"] == "account@example.com"
-    assert fake.queries["employer_onboarding_details"].payload["company_phone"] == "919876543210"
+    assert result.company_email == "custom@example.com"
+    assert result.company_phone == "9000000000"
+    assert fake.queries["employer_onboarding_details"].payload["company_email"] == "custom@example.com"
+    assert fake.queries["employer_onboarding_details"].payload["company_phone"] == "9000000000"
+
+    # 2. Fallback to signup account defaults when not provided
+    request_fallback = IndividualOnboardingSchema(
+        address="12 Main Road",
+        city="Pune",
+        state="Maharashtra",
+        pincode="411001",
+        work_location="Pune",
+    )
+
+    result_fallback = await employers._update_onboarding(USER, "INDIVIDUAL", request_fallback.model_dump())
+
+    assert result_fallback.company_email == "account@example.com"
+    assert result_fallback.company_phone == "919876543210"
 
 
 @pytest.mark.asyncio
