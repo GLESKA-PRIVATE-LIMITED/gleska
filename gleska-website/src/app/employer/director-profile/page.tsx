@@ -20,7 +20,7 @@ import {
   MapPin,
   Hash,
   CreditCard,
-  Landmark,
+  Heart,
   Info,
   Calendar,
   Briefcase,
@@ -44,44 +44,37 @@ interface EmployerProfile {
   logo_url?: string;
 }
 
-interface EmployerDetails {
-  business_name?: string;
-  company_email?: string;
-  company_phone?: string;
-  address?: string;
-  registered_address?: string;
-  work_location?: string;
-  city?: string;
-  state?: string;
-  pincode?: string;
-  gstin?: string;
-  cin_number?: string;
-  pan_number?: string;
-  tan_number?: string;
-  registration_number?: string;
+interface DirectorFormData {
+  director_name: string;
+  director_email: string;
+  director_phone: string;
+  director_address: string;
+  director_aadhaar: string;
+  director_pan: string;
+  director_din: string;
+  director_blood_group: string;
   logo_url?: string;
 }
 
-export default function CompanyProfilePage() {
+export default function DirectorProfilePage() {
   const router = useRouter();
   const { user, isLoading, logout } = useAuth();
   const [employerProfile, setEmployerProfile] = React.useState<EmployerProfile | null>(null);
-  const [activeTab, setActiveTab] = React.useState("company-profile");
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(true);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
   const [isSaving, setIsSaving] = React.useState(false);
   const [isDataLoading, setIsDataLoading] = React.useState(true);
 
-  // Real Company Information Form State
-  const [formData, setFormData] = React.useState<EmployerDetails>({
-    business_name: "",
-    company_phone: "",
-    company_email: "",
-    address: "",
-    gstin: "",
-    cin_number: "",
-    pan_number: "",
-    tan_number: "",
+  // Director Information Form State
+  const [formData, setFormData] = React.useState<DirectorFormData>({
+    director_name: "",
+    director_email: "",
+    director_phone: "",
+    director_address: "",
+    director_aadhaar: "",
+    director_pan: "",
+    director_din: "",
+    director_blood_group: "",
     logo_url: "",
   });
 
@@ -96,43 +89,40 @@ export default function CompanyProfilePage() {
       return;
     }
 
-    const fetchCompanyData = async () => {
+    const fetchDirectorData = async () => {
       setIsDataLoading(true);
       try {
-        // Fetch profile & onboarding details from API / Supabase
         const response = await apiClient.get("/api/v1/employers/onboarding", {
           withCredentials: true,
         });
 
         const emp: EmployerProfile = response.data?.employer;
-        const det: EmployerDetails = response.data?.details || {};
+        const det: Record<string, any> = response.data?.details || {};
 
         if (emp) {
           setEmployerProfile(emp);
         }
 
-        // Derive real address string from stored details
-        const fullAddress =
-          det.address ||
-          det.registered_address ||
-          det.work_location ||
-          [det.city, det.state, det.pincode].filter(Boolean).join(", ") ||
-          "";
-
         setFormData({
-          business_name: det.business_name || emp?.contact_person_name || user?.name || "",
-          company_phone: det.company_phone || user?.mobile || "",
-          company_email: det.company_email || user?.email || "",
-          address: fullAddress,
-          gstin: det.gstin || "",
-          cin_number: det.cin_number || det.registration_number || "",
-          pan_number: det.pan_number || "",
-          tan_number: det.tan_number || "",
+          director_name:
+            det.director_name || det.proprietor_name || emp?.contact_person_name || user?.name || "",
+          director_email: det.director_email || det.company_email || user?.email || "",
+          director_phone: det.director_phone || det.company_phone || user?.mobile || "",
+          director_address:
+            det.director_address ||
+            det.address ||
+            det.registered_address ||
+            [det.city, det.state].filter(Boolean).join(", ") ||
+            "",
+          director_aadhaar: det.director_aadhaar || det.proprietor_aadhaar || "",
+          director_pan: det.director_pan || det.pan_number || "",
+          director_din: det.director_din || det.cin_number || "",
+          director_blood_group: det.director_blood_group || "",
           logo_url: det.logo_url || emp?.logo_url || "",
         });
       } catch (err: any) {
-        console.error("Failed to load real employer data:", err);
-        // Direct Supabase fallback
+        console.error("Failed to load director details from API:", err);
+        // Supabase Direct Fallback
         if (user?.id) {
           const { data: prof } = await supabase
             .from("employer_profiles")
@@ -150,14 +140,14 @@ export default function CompanyProfilePage() {
 
             if (det) {
               setFormData({
-                business_name: det.business_name || prof.contact_person_name || user.name || "",
-                company_phone: det.company_phone || user.mobile || "",
-                company_email: det.company_email || user.email || "",
-                address: det.address || det.registered_address || "",
-                gstin: det.gstin || "",
-                cin_number: det.cin_number || det.registration_number || "",
-                pan_number: det.pan_number || "",
-                tan_number: det.tan_number || "",
+                director_name: det.director_name || prof.contact_person_name || user.name || "",
+                director_email: det.director_email || user.email || "",
+                director_phone: det.director_phone || user.mobile || "",
+                director_address: det.director_address || det.address || "",
+                director_aadhaar: det.director_aadhaar || "",
+                director_pan: det.director_pan || det.pan_number || "",
+                director_din: det.director_din || "",
+                director_blood_group: det.director_blood_group || "",
                 logo_url: det.logo_url || "",
               });
             }
@@ -169,7 +159,7 @@ export default function CompanyProfilePage() {
     };
 
     if (user) {
-      fetchCompanyData();
+      fetchDirectorData();
     }
   }, [user, isLoading, router]);
 
@@ -190,14 +180,14 @@ export default function CompanyProfilePage() {
     try {
       const updatePayload = {
         employer_id: employerProfile.id,
-        business_name: formData.business_name,
-        company_phone: formData.company_phone,
-        company_email: formData.company_email,
-        address: formData.address,
-        gstin: formData.gstin || null,
-        cin_number: formData.cin_number || null,
-        pan_number: formData.pan_number || null,
-        tan_number: formData.tan_number || null,
+        director_name: formData.director_name,
+        director_email: formData.director_email,
+        director_phone: formData.director_phone,
+        director_address: formData.director_address,
+        director_aadhaar: formData.director_aadhaar || null,
+        director_pan: formData.director_pan || null,
+        director_din: formData.director_din || null,
+        director_blood_group: formData.director_blood_group || null,
         updated_at: new Date().toISOString(),
       };
 
@@ -206,44 +196,42 @@ export default function CompanyProfilePage() {
         .upsert(updatePayload, { onConflict: "employer_id" });
 
       if (error) {
-        console.error("Supabase profile save error:", error);
-        toast.error("Failed to save company details");
+        console.error("Supabase director save error:", error);
+        toast.error("Failed to save director information");
       } else {
-        toast.success("Company profile saved to database successfully!");
+        toast.success("Director Profile saved successfully!");
       }
     } catch (err) {
-      toast.error("An error occurred while saving profile");
+      toast.error("An error occurred while saving director details");
     } finally {
       setIsSaving(false);
     }
   };
 
-  // Helper: Format Account Type label
   const formatAccountType = (type?: string) => {
-    if (!type) return "Employer Account";
+    if (!type) return "Business";
     switch (type) {
       case "REGISTERED_INDUSTRY":
-        return "Registered Industry";
+        return "Business";
       case "REGISTERED_BUSINESS":
-        return "Registered Business";
+        return "Business";
       case "UNREGISTERED_BUSINESS":
-        return "Unregistered Business";
+        return "Business";
       case "INDIVIDUAL":
-        return "Individual Employer";
+        return "Individual";
       default:
-        return type.replaceAll("_", " ");
+        return "Business";
     }
   };
 
-  // Helper: Calculate completion score from actual non-empty fields
   const calculateProfileCompletion = () => {
     let filled = 0;
     const fields = [
-      formData.business_name,
-      formData.company_email,
-      formData.company_phone,
-      formData.address,
-      formData.gstin || formData.cin_number || formData.pan_number,
+      formData.director_name,
+      formData.director_email,
+      formData.director_phone,
+      formData.director_address,
+      formData.director_aadhaar || formData.director_pan,
       employerProfile?.verification_status === "VERIFIED" || employerProfile?.onboarding_status === "COMPLETED",
     ];
 
@@ -260,7 +248,7 @@ export default function CompanyProfilePage() {
         <div className="flex flex-col items-center gap-3">
           <Loader2 size={36} className="animate-spin text-blue-600" />
           <p className="text-sm font-semibold text-slate-600 dark:text-slate-400">
-            Loading real company profile...
+            Loading Director Profile...
           </p>
         </div>
       </div>
@@ -269,12 +257,12 @@ export default function CompanyProfilePage() {
 
   const rawCreatedAt = employerProfile?.created_at || user?.created_at;
   const memberSinceFormatted = rawCreatedAt
-    ? new Date(rawCreatedAt).toLocaleDateString("en-GB", {
+    ? new Date(rawCreatedAt).toLocaleDateString("en-US", {
+        month: "short",
         day: "numeric",
-        month: "long",
         year: "numeric",
       })
-    : "Recently Joined";
+    : "Jan 24, 2024";
 
   const completionPercentage = calculateProfileCompletion();
 
@@ -325,7 +313,7 @@ export default function CompanyProfilePage() {
 
             <Link
               href="/employer/director-profile"
-              className={`flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-sm font-semibold transition text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 ${
+              className={`flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-sm font-semibold transition bg-blue-600 text-white shadow-xs ${
                 isSidebarOpen ? "" : "justify-center"
               }`}
               title="Director profile"
@@ -334,28 +322,22 @@ export default function CompanyProfilePage() {
               {isSidebarOpen && <span>Director profile</span>}
             </Link>
 
-            <button
-              type="button"
-              onClick={() => setActiveTab("company-profile")}
-              className={`flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-sm font-semibold transition ${
-                activeTab === "company-profile"
-                  ? "bg-blue-600 text-white shadow-xs"
-                  : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800"
-              } ${isSidebarOpen ? "text-left" : "justify-center"}`}
+            <Link
+              href="/employer/company-profile"
+              className={`flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-sm font-semibold transition text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 ${
+                isSidebarOpen ? "" : "justify-center"
+              }`}
               title="Company profile"
             >
               <Building2 size={19} className="shrink-0" />
               {isSidebarOpen && <span>Company profile</span>}
-            </button>
+            </Link>
 
             <button
               type="button"
-              onClick={() => setActiveTab("employee-profile")}
-              className={`flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-sm font-semibold transition ${
-                activeTab === "employee-profile"
-                  ? "bg-blue-600 text-white shadow-xs"
-                  : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800"
-              } ${isSidebarOpen ? "text-left" : "justify-center"}`}
+              className={`flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 transition ${
+                isSidebarOpen ? "text-left" : "justify-center"
+              }`}
               title="Employee profile"
             >
               <Users size={19} className="shrink-0" />
@@ -364,12 +346,9 @@ export default function CompanyProfilePage() {
 
             <button
               type="button"
-              onClick={() => setActiveTab("documents")}
-              className={`flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-sm font-semibold transition ${
-                activeTab === "documents"
-                  ? "bg-blue-600 text-white shadow-xs"
-                  : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800"
-              } ${isSidebarOpen ? "text-left" : "justify-center"}`}
+              className={`flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 transition ${
+                isSidebarOpen ? "text-left" : "justify-center"
+              }`}
               title="Documents"
             >
               <FileText size={19} className="shrink-0" />
@@ -378,12 +357,9 @@ export default function CompanyProfilePage() {
 
             <button
               type="button"
-              onClick={() => setActiveTab("security")}
-              className={`flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-sm font-semibold transition ${
-                activeTab === "security"
-                  ? "bg-blue-600 text-white shadow-xs"
-                  : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800"
-              } ${isSidebarOpen ? "text-left" : "justify-center"}`}
+              className={`flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 transition ${
+                isSidebarOpen ? "text-left" : "justify-center"
+              }`}
               title="Security"
             >
               <ShieldCheck size={19} className="shrink-0" />
@@ -458,16 +434,22 @@ export default function CompanyProfilePage() {
                   <LayoutDashboard size={20} />
                   <span>Dashboard</span>
                 </Link>
-                <button
-                  onClick={() => {
-                    setActiveTab("company-profile");
-                    setIsMobileMenuOpen(false);
-                  }}
-                  className="flex w-full items-center gap-3 rounded-xl bg-blue-600 px-3 py-2.5 text-sm font-semibold text-white"
+                <Link
+                  href="/employer/director-profile"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="flex items-center gap-3 rounded-xl bg-blue-600 px-3 py-2.5 text-sm font-semibold text-white"
+                >
+                  <User size={20} />
+                  <span>Director profile</span>
+                </Link>
+                <Link
+                  href="/employer/company-profile"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100"
                 >
                   <Building2 size={20} />
                   <span>Company profile</span>
-                </button>
+                </Link>
                 <button
                   onClick={handleLogout}
                   className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-rose-600 hover:bg-rose-50"
@@ -486,9 +468,9 @@ export default function CompanyProfilePage() {
         <main className="mx-auto max-w-7xl px-4 py-8 sm:px-8 sm:py-10">
           {/* Header */}
           <div className="mb-8">
-            <h1 className="font-bold text-3xl text-slate-900 dark:text-white">Company Profile</h1>
+            <h1 className="font-bold text-3xl text-slate-900 dark:text-white">Director Profile</h1>
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              Manage your business identities and verify documentation details.
+              Manage your personal identity and verification details.
             </p>
           </div>
 
@@ -505,12 +487,12 @@ export default function CompanyProfilePage() {
                         {formData.logo_url ? (
                           <img
                             src={formData.logo_url}
-                            alt="Company Logo"
+                            alt="Director Logo"
                             className="h-full w-full object-cover"
                           />
                         ) : (
                           <span>
-                            {(formData.business_name || employerProfile?.contact_person_name || "G")
+                            {(formData.director_name || employerProfile?.contact_person_name || "D")
                               .charAt(0)
                               .toUpperCase()}
                           </span>
@@ -518,28 +500,28 @@ export default function CompanyProfilePage() {
                       </div>
                       <button
                         type="button"
-                        onClick={() => toast.info("Logo upload is connected")}
+                        onClick={() => toast.info("Profile photo upload active")}
                         className="absolute bottom-0 right-0 flex h-8 w-8 items-center justify-center rounded-full bg-blue-600 text-white shadow-lg transition hover:bg-blue-700"
-                        title="Upload company logo"
+                        title="Upload profile picture"
                       >
                         <Camera size={15} />
                       </button>
                     </div>
 
                     <h2 className="text-xl font-bold text-slate-900 dark:text-white">
-                      {formData.business_name || employerProfile?.contact_person_name || "Company Profile"}
+                      {formData.director_name || employerProfile?.contact_person_name || "Director"}
                     </h2>
 
-                    {/* Dynamic Verification Badge */}
+                    {/* Verification Badge */}
                     {employerProfile?.verification_status === "VERIFIED" ? (
                       <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800">
                         <CheckCircle2 size={13} className="text-emerald-600 dark:text-emerald-400" />
                         <span>Verified Enterprise</span>
                       </div>
                     ) : (
-                      <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200/60 dark:border-amber-800">
-                        <Info size={13} className="text-amber-600 dark:text-amber-400" />
-                        <span>Verification Pending</span>
+                      <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200/60 dark:border-blue-800">
+                        <User size={13} className="text-blue-600 dark:text-blue-400" />
+                        <span>Verified Director</span>
                       </div>
                     )}
                   </div>
@@ -597,16 +579,8 @@ export default function CompanyProfilePage() {
                           STATUS
                         </p>
                         <div className="flex items-center gap-1.5">
-                          <span
-                            className={`h-2 w-2 rounded-full ${
-                              employerProfile?.verification_status === "VERIFIED"
-                                ? "bg-emerald-500"
-                                : "bg-amber-500"
-                            }`}
-                          ></span>
-                          <p className="text-sm font-bold text-slate-800 dark:text-slate-200">
-                            {employerProfile?.verification_status || "Active"}
-                          </p>
+                          <span className="h-2 w-2 rounded-full bg-emerald-500"></span>
+                          <p className="text-sm font-bold text-slate-800 dark:text-slate-200">Active</p>
                         </div>
                       </div>
                     </div>
@@ -614,7 +588,7 @@ export default function CompanyProfilePage() {
                 </div>
               </div>
 
-              {/* Right Column: Company Information Form */}
+              {/* Right Column: Director Information Form */}
               <div className="lg:col-span-8 p-6 sm:p-8">
                 <form onSubmit={handleSave} className="space-y-6">
                   {/* Form Header with Save Action */}
@@ -622,7 +596,7 @@ export default function CompanyProfilePage() {
                     <div className="flex items-center gap-2">
                       <div className="h-6 w-1 rounded-full bg-blue-600"></div>
                       <h3 className="text-lg font-bold text-slate-900 dark:text-white">
-                        Company Information
+                        Director Information
                       </h3>
                     </div>
 
@@ -636,34 +610,34 @@ export default function CompanyProfilePage() {
                     </button>
                   </div>
 
-                  {/* Input Fields Grid */}
+                  {/* Input Fields Grid (Strict 8 Fields) */}
                   <div className="grid gap-5 md:grid-cols-2">
-                    {/* Company Name */}
+                    {/* Left Column 1: Name */}
                     <div>
                       <label className="mb-1.5 flex items-center gap-2 text-xs font-bold text-blue-700 dark:text-blue-400">
-                        <Building2 size={14} />
-                        <span>Company Name</span>
+                        <User size={14} />
+                        <span>Name</span>
                       </label>
                       <div className="relative">
                         <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
-                          <Building2 size={16} />
+                          <User size={16} />
                         </div>
                         <input
                           type="text"
                           required
-                          value={formData.business_name || ""}
-                          onChange={(e) => setFormData({ ...formData, business_name: e.target.value })}
-                          placeholder="e.g. Business Mall Pvt Ltd"
+                          value={formData.director_name || ""}
+                          onChange={(e) => setFormData({ ...formData, director_name: e.target.value })}
+                          placeholder="Enter your name"
                           className="w-full rounded-xl border border-slate-200 bg-slate-50/70 py-2.5 pl-10 pr-3 text-sm text-slate-900 outline-hidden transition focus:border-blue-500 focus:bg-white dark:border-slate-800 dark:bg-slate-800 dark:text-white"
                         />
                       </div>
                     </div>
 
-                    {/* Company Number */}
+                    {/* Right Column 1: Phone Number */}
                     <div>
                       <label className="mb-1.5 flex items-center gap-2 text-xs font-bold text-blue-700 dark:text-blue-400">
                         <Phone size={14} />
-                        <span>Company Number</span>
+                        <span>Phone Number</span>
                       </label>
                       <div className="relative">
                         <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
@@ -672,19 +646,19 @@ export default function CompanyProfilePage() {
                         <input
                           type="text"
                           required
-                          value={formData.company_phone || ""}
-                          onChange={(e) => setFormData({ ...formData, company_phone: e.target.value })}
-                          placeholder="+91 98765 43210"
+                          value={formData.director_phone || ""}
+                          onChange={(e) => setFormData({ ...formData, director_phone: e.target.value })}
+                          placeholder="+1 (555) 000-0000"
                           className="w-full rounded-xl border border-slate-200 bg-slate-50/70 py-2.5 pl-10 pr-3 text-sm text-slate-900 outline-hidden transition focus:border-blue-500 focus:bg-white dark:border-slate-800 dark:bg-slate-800 dark:text-white"
                         />
                       </div>
                     </div>
 
-                    {/* Company Email */}
+                    {/* Left Column 2: Email */}
                     <div>
                       <label className="mb-1.5 flex items-center gap-2 text-xs font-bold text-blue-700 dark:text-blue-400">
                         <Mail size={14} />
-                        <span>Company Email</span>
+                        <span>Email</span>
                       </label>
                       <div className="relative">
                         <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
@@ -693,19 +667,19 @@ export default function CompanyProfilePage() {
                         <input
                           type="email"
                           required
-                          value={formData.company_email || ""}
-                          onChange={(e) => setFormData({ ...formData, company_email: e.target.value })}
+                          value={formData.director_email || ""}
+                          onChange={(e) => setFormData({ ...formData, director_email: e.target.value })}
                           placeholder="contact@businessmall.com"
                           className="w-full rounded-xl border border-slate-200 bg-slate-50/70 py-2.5 pl-10 pr-3 text-sm text-slate-900 outline-hidden transition focus:border-blue-500 focus:bg-white dark:border-slate-800 dark:bg-slate-800 dark:text-white"
                         />
                       </div>
                     </div>
 
-                    {/* Company Address */}
+                    {/* Right Column 2: Address */}
                     <div>
                       <label className="mb-1.5 flex items-center gap-2 text-xs font-bold text-blue-700 dark:text-blue-400">
                         <MapPin size={14} />
-                        <span>Company Address</span>
+                        <span>Address</span>
                       </label>
                       <div className="relative">
                         <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
@@ -714,19 +688,19 @@ export default function CompanyProfilePage() {
                         <input
                           type="text"
                           required
-                          value={formData.address || ""}
-                          onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                          placeholder="123 Commerce Way, Suite 500"
+                          value={formData.director_address || ""}
+                          onChange={(e) => setFormData({ ...formData, director_address: e.target.value })}
+                          placeholder="Enter your address"
                           className="w-full rounded-xl border border-slate-200 bg-slate-50/70 py-2.5 pl-10 pr-3 text-sm text-slate-900 outline-hidden transition focus:border-blue-500 focus:bg-white dark:border-slate-800 dark:bg-slate-800 dark:text-white"
                         />
                       </div>
                     </div>
 
-                    {/* GST Number */}
+                    {/* Left Column 3: Aadhaar Number */}
                     <div>
                       <label className="mb-1.5 flex items-center gap-2 text-xs font-bold text-blue-700 dark:text-blue-400">
                         <FileText size={14} />
-                        <span>GST Number</span>
+                        <span>Aadhaar Number</span>
                       </label>
                       <div className="relative">
                         <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
@@ -734,19 +708,19 @@ export default function CompanyProfilePage() {
                         </div>
                         <input
                           type="text"
-                          value={formData.gstin || ""}
-                          onChange={(e) => setFormData({ ...formData, gstin: e.target.value })}
+                          value={formData.director_aadhaar || ""}
+                          onChange={(e) => setFormData({ ...formData, director_aadhaar: e.target.value })}
                           placeholder="22AAAAA0000A1Z5"
                           className="w-full rounded-xl border border-slate-200 bg-slate-50/70 py-2.5 pl-10 pr-3 text-sm text-slate-900 outline-hidden transition focus:border-blue-500 focus:bg-white dark:border-slate-800 dark:bg-slate-800 dark:text-white"
                         />
                       </div>
                     </div>
 
-                    {/* CIN Number */}
+                    {/* Right Column 3: DIN Number */}
                     <div>
                       <label className="mb-1.5 flex items-center gap-2 text-xs font-bold text-blue-700 dark:text-blue-400">
                         <Hash size={14} />
-                        <span>CIN Number</span>
+                        <span>DIN Number</span>
                       </label>
                       <div className="relative">
                         <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
@@ -754,15 +728,15 @@ export default function CompanyProfilePage() {
                         </div>
                         <input
                           type="text"
-                          value={formData.cin_number || ""}
-                          onChange={(e) => setFormData({ ...formData, cin_number: e.target.value })}
+                          value={formData.director_din || ""}
+                          onChange={(e) => setFormData({ ...formData, director_din: e.target.value })}
                           placeholder="U72200DL2024PTC123456"
                           className="w-full rounded-xl border border-slate-200 bg-slate-50/70 py-2.5 pl-10 pr-3 text-sm text-slate-900 outline-hidden transition focus:border-blue-500 focus:bg-white dark:border-slate-800 dark:bg-slate-800 dark:text-white"
                         />
                       </div>
                     </div>
 
-                    {/* PAN Number */}
+                    {/* Left Column 4: PAN Number */}
                     <div>
                       <label className="mb-1.5 flex items-center gap-2 text-xs font-bold text-blue-700 dark:text-blue-400">
                         <CreditCard size={14} />
@@ -774,29 +748,29 @@ export default function CompanyProfilePage() {
                         </div>
                         <input
                           type="text"
-                          value={formData.pan_number || ""}
-                          onChange={(e) => setFormData({ ...formData, pan_number: e.target.value })}
+                          value={formData.director_pan || ""}
+                          onChange={(e) => setFormData({ ...formData, director_pan: e.target.value })}
                           placeholder="ABCDE1234F"
                           className="w-full rounded-xl border border-slate-200 bg-slate-50/70 py-2.5 pl-10 pr-3 text-sm text-slate-900 outline-hidden transition focus:border-blue-500 focus:bg-white dark:border-slate-800 dark:bg-slate-800 dark:text-white"
                         />
                       </div>
                     </div>
 
-                    {/* TAN Number */}
+                    {/* Right Column 4: Blood Group */}
                     <div>
                       <label className="mb-1.5 flex items-center gap-2 text-xs font-bold text-blue-700 dark:text-blue-400">
-                        <Landmark size={14} />
-                        <span>TAN Number</span>
+                        <Heart size={14} />
+                        <span>Blood Group</span>
                       </label>
                       <div className="relative">
                         <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
-                          <Landmark size={16} />
+                          <Heart size={16} />
                         </div>
                         <input
                           type="text"
-                          value={formData.tan_number || ""}
-                          onChange={(e) => setFormData({ ...formData, tan_number: e.target.value })}
-                          placeholder="DELB12345C"
+                          value={formData.director_blood_group || ""}
+                          onChange={(e) => setFormData({ ...formData, director_blood_group: e.target.value })}
+                          placeholder="e.g. O+ / A+ / B+"
                           className="w-full rounded-xl border border-slate-200 bg-slate-50/70 py-2.5 pl-10 pr-3 text-sm text-slate-900 outline-hidden transition focus:border-blue-500 focus:bg-white dark:border-slate-800 dark:bg-slate-800 dark:text-white"
                         />
                       </div>
@@ -813,7 +787,7 @@ export default function CompanyProfilePage() {
                         Verification Process
                       </h4>
                       <p className="mt-1 text-xs text-blue-800 dark:text-blue-300 leading-relaxed">
-                        Changing your tax identification numbers (GST, PAN, TAN) will trigger a mandatory re-verification process. Your account status might temporarily change to &lsquo;Pending&rsquo; during this time.
+                        Changes to identity or verification details may trigger a mandatory re-verification process. Your account status might temporarily change to &lsquo;Pending&rsquo; during this time.
                       </p>
                     </div>
                   </div>
