@@ -172,7 +172,6 @@ export default function EmployerDashboard() {
   const router = useRouter();
   const { user, isLoading, nextStep, logout } = useAuth();
   const [employerProfile, setEmployerProfile] = React.useState<EmployerProfile | null>(null);
-  const [profileError, setProfileError] = React.useState("");
   const [jobSites, setJobSites] = React.useState<JobSite[]>([]);
   const [siteForm, setSiteForm] = React.useState({ name: "", address: "", latitude: "", longitude: "" });
   const [siteError, setSiteError] = React.useState("");
@@ -302,8 +301,8 @@ export default function EmployerDashboard() {
           withCredentials: true,
         });
         setEmployerProfile(response.data);
-      } catch (err: any) {
-        setProfileError(err.response?.data?.detail || "Unable to load employer profile");
+      } catch {
+        // Ignored or logged if needed
       }
     };
 
@@ -768,7 +767,11 @@ export default function EmployerDashboard() {
               <div className="space-y-0.5">
                 <button
                   type="button"
-                  className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800 transition"
+                  onClick={() => {
+                    setIsProfileMenuOpen(false);
+                    void handleSubscribe();
+                  }}
+                  className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800 transition cursor-pointer"
                 >
                   <CreditCard size={17} className="text-slate-500 dark:text-slate-400 shrink-0" />
                   <span>Subscription</span>
@@ -998,7 +1001,12 @@ export default function EmployerDashboard() {
                   <div className="space-y-0.5">
                     <button
                       type="button"
-                      className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800 transition"
+                      onClick={() => {
+                        setIsMobileMenuOpen(false);
+                        setIsProfileMenuOpen(false);
+                        void handleSubscribe();
+                      }}
+                      className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800 transition cursor-pointer"
                     >
                       <CreditCard size={17} className="text-slate-500 dark:text-slate-400 shrink-0" />
                       <span>Subscription</span>
@@ -1106,32 +1114,7 @@ export default function EmployerDashboard() {
           </div>
 
           {/* Grid */}
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
-            {/* Account Status Card */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900">
-              <div className="mb-4 flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-50 dark:bg-emerald-950">
-                  <Building2 size={20} className="text-emerald-600 dark:text-emerald-400" />
-                </div>
-                <h3 className="text-sm font-bold uppercase text-slate-600 dark:text-slate-400">
-                  Verification Status
-                </h3>
-              </div>
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <div className="h-2 w-2 rounded-full bg-emerald-500"></div>
-                  <p className="font-semibold text-slate-700 dark:text-slate-300">
-                    {employerProfile?.verification_status || "Loading"}
-                  </p>
-                </div>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  {employerProfile?.onboarding_status === "COMPLETED"
-                    ? "Your employer onboarding is complete"
-                    : profileError || "Loading your employer profile"}
-                </p>
-              </div>
-            </div>
-
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
             {/* Subscription Card */}
             <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900">
               <div className="mb-4 flex items-center gap-3">
@@ -1145,7 +1128,7 @@ export default function EmployerDashboard() {
                   ? `Active until ${formatSubscriptionDate(employerProfile.subscription_valid_until)}`
                   : "No active subscription"}
               </p>
-              <button type="button" onClick={handleSubscribe} disabled={isPaymentLoading} className="mt-4 inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60">
+              <button type="button" onClick={handleSubscribe} disabled={isPaymentLoading} className="mt-4 inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer">
                 {isPaymentLoading ? <Loader2 size={16} className="animate-spin" /> : <CreditCard size={16} />}
                 {isPaymentLoading
                   ? "Opening checkout..."
@@ -1191,38 +1174,18 @@ export default function EmployerDashboard() {
                 </p>
               </div>
             </div>
-
-            {/* Time Card */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900">
-              <div className="mb-4 flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-50 dark:bg-amber-950">
-                  <Clock size={20} className="text-amber-600 dark:text-amber-400" />
-                </div>
-                <h3 className="text-sm font-bold uppercase text-slate-600 dark:text-slate-400">
-                  Member Since
-                </h3>
-              </div>
-              <div className="space-y-2">
-                <p className="font-semibold text-slate-900 dark:text-white">
-                  Today
-                </p>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Welcome aboard!
-                </p>
-              </div>
-            </div>
           </div>
 
 
-          {/* NEW COMPACT JOB SEARCH BAR (PHASE 1) */}
-          <div className="mt-8 mb-8 space-y-4">
+          {/* COMPACT JOB SEARCH SECTION (CENTERED & PROPORTIONED TO REFERENCE DESIGN) */}
+          <div className="mx-auto max-w-2xl my-10 space-y-5 flex flex-col items-center">
             {/* Top Row: Pill Buttons for Select Location & Job Site */}
-            <div className="flex flex-wrap items-center gap-3 sm:gap-4">
+            <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-6 w-full">
               {/* Select Location Pill Button */}
               <button
                 type="button"
                 onClick={handleOpenWorkSiteModal}
-                className="group flex items-center justify-between gap-3 rounded-full bg-blue-600 px-5 py-2.5 text-white shadow-md hover:bg-blue-700 transition cursor-pointer"
+                className="group flex items-center justify-between gap-4 rounded-full bg-blue-600 px-5 py-2.5 text-white shadow-md hover:bg-blue-700 active:scale-95 transition cursor-pointer min-w-[210px]"
               >
                 <div className="flex items-center gap-3">
                   <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-blue-600 shrink-0 shadow-xs">
@@ -1240,17 +1203,17 @@ export default function EmployerDashboard() {
               <button
                 type="button"
                 onClick={handleOpenWorkSiteModal}
-                className="group flex items-center justify-between gap-3 rounded-full bg-blue-600 px-5 py-2.5 text-white shadow-md hover:bg-blue-700 transition cursor-pointer"
+                className="group flex items-center justify-between gap-4 rounded-full bg-blue-600 px-5 py-2.5 text-white shadow-md hover:bg-blue-700 active:scale-95 transition cursor-pointer min-w-[210px]"
               >
                 <div className="flex items-center gap-3">
                   <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-blue-600 shrink-0 shadow-xs">
                     <MapPin size={18} />
                   </div>
                   <div className="text-left min-w-0">
-                    <p className="text-sm font-bold text-white leading-tight truncate max-w-[140px]">
+                    <p className="text-sm font-bold text-white leading-tight truncate max-w-[130px]">
                       {jobSites.find((s) => s.id === jobForm.job_site_id)?.name || "Job site"}
                     </p>
-                    <p className="text-[11px] font-medium text-blue-100 opacity-90 truncate max-w-[140px]">
+                    <p className="text-[11px] font-medium text-blue-100 opacity-90 truncate max-w-[130px]">
                       {jobSites.find((s) => s.id === jobForm.job_site_id)?.address || "Accurate and faster"}
                     </p>
                   </div>
@@ -1260,7 +1223,7 @@ export default function EmployerDashboard() {
             </div>
 
             {/* Main Pill Search Bar */}
-            <div className="relative flex items-center rounded-full border-2 border-blue-500/80 bg-white p-1.5 shadow-lg dark:border-blue-600 dark:bg-slate-900 focus-within:ring-4 focus-within:ring-blue-500/20 transition-all">
+            <div className="w-full max-w-xl relative flex items-center rounded-full border border-blue-500/80 bg-white p-1.5 shadow-xl dark:border-blue-500 dark:bg-slate-900 focus-within:ring-4 focus-within:ring-blue-500/20 transition-all">
               {/* Microphone Icon Button (Left) */}
               <button
                 type="button"
@@ -1288,7 +1251,7 @@ export default function EmployerDashboard() {
                   }
                 }}
                 placeholder="Description"
-                className="w-full bg-transparent px-3 py-2 text-sm sm:text-base font-medium text-slate-900 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-slate-500"
+                className="w-full bg-transparent px-4 py-2 text-sm sm:text-base font-medium text-slate-900 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-slate-500"
               />
 
               {/* Arrow Submit Button (Right) */}
