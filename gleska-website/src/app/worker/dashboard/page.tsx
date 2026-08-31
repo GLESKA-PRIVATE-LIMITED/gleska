@@ -9,12 +9,10 @@ import {
   Zap,
   User,
   MapPin,
-  Clock,
   AlertCircle,
   Loader2,
   PanelLeft,
   LayoutDashboard,
-  FileText,
   ShieldCheck,
   Building2,
   History,
@@ -354,17 +352,6 @@ export default function WorkerDashboard() {
               {isSidebarOpen && <span>Profile</span>}
             </Link>
 
-            {/* Documents (Disabled placeholder) */}
-            <div
-              className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-400 opacity-60 dark:text-slate-500 cursor-not-allowed ${
-                isSidebarOpen ? "" : "justify-center"
-              }`}
-              title="Documents"
-            >
-              <FileText size={20} className="shrink-0" />
-              {isSidebarOpen && <span>Documents</span>}
-            </div>
-
             {/* Security (Disabled placeholder) */}
             <div
               className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-400 opacity-60 dark:text-slate-500 cursor-not-allowed ${
@@ -578,10 +565,6 @@ export default function WorkerDashboard() {
                 <span>Profile</span>
               </Link>
               <div className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-400 opacity-60 cursor-not-allowed">
-                <FileText size={20} />
-                <span>Documents</span>
-              </div>
-              <div className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-400 opacity-60 cursor-not-allowed">
                 <ShieldCheck size={20} />
                 <span>Security</span>
               </div>
@@ -647,93 +630,6 @@ export default function WorkerDashboard() {
               >
                 <User size={40} className="text-white" />
               </Link>
-            </div>
-          </div>
-
-          {/* Grid */}
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {/* Profile Completion Card */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-              <div className="mb-4 flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-50 dark:bg-indigo-950">
-                  <User size={20} className="text-indigo-600 dark:text-indigo-400" />
-                </div>
-                <h3 className="text-sm font-bold uppercase text-slate-600 dark:text-slate-400">
-                  Profile
-                </h3>
-              </div>
-              <div className="space-y-4">
-                <div>
-                  <div className="mb-2 flex items-center justify-between">
-                    <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-                      Completion
-                    </p>
-                    <p className="text-sm font-bold text-indigo-600 dark:text-indigo-400">{profile.profile_completed ? "100%" : "0%"}</p>
-                  </div>
-                  <div className="h-2 rounded-full bg-slate-200 dark:bg-slate-700">
-                    <div className={`h-full rounded-full bg-linear-to-r from-indigo-500 to-indigo-600 ${profile.profile_completed ? "w-full" : "w-0"}`}></div>
-                  </div>
-                </div>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Add your trade, experience, and expected wage to improve matches
-                </p>
-                <Link
-                  href="/worker/profile"
-                  className="inline-block text-sm font-bold text-indigo-600 transition hover:text-indigo-700 dark:text-indigo-400"
-                >
-                  Complete Profile →
-                </Link>
-              </div>
-            </div>
-
-            {/* Availability Card */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-              <div className="mb-4 flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-50 dark:bg-emerald-950">
-                  <Clock size={20} className="text-emerald-600 dark:text-emerald-400" />
-                </div>
-                <h3 className="text-sm font-bold uppercase text-slate-600 dark:text-slate-400">
-                  Availability
-                </h3>
-              </div>
-              <div className="space-y-4">
-                <div className="flex items-center gap-3">
-                  <div className="h-3 w-3 rounded-full bg-slate-400"></div>
-                  <p className="font-semibold text-slate-700 dark:text-slate-300">{profile.availability_status}</p>
-                </div>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Set your availability to AVAILABLE to receive job pings
-                </p>
-                <button className="inline-block text-sm font-bold text-emerald-600 transition hover:text-emerald-700 dark:text-emerald-400">
-                  Go Online →
-                </button>
-              </div>
-            </div>
-
-            {/* Stats Card */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-              <div className="mb-4 flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50 dark:bg-blue-950">
-                  <MapPin size={20} className="text-blue-600 dark:text-blue-400" />
-                </div>
-                <h3 className="text-sm font-bold uppercase text-slate-600 dark:text-slate-400">
-                  Your Stats
-                </h3>
-              </div>
-              <div className="space-y-3">
-                <div>
-                  <p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">
-                    Jobs Accepted
-                  </p>
-                  <p className="text-2xl font-bold text-slate-900 dark:text-white">0</p>
-                </div>
-                <div>
-                  <p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">
-                    Hourly Rate
-                  </p>
-                  <p className="text-xl font-bold text-slate-900 dark:text-white">{profile.expected_daily_wage ? `₹${profile.expected_daily_wage}/day` : "Not set"}</p>
-                </div>
-              </div>
             </div>
           </div>
 
