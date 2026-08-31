@@ -10,7 +10,7 @@ import { getRouteForNextStep } from "@/lib/auth-routing";
 import { normalizeIndianMobile } from "@/lib/msg91";
 
 type Role = "WORKER" | "EMPLOYER";
-type OTPTransaction = { name: string; email: string; password: string; mobile: string; termsAccepted: boolean };
+type OTPTransaction = { name: string; email: string; password: string; mobile: string; termsAccepted: boolean; requestId: string | null; channel: "SMS" | "EMAIL" };
 
 export default function AuthMethodPanel({ role }: { role: Role }) {
   const router = useRouter();
@@ -76,8 +76,8 @@ export default function AuthMethodPanel({ role }: { role: Role }) {
       }
       setSubmitting(true);
       try {
-        await requestOTP(canonicalMobile);
-        setOtpTransaction({ name: "", email: "", password: "", mobile: canonicalMobile, termsAccepted: false });
+        const otpResult = await requestOTP(canonicalMobile);
+        setOtpTransaction({ name: "", email: "", password: "", mobile: canonicalMobile, termsAccepted: false, requestId: otpResult?.requestId ?? null, channel: "SMS" });
         setOtpPurpose("login");
         setOtp("");
         setCountdown(30);
@@ -137,8 +137,8 @@ export default function AuthMethodPanel({ role }: { role: Role }) {
       if (mode === "signup") {
         const canonicalMobile = normalizeIndianMobile(mobile);
         await signupPreflight(name, email, canonicalMobile, password, confirmPassword, role, termsAccepted);
-        await requestOTP(canonicalMobile);
-        setOtpTransaction({ name, email, password, mobile: canonicalMobile, termsAccepted });
+        const otpResult = await requestOTP(canonicalMobile);
+        setOtpTransaction({ name, email, password, mobile: canonicalMobile, termsAccepted, requestId: otpResult?.requestId ?? null, channel: "SMS" });
         setOtpPurpose("signup");
         setOtp("");
         setCountdown(30);
@@ -199,9 +199,13 @@ export default function AuthMethodPanel({ role }: { role: Role }) {
   };
 
   const resendSignupOTP = async () => {
+    if (!otpTransaction) {
+      toast.error("OTP session lost. Please try signing up again.");
+      return;
+    }
     setSubmitting(true);
     try {
-      await resendOTP();
+      await resendOTP(otpTransaction.mobile, otpTransaction.requestId, otpTransaction.channel);
       setCountdown(30);
       toast.success("A new verification code was sent");
     } catch (error: unknown) {

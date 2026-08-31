@@ -185,34 +185,30 @@ export default function CompanyProfilePage() {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!employerProfile?.id) return;
     setIsSaving(true);
     try {
       const updatePayload = {
-        employer_id: employerProfile.id,
-        business_name: formData.business_name,
-        company_phone: formData.company_phone,
-        company_email: formData.company_email,
-        address: formData.address,
-        gstin: formData.gstin || null,
-        cin_number: formData.cin_number || null,
-        pan_number: formData.pan_number || null,
-        tan_number: formData.tan_number || null,
-        updated_at: new Date().toISOString(),
+        business_name: formData.business_name?.trim() || null,
+        company_phone: formData.company_phone?.trim() || null,
+        company_email: formData.company_email?.trim() || null,
+        address: formData.address?.trim() || null,
+        gstin: formData.gstin?.trim() || null,
+        cin_number: formData.cin_number?.trim() || null,
+        pan_number: formData.pan_number?.trim() || null,
       };
 
-      const { error } = await supabase
-        .from("employer_onboarding_details")
-        .upsert(updatePayload, { onConflict: "employer_id" });
+      const response = await apiClient.put(
+        "/api/v1/employers/company-profile",
+        updatePayload,
+        { withCredentials: true }
+      );
 
-      if (error) {
-        console.error("Supabase profile save error:", error);
-        toast.error("Failed to save company details");
-      } else {
-        toast.success("Company profile saved to database successfully!");
+      if (response.data) {
+        toast.success("Company profile saved successfully!");
       }
-    } catch (err) {
-      toast.error("An error occurred while saving profile");
+    } catch (err: any) {
+      const msg = err.response?.data?.detail || "An error occurred while saving profile";
+      toast.error(typeof msg === "string" ? msg : "An error occurred while saving profile");
     } finally {
       setIsSaving(false);
     }
@@ -238,12 +234,19 @@ export default function CompanyProfilePage() {
   // Helper: Calculate completion score from actual non-empty fields
   const calculateProfileCompletion = () => {
     let filled = 0;
+    const isIndividual = employerProfile?.employer_type === "INDIVIDUAL";
+    const isUnregistered = employerProfile?.employer_type === "UNREGISTERED_BUSINESS";
+
     const fields = [
       formData.business_name,
       formData.company_email,
       formData.company_phone,
       formData.address,
-      formData.gstin || formData.cin_number || formData.pan_number,
+      isIndividual
+        ? true
+        : isUnregistered
+          ? Boolean(formData.pan_number || formData.business_name)
+          : Boolean(formData.gstin || formData.cin_number || formData.pan_number),
       employerProfile?.verification_status === "VERIFIED" || employerProfile?.onboarding_status === "COMPLETED",
     ];
 

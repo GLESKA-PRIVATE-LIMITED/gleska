@@ -28,7 +28,7 @@ import {
 import { toast } from "sonner";
 import Link from "next/link";
 import apiClient from "@/lib/api";
-import { supabase } from "@/lib/supabase";
+
 import LocationPicker, { LocationSelection } from "@/components/LocationPicker";
 
 /**
@@ -194,47 +194,26 @@ export default function EmployerDashboard() {
   const [isWorkSiteModalOpen, setIsWorkSiteModalOpen] = React.useState(false);
   const profileMenuRef = React.useRef<HTMLDivElement>(null);
 
-  const [recents, setRecents] = React.useState<RecentItem[]>([
-    {
-      id: "recent-1",
-      job_site_id: "site-1",
-      site_name: "Site Alpha",
-      description: "2 construction workers needed for site masonry",
-      created_at: new Date().toISOString(),
-      parsed_data: {
-        title: "Senior Mason Helper",
-        headcount_required: 2,
-        max_daily_salary: 850,
-        min_experience: 1,
-      },
-    },
-    {
-      id: "recent-2",
-      job_site_id: "site-2",
-      site_name: "Site Beta",
-      description: "Electrical wiring technician for panel installation",
-      created_at: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-      parsed_data: {
-        title: "Electrical Wiring Technician",
-        headcount_required: 1,
-        max_daily_salary: 950,
-        min_experience: 2,
-      },
-    },
-    {
-      id: "recent-3",
-      job_site_id: "site-1",
-      site_name: "Site Alpha",
-      description: "Mason required for tile fixing",
-      created_at: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-      parsed_data: {
-        title: "Mason Tile Layer",
-        headcount_required: 1,
-        max_daily_salary: 900,
-        min_experience: 3,
-      },
-    },
-  ]);
+  const recents = React.useMemo<RecentItem[]>(() => {
+    return jobs.map((job) => {
+      const site = jobSites.find((s) => s.id === job.job_site_id);
+      const siteName = site?.name || "Work Site";
+      const description = `${job.title} (${job.headcount_required} worker${job.headcount_required === 1 ? "" : "s"})`;
+      return {
+        id: job.id,
+        job_site_id: job.job_site_id,
+        site_name: siteName,
+        description: description,
+        created_at: (job as any).created_at || new Date().toISOString(),
+        parsed_data: {
+          title: job.title,
+          headcount_required: job.headcount_required,
+          max_daily_salary: job.max_daily_salary != null ? Number(job.max_daily_salary) : null,
+          min_experience: job.min_experience,
+        },
+      };
+    });
+  }, [jobs, jobSites]);
 
   const groupedRecents = React.useMemo(() => {
     const groups: { [dateLabel: string]: RecentItem[] } = {};
@@ -359,18 +338,8 @@ export default function EmployerDashboard() {
     loadJobs();
 
     const loadRecentJobRequests = async () => {
-      try {
-        const { data, error } = await supabase
-          .from("employer_job_requests")
-          .select("*")
-          .order("created_at", { ascending: false });
-
-        if (!error && data && data.length > 0) {
-          setRecents(data as RecentItem[]);
-        }
-      } catch (err) {
-        console.error("Error loading recent job requests:", err);
-      }
+      // Direct Supabase query to employer_job_requests removed as the table does not exist
+      // Rely on the initial static recents or local state for now
     };
 
     loadRecentJobRequests();
@@ -578,35 +547,6 @@ export default function EmployerDashboard() {
         min_experience: jobForm.min_experience ? Number(jobForm.min_experience) : null,
       }, { withCredentials: true });
       setJobs((current) => [response.data, ...current]);
-      
-      // Save recent job request to Supabase
-      if (user?.id) {
-        const selectedSite = jobSites.find((s) => s.id === response.data.job_site_id);
-        const siteName = selectedSite?.name || "Work Site";
-        const descriptionText = aiPrompt.trim() || `${response.data.title} - ${response.data.headcount_required} workers needed`;
-
-        const { data: recentData, error: recentError } = await supabase
-          .from("employer_job_requests")
-          .insert({
-            user_id: user.id,
-            job_site_id: response.data.job_site_id || null,
-            site_name: siteName,
-            description: descriptionText,
-            parsed_data: {
-              title: response.data.title,
-              headcount_required: response.data.headcount_required,
-              max_daily_salary: response.data.max_daily_salary,
-              min_experience: response.data.min_experience,
-            },
-          })
-          .select()
-          .single();
-
-        if (!recentError && recentData) {
-          setRecents((current) => [recentData as RecentItem, ...current.filter((r) => r.id !== recentData.id)]);
-        }
-      }
-
       setJobForm({ job_site_id: jobForm.job_site_id, title: "", headcount_required: "1", max_daily_salary: "", min_experience: "" });
       toast.success("Job created");
     } catch (err: any) {
@@ -639,37 +579,6 @@ export default function EmployerDashboard() {
         max_daily_salary: extracted.max_daily_salary == null ? "" : String(extracted.max_daily_salary),
         min_experience: String(extracted.min_experience),
       }));
-
-      const selectedSite = jobSites.find((s) => s.id === jobForm.job_site_id);
-      const siteName = selectedSite?.name || "Work Site";
-
-      if (user?.id) {
-        const { data: recentData, error: recentError } = await supabase
-          .from("employer_job_requests")
-          .insert({
-            user_id: user.id,
-            job_site_id: jobForm.job_site_id || null,
-            site_name: siteName,
-            description: aiPrompt.trim(),
-            parsed_data: extracted,
-          })
-          .select()
-          .single();
-
-        if (!recentError && recentData) {
-          setRecents((current) => [recentData as RecentItem, ...current.filter((r) => r.id !== recentData.id)]);
-        } else {
-          const fallbackRecent: RecentItem = {
-            id: `recent-${Date.now()}`,
-            job_site_id: jobForm.job_site_id,
-            site_name: siteName,
-            description: aiPrompt.trim(),
-            created_at: new Date().toISOString(),
-            parsed_data: extracted,
-          };
-          setRecents((current) => [fallbackRecent, ...current.filter((r) => r.description !== fallbackRecent.description)]);
-        }
-      }
 
       toast.success("Job requirements extracted");
     } catch (err: any) {

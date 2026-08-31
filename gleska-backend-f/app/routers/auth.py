@@ -9,7 +9,7 @@ from app.core.supabase import supabase
 from app.services.auth_service import AuthService
 from app.services.msg91_service import MSG91Service
 from app.services.onboarding_service import OnboardingService
-from app.schemas.auth import UserResponse, ProvisionUserSchema, SignupPreflightSchema, MobileVerifiedSignupSchema, PasswordResetRequestSchema, PasswordResetVerifySchema, PasswordResetCompleteSchema
+from app.schemas.auth import UserResponse, ProvisionUserSchema, SignupPreflightSchema, MobileVerifiedSignupSchema, PasswordResetRequestSchema, PasswordResetVerifySchema, PasswordResetCompleteSchema, ResendOTPSchema
 from app.services.password_reset_service import PasswordResetService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -304,6 +304,37 @@ async def get_current_user_info(user: UserResponse = Depends(get_current_user)):
         "user": application_user,
         "next_step": next_step,
     }
+
+
+@router.post("/resend-otp")
+async def resend_otp(request: ResendOTPSchema):
+    """Request to resend OTP for signup or login.
+    
+    This endpoint enforces rate limiting to prevent abuse.
+    The frontend MSG91 SDK will handle the actual OTP send.
+    """
+    try:
+        normalized_mobile = AuthService.normalize_mobile(request.mobile)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Enter a valid Indian mobile number") from exc
+
+    try:
+        MSG91Service.validate_otp_resend_request(normalized_mobile, request.channel)
+    except ValueError as exc:
+        code = str(exc)
+        if code == "OTP_RESEND_COOLDOWN":
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Please wait before requesting another OTP",
+            ) from exc
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=code) from exc
+
+    logger.info(
+        "OTP resend validated for mobile_suffix=%s channel=%s",
+        normalized_mobile[-4:],
+        request.channel,
+    )
+    return {"success": True, "message": "OTP resend request accepted. Please check your device."}
 
 
 @router.post("/logout")

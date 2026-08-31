@@ -175,63 +175,62 @@ export default function DirectorProfilePage() {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!employerProfile?.id) return;
     setIsSaving(true);
     try {
       const updatePayload = {
-        employer_id: employerProfile.id,
-        director_name: formData.director_name,
-        director_email: formData.director_email,
-        director_phone: formData.director_phone,
-        director_address: formData.director_address,
-        director_aadhaar: formData.director_aadhaar || null,
-        director_pan: formData.director_pan || null,
-        director_din: formData.director_din || null,
-        director_blood_group: formData.director_blood_group || null,
-        updated_at: new Date().toISOString(),
+        director_name: formData.director_name?.trim() || null,
+        director_email: formData.director_email?.trim() || null,
+        director_phone: formData.director_phone?.trim() || null,
+        director_address: formData.director_address?.trim() || null,
+        director_aadhaar: formData.director_aadhaar?.trim() || null,
+        director_pan: formData.director_pan?.trim() || null,
+        director_din: formData.director_din?.trim() || null,
+        director_blood_group: formData.director_blood_group?.trim() || null,
       };
 
-      const { error } = await supabase
-        .from("employer_onboarding_details")
-        .upsert(updatePayload, { onConflict: "employer_id" });
+      const response = await apiClient.put(
+        "/api/v1/employers/director-profile",
+        updatePayload,
+        { withCredentials: true }
+      );
 
-      if (error) {
-        console.error("Supabase director save error:", error);
-        toast.error("Failed to save director information");
-      } else {
+      if (response.data) {
         toast.success("Director Profile saved successfully!");
       }
-    } catch (err) {
-      toast.error("An error occurred while saving director details");
+    } catch (err: any) {
+      const msg = err.response?.data?.detail || "An error occurred while saving director details";
+      toast.error(typeof msg === "string" ? msg : "An error occurred while saving director details");
     } finally {
       setIsSaving(false);
     }
   };
 
   const formatAccountType = (type?: string) => {
-    if (!type) return "Business";
+    if (!type) return "Employer Account";
     switch (type) {
       case "REGISTERED_INDUSTRY":
-        return "Business";
+        return "Registered Industry";
       case "REGISTERED_BUSINESS":
-        return "Business";
+        return "Registered Business";
       case "UNREGISTERED_BUSINESS":
-        return "Business";
+        return "Unregistered Business";
       case "INDIVIDUAL":
-        return "Individual";
+        return "Individual Employer";
       default:
-        return "Business";
+        return type.replaceAll("_", " ");
     }
   };
 
   const calculateProfileCompletion = () => {
     let filled = 0;
+    const isIndividual = employerProfile?.employer_type === "INDIVIDUAL";
+
     const fields = [
       formData.director_name,
       formData.director_email,
       formData.director_phone,
       formData.director_address,
-      formData.director_aadhaar || formData.director_pan,
+      isIndividual ? true : Boolean(formData.director_aadhaar || formData.director_pan || formData.director_din),
       employerProfile?.verification_status === "VERIFIED" || employerProfile?.onboarding_status === "COMPLETED",
     ];
 

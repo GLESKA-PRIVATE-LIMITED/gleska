@@ -63,18 +63,21 @@ class VerificationService:
 
     @staticmethod
     def required_for(employer_type: str, details: dict[str, Any] | None = None) -> list[str]:
-        configured = settings.EMPLOYER_REQUIRED_VERIFICATIONS.strip()
+        configured = VerificationService._clean_setting(settings.EMPLOYER_REQUIRED_VERIFICATIONS)
         required: list[str] = []
-        normalized_type = employer_type.upper()
+        normalized_type = employer_type.upper().strip()
         if normalized_type in {"REGISTERED_INDUSTRY", "REGISTERED_BUSINESS"}:
             required.append("CIN")
             if details and str(details.get("gstin") or "").strip():
                 for mapping in configured.split(";"):
+                    if not mapping.strip():
+                        continue
                     mapped_type, separator, mapped_verifications = mapping.partition(":")
                     if separator and mapped_type.strip().upper() == normalized_type:
                         configured_types = {
                             value.strip().upper()
                             for value in mapped_verifications.replace(",", "|").split("|")
+                            if value.strip()
                         }
                         if "GSTIN" in configured_types:
                             required.append("GSTIN")
@@ -497,9 +500,11 @@ class VerificationService:
     @staticmethod
     def required_for_for_any_employer_type() -> set[str]:
         """Return configured verification types without inventing business rules."""
-        configured = settings.EMPLOYER_REQUIRED_VERIFICATIONS.strip()
+        configured = VerificationService._clean_setting(settings.EMPLOYER_REQUIRED_VERIFICATIONS)
         required: set[str] = set()
         for mapping in configured.split(";"):
+            if not mapping.strip():
+                continue
             _, separator, mapped_verifications = mapping.partition(":")
             if separator:
                 required.update(
