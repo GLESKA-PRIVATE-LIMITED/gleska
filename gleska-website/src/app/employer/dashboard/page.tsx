@@ -776,13 +776,14 @@ export default function EmployerDashboard() {
                   <CreditCard size={17} className="text-slate-500 dark:text-slate-400 shrink-0" />
                   <span>Subscription</span>
                 </button>
-                <button
-                  type="button"
+                <Link
+                  href="/employer/company-profile"
+                  onClick={() => setIsProfileMenuOpen(false)}
                   className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800 transition"
                 >
                   <User size={17} className="text-slate-500 dark:text-slate-400 shrink-0" />
                   <span>Profile</span>
-                </button>
+                </Link>
                 <button
                   type="button"
                   className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800 transition"
@@ -1013,6 +1014,10 @@ export default function EmployerDashboard() {
                     </button>
                     <Link
                       href="/employer/company-profile"
+                      onClick={() => {
+                        setIsMobileMenuOpen(false);
+                        setIsProfileMenuOpen(false);
+                      }}
                       className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800 transition"
                     >
                       <User size={17} className="text-slate-500 dark:text-slate-400 shrink-0" />
@@ -1114,31 +1119,7 @@ export default function EmployerDashboard() {
           </div>
 
           {/* Grid */}
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-            {/* Subscription Card */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900">
-              <div className="mb-4 flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50 dark:bg-blue-950">
-                  <CreditCard size={20} className="text-blue-600 dark:text-blue-400" />
-                </div>
-                <h3 className="text-sm font-bold uppercase text-slate-600 dark:text-slate-400">Subscription</h3>
-              </div>
-              <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                {employerProfile?.subscription_valid_until && isActiveSubscription(employerProfile.subscription_valid_until)
-                  ? `Active until ${formatSubscriptionDate(employerProfile.subscription_valid_until)}`
-                  : "No active subscription"}
-              </p>
-              <button type="button" onClick={handleSubscribe} disabled={isPaymentLoading} className="mt-4 inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer">
-                {isPaymentLoading ? <Loader2 size={16} className="animate-spin" /> : <CreditCard size={16} />}
-                {isPaymentLoading
-                  ? "Opening checkout..."
-                  : isActiveSubscription(employerProfile?.subscription_valid_until)
-                    ? "Renew Subscription"
-                    : "Subscribe ₹2,000"}
-              </button>
-              {paymentMessage && <p className="mt-3 text-xs text-slate-600 dark:text-slate-400">{paymentMessage}</p>}
-            </div>
-
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
             {/* Active Jobs Card */}
             <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900">
               <div className="mb-4 flex items-center gap-3">
