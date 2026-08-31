@@ -379,19 +379,16 @@ export default function CompanyProfilePage() {
               {isSidebarOpen && <span>Documents</span>}
             </button>
 
-            <button
-              type="button"
-              onClick={() => setActiveTab("security")}
-              className={`flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-sm font-semibold transition ${
-                activeTab === "security"
-                  ? "bg-blue-600 text-white shadow-xs"
-                  : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800"
-              } ${isSidebarOpen ? "text-left" : "justify-center"}`}
+            <Link
+              href="/employer/security"
+              className={`flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-sm font-semibold transition text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 ${
+                isSidebarOpen ? "" : "justify-center"
+              }`}
               title="Security"
             >
               <ShieldCheck size={19} className="shrink-0" />
               {isSidebarOpen && <span>Security</span>}
-            </button>
+            </Link>
           </nav>
         </div>
 
