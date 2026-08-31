@@ -4,12 +4,19 @@ from __future__ import annotations
 
 import logging
 from typing import Any
+from datetime import datetime, timedelta
+from collections import defaultdict
 
 import httpx
 
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+# In-memory rate limiting for OTP resend attempts
+# Format: {mobile: [(timestamp, channel), ...]}
+_otp_resend_history: dict[str, list[tuple[datetime, str]]] = defaultdict(list)
+OTP_RESEND_COOLDOWN_SECONDS = 30  # Minimum seconds between resend attempts
 
 
 class MSG91Service:
@@ -85,3 +92,53 @@ class MSG91Service:
 
         logger.info("MSG91 verification succeeded: status=%s", response.status_code)
         return payload
+
+    @staticmethod
+    def validate_otp_resend_request(mobile: str, channel: str) -> None:
+        """Validate OTP resend request and enforce rate limiting.
+        
+        Args:
+            mobile: Normalized mobile number (e.g., 91XXXXXXXXXX)
+            channel: OTP channel ("SMS" or "EMAIL")
+            
+        Raises:
+            ValueError: If resend is rate-limited or invalid parameters
+        """
+        if not mobile or not isinstance(mobile, str):
+            raise ValueError("INVALID_MOBILE")
+        
+        if channel not in ("SMS", "EMAIL"):
+            raise ValueError("INVALID_CHANNEL")
+        
+        # Clean up old entries (older than cooldown window)
+        now = datetime.utcnow()
+        cutoff_time = now - timedelta(seconds=OTP_RESEND_COOLDOWN_SECONDS)
+        
+        if mobile in _otp_resend_history:
+            _otp_resend_history[mobile] = [
+                (timestamp, ch) for timestamp, ch in _otp_resend_history[mobile]
+                if timestamp > cutoff_time
+            ]
+        
+        # Check if last resend was recent
+        history = _otp_resend_history.get(mobile, [])
+        if history:
+            last_timestamp, last_channel = history[-1]
+            seconds_since_last = (now - last_timestamp).total_seconds()
+            if seconds_since_last < OTP_RESEND_COOLDOWN_SECONDS:
+                logger.warning(
+                    "OTP resend rate limited for mobile_suffix=%s channel=%s (last resend %d seconds ago)",
+                    mobile[-4:] if len(mobile) >= 4 else mobile,
+                    last_channel,
+                    int(seconds_since_last),
+                )
+                raise ValueError("OTP_RESEND_COOLDOWN")
+        
+        # Record this resend attempt
+        logger.info(
+            "OTP resend request accepted for mobile_suffix=%s channel=%s",
+            mobile[-4:] if len(mobile) >= 4 else mobile,
+            channel,
+        )
+        _otp_resend_history[mobile].append((now, channel))
+

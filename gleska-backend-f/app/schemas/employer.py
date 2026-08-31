@@ -192,6 +192,40 @@ class IndividualOnboardingSchema(BaseModel):
     company_phone: Optional[str] = None
 
 
+class CompanyProfileUpdateSchema(BaseModel):
+    """Schema for updating company profile from dashboard."""
+    business_name: Optional[str] = None
+    company_phone: Optional[str] = None
+    company_email: Optional[str] = None
+    address: Optional[str] = None
+    registered_address: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    pincode: Optional[str] = None
+    website_url: Optional[str] = None
+    description: Optional[str] = None
+    gstin: Optional[str] = None
+    cin_number: Optional[str] = None
+    pan_number: Optional[str] = None
+    tan_number: Optional[str] = None
+    business_category: Optional[str] = None
+    industry_type: Optional[str] = None
+    industry_category: Optional[str] = None
+    work_location: Optional[str] = None
+
+
+class DirectorProfileUpdateSchema(BaseModel):
+    """Schema for updating director profile from dashboard."""
+    director_name: Optional[str] = None
+    director_phone: Optional[str] = None
+    director_email: Optional[str] = None
+    director_address: Optional[str] = None
+    director_aadhaar: Optional[str] = None
+    director_pan: Optional[str] = None
+    director_din: Optional[str] = None
+    director_blood_group: Optional[str] = None
+
+
 class CompleteOnboardingSchema(BaseModel):
     """Request to complete onboarding."""
     pass  # Just a marker - all details should already be saved

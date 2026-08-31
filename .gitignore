@@ -36,6 +36,7 @@ out/
 dist/
 build/
 .turbo/
+*.tsbuildinfo
 
 # =========================
 # Logs

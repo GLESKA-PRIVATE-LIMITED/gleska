@@ -41,16 +41,17 @@ interface AuthContextType {
   loginWithMobile: (mobile: string, otp: string, role: "WORKER" | "EMPLOYER") => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<NextStep | null>;
-  requestOTP: (mobile: string) => Promise<void>;
-  resendOTP: () => Promise<void>;
+  requestOTP: (mobile: string) => Promise<{ requestId: string | null }>;
+  resendOTP: (mobile: string, requestId?: string | null, channel?: "SMS" | "EMAIL") => Promise<void>;
   signInWithEmail: (email: string, password: string, role: "WORKER" | "EMPLOYER") => Promise<void>;
   signInWithGoogle: (role: "WORKER" | "EMPLOYER") => Promise<void>;
-  provisionSession: (role: "WORKER" | "EMPLOYER", name?: string) => Promise<void>;
+  provisionSession: (role: "WORKER" | "EMPLOYER", name?: string) => Promise<{ user: AuthUser; nextStep: NextStep | null }>;
   completeEmailSignup: (email: string, password: string, name: string, mobile: string, otp: string, role: "WORKER" | "EMPLOYER", termsAccepted?: boolean) => Promise<void>;
   requestPasswordReset: (phone: string) => Promise<void>;
   verifyPasswordResetOTP: (phone: string, msg91AccessToken: string) => Promise<string>;
   completePasswordReset: (resetAuthorization: string, password: string, confirmPassword: string) => Promise<void>;
   signupPreflight: (name: string, email: string, mobile: string, password: string, confirmPassword: string, role: "WORKER" | "EMPLOYER", termsAccepted?: boolean) => Promise<void>;
+  setAuthState: (user: AuthUser, nextStep: NextStep | null) => void;
 }
 
 export const AuthContext = createContext<AuthContextType>({
@@ -64,16 +65,17 @@ export const AuthContext = createContext<AuthContextType>({
   loginWithMobile: async () => {},
   logout: async () => {},
   refreshUser: async () => null,
-  requestOTP: async () => {},
+  requestOTP: async () => ({ requestId: null }),
   resendOTP: async () => {},
   signInWithEmail: async () => {},
   signInWithGoogle: async () => {},
-  provisionSession: async () => {},
+  provisionSession: async () => ({ user: {} as AuthUser, nextStep: null }),
   completeEmailSignup: async () => {},
   requestPasswordReset: async () => {},
   verifyPasswordResetOTP: async () => "",
   completePasswordReset: async () => {},
   signupPreflight: async () => {},
+  setAuthState: () => {},
 });
 
 const setClientAuthCookie = () => {
@@ -93,6 +95,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [nextStep, setNextStep] = useState<NextStep | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const setAuthState = (newUser: AuthUser, newNextStep: NextStep | null) => {
+    setUser(newUser);
+    setNextStep(newNextStep);
+    setClientAuthCookie();
+    setError(null);
+  };
 
   useEffect(() => {
     const initAuth = async () => {
@@ -129,7 +138,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       setError(null);
       await initializeMSG91Widget();
-      await sendOTP(mobile);
+      const result = await sendOTP(mobile);
+      return { requestId: result.requestId ?? null };
     } catch (err: any) {
       const message = err.message || "Failed to send OTP";
       setError(message);
@@ -149,11 +159,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
-  const resendOTP = async () => {
+const resendOTP = async (mobile: string, requestId: string | null = null, channel: "SMS" | "EMAIL" = "SMS") => {
     try {
       setError(null);
+
+      if (!mobile) {
+        throw new Error("Mobile number is required to resend OTP");
+      }
+
+      // Call backend endpoint to validate resend request and enforce rate limiting
+      try {
+        await apiClient.post(
+          "/api/v1/auth/resend-otp",
+          { mobile, channel },
+          { skipSupabaseAuth: true }
+        );
+      } catch (backendErr: any) {
+        const statusCode = backendErr.response?.status;
+        const errorDetail = backendErr.response?.data?.detail || backendErr.message;
+
+        if (statusCode === 429) {
+          console.warn("[MSG91] Backend resend authorization: blocked (rate limited)");
+          throw new Error(errorDetail || "Please wait before requesting another OTP");
+        }
+
+        console.warn("[MSG91] Backend resend authorization: blocked (error)", errorDetail);
+        throw new Error(errorDetail || "Failed to authorize resend request");
+      }
+
+      // Only if backend approved, call MSG91 retry
       await initializeMSG91Widget();
-      await retryOTP();
+      await retryOTP(channel, requestId);
     } catch (err: any) {
       const message = err.message || "Failed to resend OTP";
       setError(message);
@@ -176,6 +212,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(state.data.user);
     setNextStep(state.data.next_step || null);
     setClientAuthCookie();
+    return { user: state.data.user, nextStep: state.data.next_step || null };
   };
 
   const signInWithEmail = async (email: string, password: string, role: "WORKER" | "EMPLOYER") => {
@@ -257,6 +294,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
       if (signInError) throw signInError;
       setUser(response.data);
+      setClientAuthCookie();
       const state = await apiClient.get("/api/v1/auth/me");
       setNextStep(state.data?.next_step || null);
     } catch (err: any) {
@@ -380,6 +418,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         verifyPasswordResetOTP,
         completePasswordReset,
         signupPreflight,
+        setAuthState,
       }}
     >
       {children}

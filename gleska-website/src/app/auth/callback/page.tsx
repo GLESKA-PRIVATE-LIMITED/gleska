@@ -30,7 +30,7 @@ function clearStoredRole() {
 
 export default function AuthCallbackPage() {
   const router = useRouter();
-  const { provisionSession, refreshUser } = useAuth();
+  const { provisionSession, setAuthState } = useAuth();
   const [error, setError] = useState("");
   const exchangeHandled = useRef(false);
 
@@ -108,7 +108,7 @@ export default function AuthCallbackPage() {
           const existingRole = meRes.data.user.role as "WORKER" | "EMPLOYER";
           const nextStep = meRes.data.next_step;
           clearStoredRole();
-          await refreshUser();
+          setAuthState(meRes.data.user, meRes.data.next_step || null);
           const targetRoute = getRouteForNextStep(existingRole, nextStep);
           console.log("[OAuth] Redirecting existing user to:", targetRoute);
           router.replace(targetRoute);
@@ -138,13 +138,12 @@ export default function AuthCallbackPage() {
       console.log("[OAuth] Provisioning new user with role:", storedRole);
       try {
         // Provision the user in the backend using the Supabase session established in PHASE 2
-        await provisionSession(storedRole);
+        // provisionSession now returns the user and nextStep directly without needing a third API call here
+        const provisionedData = await provisionSession(storedRole);
         console.log("[OAuth] User provisioned successfully");
 
-        // Retrieve the user's next_step from backend
-        const meRes = await apiClient.get("/api/v1/auth/me", { withCredentials: true });
-        const authenticatedRole = meRes.data?.user?.role as "WORKER" | "EMPLOYER";
-        const nextStep = meRes.data?.next_step;
+        const authenticatedRole = provisionedData.user.role as "WORKER" | "EMPLOYER";
+        const nextStep = provisionedData.nextStep;
 
         if (!authenticatedRole) {
           throw new Error(
@@ -184,7 +183,7 @@ export default function AuthCallbackPage() {
       toast.error(message);
       setError(message);
     });
-  }, [provisionSession, refreshUser, router]);
+  }, [provisionSession, setAuthState, router]);
 
   const handleReturnToSignIn = () => {
     clearStoredRole();

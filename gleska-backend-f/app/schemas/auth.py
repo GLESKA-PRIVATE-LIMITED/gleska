@@ -60,6 +60,12 @@ class AuthResponse(BaseModel):
     message: Optional[str] = None
 
 
+class ResendOTPSchema(BaseModel):
+    """Request to resend OTP."""
+    mobile: str = Field(..., min_length=10, max_length=32, description="Mobile number to send OTP to")
+    channel: str = Field(..., pattern="^(SMS|EMAIL)$", description="Channel for OTP: SMS or EMAIL")
+
+
 class ProvisionUserSchema(BaseModel):
     """Application profile data for an already authenticated Supabase identity."""
     name: str = Field(default="", max_length=120)

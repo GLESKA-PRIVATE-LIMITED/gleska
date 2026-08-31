@@ -72,7 +72,7 @@ export default function ForgotPasswordPage() {
     setSubmitting(true);
     try {
       await initializeMSG91Widget();
-      await retryOTP();
+      await retryOTP("SMS");
       setOtp("");
       setCountdown(30);
       toast.success("If an account exists for this phone number, we have sent a new verification code.");
