@@ -131,13 +131,6 @@ export default function WorkerProfilePage() {
       .finally(() => setLoading(false));
   }, [isLoading, user, router]);
 
-  // Check if profile has unsaved changes
-  const hasUnsavedChanges =
-    JSON.stringify(profile) !== JSON.stringify(initialProfile) ||
-    isEditingPersonal ||
-    isEditingAddress ||
-    isEditingProfessional;
-
   // Location handlers
   const selectLocation = (location: LocationSelection) => {
     setProfile((current) => ({
@@ -601,7 +594,7 @@ export default function WorkerProfilePage() {
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0 min-h-screen overflow-y-auto">
-        <main className="flex-1 mx-auto w-full max-w-7xl px-4 sm:px-6 py-6 sm:py-8 space-y-6 pb-24">
+        <main className="flex-1 mx-auto w-full max-w-7xl px-4 sm:px-6 py-6 sm:py-8 space-y-6 pb-12">
           {/* Top Banner Card matching Figma */}
           <div className="relative overflow-hidden rounded-3xl bg-linear-to-r from-blue-600 via-indigo-600 to-purple-600 p-6 sm:p-8 text-white shadow-xl">
             {/* Ambient Background Accents */}
@@ -1211,29 +1204,16 @@ export default function WorkerProfilePage() {
           </div>
         </main>
 
-        {/* Bottom Save Action Bar */}
-        <footer className="fixed bottom-0 left-0 right-0 z-40 flex items-center justify-between border-t border-slate-200 bg-white/95 px-6 py-4 shadow-2xl backdrop-blur-md dark:border-slate-800 dark:bg-slate-900/95 md:pl-72">
-          <div className="flex items-center gap-2">
-            <span
-              className={`h-2.5 w-2.5 rounded-full ${
-                hasUnsavedChanges ? "bg-amber-500 animate-pulse" : "bg-emerald-500"
-              }`}
-            />
-            <p className="text-xs sm:text-sm font-semibold text-slate-600 dark:text-slate-300">
-              {hasUnsavedChanges ? "Unsaved changes detected" : "All changes saved"}
-            </p>
-          </div>
-
-          <button
-            type="button"
-            disabled={saving}
-            onClick={() => void save()}
-            className="flex items-center gap-2 rounded-xl bg-blue-600 px-6 py-2.5 font-bold text-white shadow-md hover:bg-blue-500 active:scale-95 transition disabled:opacity-50 cursor-pointer"
-          >
-            {saving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
-            <span>Save Changes</span>
-          </button>
-        </footer>
+        {/* Fixed Floating Save Changes Button */}
+        <button
+          type="button"
+          disabled={saving}
+          onClick={() => void save()}
+          className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-2xl bg-blue-600 px-6 py-3 font-bold text-white shadow-2xl hover:bg-blue-500 active:scale-95 transition disabled:opacity-50 cursor-pointer"
+        >
+          {saving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+          <span>Save Changes</span>
+        </button>
       </div>
     </div>
   );
