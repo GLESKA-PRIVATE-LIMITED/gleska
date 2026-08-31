@@ -286,7 +286,7 @@ export default function WorkerDashboard() {
   };
 
   return (
-    <div className="flex min-h-screen bg-[#eef1fb] font-sans text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+    <div className="flex flex-col md:flex-row min-h-screen bg-[#eef1fb] font-sans text-slate-900 dark:bg-slate-950 dark:text-slate-100">
       {/* Desktop Left Sidebar (hidden on mobile, flex on md+) */}
       <aside
         className={`hidden md:flex sticky top-0 h-screen flex-col justify-between border-r border-slate-200 bg-white/95 p-4 shadow-xs backdrop-blur transition-all duration-300 dark:border-slate-800 dark:bg-slate-900/95 z-40 shrink-0 ${
@@ -609,26 +609,27 @@ export default function WorkerDashboard() {
       <div className="flex-1 min-w-0 overflow-y-auto">
         <main className="mx-auto max-w-7xl px-4 sm:px-6 py-8 sm:py-12">
           {/* Welcome Card */}
-          <div className="mb-8 rounded-3xl bg-linear-to-br from-amber-50 to-yellow-50 p-8 dark:from-amber-950/20 dark:to-yellow-950/20 border border-amber-200 dark:border-amber-800">
-            <div className="flex items-center justify-between">
+          <div className="mb-8 rounded-3xl bg-linear-to-br from-amber-50 to-yellow-50 p-5 sm:p-8 dark:from-amber-950/20 dark:to-yellow-950/20 border border-amber-200 dark:border-amber-800">
+            <div className="flex flex-col-reverse sm:flex-row items-start sm:items-center justify-between gap-4 sm:gap-6">
               <div>
-                <p className="text-sm font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300">
+                <p className="text-xs sm:text-sm font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300">
                   Welcome back
                 </p>
-                <h1 className="font-(--font-anton) text-4xl uppercase text-slate-900 dark:text-white">
+                <h1 className="font-(--font-anton) text-2xl sm:text-4xl uppercase text-slate-900 dark:text-white">
                   {user.name}
                 </h1>
-                <p className="mt-2 text-lg text-amber-700 dark:text-amber-300">
+                <p className="mt-1 sm:mt-2 text-base sm:text-lg text-amber-700 dark:text-amber-300">
                   Ready to find your next job?
                 </p>
               </div>
               {/* Profile Entry Point #3: Top-Right Avatar in Welcome Card */}
               <Link
                 href="/worker/profile"
-                className="flex h-24 w-24 items-center justify-center rounded-2xl bg-linear-to-br from-amber-400 to-yellow-500 shadow-lg hover:scale-105 transition-transform cursor-pointer shrink-0"
+                className="flex h-16 w-16 sm:h-24 sm:w-24 items-center justify-center rounded-2xl bg-linear-to-br from-amber-400 to-yellow-500 shadow-lg hover:scale-105 transition-transform cursor-pointer shrink-0"
                 title="View Profile"
               >
-                <User size={40} className="text-white" />
+                <User size={32} className="sm:hidden text-white" />
+                <User size={40} className="hidden sm:block text-white" />
               </Link>
             </div>
           </div>

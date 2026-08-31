@@ -246,7 +246,7 @@ export default function EmployerSecurityPage() {
   // Render
   // ---------------------------------------------------------------------------
   return (
-    <div className="flex min-h-screen bg-[#f4f6fc] font-sans text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+    <div className="flex flex-col md:flex-row min-h-screen bg-[#f4f6fc] font-sans text-slate-900 dark:bg-slate-950 dark:text-slate-100">
       {/* Desktop Left Sidebar */}
       <aside
         className={`hidden md:flex flex-col justify-between border-r border-slate-200/80 bg-white p-4 transition-all duration-300 dark:border-slate-800 dark:bg-slate-900 ${

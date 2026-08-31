@@ -592,7 +592,7 @@ export default function EmployerDashboard() {
   };
 
   return (
-    <div className="flex min-h-screen bg-[#eef1fb] font-sans text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+    <div className="flex flex-col md:flex-row min-h-screen bg-[#eef1fb] font-sans text-slate-900 dark:bg-slate-950 dark:text-slate-100">
       {/* Desktop Left Sidebar (hidden on mobile, flex on md+) */}
       <aside
         className={`hidden md:flex sticky top-0 h-screen flex-col justify-between border-r border-slate-200 bg-white/95 p-4 shadow-xs backdrop-blur transition-all duration-300 dark:border-slate-800 dark:bg-slate-900/95 z-40 shrink-0 ${
@@ -1088,29 +1088,30 @@ export default function EmployerDashboard() {
       <div className="flex-1 min-w-0">
         <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-12">
           {/* Welcome Card */}
-          <div className="mb-8 rounded-3xl bg-linear-to-br from-blue-50 to-indigo-50 p-8 dark:from-blue-950/20 dark:to-indigo-950/20 border border-blue-200 dark:border-blue-800">
-            <div className="flex items-center justify-between">
+          <div className="mb-8 rounded-3xl bg-linear-to-br from-blue-50 to-indigo-50 p-5 sm:p-8 dark:from-blue-950/20 dark:to-indigo-950/20 border border-blue-200 dark:border-blue-800">
+            <div className="flex flex-col-reverse sm:flex-row items-start sm:items-center justify-between gap-4 sm:gap-6">
               <div>
-                <p className="text-sm font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300">
+                <p className="text-xs sm:text-sm font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300">
                   Welcome back
                 </p>
-                <h1 className="font-(--font-anton) text-4xl uppercase text-slate-900 dark:text-white">
+                <h1 className="font-(--font-anton) text-2xl sm:text-4xl uppercase text-slate-900 dark:text-white">
                   {employerProfile?.contact_person_name || user.name}
                 </h1>
-                <p className="mt-2 text-lg text-blue-700 dark:text-blue-300">
+                <p className="mt-1 sm:mt-2 text-base sm:text-lg text-blue-700 dark:text-blue-300">
                   {employerProfile?.employer_type?.replaceAll("_", " ") || "Employer profile"}
                 </p>
               </div>
               <Link
                 href="/employer/company-profile"
-                className="group relative flex h-24 w-24 items-center justify-center overflow-hidden rounded-2xl bg-linear-to-br from-blue-500 to-indigo-600 shadow-lg transition hover:shadow-xl hover:scale-105"
+                className="group relative flex h-20 w-20 sm:h-24 sm:w-24 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-linear-to-br from-blue-500 to-indigo-600 shadow-lg transition hover:shadow-xl hover:scale-105"
                 title="View Company Profile"
               >
                 {employerProfile?.logo_url ? (
                   <img src={employerProfile.logo_url} alt="Company Logo" className="h-full w-full object-cover" />
                 ) : (
                   <div className="flex h-full w-full flex-col items-center justify-center text-white">
-                    <Building2 size={40} />
+                    <Building2 size={32} className="sm:hidden" />
+                    <Building2 size={40} className="hidden sm:block" />
                     <span className="text-[10px] font-semibold mt-1 opacity-0 group-hover:opacity-100 transition">Profile</span>
                   </div>
                 )}
@@ -1159,14 +1160,14 @@ export default function EmployerDashboard() {
 
 
           {/* COMPACT JOB SEARCH SECTION (CENTERED & PROPORTIONED TO REFERENCE DESIGN) */}
-          <div className="mx-auto max-w-2xl my-10 space-y-5 flex flex-col items-center">
+          <div className="mx-auto max-w-2xl my-8 sm:my-10 space-y-5 flex flex-col items-center w-full">
             {/* Top Row: Pill Buttons for Select Location & Job Site */}
-            <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-6 w-full">
+            <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-6 w-full">
               {/* Select Location Pill Button */}
               <button
                 type="button"
                 onClick={handleOpenWorkSiteModal}
-                className="group flex items-center justify-between gap-4 rounded-full bg-blue-600 px-5 py-2.5 text-white shadow-md hover:bg-blue-700 active:scale-95 transition cursor-pointer min-w-[210px]"
+                className="group flex items-center justify-between gap-3 sm:gap-4 rounded-full bg-blue-600 px-4 sm:px-5 py-2.5 text-white shadow-md hover:bg-blue-700 active:scale-95 transition cursor-pointer w-full sm:w-auto sm:min-w-[210px] max-w-full"
               >
                 <div className="flex items-center gap-3">
                   <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-blue-600 shrink-0 shadow-xs">
@@ -1177,29 +1178,29 @@ export default function EmployerDashboard() {
                     <p className="text-[11px] font-medium text-blue-100 opacity-90">Accurate and faster</p>
                   </div>
                 </div>
-                <ChevronRight size={18} className="text-white opacity-80 group-hover:translate-x-0.5 transition-transform" />
+                <ChevronRight size={18} className="text-white opacity-80 group-hover:translate-x-0.5 transition-transform shrink-0" />
               </button>
 
               {/* Job Site Pill Button */}
               <button
                 type="button"
                 onClick={handleOpenWorkSiteModal}
-                className="group flex items-center justify-between gap-4 rounded-full bg-blue-600 px-5 py-2.5 text-white shadow-md hover:bg-blue-700 active:scale-95 transition cursor-pointer min-w-[210px]"
+                className="group flex items-center justify-between gap-3 sm:gap-4 rounded-full bg-blue-600 px-4 sm:px-5 py-2.5 text-white shadow-md hover:bg-blue-700 active:scale-95 transition cursor-pointer w-full sm:w-auto sm:min-w-[210px] max-w-full"
               >
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 min-w-0">
                   <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-blue-600 shrink-0 shadow-xs">
                     <MapPin size={18} />
                   </div>
                   <div className="text-left min-w-0">
-                    <p className="text-sm font-bold text-white leading-tight truncate max-w-[130px]">
+                    <p className="text-sm font-bold text-white leading-tight truncate max-w-[130px] sm:max-w-[150px]">
                       {jobSites.find((s) => s.id === jobForm.job_site_id)?.name || "Job site"}
                     </p>
-                    <p className="text-[11px] font-medium text-blue-100 opacity-90 truncate max-w-[130px]">
+                    <p className="text-[11px] font-medium text-blue-100 opacity-90 truncate max-w-[130px] sm:max-w-[150px]">
                       {jobSites.find((s) => s.id === jobForm.job_site_id)?.address || "Accurate and faster"}
                     </p>
                   </div>
                 </div>
-                <ChevronRight size={18} className="text-white opacity-80 group-hover:translate-x-0.5 transition-transform" />
+                <ChevronRight size={18} className="text-white opacity-80 group-hover:translate-x-0.5 transition-transform shrink-0" />
               </button>
             </div>
 
@@ -1211,13 +1212,13 @@ export default function EmployerDashboard() {
                 onClick={handleVoiceInput}
                 title={isListening ? "Listening..." : "Speak requirement"}
                 aria-label={isListening ? "Listening..." : "Speak requirement"}
-                className={`flex h-11 w-11 items-center justify-center rounded-full transition cursor-pointer ml-1 ${
+                className={`flex h-10 w-10 sm:h-11 sm:w-11 shrink-0 items-center justify-center rounded-full transition cursor-pointer ml-1 ${
                   isListening
                     ? "bg-rose-100 text-rose-600 dark:bg-rose-950/60 dark:text-rose-400 animate-pulse"
                     : "text-slate-500 hover:bg-slate-100 hover:text-blue-600 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-blue-400"
                 }`}
               >
-                {isListening ? <Loader2 size={20} className="animate-spin text-rose-500" /> : <Mic size={20} />}
+                {isListening ? <Loader2 size={18} className="animate-spin text-rose-500 sm:w-5 sm:h-5" /> : <Mic size={18} className="sm:w-5 sm:h-5" />}
               </button>
 
               {/* Input Field (Center) */}
@@ -1232,7 +1233,7 @@ export default function EmployerDashboard() {
                   }
                 }}
                 placeholder="Description"
-                className="w-full bg-transparent px-4 py-2 text-sm sm:text-base font-medium text-slate-900 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-slate-500"
+                className="w-full min-w-0 bg-transparent px-2 sm:px-4 py-2 text-sm sm:text-base font-medium text-slate-900 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-slate-500"
               />
 
               {/* Arrow Submit Button (Right) */}
@@ -1242,9 +1243,9 @@ export default function EmployerDashboard() {
                 disabled={isExtracting || !aiPrompt.trim()}
                 title="Extract with AI"
                 aria-label="Extract with AI"
-                className="flex h-11 w-11 items-center justify-center rounded-full bg-linear-to-r from-blue-500 to-indigo-600 text-white shadow-md hover:from-blue-600 hover:to-indigo-700 active:scale-95 transition disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shrink-0 mr-1"
+                className="flex h-10 w-10 sm:h-11 sm:w-11 items-center justify-center rounded-full bg-linear-to-r from-blue-500 to-indigo-600 text-white shadow-md hover:from-blue-600 hover:to-indigo-700 active:scale-95 transition disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shrink-0 mr-1"
               >
-                {isExtracting ? <Loader2 size={20} className="animate-spin" /> : <ArrowRight size={20} />}
+                {isExtracting ? <Loader2 size={18} className="animate-spin sm:w-5 sm:h-5" /> : <ArrowRight size={18} className="sm:w-5 sm:h-5" />}
               </button>
             </div>
           </div>
