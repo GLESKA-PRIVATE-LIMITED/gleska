@@ -1321,46 +1321,6 @@ export default function EmployerDashboard() {
             </div>}
           </section>
 
-          <section id="work-sites" className="mt-12 scroll-mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900">
-            <div className="mb-6 flex items-start justify-between gap-4">
-              <div>
-                <div className="flex items-center gap-3">
-                  <MapPin size={22} className="text-blue-600 dark:text-blue-400" />
-                  <h2 className="font-(--font-anton) text-2xl uppercase text-slate-900 dark:text-white">Work sites</h2>
-                </div>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Save locations for future job requests.</p>
-              </div>
-            </div>
-
-            <form onSubmit={handleSiteSubmit} className="grid gap-3 md:grid-cols-2 lg:grid-cols-5">
-              <input required maxLength={160} value={siteForm.name} onChange={(event) => setSiteForm({ ...siteForm, name: event.target.value })} placeholder="Site name" className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-hidden focus:border-blue-500 dark:border-slate-700 dark:bg-slate-800" />
-              <input required maxLength={500} value={siteForm.address} onChange={(event) => setSiteForm({ ...siteForm, address: event.target.value })} placeholder="Human-readable address" className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-hidden focus:border-blue-500 dark:border-slate-700 dark:bg-slate-800" />
-              <div className="sm:col-span-2"><LocationPicker value={siteForm.address} onSelect={selectSiteLocation} /></div>
-              <button type="submit" disabled={isSiteSaving} className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60">
-                {isSiteSaving ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
-                Add site
-              </button>
-            </form>
-
-            {siteError && <p className="mt-3 text-sm text-rose-600 dark:text-rose-400">{siteError}</p>}
-            <div className="mt-6 divide-y divide-slate-100 dark:divide-slate-800">
-              {isSiteLoading ? (
-                <div className="flex items-center gap-2 py-4 text-sm text-slate-500"><Loader2 size={16} className="animate-spin" /> Loading sites...</div>
-              ) : jobSites.length === 0 ? (
-                <p className="py-4 text-sm text-slate-500 dark:text-slate-400">No work sites saved yet.</p>
-              ) : jobSites.map((site) => (
-                <div key={site.id} className="flex items-center justify-between gap-4 py-4">
-                  <div className="min-w-0">
-                    <p className="font-semibold text-slate-900 dark:text-white">{site.name}</p>
-                    <p className="truncate text-sm text-slate-500 dark:text-slate-400">{site.address || "Location selected"}</p>
-                  </div>
-                  <button type="button" title={`Remove ${site.name}`} aria-label={`Remove ${site.name}`} onClick={() => handleSiteDelete(site.id)} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:border-rose-200 hover:text-rose-600 dark:border-slate-700 dark:text-slate-400 dark:hover:border-rose-800 dark:hover:text-rose-400">
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </section>
         </main>
       </div>
 
