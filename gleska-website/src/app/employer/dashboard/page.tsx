@@ -24,6 +24,9 @@ import {
   HelpCircle,
   ChevronUp,
   History,
+  Mic,
+  ArrowRight,
+  ChevronRight,
 } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
@@ -1210,6 +1213,97 @@ export default function EmployerDashboard() {
             </div>
           </div>
 
+
+          {/* NEW COMPACT JOB SEARCH BAR (PHASE 1) */}
+          <div className="mt-8 mb-8 space-y-4">
+            {/* Top Row: Pill Buttons for Select Location & Job Site */}
+            <div className="flex flex-wrap items-center gap-3 sm:gap-4">
+              {/* Select Location Pill Button */}
+              <button
+                type="button"
+                onClick={handleOpenWorkSiteModal}
+                className="group flex items-center justify-between gap-3 rounded-full bg-blue-600 px-5 py-2.5 text-white shadow-md hover:bg-blue-700 transition cursor-pointer"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-blue-600 shrink-0 shadow-xs">
+                    <MapPin size={18} />
+                  </div>
+                  <div className="text-left">
+                    <p className="text-sm font-bold text-white leading-tight">Select location</p>
+                    <p className="text-[11px] font-medium text-blue-100 opacity-90">Accurate and faster</p>
+                  </div>
+                </div>
+                <ChevronRight size={18} className="text-white opacity-80 group-hover:translate-x-0.5 transition-transform" />
+              </button>
+
+              {/* Job Site Pill Button */}
+              <button
+                type="button"
+                onClick={handleOpenWorkSiteModal}
+                className="group flex items-center justify-between gap-3 rounded-full bg-blue-600 px-5 py-2.5 text-white shadow-md hover:bg-blue-700 transition cursor-pointer"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-blue-600 shrink-0 shadow-xs">
+                    <MapPin size={18} />
+                  </div>
+                  <div className="text-left min-w-0">
+                    <p className="text-sm font-bold text-white leading-tight truncate max-w-[140px]">
+                      {jobSites.find((s) => s.id === jobForm.job_site_id)?.name || "Job site"}
+                    </p>
+                    <p className="text-[11px] font-medium text-blue-100 opacity-90 truncate max-w-[140px]">
+                      {jobSites.find((s) => s.id === jobForm.job_site_id)?.address || "Accurate and faster"}
+                    </p>
+                  </div>
+                </div>
+                <ChevronRight size={18} className="text-white opacity-80 group-hover:translate-x-0.5 transition-transform" />
+              </button>
+            </div>
+
+            {/* Main Pill Search Bar */}
+            <div className="relative flex items-center rounded-full border-2 border-blue-500/80 bg-white p-1.5 shadow-lg dark:border-blue-600 dark:bg-slate-900 focus-within:ring-4 focus-within:ring-blue-500/20 transition-all">
+              {/* Microphone Icon Button (Left) */}
+              <button
+                type="button"
+                onClick={handleVoiceInput}
+                title={isListening ? "Listening..." : "Speak requirement"}
+                aria-label={isListening ? "Listening..." : "Speak requirement"}
+                className={`flex h-11 w-11 items-center justify-center rounded-full transition cursor-pointer ml-1 ${
+                  isListening
+                    ? "bg-rose-100 text-rose-600 dark:bg-rose-950/60 dark:text-rose-400 animate-pulse"
+                    : "text-slate-500 hover:bg-slate-100 hover:text-blue-600 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-blue-400"
+                }`}
+              >
+                {isListening ? <Loader2 size={20} className="animate-spin text-rose-500" /> : <Mic size={20} />}
+              </button>
+
+              {/* Input Field (Center) */}
+              <input
+                type="text"
+                value={aiPrompt}
+                onChange={(event) => setAiPrompt(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    void handleExtractWithAI();
+                  }
+                }}
+                placeholder="Description"
+                className="w-full bg-transparent px-3 py-2 text-sm sm:text-base font-medium text-slate-900 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-slate-500"
+              />
+
+              {/* Arrow Submit Button (Right) */}
+              <button
+                type="button"
+                onClick={() => void handleExtractWithAI()}
+                disabled={isExtracting || !aiPrompt.trim()}
+                title="Extract with AI"
+                aria-label="Extract with AI"
+                className="flex h-11 w-11 items-center justify-center rounded-full bg-linear-to-r from-blue-500 to-indigo-600 text-white shadow-md hover:from-blue-600 hover:to-indigo-700 active:scale-95 transition disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shrink-0 mr-1"
+              >
+                {isExtracting ? <Loader2 size={20} className="animate-spin" /> : <ArrowRight size={20} />}
+              </button>
+            </div>
+          </div>
 
           <section id="create-job" className="mt-12 scroll-mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900">
             <div className="mb-6 flex items-center gap-3">
