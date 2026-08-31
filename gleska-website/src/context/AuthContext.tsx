@@ -4,6 +4,7 @@ import React, { createContext, useContext, useEffect, useState } from "react";
 import apiClient from "@/lib/api";
 import { supabase } from "@/lib/supabase";
 import { initializeMSG91Widget, retryOTP, sendOTP, verifyOTP } from "@/lib/msg91";
+import { registerSession, logSecurityActivity, parseDeviceInfo } from "@/lib/security";
 
 export interface AuthUser {
   id: string;
@@ -212,6 +213,8 @@ const resendOTP = async (mobile: string, requestId: string | null = null, channe
     setUser(state.data.user);
     setNextStep(state.data.next_step || null);
     setClientAuthCookie();
+    // Register device session (non-blocking)
+    registerSession(supabase, session.user.id);
     return { user: state.data.user, nextStep: state.data.next_step || null };
   };
 
@@ -224,6 +227,7 @@ const resendOTP = async (mobile: string, requestId: string | null = null, channe
         password,
       });
       if (signInError) throw signInError;
+      // provisionSession already calls registerSession internally
       await provisionSession(role);
     } catch (err: any) {
       const message = err.response?.data?.detail || err.message || "Email login failed";
@@ -288,7 +292,7 @@ const resendOTP = async (mobile: string, requestId: string | null = null, channe
         terms_accepted: termsAccepted,
       }, { skipSupabaseAuth: true });
 
-      const { error: signInError } = await supabase.auth.signInWithPassword({
+      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
         email: email.trim().toLowerCase(),
         password,
       });
@@ -297,6 +301,10 @@ const resendOTP = async (mobile: string, requestId: string | null = null, channe
       setClientAuthCookie();
       const state = await apiClient.get("/api/v1/auth/me");
       setNextStep(state.data?.next_step || null);
+      // Register device session after signup (non-blocking)
+      if (signInData?.session?.user?.id) {
+        registerSession(supabase, signInData.session.user.id);
+      }
     } catch (err: any) {
       const message = err.response?.data?.detail || err.message || "Signup failed";
       setError(message);
@@ -347,6 +355,10 @@ const resendOTP = async (mobile: string, requestId: string | null = null, channe
       setUser(response.data.user);
       setNextStep(response.data.next_step);
       setClientAuthCookie();
+      // Register device session after mobile login (non-blocking)
+      if (response.data.user?.id) {
+        registerSession(supabase, response.data.user.id);
+      }
     } catch (err: any) {
       const message = err.response?.data?.detail || err.message || "Mobile login failed";
       setError(message);
@@ -359,6 +371,18 @@ const resendOTP = async (mobile: string, requestId: string | null = null, channe
   const logout = async () => {
     try {
       setError(null);
+      // Log security activity before signing out (non-blocking, best-effort)
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user?.id) {
+        const deviceInfo = parseDeviceInfo();
+        logSecurityActivity(supabase, session.user.id, {
+          event_type: "logout",
+          description: `Signed out from ${deviceInfo.deviceName}`,
+          device_name: deviceInfo.deviceName,
+          browser: deviceInfo.browser,
+          os: deviceInfo.os,
+        });
+      }
       await apiClient.post("/api/v1/auth/logout", {}, { withCredentials: true });
       await supabase.auth.signOut();
       setUser(null);
