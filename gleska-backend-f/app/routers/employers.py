@@ -650,28 +650,9 @@ async def _update_onboarding(
         if identity_changed:
             VerificationService.invalidate_for_identity_change(employer["id"])
 
-        required_verifications = VerificationService.required_for(employer_type, merged_details)
-        legal_verifications = [
-            verification_type
-            for verification_type in required_verifications
-            if verification_type in {"CIN", "GSTIN", "PAN", "REGISTRATION_NUMBER", "UDYAM", "AADHAAR"}
-        ]
-        if legal_verifications:
-            verified_records = {
-                record.get("verification_type")
-                for record in VerificationService.list_for_employer(employer["id"])
-                if record.get("status") == "VERIFIED"
-            }
-            missing_verifications = [
-                verification_type
-                for verification_type in legal_verifications
-                if verification_type not in verified_records
-            ]
-            if missing_verifications:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail="Legal verification required before saving remaining onboarding details: " + ", ".join(missing_verifications),
-                )
+        # Legal verification is required for final completion, not for saving
+        # onboarding details. This keeps the step order aligned with the frontend:
+        # details -> review -> verification -> complete.
 
         # Validate required fields for this type
         is_valid, error_msg = OnboardingService.validate_onboarding_fields(

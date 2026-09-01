@@ -76,3 +76,95 @@ async def test_unregistered_aadhaar_requires_real_provider_and_uses_saved_propri
     assert error.value.status_code == 503
     assert error.value.detail["code"] == VerificationService.PROVIDER_NOT_CONFIGURED
     assert captured["args"] == ("employer-id", "AADHAAR", "UNREGISTERED_BUSINESS", "123456789012")
+
+
+@pytest.mark.asyncio
+async def test_unregistered_business_details_can_be_saved_before_aadhaar_verification(monkeypatch):
+    profile = {"id": "employer-id", "user_id": "user-id", "employer_type": "UNREGISTERED_BUSINESS", "onboarding_status": "IN_PROGRESS"}
+    account = {"email": "owner@example.com", "mobile": "9876543210"}
+    details = {}
+
+    class Query:
+        def __init__(self, data):
+            self.data = data
+
+        def select(self, _fields):
+            return self
+
+        def eq(self, field, value):
+            return self
+
+        def single(self):
+            return self
+
+        def execute(self):
+            return SimpleNamespace(data=self.data)
+
+        def upsert(self, payload, on_conflict=None):
+            self.payload = payload
+            self.on_conflict = on_conflict
+            self.data = [{
+                **payload,
+                "id": "details-id",
+                "created_at": "2026-01-01T00:00:00Z",
+                "updated_at": "2026-01-01T00:00:00Z",
+            }]
+            return self
+
+        def update(self, payload):
+            self.payload = payload
+            self.data = [payload]
+            return self
+
+    class FakeSupabase:
+        def table(self, name):
+            if name == "employer_profiles":
+                return Query(profile)
+            if name == "users":
+                return Query(account)
+            if name == "employer_onboarding_details":
+                return Query(details)
+            if name == "employer_verifications":
+                return Query([])
+            raise AssertionError(f"Unexpected table: {name}")
+
+    monkeypatch.setattr(employers, "supabase", FakeSupabase())
+    monkeypatch.setattr(
+        VerificationService,
+        "required_for",
+        staticmethod(lambda employer_type, details=None: ["AADHAAR"]),
+    )
+    monkeypatch.setattr(
+        VerificationService,
+        "list_for_employer",
+        staticmethod(lambda employer_id: []),
+    )
+    monkeypatch.setattr(
+        VerificationService,
+        "invalidate_for_identity_change",
+        staticmethod(lambda employer_id: None),
+    )
+
+    result = await employers._update_onboarding(
+        SimpleNamespace(id="user-id", role="EMPLOYER"),
+        "UNREGISTERED_BUSINESS",
+        {
+            "business_name": "Local Shop",
+            "business_type": "Proprietorship",
+            "nature_of_business": "Retail",
+            "number_of_proprietors": "1",
+            "proprietor_name": "Amit Kumar",
+            "proprietor_aadhaar": "123456789012",
+            "industry_category": "Retail",
+            "address": "Main Road",
+            "city": "Nanded",
+            "state": "Maharashtra",
+            "pincode": "431745",
+            "work_location": "Nanded, Maharashtra, India",
+            "company_email": "owner@example.com",
+            "company_phone": "9876543210",
+        },
+    )
+
+    assert result.business_name == "Local Shop"
+    assert result.company_email == "owner@example.com"
