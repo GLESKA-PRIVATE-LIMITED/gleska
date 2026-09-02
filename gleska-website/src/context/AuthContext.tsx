@@ -20,6 +20,7 @@ export interface AuthUser {
   created_at: string;
   updated_at: string;
   subscription_valid_until?: string | null;
+  profile_photo_url?: string | null;
 }
 
 export type NextStep =

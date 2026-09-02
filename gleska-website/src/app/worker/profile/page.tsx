@@ -23,7 +23,6 @@ import {
   CheckCircle2,
   Edit3,
   Plus,
-  UploadCloud,
   Briefcase,
   Save,
   Camera,
@@ -37,6 +36,7 @@ import apiClient from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import LocationPicker, { LocationSelection } from "@/components/LocationPicker";
 import { getBrowserLocation } from "@/lib/location";
+import { useWorkerProfilePhoto } from "@/lib/useWorkerProfilePhoto";
 
 type Profile = {
   trade_id?: string | null;
@@ -79,6 +79,8 @@ export default function WorkerProfilePage() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement>(null);
+  const profilePhotoInputRef = useRef<HTMLInputElement>(null);
+  const { isUploading: isProfilePhotoUploading, uploadPhoto } = useWorkerProfilePhoto();
 
   const [isEditingPersonal, setIsEditingPersonal] = useState(false);
   const [isEditingAddress, setIsEditingAddress] = useState(false);
@@ -297,6 +299,18 @@ export default function WorkerProfilePage() {
     }
   };
 
+  const handleProfilePhotoChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    try {
+      await uploadPhoto(file, refreshUser);
+      toast.success("Profile photo updated");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to update profile photo");
+    }
+  };
+
   // Calculate Profile Strength percentage
   const calculateProfileStrength = () => {
     const checks = [
@@ -383,7 +397,7 @@ export default function WorkerProfilePage() {
 
             {/* Profile (Active) */}
             <Link
-              href="/worker/profile"
+              href="/worker/documents"
               className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition ${
                 isSidebarOpen ? "" : "justify-center"
               } bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400`}
@@ -394,15 +408,16 @@ export default function WorkerProfilePage() {
             </Link>
 
             {/* Documents */}
-            <div
-              className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-400 opacity-60 dark:text-slate-500 cursor-not-allowed ${
+            <Link
+              href="/worker/profile"
+              className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white transition ${
                 isSidebarOpen ? "" : "justify-center"
               }`}
               title="Documents"
             >
               <FileText size={20} className="shrink-0" />
               {isSidebarOpen && <span>Documents</span>}
-            </div>
+            </Link>
 
             {/* Security */}
             <div
@@ -603,17 +618,21 @@ export default function WorkerProfilePage() {
                 <span>Dashboard</span>
               </Link>
               <Link
-                href="/worker/profile"
+                href="/worker/documents"
                 onClick={() => setIsMobileMenuOpen(false)}
                 className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400"
               >
                 <User size={20} />
                 <span>Profile</span>
               </Link>
-              <div className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-400 opacity-60 cursor-not-allowed">
+              <Link
+                href="/worker/profile"
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+              >
                 <FileText size={20} />
                 <span>Documents</span>
-              </div>
+              </Link>
               <div className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-400 opacity-60 cursor-not-allowed">
                 <ShieldCheck size={20} />
                 <span>Security</span>
@@ -710,13 +729,19 @@ export default function WorkerProfilePage() {
                 </div>
 
                 <div className="relative">
-                  <div className="flex h-20 w-20 sm:h-24 sm:w-24 items-center justify-center rounded-full border-4 border-white/30 bg-blue-500 text-3xl font-extrabold text-white shadow-xl backdrop-blur-md">
-                    {(user.name || "W").charAt(0).toUpperCase()}
+                  <div className="flex h-20 w-20 sm:h-24 sm:w-24 items-center justify-center overflow-hidden rounded-full border-4 border-white/30 bg-blue-500 text-3xl font-extrabold text-white shadow-xl backdrop-blur-md">
+                    {user.profile_photo_url ? (
+                      <img src={user.profile_photo_url} alt="Profile" className="h-full w-full object-cover" />
+                    ) : (
+                      (user.name || "W").charAt(0).toUpperCase()
+                    )}
                   </div>
+                  <input ref={profilePhotoInputRef} type="file" accept="image/jpeg,image/png,image/webp" onChange={handleProfilePhotoChange} className="hidden" />
                   <button
                     type="button"
                     title="Change profile photo"
-                    onClick={() => toast.info("Profile picture upload coming soon!")}
+                    onClick={() => profilePhotoInputRef.current?.click()}
+                    disabled={isProfilePhotoUploading}
                     className="absolute bottom-0 right-0 flex h-8 w-8 items-center justify-center rounded-full bg-white text-blue-600 shadow-md hover:scale-110 transition cursor-pointer"
                   >
                     <Camera size={16} />
@@ -1195,71 +1220,6 @@ export default function WorkerProfilePage() {
 
             {/* Right Column (Span 1): Documents & Security Cards */}
             <div className="space-y-6">
-              {/* Documents Card */}
-              <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900">
-                <div className="flex items-center gap-3 mb-2">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400">
-                    <UploadCloud size={20} />
-                  </div>
-                  <div>
-                    <h2 className="text-lg font-bold text-slate-900 dark:text-white">
-                      Documents
-                    </h2>
-                  </div>
-                </div>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mb-6">
-                  Upload your documents for verification
-                </p>
-
-                <div className="space-y-3">
-                  {/* Experience Certificate */}
-                  <div className="flex items-center justify-between rounded-xl bg-slate-50 p-3.5 border border-slate-100 dark:bg-slate-800/50 dark:border-slate-800">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400 shrink-0">
-                        <ShieldCheck size={16} />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
-                          Experience Certificate
-                        </p>
-                        <p className="text-[10px] text-slate-400 truncate">Upload PDF, JPG or PNG</p>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => toast.info("Document upload feature coming soon")}
-                      className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-white hover:bg-blue-500 transition shrink-0 cursor-pointer"
-                      title="Upload Experience Certificate"
-                    >
-                      <UploadCloud size={16} />
-                    </button>
-                  </div>
-
-                  {/* Police Verification */}
-                  <div className="flex items-center justify-between rounded-xl bg-slate-50 p-3.5 border border-slate-100 dark:bg-slate-800/50 dark:border-slate-800">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400 shrink-0">
-                        <ShieldCheck size={16} />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
-                          Police Verification
-                        </p>
-                        <p className="text-[10px] text-slate-400 truncate">Upload PDF, JPG or PNG</p>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => toast.info("Document upload feature coming soon")}
-                      className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-white hover:bg-blue-500 transition shrink-0 cursor-pointer"
-                      title="Upload Police Verification"
-                    >
-                      <UploadCloud size={16} />
-                    </button>
-                  </div>
-                </div>
-              </section>
-
               {/* Security / Privacy Banner Card matching Figma */}
               <section className="relative overflow-hidden rounded-2xl bg-linear-to-br from-blue-600 to-indigo-700 p-6 text-white text-center shadow-lg">
                 <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-white/20 backdrop-blur-md">

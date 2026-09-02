@@ -138,3 +138,78 @@ class WorkerJobRouteResponse(BaseModel):
     origin: WorkerRouteOrigin
     destination: WorkerRouteDestination
     route: WorkerRouteSummary
+
+
+class WorkerDocumentResponse(BaseModel):
+    """Metadata for a worker document stored in Supabase Storage."""
+    
+    id: str
+    worker_profile_id: str
+    document_type: str  # EXPERIENCE_CERTIFICATE or POLICE_VERIFICATION
+    original_filename: str
+    mime_type: str
+    file_size_bytes: int
+    uploaded_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+class WorkerDocumentListResponse(BaseModel):
+    """List of documents for a worker."""
+    documents: list[WorkerDocumentResponse]
+    total_count: int
+
+
+class ProfilePhotoUploadRequest(BaseModel):
+    original_filename: str = Field(..., min_length=1, max_length=255)
+    mime_type: str
+    file_size_bytes: int = Field(..., gt=0, le=5242880)
+    storage_path: Optional[str] = None
+
+    @field_validator("mime_type")
+    @classmethod
+    def validate_mime_type(cls, value: str) -> str:
+        if value not in {"image/jpeg", "image/png", "image/webp"}:
+            raise ValueError("Only JPEG, PNG, and WEBP images are allowed")
+        return value
+
+    @field_validator("original_filename")
+    @classmethod
+    def validate_filename(cls, value: str) -> str:
+        if "/" in value or "\\" in value or ".." in value:
+            raise ValueError("Filename cannot contain path separators or parent directory references")
+        return value.strip()
+
+
+class DocumentUploadRequest(BaseModel):
+    """Metadata about a document being uploaded (sent by frontend)."""
+    document_type: str = Field(..., description="EXPERIENCE_CERTIFICATE or POLICE_VERIFICATION")
+    original_filename: str = Field(..., min_length=1, max_length=255)
+    mime_type: str = Field(..., description="application/pdf, image/jpeg, or image/png")
+    file_size_bytes: int = Field(..., gt=0, le=5242880, description="File size in bytes, max 5 MB")
+    
+    @field_validator("document_type")
+    @classmethod
+    def validate_document_type(cls, value: str) -> str:
+        valid_types = {"EXPERIENCE_CERTIFICATE", "POLICE_VERIFICATION"}
+        if value not in valid_types:
+            raise ValueError(f"document_type must be one of {valid_types}")
+        return value
+    
+    @field_validator("mime_type")
+    @classmethod
+    def validate_mime_type(cls, value: str) -> str:
+        valid_types = {"application/pdf", "image/jpeg", "image/png"}
+        if value not in valid_types:
+            raise ValueError(f"mime_type must be one of {valid_types}")
+        return value
+    
+    @field_validator("original_filename")
+    @classmethod
+    def validate_filename(cls, value: str) -> str:
+        # Prevent path traversal
+        if "/" in value or "\\" in value or ".." in value:
+            raise ValueError("Filename cannot contain path separators or parent directory references")
+        return value.strip()

@@ -15,6 +15,26 @@ from app.schemas.worker import (
     WorkerProfileResponse,
     UpdateWorkerProfileSchema,
 )
+from app.schemas.worker import (
+    WorkerCurrentLocationResponse,
+    WorkerJobRouteResponse,
+    WorkerLocationUpdate,
+    WorkerProfileResponse,
+    UpdateWorkerProfileSchema,
+    WorkerDocumentResponse,
+    WorkerDocumentListResponse,
+    DocumentUploadRequest,
+    ProfilePhotoUploadRequest,
+)
+from app.services.document_service import WorkerDocumentService
+from app.services.profile_photo_service import (
+    PROFILE_PHOTOS_BUCKET,
+    delete_profile_photo,
+    get_profile_photo_path,
+    get_signed_profile_photo_url,
+    now_iso,
+    validate_profile_photo,
+)
 from app.services.geocoding_service import GeocodingError, GeocodingService
 from app.services.google_routes_service import GoogleRoutesError, GoogleRoutesService
 from app.services.matching_service import MatchingError, MatchingService
@@ -22,6 +42,35 @@ from app.services.matching_service import MatchingError, MatchingService
 router = APIRouter(prefix="/workers", tags=["workers"])
 logger = logging.getLogger(__name__)
 CURRENT_LOCATION_MAX_AGE = timedelta(minutes=10)
+
+
+@router.post("/me/profile-photo/upload-start")
+async def start_profile_photo_upload(request: ProfilePhotoUploadRequest, user: UserResponse = Depends(require_worker)):
+    validate_profile_photo(request)
+    return {"storage_path": get_profile_photo_path(user.id, request.original_filename)}
+
+
+@router.post("/me/profile-photo/upload-complete", response_model=UserResponse)
+async def complete_profile_photo_upload(request: ProfilePhotoUploadRequest, user: UserResponse = Depends(require_worker)):
+    validate_profile_photo(request)
+    expected_prefix = f"users/{user.id}/"
+    if not request.storage_path or not request.storage_path.startswith(expected_prefix):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid profile photo path")
+
+    current = supabase.table("users").select("profile_photo_path").eq("id", user.id).single().execute().data or {}
+    old_path = current.get("profile_photo_path")
+    supabase.table("users").update({"profile_photo_path": request.storage_path, "updated_at": now_iso()}).eq("id", user.id).execute()
+    if old_path and old_path != request.storage_path:
+        delete_profile_photo(old_path)
+    updated = supabase.table("users").select("*").eq("id", user.id).single().execute().data
+    return UserResponse(**updated, profile_photo_url=get_signed_profile_photo_url(request.storage_path))
+
+
+@router.delete("/me/profile-photo", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_profile_photo_upload(user: UserResponse = Depends(require_worker)):
+    current = supabase.table("users").select("profile_photo_path").eq("id", user.id).single().execute().data or {}
+    delete_profile_photo(current.get("profile_photo_path"))
+    supabase.table("users").update({"profile_photo_path": None, "updated_at": now_iso()}).eq("id", user.id).execute()
 
 
 def _is_current_location_fresh(updated_at: Any) -> bool:
@@ -462,3 +511,335 @@ async def get_worker_jobs(user: UserResponse = Depends(require_worker)):
             recent_jobs.append(item)
 
     return {"active_job": active_job, "recent_jobs": recent_jobs}
+
+
+# ============================================================================
+# Document Management Endpoints
+# ============================================================================
+
+@router.post("/me/documents/upload-start", response_model=dict)
+async def start_document_upload(
+    upload_request: DocumentUploadRequest,
+    user: UserResponse = Depends(require_worker)
+):
+    """
+    Start a document upload session.
+    Frontend calls this before uploading the file to Storage.
+    Returns storage path and upload URL.
+    
+    Args:
+        upload_request: Document metadata (type, filename, mime_type, file_size)
+        user: Authenticated worker user
+        
+    Returns:
+        {
+            "storage_path": "workers/{worker_id}/documents/{type}/{uuid}_{filename}",
+            "document_type": "EXPERIENCE_CERTIFICATE|POLICE_VERIFICATION"
+        }
+    """
+    try:
+        # Get worker profile
+        profile_response = (
+            supabase.table("worker_profiles")
+            .select("id")
+            .eq("user_id", user.id)
+            .single()
+            .execute()
+        )
+        
+        profile = profile_response.data
+        if not profile:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Worker profile not found"
+            )
+        
+        worker_profile_id = profile["id"]
+        
+        # Initialize document service
+        doc_service = WorkerDocumentService(supabase, supabase)
+        
+        # Validate file metadata
+        doc_service.validate_file_metadata(upload_request)
+        
+        # Generate storage path
+        storage_path = doc_service.get_document_storage_path(
+            worker_profile_id,
+            upload_request.document_type,
+            upload_request.original_filename
+        )
+        
+        return {
+            "storage_path": storage_path,
+            "document_type": upload_request.document_type,
+            "worker_profile_id": worker_profile_id,
+        }
+        
+    except ValueError as e:
+        logger.warning("Document validation failed: user_id=%s, error=%s", user.id, str(e))
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.exception("Document upload start failed: user_id=%s", user.id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="DOCUMENT_UPLOAD_START_FAILED"
+        )
+
+
+@router.post("/me/documents/upload-complete", response_model=WorkerDocumentResponse)
+async def complete_document_upload(
+    upload_request: DocumentUploadRequest,
+    user: UserResponse = Depends(require_worker)
+):
+    """
+    Complete a document upload.
+    Frontend calls this AFTER successfully uploading file to Storage.
+    Creates metadata record in database.
+    
+    Args:
+        upload_request: Document metadata (type, filename, mime_type, file_size)
+        user: Authenticated worker user
+        
+    Returns:
+        WorkerDocumentResponse with created document metadata
+    """
+    try:
+        # Get worker profile
+        profile_response = (
+            supabase.table("worker_profiles")
+            .select("id")
+            .eq("user_id", user.id)
+            .single()
+            .execute()
+        )
+        
+        profile = profile_response.data
+        if not profile:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Worker profile not found"
+            )
+        
+        worker_profile_id = profile["id"]
+        
+        # Initialize document service
+        doc_service = WorkerDocumentService(supabase, supabase)
+        
+        # Validate file metadata
+        doc_service.validate_file_metadata(upload_request)
+        
+        # Delete old document from Storage if it exists (replacement scenario)
+        await doc_service.delete_old_document_storage(
+            worker_profile_id,
+            upload_request.document_type
+        )
+        
+        # Generate storage path
+        storage_path = doc_service.get_document_storage_path(
+            worker_profile_id,
+            upload_request.document_type,
+            upload_request.original_filename
+        )
+        
+        # Create/update metadata in database (UPSERT)
+        document = await doc_service.create_document_metadata(
+            worker_profile_id,
+            upload_request,
+            storage_path
+        )
+        
+        return document
+        
+    except ValueError as e:
+        logger.warning("Document validation failed: user_id=%s, error=%s", user.id, str(e))
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.exception("Document upload complete failed: user_id=%s", user.id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="DOCUMENT_UPLOAD_COMPLETE_FAILED"
+        )
+
+
+@router.get("/me/documents", response_model=WorkerDocumentListResponse)
+async def list_worker_documents(user: UserResponse = Depends(require_worker)):
+    """
+    List all documents for the authenticated worker.
+    
+    Args:
+        user: Authenticated worker user
+        
+    Returns:
+        WorkerDocumentListResponse with list of documents
+    """
+    try:
+        # Get worker profile
+        profile_response = (
+            supabase.table("worker_profiles")
+            .select("id")
+            .eq("user_id", user.id)
+            .single()
+            .execute()
+        )
+        
+        profile = profile_response.data
+        if not profile:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Worker profile not found"
+            )
+        
+        worker_profile_id = profile["id"]
+        
+        # Initialize document service
+        doc_service = WorkerDocumentService(supabase, supabase)
+        
+        # Get documents
+        documents = await doc_service.get_worker_documents(worker_profile_id)
+        
+        return WorkerDocumentListResponse(
+            documents=documents,
+            total_count=len(documents)
+        )
+        
+    except Exception as e:
+        logger.exception("Document list failed: user_id=%s", user.id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="DOCUMENT_LIST_FAILED"
+        )
+
+
+@router.get("/me/documents/{document_id}", response_model=WorkerDocumentResponse)
+async def get_worker_document(
+    document_id: str,
+    user: UserResponse = Depends(require_worker)
+):
+    """
+    Retrieve metadata for a single document.
+    
+    Args:
+        document_id: UUID of the document
+        user: Authenticated worker user
+        
+    Returns:
+        WorkerDocumentResponse
+    """
+    try:
+        # Get worker profile
+        profile_response = (
+            supabase.table("worker_profiles")
+            .select("id")
+            .eq("user_id", user.id)
+            .single()
+            .execute()
+        )
+        
+        profile = profile_response.data
+        if not profile:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Worker profile not found"
+            )
+        
+        worker_profile_id = profile["id"]
+        
+        # Initialize document service
+        doc_service = WorkerDocumentService(supabase, supabase)
+        
+        # Get document
+        document = await doc_service.get_document(worker_profile_id, document_id)
+        
+        return document
+        
+    except ValueError as e:
+        logger.warning("Document not found: user_id=%s, document_id=%s", user.id, document_id)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found"
+        )
+    except Exception as e:
+        logger.exception("Document retrieval failed: user_id=%s, document_id=%s", user.id, document_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="DOCUMENT_RETRIEVAL_FAILED"
+        )
+
+
+@router.get("/me/documents/{document_id}/view")
+async def view_worker_document(
+    document_id: str,
+    user: UserResponse = Depends(require_worker)
+):
+    try:
+        profile_response = supabase.table("worker_profiles").select("id").eq("user_id", user.id).single().execute()
+        profile = profile_response.data
+        if not profile:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Worker profile not found")
+        doc_service = WorkerDocumentService(supabase, supabase)
+        url = await doc_service.get_document_view_url(profile["id"], document_id)
+        return {"url": url, "expires_in": 3600}
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found") from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Document view failed: user_id=%s, document_id=%s", user.id, document_id)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="DOCUMENT_VIEW_FAILED") from exc
+
+
+@router.delete("/me/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_worker_document(
+    document_id: str,
+    user: UserResponse = Depends(require_worker)
+):
+    """
+    Delete a document (both metadata and Storage file).
+    
+    Args:
+        document_id: UUID of the document
+        user: Authenticated worker user
+    """
+    try:
+        # Get worker profile
+        profile_response = (
+            supabase.table("worker_profiles")
+            .select("id")
+            .eq("user_id", user.id)
+            .single()
+            .execute()
+        )
+        
+        profile = profile_response.data
+        if not profile:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Worker profile not found"
+            )
+        
+        worker_profile_id = profile["id"]
+        
+        # Initialize document service
+        doc_service = WorkerDocumentService(supabase, supabase)
+        
+        # Delete document
+        await doc_service.delete_document(worker_profile_id, document_id)
+        
+    except ValueError as e:
+        logger.warning("Document not found for deletion: user_id=%s, document_id=%s", user.id, document_id)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found"
+        )
+    except Exception as e:
+        logger.exception("Document deletion failed: user_id=%s, document_id=%s", user.id, document_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="DOCUMENT_DELETION_FAILED"
+        )

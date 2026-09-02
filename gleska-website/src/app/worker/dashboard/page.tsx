@@ -13,6 +13,7 @@ import {
   Loader2,
   PanelLeft,
   LayoutDashboard,
+  FileText,
   ShieldCheck,
   Building2,
   History,
@@ -408,6 +409,18 @@ export default function WorkerDashboard() {
               {isSidebarOpen && <span>Profile</span>}
             </Link>
 
+            {/* Documents (Functional -> /worker/documents) */}
+            <Link
+              href="/worker/documents"
+              className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white transition ${
+                isSidebarOpen ? "" : "justify-center"
+              }`}
+              title="Documents"
+            >
+              <FileText size={20} className="shrink-0" />
+              {isSidebarOpen && <span>Documents</span>}
+            </Link>
+
             {/* Security (Disabled placeholder) */}
             <div
               className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-400 opacity-60 dark:text-slate-500 cursor-not-allowed ${
@@ -619,6 +632,14 @@ export default function WorkerDashboard() {
               >
                 <User size={20} />
                 <span>Profile</span>
+              </Link>
+              <Link
+                href="/worker/documents"
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+              >
+                <FileText size={20} />
+                <span>Documents</span>
               </Link>
               <div className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-400 opacity-60 cursor-not-allowed">
                 <ShieldCheck size={20} />

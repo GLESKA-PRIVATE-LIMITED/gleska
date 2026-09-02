@@ -11,6 +11,7 @@ from app.services.msg91_service import MSG91Service
 from app.services.onboarding_service import OnboardingService
 from app.schemas.auth import UserResponse, ProvisionUserSchema, SignupPreflightSchema, MobileVerifiedSignupSchema, PasswordResetRequestSchema, PasswordResetVerifySchema, PasswordResetCompleteSchema, ResendOTPSchema
 from app.services.password_reset_service import PasswordResetService
+from app.services.profile_photo_service import get_signed_profile_photo_url
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 logger = logging.getLogger(__name__)
@@ -284,6 +285,8 @@ async def login_msg91(request: dict, response: Response):
 async def get_current_user_info(user: UserResponse = Depends(get_current_user)):
     next_step = OnboardingService.determine_next_step(user)
     application_user = user.model_dump(mode="json")
+    photo_row = supabase.table("users").select("profile_photo_path").eq("id", user.id).single().execute().data or {}
+    application_user["profile_photo_url"] = get_signed_profile_photo_url(photo_row.get("profile_photo_path"))
     if user.role == "WORKER":
         profile_response = supabase.table("worker_profiles").select("onboarding_status, profile_completed").eq("user_id", user.id).single().execute()
         profile = profile_response.data or {}

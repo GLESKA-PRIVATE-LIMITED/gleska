@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 // Define protected route prefixes
-const WORKER_PROTECTED_PREFIXES = ["/worker/dashboard", "/worker/profile", "/worker/onboarding"];
+const WORKER_PROTECTED_PREFIXES = ["/worker/dashboard", "/worker/profile", "/worker/documents", "/worker/onboarding"];
 const EMPLOYER_PROTECTED_PREFIXES = ["/employer/dashboard", "/employer/onboarding", "/employer/workers", "/employer/attendance"];
 
 export function middleware(request: NextRequest) {
@@ -48,6 +48,7 @@ export const config = {
     "/",
     "/worker/dashboard/:path*",
     "/worker/profile/:path*",
+    "/worker/documents/:path*",
     "/worker/onboarding/:path*",
     "/employer/dashboard/:path*",
     "/employer/onboarding/:path*",

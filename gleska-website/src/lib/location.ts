@@ -11,6 +11,16 @@ export type LiveLocationSnapshot = {
   updated_at: number;
 };
 
+export type NormalizedLocation = {
+  latitude: number;
+  longitude: number;
+  accuracy: number;
+  altitude: number | null;
+  altitudeAccuracy: number | null;
+  heading: number | null;
+  speed: number | null;
+};
+
 export class InaccurateLocationError extends Error {
   code = "INACCURATE";
   accuracy: number;
@@ -27,7 +37,7 @@ function getBrowserPosition(options: PositionOptions): Promise<GeolocationPositi
   });
 }
 
-export function normalizeCoordinates(latitude: number, longitude: number, accuracy: number): GeolocationCoordinates | null {
+export function normalizeCoordinates(latitude: number, longitude: number, accuracy: number): NormalizedLocation | null {
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || !Number.isFinite(accuracy)) return null;
   if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return null;
   if (accuracy <= 0 || accuracy > MAX_LOCATION_ACCURACY_METERS) return null;
@@ -50,7 +60,7 @@ export function shouldSendLiveLocationUpdate(current: LiveLocationSnapshot | nul
   return hasHeartbeat || movementMeters >= MIN_LOCATION_MOVEMENT_METERS;
 }
 
-export async function getBrowserLocation(): Promise<GeolocationCoordinates> {
+export async function getBrowserLocation(): Promise<NormalizedLocation> {
   if (!navigator.geolocation) throw new Error("Location unavailable");
 
   let position: GeolocationPosition;

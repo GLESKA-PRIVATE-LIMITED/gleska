@@ -47,6 +47,7 @@ class UserResponse(BaseModel):
     employer_type: Optional[str] = None
     profile_completed: Optional[bool] = None
     subscription_valid_until: Optional[datetime] = None
+    profile_photo_url: Optional[str] = None
 
     class Config:
         from_attributes = True
