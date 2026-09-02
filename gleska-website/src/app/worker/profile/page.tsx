@@ -50,6 +50,9 @@ type Profile = {
   longitude?: number | null;
   location_source?: string | null;
   availability_status: "AVAILABLE" | "ON_JOB" | "OFFLINE";
+  marital_status?: string | null;
+  blood_group?: string | null;
+  skills?: string[] | null;
   profile_completed?: boolean;
 };
 
@@ -112,6 +115,8 @@ export default function WorkerProfilePage() {
     setDisplayNameInput(user.name || "");
     setPhoneInput(user.mobile || "");
     setEmailInput(user.email || "");
+    setMaritalStatus("Unmarried");
+    setBloodGroup("A+");
 
     apiClient
       .get("/api/v1/workers/me")
@@ -119,8 +124,22 @@ export default function WorkerProfilePage() {
         setProfile(response.data);
         setInitialProfile(response.data);
 
-        // Populate skills from trade_id if available
-        if (response.data.trade_id) {
+        // Load marital status and blood group from API (default if not set)
+        if (response.data.marital_status) {
+          setMaritalStatus(response.data.marital_status);
+        } else {
+          setMaritalStatus("Unmarried");
+        }
+        if (response.data.blood_group) {
+          setBloodGroup(response.data.blood_group);
+        } else {
+          setBloodGroup("A+");
+        }
+
+        // Load skills from API or populate from trade_id
+        if (response.data.skills && Array.isArray(response.data.skills)) {
+          setSkills(response.data.skills);
+        } else if (response.data.trade_id) {
           const trade = response.data.trade_id;
           if (!skills.includes(trade)) {
             setSkills((prev) => Array.from(new Set([trade, ...prev])));
@@ -161,8 +180,34 @@ export default function WorkerProfilePage() {
       };
       setDetectedLocation(location);
       return location;
-    } catch {
-      toast.error("Unable to detect current location");
+    } catch (error) {
+      // Handle different error types
+      if (error instanceof Error) {
+        if ("code" in error && error.code === "INACCURATE") {
+          // Accuracy > 1000m
+          const accuracy = (error as any).accuracy;
+          toast.error(`Location accuracy is too low (${Math.round(accuracy / 1000)}km). Enable device location services or try from a device with GPS.`);
+        } else if ("code" in error && typeof error.code === "number") {
+          // GeolocationPositionError
+          const code = error.code as number;
+          if (code === 1) {
+            toast.error("Location permission was denied. Please enable location access and try again.");
+          } else if (code === 2) {
+            toast.error("Your location could not be determined. Please try again.");
+          } else if (code === 3) {
+            toast.error("Location request timed out. Please try again.");
+          } else {
+            toast.error("Unable to detect current location");
+          }
+        } else if (error.message === "Location unavailable") {
+          toast.error("Location services are not available on this device.");
+        } else {
+          // Likely network/reverse-geocoding error
+          toast.error("Could not determine your address. Please try again.");
+        }
+      } else {
+        toast.error("Unable to detect current location");
+      }
       return null;
     }
   };
@@ -210,9 +255,26 @@ export default function WorkerProfilePage() {
     if (event) event.preventDefault();
     setSaving(true);
     try {
-      const response = await apiClient.put("/api/v1/workers/me", profile);
+      const response = await apiClient.put("/api/v1/workers/me", {
+        ...profile,
+        marital_status: maritalStatus,
+        blood_group: bloodGroup,
+        skills,
+      });
       setProfile(response.data);
       setInitialProfile(response.data);
+
+      // Update marital/blood/skills from response
+      if (response.data.marital_status) {
+        setMaritalStatus(response.data.marital_status);
+      }
+      if (response.data.blood_group) {
+        setBloodGroup(response.data.blood_group);
+      }
+      if (response.data.skills && Array.isArray(response.data.skills)) {
+        setSkills(response.data.skills);
+      }
+
       setIsEditingPersonal(false);
       setIsEditingAddress(false);
       setIsEditingProfessional(false);
@@ -760,7 +822,9 @@ export default function WorkerProfilePage() {
                       >
                         <option value="Unmarried">Unmarried</option>
                         <option value="Married">Married</option>
-                        <option value="Single">Single</option>
+                        <option value="Divorced">Divorced</option>
+                        <option value="Widowed">Widowed</option>
+                        <option value="Separated">Separated</option>
                       </select>
                     ) : (
                       <p className="mt-1 text-sm font-bold text-slate-800 dark:text-slate-100">
@@ -780,9 +844,12 @@ export default function WorkerProfilePage() {
                         onChange={(e) => setBloodGroup(e.target.value)}
                         className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-semibold dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                       >
-                        <option value="AB+">AB+</option>
                         <option value="A+">A+</option>
+                        <option value="A-">A-</option>
                         <option value="B+">B+</option>
+                        <option value="B-">B-</option>
+                        <option value="AB+">AB+</option>
+                        <option value="AB-">AB-</option>
                         <option value="O+">O+</option>
                         <option value="O-">O-</option>
                       </select>
@@ -930,6 +997,16 @@ export default function WorkerProfilePage() {
                             value={profile.state || ""}
                             onChange={(e) => setProfile({ ...profile, state: e.target.value })}
                             className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold dark:border-slate-700 dark:bg-slate-800"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs font-bold text-slate-600 dark:text-slate-400">Pincode</label>
+                          <input
+                            type="text"
+                            value={profile.pincode || ""}
+                            onChange={(e) => setProfile({ ...profile, pincode: e.target.value })}
+                            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold dark:border-slate-700 dark:bg-slate-800"
+                            placeholder="6-digit postal code"
                           />
                         </div>
                       </div>

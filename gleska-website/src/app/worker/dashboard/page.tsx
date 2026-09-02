@@ -25,6 +25,7 @@ import {
 import { toast } from "sonner";
 import Link from "next/link";
 import apiClient from "@/lib/api";
+import { shouldSendLiveLocationUpdate, type LiveLocationSnapshot, normalizeCoordinates } from "@/lib/location";
 
 declare global {
   interface Window {
@@ -191,6 +192,61 @@ export default function WorkerDashboard() {
   const [jobsError, setJobsError] = React.useState("");
   const [routeError, setRouteError] = React.useState("");
   const [routeLoading, setRouteLoading] = React.useState(false);
+  const watcherIdRef = React.useRef<number | null>(null);
+  const lastLiveLocationRef = React.useRef<LiveLocationSnapshot | null>(null);
+
+  useEffect(() => {
+    if (!user || user.role !== "WORKER") return;
+    if (typeof navigator === "undefined" || !("geolocation" in navigator)) return;
+    if (watcherIdRef.current !== null) return;
+
+    const onPosition = (position: GeolocationPosition) => {
+      const { latitude, longitude, accuracy } = position.coords;
+      const normalized = normalizeCoordinates(latitude, longitude, accuracy);
+      if (!normalized) return;
+
+      const next: LiveLocationSnapshot = {
+        latitude: normalized.latitude,
+        longitude: normalized.longitude,
+        accuracy_m: normalized.accuracy,
+        updated_at: Date.now(),
+      };
+
+      if (!shouldSendLiveLocationUpdate(lastLiveLocationRef.current, next)) {
+        return;
+      }
+
+      lastLiveLocationRef.current = next;
+      apiClient.put("/api/v1/workers/me/location", {
+        latitude: next.latitude,
+        longitude: next.longitude,
+        accuracy_m: next.accuracy_m,
+      }).catch(() => {
+        // Preserve the dashboard and retry on the next valid GPS callback.
+      });
+    };
+
+    const onError = (error: GeolocationPositionError) => {
+      if (error.code === 1) {
+        toast.error("Location permission was denied. Using your saved profile location.");
+      }
+    };
+
+    const watchId = navigator.geolocation.watchPosition(onPosition, onError, {
+      enableHighAccuracy: true,
+      maximumAge: 300000,
+      timeout: 30000,
+    });
+    watcherIdRef.current = watchId;
+
+    return () => {
+      if (watcherIdRef.current !== null) {
+        navigator.geolocation.clearWatch(watcherIdRef.current);
+        watcherIdRef.current = null;
+      }
+      lastLiveLocationRef.current = null;
+    };
+  }, [user]);
 
   // Layout UI states
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(true);

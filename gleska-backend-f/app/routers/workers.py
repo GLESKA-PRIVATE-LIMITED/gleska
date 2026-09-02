@@ -224,15 +224,51 @@ async def update_worker_profile(
         if "latitude" in update_dict:
             update_dict["location_updated_at"] = datetime.now(timezone.utc).isoformat()
 
-        if {"trade_id", "experience_years", "expected_daily_wage", "city", "state"} & update_dict.keys():
-            current_response = supabase.table("worker_profiles").select("*").eq("user_id", user.id).single().execute()
-            current_profile = current_response.data or {}
-            merged_profile = {**current_profile, **update_dict}
-            update_dict["profile_completed"] = all(
-                merged_profile.get(field) is not None and str(merged_profile.get(field)).strip() != ""
-                for field in ("trade_id", "experience_years", "expected_daily_wage", "city", "state")
-            )
-            update_dict["onboarding_status"] = "COMPLETED" if update_dict["profile_completed"] else "IN_PROGRESS"
+        # Always recalculate profile_completed to align with frontend's 8-field requirement:
+        # 1. user.name (from users table)
+        # 2. user.mobile (from users table)
+        # 3. user.email (from users table)
+        # 4. profile.trade_id
+        # 5. profile.experience_years
+        # 6. profile.expected_daily_wage
+        # 7. profile.city OR profile.address
+        # 8. profile.availability_status (must not be "OFFLINE")
+        current_response = supabase.table("worker_profiles").select("*").eq("user_id", user.id).single().execute()
+        current_profile = current_response.data or {}
+        merged_profile = {**current_profile, **update_dict}
+
+        # Check user fields from UserResponse object
+        has_name = user.name is not None and str(user.name).strip() != ""
+        has_mobile = user.mobile is not None and str(user.mobile).strip() != ""
+        has_email = user.email is not None and str(user.email).strip() != ""
+
+        # Check profile fields with merged updates
+        has_trade_id = merged_profile.get("trade_id") is not None and str(merged_profile.get("trade_id")).strip() != ""
+        has_experience = merged_profile.get("experience_years") is not None
+        has_wage = merged_profile.get("expected_daily_wage") is not None
+        has_location = (
+            (merged_profile.get("city") is not None and str(merged_profile.get("city")).strip() != "")
+            or (merged_profile.get("address") is not None and str(merged_profile.get("address")).strip() != "")
+        )
+        availability = merged_profile.get("availability_status")
+        has_availability = (
+            availability is not None 
+            and str(availability).strip() != "" 
+            and str(availability).strip() != "OFFLINE"
+        )
+
+        # Profile is complete only if all 8 fields are satisfied
+        update_dict["profile_completed"] = all([
+            has_name,
+            has_mobile,
+            has_email,
+            has_trade_id,
+            has_experience,
+            has_wage,
+            has_location,
+            has_availability,
+        ])
+        update_dict["onboarding_status"] = "COMPLETED" if update_dict["profile_completed"] else "IN_PROGRESS"
 
         if not update_dict:
             # Get and return current profile if no updates
@@ -342,9 +378,11 @@ async def get_available_jobs(
             .maybe_single()
             .execute()
         )
-        current_data = current_location.data or {}
-        if isinstance(current_location.data, list):
-            current_data = current_location.data[0] if current_location.data else {}
+        current_data = {}
+        if current_location is not None and getattr(current_location, "data", None) is not None:
+            current_data = current_location.data or {}
+            if isinstance(current_data, list):
+                current_data = current_data[0] if current_data else {}
         has_current = (
             current_data.get("latitude") is not None
             and current_data.get("longitude") is not None

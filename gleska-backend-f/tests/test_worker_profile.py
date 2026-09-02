@@ -100,3 +100,297 @@ def test_worker_profile_rejects_blank_trade():
 def test_worker_profile_rejects_negative_numeric_values(field):
     with pytest.raises(ValidationError):
         UpdateWorkerProfileSchema(**{field: -1})
+
+
+# Tests for 8-field profile completion alignment (audit fix)
+def user_with_fields(**overrides):
+    """Create a UserResponse-like object with required fields."""
+    defaults = {
+        "id": "user-id",
+        "name": "John Doe",
+        "mobile": "+919999999999",
+        "email": "john@example.com",
+        "role": "WORKER",
+        "is_mobile_verified": True,
+        "is_active": True,
+    }
+    defaults.update(overrides)
+    return SimpleNamespace(**defaults)
+
+
+@pytest.mark.asyncio
+async def test_profile_completed_requires_all_8_fields(monkeypatch):
+    """Profile completion requires all 8 fields: name, mobile, email, trade_id, exp, wage, location, availability."""
+    # Start with all fields present
+    row = profile_row(
+        trade_id="Electrician",
+        experience_years=8,
+        expected_daily_wage=999,
+        city="Nanded",
+        state="Maharashtra",
+        address="Street 1",
+        availability_status="AVAILABLE",
+    )
+    fake_supabase = FakeSupabase(row)
+    monkeypatch.setattr(workers, "supabase", fake_supabase)
+
+    # User with all required fields
+    user = user_with_fields(
+        name="John Doe",
+        mobile="+919999999999",
+        email="john@example.com",
+    )
+
+    request = UpdateWorkerProfileSchema(availability_status="AVAILABLE")
+    result = await update_worker_profile(request, user)
+
+    assert result.profile_completed is True
+    assert result.onboarding_status == "COMPLETED"
+
+
+@pytest.mark.asyncio
+async def test_profile_incomplete_missing_user_name(monkeypatch):
+    """Profile incomplete if user.name is missing."""
+    row = profile_row(
+        trade_id="Electrician",
+        experience_years=8,
+        expected_daily_wage=999,
+        city="Nanded",
+        address="Street 1",
+        availability_status="AVAILABLE",
+    )
+    fake_supabase = FakeSupabase(row)
+    monkeypatch.setattr(workers, "supabase", fake_supabase)
+
+    # User with missing name
+    user = user_with_fields(name="", mobile="+919999999999", email="john@example.com")
+
+    request = UpdateWorkerProfileSchema(availability_status="AVAILABLE")
+    result = await update_worker_profile(request, user)
+
+    assert result.profile_completed is False
+    assert result.onboarding_status == "IN_PROGRESS"
+
+
+@pytest.mark.asyncio
+async def test_profile_incomplete_missing_user_mobile(monkeypatch):
+    """Profile incomplete if user.mobile is missing."""
+    row = profile_row(
+        trade_id="Electrician",
+        experience_years=8,
+        expected_daily_wage=999,
+        city="Nanded",
+        address="Street 1",
+        availability_status="AVAILABLE",
+    )
+    fake_supabase = FakeSupabase(row)
+    monkeypatch.setattr(workers, "supabase", fake_supabase)
+
+    # User with missing mobile
+    user = user_with_fields(name="John Doe", mobile=None, email="john@example.com")
+
+    request = UpdateWorkerProfileSchema(availability_status="AVAILABLE")
+    result = await update_worker_profile(request, user)
+
+    assert result.profile_completed is False
+    assert result.onboarding_status == "IN_PROGRESS"
+
+
+@pytest.mark.asyncio
+async def test_profile_incomplete_missing_user_email(monkeypatch):
+    """Profile incomplete if user.email is missing."""
+    row = profile_row(
+        trade_id="Electrician",
+        experience_years=8,
+        expected_daily_wage=999,
+        city="Nanded",
+        address="Street 1",
+        availability_status="AVAILABLE",
+    )
+    fake_supabase = FakeSupabase(row)
+    monkeypatch.setattr(workers, "supabase", fake_supabase)
+
+    # User with missing email
+    user = user_with_fields(name="John Doe", mobile="+919999999999", email=None)
+
+    request = UpdateWorkerProfileSchema(availability_status="AVAILABLE")
+    result = await update_worker_profile(request, user)
+
+    assert result.profile_completed is False
+    assert result.onboarding_status == "IN_PROGRESS"
+
+
+@pytest.mark.asyncio
+async def test_profile_incomplete_missing_trade_id(monkeypatch):
+    """Profile incomplete if trade_id is missing."""
+    row = profile_row(
+        trade_id=None,
+        experience_years=8,
+        expected_daily_wage=999,
+        city="Nanded",
+        address="Street 1",
+        availability_status="AVAILABLE",
+    )
+    fake_supabase = FakeSupabase(row)
+    monkeypatch.setattr(workers, "supabase", fake_supabase)
+
+    user = user_with_fields()
+    request = UpdateWorkerProfileSchema(availability_status="AVAILABLE")
+    result = await update_worker_profile(request, user)
+
+    assert result.profile_completed is False
+    assert result.onboarding_status == "IN_PROGRESS"
+
+
+@pytest.mark.asyncio
+async def test_profile_incomplete_missing_experience_years(monkeypatch):
+    """Profile incomplete if experience_years is missing."""
+    row = profile_row(
+        trade_id="Electrician",
+        experience_years=None,
+        expected_daily_wage=999,
+        city="Nanded",
+        address="Street 1",
+        availability_status="AVAILABLE",
+    )
+    fake_supabase = FakeSupabase(row)
+    monkeypatch.setattr(workers, "supabase", fake_supabase)
+
+    user = user_with_fields()
+    request = UpdateWorkerProfileSchema(availability_status="AVAILABLE")
+    result = await update_worker_profile(request, user)
+
+    assert result.profile_completed is False
+    assert result.onboarding_status == "IN_PROGRESS"
+
+
+@pytest.mark.asyncio
+async def test_profile_incomplete_missing_expected_daily_wage(monkeypatch):
+    """Profile incomplete if expected_daily_wage is missing."""
+    row = profile_row(
+        trade_id="Electrician",
+        experience_years=8,
+        expected_daily_wage=None,
+        city="Nanded",
+        address="Street 1",
+        availability_status="AVAILABLE",
+    )
+    fake_supabase = FakeSupabase(row)
+    monkeypatch.setattr(workers, "supabase", fake_supabase)
+
+    user = user_with_fields()
+    request = UpdateWorkerProfileSchema(availability_status="AVAILABLE")
+    result = await update_worker_profile(request, user)
+
+    assert result.profile_completed is False
+    assert result.onboarding_status == "IN_PROGRESS"
+
+
+@pytest.mark.asyncio
+async def test_profile_incomplete_missing_location_both_city_and_address(monkeypatch):
+    """Profile incomplete if both city and address are missing."""
+    row = profile_row(
+        trade_id="Electrician",
+        experience_years=8,
+        expected_daily_wage=999,
+        city=None,
+        address=None,
+        availability_status="AVAILABLE",
+    )
+    fake_supabase = FakeSupabase(row)
+    monkeypatch.setattr(workers, "supabase", fake_supabase)
+
+    user = user_with_fields()
+    request = UpdateWorkerProfileSchema(availability_status="AVAILABLE")
+    result = await update_worker_profile(request, user)
+
+    assert result.profile_completed is False
+    assert result.onboarding_status == "IN_PROGRESS"
+
+
+@pytest.mark.asyncio
+async def test_profile_complete_with_city_only(monkeypatch):
+    """Profile complete if city is present (address not required)."""
+    row = profile_row(
+        trade_id="Electrician",
+        experience_years=8,
+        expected_daily_wage=999,
+        city="Nanded",
+        address=None,
+        availability_status="AVAILABLE",
+    )
+    fake_supabase = FakeSupabase(row)
+    monkeypatch.setattr(workers, "supabase", fake_supabase)
+
+    user = user_with_fields()
+    request = UpdateWorkerProfileSchema(availability_status="AVAILABLE")
+    result = await update_worker_profile(request, user)
+
+    assert result.profile_completed is True
+    assert result.onboarding_status == "COMPLETED"
+
+
+@pytest.mark.asyncio
+async def test_profile_complete_with_address_only(monkeypatch):
+    """Profile complete if address is present (city not required)."""
+    row = profile_row(
+        trade_id="Electrician",
+        experience_years=8,
+        expected_daily_wage=999,
+        city=None,
+        address="Street 1",
+        availability_status="AVAILABLE",
+    )
+    fake_supabase = FakeSupabase(row)
+    monkeypatch.setattr(workers, "supabase", fake_supabase)
+
+    user = user_with_fields()
+    request = UpdateWorkerProfileSchema(availability_status="AVAILABLE")
+    result = await update_worker_profile(request, user)
+
+    assert result.profile_completed is True
+    assert result.onboarding_status == "COMPLETED"
+
+
+@pytest.mark.asyncio
+async def test_profile_incomplete_availability_status_offline(monkeypatch):
+    """Profile incomplete if availability_status is OFFLINE."""
+    row = profile_row(
+        trade_id="Electrician",
+        experience_years=8,
+        expected_daily_wage=999,
+        city="Nanded",
+        address="Street 1",
+        availability_status="OFFLINE",
+    )
+    fake_supabase = FakeSupabase(row)
+    monkeypatch.setattr(workers, "supabase", fake_supabase)
+
+    user = user_with_fields()
+    request = UpdateWorkerProfileSchema(availability_status="OFFLINE")
+    result = await update_worker_profile(request, user)
+
+    assert result.profile_completed is False
+    assert result.onboarding_status == "IN_PROGRESS"
+
+
+@pytest.mark.asyncio
+async def test_profile_complete_with_availability_on_job(monkeypatch):
+    """Profile complete if availability_status is ON_JOB."""
+    row = profile_row(
+        trade_id="Electrician",
+        experience_years=8,
+        expected_daily_wage=999,
+        city="Nanded",
+        address="Street 1",
+        availability_status="ON_JOB",
+    )
+    fake_supabase = FakeSupabase(row)
+    monkeypatch.setattr(workers, "supabase", fake_supabase)
+
+    user = user_with_fields()
+    request = UpdateWorkerProfileSchema(availability_status="ON_JOB")
+    result = await update_worker_profile(request, user)
+
+    assert result.profile_completed is True
+    assert result.onboarding_status == "COMPLETED"

@@ -21,6 +21,9 @@ class WorkerProfileResponse(BaseModel):
     location_updated_at: Optional[datetime] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
+    marital_status: Optional[str] = None
+    blood_group: Optional[str] = None
+    skills: Optional[list[str]] = None
     profile_completed: bool = False
     onboarding_status: str = "NOT_STARTED"
     created_at: datetime
@@ -43,6 +46,9 @@ class UpdateWorkerProfileSchema(BaseModel):
     latitude: Optional[float] = Field(default=None, ge=-90, le=90)
     longitude: Optional[float] = Field(default=None, ge=-180, le=180)
     location_source: Optional[str] = None
+    marital_status: Optional[str] = Field(default=None)
+    blood_group: Optional[str] = Field(default=None)
+    skills: Optional[list[str]] = Field(default=None)
 
     @field_validator("trade_id")
     @classmethod
@@ -53,6 +59,35 @@ class UpdateWorkerProfileSchema(BaseModel):
         if not normalized:
             raise ValueError("trade_id must not be blank")
         return normalized
+
+    @field_validator("marital_status")
+    @classmethod
+    def validate_marital_status(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        valid_values = {"Unmarried", "Married", "Divorced", "Widowed", "Separated"}
+        if value not in valid_values:
+            raise ValueError(f"marital_status must be one of {valid_values}")
+        return value
+
+    @field_validator("blood_group")
+    @classmethod
+    def validate_blood_group(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        valid_values = {"A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"}
+        if value not in valid_values:
+            raise ValueError(f"blood_group must be one of {valid_values}")
+        return value
+
+    @field_validator("skills")
+    @classmethod
+    def validate_skills(cls, value: Optional[list[str]]) -> Optional[list[str]]:
+        if value is None:
+            return None
+        if not isinstance(value, list):
+            raise ValueError("skills must be a list of strings")
+        return [skill.strip() for skill in value if isinstance(skill, str) and skill.strip()]
 
 
 class WorkerLocationUpdate(BaseModel):

@@ -11,7 +11,32 @@ import {
   Building2,
   User,
   ArrowRight,
+  ArrowLeft,
   Loader2,
+  CheckCircle2,
+  ShieldCheck,
+  Building,
+  MapPin,
+  FileCheck,
+  Sparkles,
+  ChevronRight,
+  Info,
+  Check,
+  BadgeCheck,
+  Briefcase,
+  Users,
+  Tag,
+  Globe,
+  TrendingUp,
+  FileText,
+  Phone,
+  Mail,
+  CreditCard,
+  Rocket,
+  Shield,
+  RefreshCw,
+  Sliders,
+  Compass,
 } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
@@ -40,10 +65,57 @@ type VerificationState = {
 };
 
 const REQUIRED_FIELDS: Record<EmployerType, string[]> = {
-  REGISTERED_INDUSTRY: ["business_name", "cin_number", "industry_type", "industry_category", "registered_address", "company_email", "company_phone", "city", "state", "pincode", "work_location"],
-  REGISTERED_BUSINESS: ["business_name", "cin_number", "business_type", "industry_category", "registered_address", "company_email", "company_phone", "city", "state", "pincode", "work_location"],
-  UNREGISTERED_BUSINESS: ["business_name", "business_type", "nature_of_business", "number_of_proprietors", "company_email", "company_phone", "proprietor_name", "proprietor_aadhaar", "industry_category", "address", "city", "state", "pincode", "work_location"],
-  INDIVIDUAL: ["address", "company_email", "company_phone", "city", "state", "pincode", "work_location"],
+  REGISTERED_INDUSTRY: [
+    "business_name",
+    "cin_number",
+    "industry_type",
+    "industry_category",
+    "registered_address",
+    "company_email",
+    "company_phone",
+    "city",
+    "state",
+    "pincode",
+    "work_location",
+  ],
+  REGISTERED_BUSINESS: [
+    "business_name",
+    "cin_number",
+    "business_type",
+    "industry_category",
+    "registered_address",
+    "company_email",
+    "company_phone",
+    "city",
+    "state",
+    "pincode",
+    "work_location",
+  ],
+  UNREGISTERED_BUSINESS: [
+    "business_name",
+    "business_type",
+    "nature_of_business",
+    "number_of_proprietors",
+    "company_email",
+    "company_phone",
+    "proprietor_name",
+    "proprietor_aadhaar",
+    "industry_category",
+    "address",
+    "city",
+    "state",
+    "pincode",
+    "work_location",
+  ],
+  INDIVIDUAL: [
+    "address",
+    "company_email",
+    "company_phone",
+    "city",
+    "state",
+    "pincode",
+    "work_location",
+  ],
 };
 
 function requiredFieldsFor(type: EmployerType): string[] {
@@ -59,7 +131,13 @@ function getErrorDetail(error: unknown, fallback: string): string {
   if (typeof detail === "string") return detail;
   if (Array.isArray(detail) && detail.length > 0) {
     const msgs = detail
-      .map((item) => (typeof item === "object" && item && "msg" in item ? String(item.msg) : typeof item === "string" ? item : ""))
+      .map((item) =>
+        typeof item === "object" && item && "msg" in item
+          ? String(item.msg)
+          : typeof item === "string"
+          ? item
+          : ""
+      )
       .filter(Boolean);
     if (msgs.length > 0) return msgs.join(", ");
   }
@@ -78,7 +156,7 @@ function hasCompleteDetails(type: EmployerType, details: Record<string, unknown>
 
 function maskAadhaar(value: string): string {
   const digits = value.replace(/\D/g, "");
-  return digits.length === 12 ? `XXXX XXXX ${digits.slice(-4)}` : "Masked";
+  return digits.length === 12 ? `XXXX XXXX ${digits.slice(-4)}` : value || "Masked";
 }
 
 function hasVerifiedLegalIdentity(type: EmployerType | "", verification: VerificationState): boolean {
@@ -118,22 +196,44 @@ const ONBOARDING_FIELDS = [
   "work_location",
   "latitude",
   "longitude",
+  "website_url",
+  "annual_revenue",
+  "description",
+  "business_category",
 ];
 
 export default function EmployerOnboarding() {
   const router = useRouter();
   const { user, isLoading, nextStep, logout, refreshUser } = useAuth();
 
-  const [step, setStep] = useState<"type" | "identity" | "details" | "verification" | "review">("type");
+  // 1: Business Information, 2: Contact, 3: Verify, 0: Type Selection
+  const [activeStep, setActiveStep] = useState<0 | 1 | 2 | 3>(0);
   const [employerType, setEmployerType] = useState<EmployerType | "">("");
   const [formData, setFormData] = useState<OnboardingFormData>({});
   const [formError, setFormError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isHydrating, setIsHydrating] = useState(true);
   const [verification, setVerification] = useState<VerificationState>({ required: [], records: [] });
 
+  // Animation Transition States
+  const [transitionDirection, setTransitionDirection] = useState<"next" | "prev">("next");
+  const [isAnimating, setIsAnimating] = useState(false);
+  const [animPhase, setAnimPhase] = useState<"idle" | "exit" | "enter">("idle");
+  const [orbRotation, setOrbRotation] = useState(0);
+
   const selectWorkLocation = (location: LocationSelection) => {
-    setFormData((current) => ({ ...current, work_location: location.address, city: location.city || current.city || "", state: location.state || current.state || "", pincode: location.pincode || current.pincode || "", latitude: String(location.latitude), longitude: String(location.longitude) }));
+    setFormData((current) => ({
+      ...current,
+      work_location: location.address,
+      city: location.city || current.city || "",
+      state: location.state || current.state || "",
+      pincode: location.pincode || current.pincode || "",
+      latitude: String(location.latitude),
+      longitude: String(location.longitude),
+    }));
+    setFormError("");
+    setFieldErrors((prev) => ({ ...prev, work_location: "", pincode: "", city: "", state: "" }));
   };
 
   useEffect(() => {
@@ -145,7 +245,6 @@ export default function EmployerOnboarding() {
       router.push("/");
     }
 
-    // If onboarding is complete, redirect to dashboard
     if (!isLoading && nextStep === "DASHBOARD") {
       router.push("/employer/dashboard");
     }
@@ -166,12 +265,13 @@ export default function EmployerOnboarding() {
         const details = response.data?.details || {};
         const savedVerification = response.data?.verification || { required: [], records: [] };
         const savedFormData = Object.fromEntries(
-          ONBOARDING_FIELDS
-            .filter((field) => details[field] !== null && details[field] !== undefined)
-            .map((field) => [field, String(details[field])]),
+          ONBOARDING_FIELDS.filter(
+            (field) => details[field] !== null && details[field] !== undefined
+          ).map((field) => [field, String(details[field])])
         );
-          if (!savedFormData.company_email && user.email) savedFormData.company_email = user.email;
-          if (!savedFormData.company_phone && user.mobile) savedFormData.company_phone = user.mobile;
+
+        if (!savedFormData.company_email && user.email) savedFormData.company_email = user.email;
+        if (!savedFormData.company_phone && user.mobile) savedFormData.company_phone = user.mobile;
 
         if (employer?.employer_type) {
           const selectedType = employer.employer_type as EmployerType;
@@ -188,37 +288,20 @@ export default function EmployerOnboarding() {
             return;
           }
 
-          const isRegistered = selectedType === "REGISTERED_BUSINESS" || selectedType === "REGISTERED_INDUSTRY";
-          const legalVerified = hasVerifiedLegalIdentity(selectedType, currentVerification);
           const savedDetailsComplete = hasCompleteDetails(selectedType, details);
 
-          if (isRegistered) {
-            if (!legalVerified) {
-              setStep("identity"); // Step 2: Legal Verification
-            } else if (!savedDetailsComplete) {
-              setStep("details"); // Step 3: Remaining Details
+          if (!savedDetailsComplete) {
+            const step1Incomplete = checkStep1Incomplete(selectedType, savedFormData);
+            if (step1Incomplete) {
+              setActiveStep(1);
             } else {
-              setStep("review"); // Step 4: Review
-            }
-          } else if (selectedType === "UNREGISTERED_BUSINESS") {
-            const unregVerificationComplete = currentVerification.required.length === 0 || currentVerification.required.every((t: string) =>
-              currentVerification.records.some((r: VerificationRecord) => r.verification_type === t && r.status === "VERIFIED")
-            );
-            if (!savedDetailsComplete) {
-              setStep("details");
-            } else if (!unregVerificationComplete) {
-              setStep("verification");
-            } else {
-              setStep("review");
+              setActiveStep(2);
             }
           } else {
-            // INDIVIDUAL
-            if (!savedDetailsComplete) {
-              setStep("details");
-            } else {
-              setStep("review");
-            }
+            setActiveStep(3);
           }
+        } else {
+          setActiveStep(0);
         }
       } catch (err: unknown) {
         const status = (err as { response?: { status?: number } }).response?.status;
@@ -236,12 +319,48 @@ export default function EmployerOnboarding() {
     };
   }, [isLoading, user, nextStep, router]);
 
+  const checkStep1Incomplete = (type: EmployerType, data: OnboardingFormData) => {
+    if (type === "REGISTERED_BUSINESS") {
+      return !data.business_name?.trim() || !data.registered_address?.trim();
+    }
+    if (type === "REGISTERED_INDUSTRY") {
+      return !data.business_name?.trim() || !data.registered_address?.trim() || !data.industry_type?.trim();
+    }
+    if (type === "UNREGISTERED_BUSINESS") {
+      return !data.business_name?.trim() || !data.address?.trim() || !data.nature_of_business?.trim();
+    }
+    if (type === "INDIVIDUAL") {
+      return !data.address?.trim();
+    }
+    return false;
+  };
+
+  // Animated Step Transition Handler
+  const transitionToStep = (targetStep: 0 | 1 | 2 | 3, dir: "next" | "prev" = "next") => {
+    if (isAnimating || targetStep === activeStep) return;
+    setIsAnimating(true);
+    setTransitionDirection(dir);
+    setOrbRotation((prev) => prev + (dir === "next" ? 180 : -180));
+    setAnimPhase("exit");
+
+    setTimeout(() => {
+      setActiveStep(targetStep);
+      setAnimPhase("enter");
+      setTimeout(() => {
+        setAnimPhase("idle");
+        setIsAnimating(false);
+      }, 300);
+    }, 250);
+  };
+
   if (isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#eef1fb] dark:bg-slate-950">
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-slate-950">
         <div className="flex flex-col items-center gap-4">
-          <Loader2 size={40} className="animate-spin text-blue-600" />
-          <p className="text-slate-600 dark:text-slate-400">Loading...</p>
+          <div className="relative flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 shadow-xl shadow-blue-500/30">
+            <Zap size={28} className="text-white animate-pulse" fill="currentColor" />
+          </div>
+          <p className="text-sm font-semibold text-slate-600 dark:text-slate-400">Loading profile...</p>
         </div>
       </div>
     );
@@ -252,15 +371,21 @@ export default function EmployerOnboarding() {
   }
 
   const handleSelectType = async (type: string) => {
-    if (isSubmitting) return;
+    if (isSubmitting || isAnimating) return;
     setFormError("");
+    setFieldErrors({});
     setIsSubmitting(true);
     try {
       await apiClient.post("/api/v1/employers/onboarding/type", {
         employer_type: type as EmployerType,
       });
-      const verificationResponse = await apiClient.get("/api/v1/employers/onboarding/verifications", { withCredentials: true });
-      const nextVerification = { required: verificationResponse.data?.required || [], records: verificationResponse.data?.records || [] };
+      const verificationResponse = await apiClient.get("/api/v1/employers/onboarding/verifications", {
+        withCredentials: true,
+      });
+      const nextVerification = {
+        required: verificationResponse.data?.required || [],
+        records: verificationResponse.data?.records || [],
+      };
       setVerification(nextVerification);
       setEmployerType(type as EmployerType);
       setFormData((current) => ({
@@ -269,13 +394,8 @@ export default function EmployerOnboarding() {
         company_phone: current.company_phone || user.mobile || "",
       }));
 
-      const isRegistered = type === "REGISTERED_BUSINESS" || type === "REGISTERED_INDUSTRY";
-      if (isRegistered) {
-        setStep("identity"); // Step 2: Legal Verification
-      } else {
-        setStep("details"); // Step 2 for Individual / Unregistered
-      }
-      toast.success("Employer type selected");
+      transitionToStep(1, "next");
+      toast.success("Employer category set");
     } catch (err: unknown) {
       const message = getErrorDetail(err, "Failed to select type");
       setFormError(message);
@@ -289,12 +409,14 @@ export default function EmployerOnboarding() {
     const formatted = ["cin_number", "pan_number", "gstin"].includes(field)
       ? value.toUpperCase().replace(/\s+/g, "")
       : field === "proprietor_aadhaar" || field === "director_aadhaar"
-        ? value.replace(/\D/g, "").slice(0, 12)
-        : field === "number_of_proprietors"
-          ? value.replace(/\D/g, "")
-          : value;
+      ? value.replace(/\D/g, "").slice(0, 12)
+      : field === "number_of_proprietors"
+      ? value.replace(/\D/g, "")
+      : value;
+
     setFormData((current) => ({ ...current, [field]: formatted }));
     setFormError("");
+    setFieldErrors((prev) => ({ ...prev, [field]: "" }));
   };
 
   const endpointByType: Record<EmployerType, string> = {
@@ -304,23 +426,132 @@ export default function EmployerOnboarding() {
     INDIVIDUAL: "/api/v1/employers/onboarding/individual",
   };
 
-  const validateDetails = () => {
-    if (!employerType) return "Select an employer type first";
-
-    const missingField = REQUIRED_FIELDS[employerType].find(
-      (field) => !formData[field]?.trim(),
+  const buildPayload = () =>
+    Object.fromEntries(
+      Object.entries(formData).filter(([, value]) => value && value.trim() !== "")
     );
-    if (missingField) return `${missingField.replaceAll("_", " ")} is required`;
-    if (!/^\d{6}$/.test(formData.pincode || "")) return "pincode must be a valid 6-digit number";
-    if (employerType === "UNREGISTERED_BUSINESS") {
-      if (formData.proprietor_aadhaar && !/^\d{12}$/.test(formData.proprietor_aadhaar.trim())) {
-        return "Proprietor Aadhaar must be a valid 12-digit number";
+
+  const saveCurrentDraft = async () => {
+    if (!employerType) return true;
+    try {
+      await apiClient.put(endpointByType[employerType], buildPayload(), {
+        withCredentials: true,
+      });
+      return true;
+    } catch (err: unknown) {
+      const message = getErrorDetail(err, "Failed to save details");
+      setFormError(message);
+      toast.error(message);
+      return false;
+    }
+  };
+
+  // Step 1 Validation & Proceed
+  const handleProceedFromStep1 = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isSubmitting || isAnimating) return;
+    setFormError("");
+    const errors: Record<string, string> = {};
+
+    if (!employerType) {
+      setFormError("Please select an employer category first");
+      return;
+    }
+
+    if (employerType === "REGISTERED_BUSINESS" || employerType === "REGISTERED_INDUSTRY") {
+      if (!formData.business_name?.trim()) {
+        errors.business_name = "Business / Company name is required";
       }
-      if (formData.number_of_proprietors && (isNaN(Number(formData.number_of_proprietors)) || Number(formData.number_of_proprietors) < 1)) {
-        return "Number of proprietors must be at least 1";
+      if (employerType === "REGISTERED_INDUSTRY" && !formData.industry_type?.trim()) {
+        errors.industry_type = "Industry type is required";
+      }
+      if (!formData.registered_address?.trim()) {
+        errors.registered_address = "Registered address is required";
+      }
+    } else if (employerType === "UNREGISTERED_BUSINESS") {
+      if (!formData.business_name?.trim()) {
+        errors.business_name = "Business name is required";
+      }
+      if (!formData.nature_of_business?.trim()) {
+        errors.nature_of_business = "Nature of business is required";
+      }
+      if (!formData.address?.trim()) {
+        errors.address = "Business address is required";
+      }
+    } else if (employerType === "INDIVIDUAL") {
+      if (!formData.address?.trim()) {
+        errors.address = "Primary address is required";
       }
     }
-    return "";
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      setFormError("Please fill in all required fields before continuing");
+      return;
+    }
+
+    setIsSubmitting(true);
+    const saved = await saveCurrentDraft();
+    setIsSubmitting(false);
+
+    if (saved) {
+      transitionToStep(2, "next");
+      toast.success("Business information saved");
+    }
+  };
+
+  // Step 2 Validation & Proceed
+  const handleProceedFromStep2 = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isSubmitting || isAnimating) return;
+    setFormError("");
+    const errors: Record<string, string> = {};
+
+    if (!formData.company_email?.trim()) {
+      errors.company_email = "Account email is required";
+    }
+    if (!formData.company_phone?.trim()) {
+      errors.company_phone = "Account phone is required";
+    }
+    if (!formData.city?.trim()) {
+      errors.city = "City is required";
+    }
+    if (!formData.state?.trim()) {
+      errors.state = "State is required";
+    }
+    if (!formData.pincode?.trim() || !/^\d{6}$/.test(formData.pincode.trim())) {
+      errors.pincode = "A valid 6-digit pincode is required";
+    }
+    if (!formData.work_location?.trim()) {
+      errors.work_location = "Work location is required";
+    }
+
+    if (employerType === "UNREGISTERED_BUSINESS") {
+      if (!formData.proprietor_name?.trim()) {
+        errors.proprietor_name = "Proprietor name is required";
+      }
+      if (formData.proprietor_aadhaar && !/^\d{12}$/.test(formData.proprietor_aadhaar.trim())) {
+        errors.proprietor_aadhaar = "Proprietor Aadhaar must be a 12-digit number";
+      }
+      if (!formData.number_of_proprietors || Number(formData.number_of_proprietors) < 1) {
+        errors.number_of_proprietors = "Number of proprietors must be at least 1";
+      }
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      setFormError("Please correct the highlighted errors before continuing");
+      return;
+    }
+
+    setIsSubmitting(true);
+    const saved = await saveCurrentDraft();
+    setIsSubmitting(false);
+
+    if (saved) {
+      transitionToStep(3, "next");
+      toast.success("Contact details saved");
+    }
   };
 
   const validateIdentity = () => {
@@ -333,61 +564,8 @@ export default function EmployerOnboarding() {
     return "";
   };
 
-  const buildPayload = () => Object.fromEntries(
-    Object.entries(formData).filter(([, value]) => value && value.trim() !== ""),
-  );
-
-  const handleSaveDetails = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (isSubmitting) return;
-    const validationError = validateDetails();
-    if (validationError) {
-      const message = validationError;
-      setFormError(message);
-      toast.error(message);
-      return;
-    }
-
-    setFormError("");
-    setIsSubmitting(true);
-    try {
-      const selectedType = employerType;
-      if (!selectedType) return;
-      await apiClient.put(endpointByType[selectedType], buildPayload(), {
-        withCredentials: true,
-      });
-      const verificationResponse = await apiClient.get("/api/v1/employers/onboarding/verifications", {
-        withCredentials: true,
-      });
-      const nextVer = {
-        required: verificationResponse.data?.required || [],
-        records: verificationResponse.data?.records || [],
-      };
-      setVerification(nextVer);
-      if (selectedType === "UNREGISTERED_BUSINESS" && nextVer.required.length > 0) {
-        const unregComplete = nextVer.required.every((t: string) =>
-          nextVer.records.some((r: VerificationRecord) => r.verification_type === t && r.status === "VERIFIED")
-        );
-        if (!unregComplete) {
-          setStep("verification");
-          toast.success("Details saved. Please complete document verification.");
-          return;
-        }
-      }
-      setStep("review");
-      toast.success("Details saved. Review before submitting.");
-    } catch (err: unknown) {
-      const message = getErrorDetail(err, "Failed to save onboarding details");
-      setFormError(message);
-      toast.error(message);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleVerifyLegalIdentity = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (isSubmitting) return;
+  const handleVerifyLegalIdentity = async () => {
+    if (isSubmitting || isAnimating) return;
     const validationError = validateIdentity();
     if (validationError) {
       setFormError(validationError);
@@ -402,13 +580,15 @@ export default function EmployerOnboarding() {
         ...buildPayload(),
         cin_number: normalizedCin,
       };
-      // 1. Save legal identity fields
-      await apiClient.put("/api/v1/employers/onboarding/legal-identity", payload, { withCredentials: true });
+      await apiClient.put("/api/v1/employers/onboarding/legal-identity", payload, {
+        withCredentials: true,
+      });
 
-      // 2. Request CIN verification from backend / Cashfree
-      const verifyRes = await apiClient.post("/api/v1/employers/onboarding/verifications/CIN", {
-        reference: normalizedCin,
-      }, { withCredentials: true });
+      const verifyRes = await apiClient.post(
+        "/api/v1/employers/onboarding/verifications/CIN",
+        { reference: normalizedCin },
+        { withCredentials: true }
+      );
 
       const record = verifyRes.data as VerificationRecord;
       const nextRecords = [
@@ -422,36 +602,18 @@ export default function EmployerOnboarding() {
 
       if (record.status === "VERIFIED") {
         toast.success("Legal identity (CIN) verified successfully!");
-        setStep("details"); // Advance to Step 3: Remaining details
       } else {
-        const failureMessage = record.failure_reason === "CASHFREE_AUTHENTICATION_FAILED"
-          ? "Cashfree credentials were rejected. Contact the administrator."
-          : record.failure_reason === "VERIFICATION_PROVIDER_NOT_CONFIGURED"
-            ? "Verification is unavailable until the provider is configured."
+        const failureMessage =
+          record.failure_reason === "CASHFREE_AUTHENTICATION_FAILED"
+            ? "Cashfree credentials were rejected. Contact the administrator."
+            : record.failure_reason === "VERIFICATION_PROVIDER_NOT_CONFIGURED"
+            ? "Verification provider is not configured."
             : record.failure_reason || "Verification failed";
         setFormError(failureMessage);
         toast.error(failureMessage);
       }
     } catch (err: unknown) {
-      const detail = (err as { response?: { data?: { detail?: unknown } } }).response?.data?.detail;
-      const record = detail && typeof detail === "object" && "verification" in detail
-        ? (detail as { verification?: VerificationRecord }).verification
-        : undefined;
-      if (record) {
-        setVerification((current) => ({
-          ...current,
-          records: [
-            ...current.records.filter((item) => item.verification_type !== "CIN"),
-            record,
-          ],
-        }));
-      }
-      const detailCode = detail && typeof detail === "object" && "code" in detail
-        ? String((detail as { code: unknown }).code)
-        : "";
-      const message = detailCode === "VERIFICATION_PROVIDER_NOT_CONFIGURED"
-        ? "Verification is unavailable until the provider is configured. It was not completed."
-        : getErrorDetail(err, "Verification failed");
+      const message = getErrorDetail(err, "Verification failed");
       setFormError(message);
       toast.error(message);
     } finally {
@@ -463,13 +625,15 @@ export default function EmployerOnboarding() {
     verification.records.find((record) => record.verification_type === type);
 
   const handleRequestVerification = async (type: string) => {
-    if (isSubmitting) return;
+    if (isSubmitting || isAnimating) return;
     setFormError("");
     setIsSubmitting(true);
     try {
-      const response = await apiClient.post(`/api/v1/employers/onboarding/verifications/${type}`, {}, {
-        withCredentials: true,
-      });
+      const response = await apiClient.post(
+        `/api/v1/employers/onboarding/verifications/${type}`,
+        {},
+        { withCredentials: true }
+      );
       const record = response.data as VerificationRecord;
       setVerification((current) => ({
         ...current,
@@ -478,32 +642,9 @@ export default function EmployerOnboarding() {
           record,
         ],
       }));
-      const nextRecords = [
-        ...verification.records.filter((item) => item.verification_type !== type),
-        record,
-      ];
-      if (hasVerifiedLegalIdentity(employerType, { ...verification, records: nextRecords })) setStep("details");
       toast.success(`${type.replaceAll("_", " ")} verification ${record.status.toLowerCase()}`);
     } catch (err: unknown) {
-      const detail = (err as { response?: { data?: { detail?: unknown } } }).response?.data?.detail;
-      const record = detail && typeof detail === "object" && "verification" in detail
-        ? (detail as { verification?: VerificationRecord }).verification
-        : undefined;
-      if (record) {
-        setVerification((current) => ({
-          ...current,
-          records: [
-            ...current.records.filter((item) => item.verification_type !== type),
-            record,
-          ],
-        }));
-      }
-      const detailCode = detail && typeof detail === "object" && "code" in detail
-        ? String((detail as { code: unknown }).code)
-        : "";
-      const message = detailCode === "VERIFICATION_PROVIDER_NOT_CONFIGURED"
-        ? "Verification is unavailable until the provider is configured. It was not completed."
-        : getErrorDetail(err, "Verification failed");
+      const message = getErrorDetail(err, "Verification failed");
       setFormError(message);
       toast.error(message);
     } finally {
@@ -511,11 +652,33 @@ export default function EmployerOnboarding() {
     }
   };
 
+  const validateAllRequired = () => {
+    if (!employerType) return "Select an employer category first";
+    const missingField = REQUIRED_FIELDS[employerType].find(
+      (field) => !formData[field]?.trim()
+    );
+    if (missingField) return `${missingField.replaceAll("_", " ")} is required`;
+    if (!/^\d{6}$/.test(formData.pincode || "")) return "Pincode must be a valid 6-digit number";
+    return "";
+  };
+
   const handleComplete = async () => {
-    if (isSubmitting) return;
+    if (isSubmitting || isAnimating) return;
     setFormError("");
+
+    const validationError = validateAllRequired();
+    if (validationError) {
+      setFormError(validationError);
+      toast.error(validationError);
+      return;
+    }
+
     setIsSubmitting(true);
     try {
+      await apiClient.put(endpointByType[employerType as EmployerType], buildPayload(), {
+        withCredentials: true,
+      });
+
       await apiClient.post("/api/v1/employers/onboarding/complete", {});
       await refreshUser();
       const refreshedState = await apiClient.get("/api/v1/auth/me", {
@@ -525,11 +688,11 @@ export default function EmployerOnboarding() {
 
       if (refreshedNextStep !== "DASHBOARD") {
         throw new Error(
-          `Onboarding completed but session state is ${refreshedNextStep || "unknown"}. Please refresh and try again.`,
+          `Onboarding completed but session state is ${refreshedNextStep || "unknown"}. Please refresh.`
         );
       }
 
-      toast.success("Onboarding completed!");
+      toast.success("Onboarding completed successfully!");
       router.push("/employer/dashboard");
     } catch (err: unknown) {
       const message = getErrorDetail(err, "Failed to complete onboarding");
@@ -549,520 +712,1050 @@ export default function EmployerOnboarding() {
     }
   };
 
-  const isRegistered = employerType === "REGISTERED_BUSINESS" || employerType === "REGISTERED_INDUSTRY";
+  const isRegistered =
+    employerType === "REGISTERED_BUSINESS" || employerType === "REGISTERED_INDUSTRY";
 
   return (
-    <div className="min-h-screen bg-[#eef1fb] font-sans text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+    <div className="min-h-screen bg-slate-50/80 font-sans text-slate-900 dark:bg-slate-950 dark:text-slate-100 flex flex-col selection:bg-blue-500 selection:text-white">
       {/* Header */}
-      <header className="border-b border-slate-200 bg-white/80 backdrop-blur dark:border-slate-800 dark:bg-slate-900/80">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
-          <Link href="/" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-linear-to-br from-blue-600 to-indigo-600">
-              <Zap size={16} className="text-white" fill="currentColor" />
+      <header className="sticky top-0 z-30 border-b border-slate-200/70 bg-white/80 backdrop-blur-xl dark:border-slate-800/80 dark:bg-slate-900/80">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3.5 sm:px-6">
+          <Link href="/" className="flex items-center gap-3 group">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-blue-500 shadow-md shadow-blue-500/25 transition group-hover:scale-105">
+              <Zap size={20} className="text-white" fill="currentColor" />
             </div>
-            <span className="font-(--font-anton) text-lg uppercase text-slate-900 dark:text-white">
-              GO LESKA
-            </span>
+            <div className="flex flex-col">
+              <div className="flex items-center gap-1.5">
+                <span className="font-extrabold tracking-tight text-slate-900 text-lg leading-none dark:text-white">
+                  GO LESKA
+                </span>
+                <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-700 dark:bg-blue-950 dark:text-blue-300">
+                  PRO
+                </span>
+              </div>
+              <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                Employer Onboarding
+              </span>
+            </div>
           </Link>
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
-          >
-            <LogOut size={16} />
-            Logout
-          </button>
+
+          <div className="flex items-center gap-4">
+            {user.email && (
+              <div className="hidden sm:flex flex-col items-end">
+                <span className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                  {user.email}
+                </span>
+                <span className="text-[10px] text-slate-400">Verified Employer Account</span>
+              </div>
+            )}
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-bold text-slate-700 shadow-xs transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+            >
+              <LogOut size={14} />
+              <span>Logout</span>
+            </button>
+          </div>
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="mx-auto max-w-4xl px-6 py-12">
-        {/* Step Indicator */}
-        <div className="mb-10 flex items-center justify-center">
-          {(() => {
-            const stepsList = isRegistered
-              ? [
-                  { num: 1, label: "Employer Type", active: true, current: step === "type" },
-                  { num: 2, label: "Legal Verification", active: step === "identity" || step === "details" || step === "review", current: step === "identity" },
-                  { num: 3, label: "Remaining Details", active: step === "details" || step === "review", current: step === "details" },
-                  { num: 4, label: "Review", active: step === "review", current: step === "review" },
-                ]
-              : [
-                  { num: 1, label: "Employer Type", active: true, current: step === "type" },
-                  { num: 2, label: "Details", active: step === "details" || step === "verification" || step === "review", current: step === "details" },
-                  ...(employerType === "UNREGISTERED_BUSINESS" && verification.required.length > 0
-                    ? [{ num: 3, label: "Verification", active: step === "verification" || step === "review", current: step === "verification" }]
-                    : []),
-                  { num: employerType === "UNREGISTERED_BUSINESS" && verification.required.length > 0 ? 4 : 3, label: "Review", active: step === "review", current: step === "review" },
-                ];
+      {/* Main Container */}
+      <main className="flex-1 mx-auto w-full max-w-7xl p-4 sm:p-6 lg:p-8">
+        <div className="relative flex flex-col lg:flex-row gap-6 lg:gap-0 items-stretch">
+          {/* LEFT SIDE: Promotional & Value Proposition Panel (Inspired by Business Mall) */}
+          <div className="hidden lg:flex lg:w-5/12 xl:w-4/12 flex-col justify-between p-8 xl:p-10 rounded-3xl bg-gradient-to-br from-slate-900 via-indigo-950 to-blue-950 text-white shadow-2xl border border-slate-800/80 relative overflow-hidden z-10">
+            {/* Ambient Lighting Accents */}
+            <div className="absolute -top-32 -left-32 h-80 w-80 rounded-full bg-blue-500/20 blur-3xl" />
+            <div className="absolute -bottom-32 -right-32 h-80 w-80 rounded-full bg-indigo-500/20 blur-3xl" />
 
-            return (
-              <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-4">
-                {stepsList.map((item, idx) => (
-                  <React.Fragment key={item.num}>
-                    {idx > 0 && (
-                      <div className={`h-1 w-6 sm:w-10 rounded ${item.active ? "bg-blue-600" : "bg-slate-200 dark:bg-slate-700"}`} />
-                    )}
-                    <div className="flex items-center gap-2">
-                      <div
-                        className={`flex h-9 w-9 items-center justify-center rounded-full text-xs font-bold transition-all ${
-                          item.current
-                            ? "bg-blue-600 text-white ring-4 ring-blue-100 dark:ring-blue-950"
-                            : item.active
-                              ? "bg-blue-600 text-white"
-                              : "bg-slate-200 text-slate-500 dark:bg-slate-800 dark:text-slate-400"
-                        }`}
-                      >
-                        {item.num}
-                      </div>
-                      <span className={`hidden text-xs font-bold md:inline ${item.current ? "text-blue-600 dark:text-blue-400" : "text-slate-500 dark:text-slate-400"}`}>
-                        {item.label}
-                      </span>
-                    </div>
-                  </React.Fragment>
-                ))}
-              </div>
-            );
-          })()}
-        </div>
-
-        {/* STEP 1: Select Employer Type */}
-        {step === "type" && (
-          <div className="space-y-8">
-            <div className="text-center">
-              <h1 className="font-(--font-anton) text-4xl uppercase text-slate-900 dark:text-white">
-                What type of employer are you?
-              </h1>
-              <p className="mt-3 text-lg text-slate-600 dark:text-slate-400">
-                Select your business structure to get started
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              {[
-                {
-                  id: "REGISTERED_INDUSTRY",
-                  name: "Registered Industry",
-                  desc: "Large factory, manufacturing, or industrial facility",
-                  icon: Factory,
-                },
-                {
-                  id: "REGISTERED_BUSINESS",
-                  name: "Registered Business",
-                  desc: "Pvt. Ltd., Partnership, or other registered entity",
-                  icon: Building2,
-                },
-                {
-                  id: "UNREGISTERED_BUSINESS",
-                  name: "Unregistered Business",
-                  desc: "Sole proprietorship or informal business",
-                  icon: User,
-                },
-                {
-                  id: "INDIVIDUAL",
-                  name: "Individual Employer",
-                  desc: "Personal hiring for one-off projects",
-                  icon: User,
-                },
-              ].map((type) => (
-                <button
-                  key={type.id}
-                  onClick={() => handleSelectType(type.id)}
-                  disabled={isSubmitting}
-                  className="group rounded-2xl border-2 border-slate-200 bg-white p-6 text-left transition hover:border-blue-500 hover:shadow-lg dark:border-slate-800 dark:bg-slate-900 dark:hover:border-blue-500"
-                >
-                  <div className="flex items-start gap-4">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-blue-50 group-hover:bg-blue-100 dark:bg-blue-950">
-                      <type.icon size={24} className="text-blue-600 dark:text-blue-400" />
-                    </div>
-                    <div className="flex-1">
-                      <h3 className="font-bold text-slate-900 dark:text-white">
-                        {type.name}
-                      </h3>
-                      <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                        {type.desc}
-                      </p>
-                    </div>
-                    <ArrowRight className="text-blue-600 opacity-0 transition group-hover:opacity-100" />
-                  </div>
-                </button>
-              ))}
-            </div>
-            {formError && <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{formError}</p>}
-          </div>
-        )}
-
-        {/* STEP 2: Legal Verification (Dedicated Stage for Registered Business & Industry) */}
-        {step === "identity" && employerType && isRegistered && (
-          <form onSubmit={handleVerifyLegalIdentity} className="space-y-8 rounded-2xl border border-slate-200 bg-white p-8 dark:border-slate-800 dark:bg-slate-900 shadow-xs">
-            <div>
-              <div className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-blue-700 dark:bg-blue-950 dark:text-blue-300">
-                Step 2 — Legal Verification
-              </div>
-              <h2 className="mt-2 font-(--font-anton) text-2xl uppercase text-slate-900 dark:text-white">Legal / company identity</h2>
-              <p className="mt-1 text-slate-600 dark:text-slate-400">
-                Verify the legal identity before completing the remaining onboarding details.
-              </p>
-            </div>
-
-            {hasVerifiedLegalIdentity(employerType, verification) && (
-              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-300">
-                <div className="flex items-center justify-between">
-                  <div className="font-bold flex items-center gap-2">
-                    <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 inline-block" />
-                    Legal Identity Verified (CIN: {formData.cin_number})
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setStep("details")}
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-emerald-700"
-                  >
-                    Continue to Details <ArrowRight size={14} />
-                  </button>
+            <div className="relative z-10 space-y-8">
+              {/* Logo Badge */}
+              <div className="flex items-center justify-between">
+                <div className="inline-flex items-center gap-2 rounded-full border border-blue-400/30 bg-blue-500/10 px-3.5 py-1.5 text-xs font-bold tracking-wider text-blue-300 backdrop-blur-md uppercase">
+                  <Globe size={14} className="text-blue-400" />
+                  Your All-in-One Business Platform
                 </div>
               </div>
-            )}
 
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <FormField
-                label="Legal / company name *"
-                field="business_name"
-                value={formData.business_name}
-                onChange={updateField}
-                wide
-              />
-              <FormField
-                label="CIN (Corporate Identification Number) *"
-                field="cin_number"
-                value={formData.cin_number}
-                onChange={updateField}
-              />
-              <FormField
-                label="GSTIN (optional)"
-                field="gstin"
-                value={formData.gstin}
-                onChange={updateField}
-              />
-              <FormField
-                label="PAN (optional)"
-                field="pan_number"
-                value={formData.pan_number}
-                onChange={updateField}
-              />
-              <FormField
-                label="Registration number (optional)"
-                field="registration_number"
-                value={formData.registration_number}
-                onChange={updateField}
-              />
+              {/* Main Headline */}
+              <div className="space-y-3">
+                <h1 className="text-3xl font-extrabold tracking-tight text-white xl:text-4xl leading-tight">
+                  Build. Manage. <br />
+                  Grow. <span className="bg-gradient-to-r from-blue-400 to-indigo-300 bg-clip-text text-transparent">Together.</span>
+                </h1>
+                <p className="text-xs text-slate-300 leading-relaxed font-medium">
+                  Complete your verified profile to connect with workers, manage site attendance, and publish jobs seamlessly.
+                </p>
+              </div>
+
+              {/* 4 Core Value Pillars (Business Mall Reference) */}
+              <div className="space-y-4 pt-1">
+                {[
+                  {
+                    title: "Build",
+                    desc: "Create your digital presence in minutes with our intuitive toolset.",
+                    icon: Rocket,
+                    color: "text-blue-400 bg-blue-500/20 border-blue-500/30",
+                  },
+                  {
+                    title: "Hire",
+                    desc: "Access an elite local talent pool vetted for enterprise standards.",
+                    icon: Users,
+                    color: "text-indigo-400 bg-indigo-500/20 border-indigo-500/30",
+                  },
+                  {
+                    title: "AI Assistant",
+                    desc: "Smart job post extraction powered by automated intelligence.",
+                    icon: Sparkles,
+                    color: "text-cyan-400 bg-cyan-500/20 border-cyan-500/30",
+                  },
+                  {
+                    title: "Secure",
+                    desc: "Enterprise-grade protection for your business data and verification.",
+                    icon: ShieldCheck,
+                    color: "text-emerald-400 bg-emerald-500/20 border-emerald-500/30",
+                  },
+                ].map((pillar) => (
+                  <div key={pillar.title} className="flex items-start gap-3.5 group">
+                    <div className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border ${pillar.color} transition group-hover:scale-110`}>
+                      <pillar.icon size={18} />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-white tracking-wide">{pillar.title}</h4>
+                      <p className="text-[11px] text-slate-300 leading-normal mt-0.5 font-normal">
+                        {pillar.desc}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
 
-            {/* Verification Status Feedback */}
-            {verification.records.length > 0 && (
-              <div className="space-y-3 pt-2">
-                <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Verification Result</p>
-                {verification.records.map((record) => {
-                  const isVerifiedRecord = record.status === "VERIFIED";
-                  const isFailed = record.status === "FAILED";
-                  const isNotConfigured = record.status === "NOT_CONFIGURED";
-                  const failureMessage = record.failure_reason === "CASHFREE_AUTHENTICATION_FAILED"
-                    ? "Cashfree credentials were rejected. Contact the administrator."
-                    : record.failure_reason === "VERIFICATION_PROVIDER_NOT_CONFIGURED"
-                      ? "Verification provider is not configured. Verification cannot be claimed as completed."
-                      : record.failure_reason;
+            {/* Bottom Social Proof Box */}
+            <div className="relative z-10 mt-8 rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-md">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="flex -space-x-2">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-600 text-[11px] font-bold text-white ring-2 ring-slate-900">
+                      AB
+                    </div>
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-600 text-[11px] font-bold text-white ring-2 ring-slate-900">
+                      SK
+                    </div>
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-600 text-[11px] font-bold text-white ring-2 ring-slate-900">
+                      VR
+                    </div>
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-800 text-[10px] font-bold text-blue-300 ring-2 ring-slate-900">
+                      +50k
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-white">50,000+ Businesses</p>
+                    <p className="text-[10px] text-slate-400">Trust Go Leska platform</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 text-amber-400 text-xs font-bold">
+                  ★ 4.9
+                </div>
+              </div>
+            </div>
+          </div>
 
-                  return (
-                    <div
-                      key={record.verification_type}
-                      className={`rounded-xl border p-4 text-sm ${
-                        isVerifiedRecord
-                          ? "border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200"
-                          : isFailed
-                            ? "border-red-200 bg-red-50 text-red-900 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200"
-                            : isNotConfigured
-                              ? "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200"
-                              : "border-slate-200 bg-slate-50 text-slate-800 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
-                      }`}
-                    >
-                      <div className="flex items-center gap-2">
+          {/* CENTRAL ANIMATED DIVIDER & ORB TRANSITION POINT (Ref Image 1 & 2) */}
+          <div className="hidden lg:flex items-center justify-center relative -mx-4 z-20 pointer-events-none self-stretch">
+            {/* Vertical Curved Bridge Backdrop */}
+            <div className="h-full w-8 flex flex-col items-center justify-center relative">
+              <div className="h-full w-[2px] bg-gradient-to-b from-blue-500/10 via-indigo-500/40 to-blue-500/10" />
+
+              {/* Glowing Central Orb Dial */}
+              <div className="absolute top-1/2 -translate-y-1/2 flex items-center justify-center">
+                <div
+                  className="h-12 w-12 rounded-full bg-gradient-to-tr from-blue-600 via-indigo-600 to-cyan-500 p-0.5 shadow-xl shadow-blue-500/40 ring-4 ring-blue-500/20 backdrop-blur-xl transition-all duration-500 transform"
+                  style={{
+                    transform: `rotate(${orbRotation}deg)`,
+                  }}
+                >
+                  <div className="h-full w-full rounded-full bg-slate-950 flex items-center justify-center text-blue-400 shadow-inner">
+                    <RefreshCw
+                      size={20}
+                      className={`transition-all duration-500 ${isAnimating ? "animate-spin text-cyan-300" : ""}`}
+                    />
+                  </div>
+                </div>
+
+                {/* Pulse wave ring when animating */}
+                {isAnimating && (
+                  <div className="absolute h-16 w-16 rounded-full border-2 border-cyan-400/60 animate-ping" />
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* RIGHT SIDE: Main Onboarding Form Card */}
+          <div className="w-full lg:w-7/12 xl:w-8/12 flex flex-col">
+            <div className="flex-1 rounded-3xl border border-slate-200/80 bg-white p-6 sm:p-8 lg:p-10 shadow-xl shadow-slate-200/50 dark:border-slate-800 dark:bg-slate-900 dark:shadow-none transition-all">
+              {/* Category Selector View (Step 0) */}
+              {activeStep === 0 || !employerType ? (
+                <div className="space-y-6">
+                  <div className="border-b border-slate-100 pb-5 dark:border-slate-800">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-blue-700 dark:bg-blue-950 dark:text-blue-300">
+                      Getting Started
+                    </span>
+                    <h2 className="mt-2 text-2xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-3xl">
+                      Create Your Business Profile
+                    </h2>
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      Select your business structure to begin the 3-step onboarding process
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    {[
+                      {
+                        id: "REGISTERED_BUSINESS",
+                        name: "Registered Business",
+                        tag: "Recommended",
+                        desc: "Pvt. Ltd., LLP, Partnership, or OPC entity with CIN registration",
+                        icon: Building2,
+                      },
+                      {
+                        id: "REGISTERED_INDUSTRY",
+                        name: "Registered Industry",
+                        tag: "Industrial",
+                        desc: "Manufacturing plant, factory, or industrial enterprise",
+                        icon: Factory,
+                      },
+                      {
+                        id: "UNREGISTERED_BUSINESS",
+                        name: "Unregistered Business",
+                        tag: "Proprietorship",
+                        desc: "Sole proprietorship, retail store, or local business unit",
+                        icon: Briefcase,
+                      },
+                      {
+                        id: "INDIVIDUAL",
+                        name: "Individual Employer",
+                        tag: "Personal",
+                        desc: "Individual hiring directly for projects or site work",
+                        icon: User,
+                      },
+                    ].map((type) => (
+                      <button
+                        key={type.id}
+                        onClick={() => handleSelectType(type.id)}
+                        disabled={isSubmitting || isAnimating}
+                        className="group relative flex flex-col justify-between rounded-2xl border-2 border-slate-100 bg-slate-50/50 p-5 text-left transition hover:border-blue-600 hover:bg-white hover:shadow-xl hover:shadow-blue-500/5 dark:border-slate-800 dark:bg-slate-800/40 dark:hover:border-blue-500 dark:hover:bg-slate-800"
+                      >
                         <div>
-                          <span className="font-bold">{record.verification_type}: </span>
-                          <span className="font-semibold uppercase">{record.status}</span>
-                          {failureMessage && <p className="mt-1 text-xs opacity-90">{failureMessage}</p>}
+                          <div className="flex items-center justify-between">
+                            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-50 text-blue-600 transition group-hover:bg-blue-600 group-hover:text-white dark:bg-blue-950 dark:text-blue-400">
+                              <type.icon size={22} />
+                            </div>
+                            <span className="rounded-full bg-slate-200/70 px-2.5 py-0.5 text-[10px] font-bold text-slate-600 dark:bg-slate-700 dark:text-slate-300">
+                              {type.tag}
+                            </span>
+                          </div>
+                          <h3 className="mt-4 text-sm font-bold text-slate-900 dark:text-white">
+                            {type.name}
+                          </h3>
+                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 leading-relaxed font-normal">
+                            {type.desc}
+                          </p>
+                        </div>
+                        <div className="mt-4 flex items-center gap-1 text-xs font-bold text-blue-600 dark:text-blue-400">
+                          <span>Select & Begin Onboarding</span>
+                          <ArrowRight size={14} className="transition group-hover:translate-x-1" />
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+
+                  {formError && (
+                    <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-xs font-semibold text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-300">
+                      {formError}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                /* 3-STEP FORM FLOW WITH SMOOTH ANIMATED CONTENT TRANSITIONS */
+                <div className="space-y-8">
+                  {/* Top Header & 3-Step Progress Indicator (Matching Reference Image) */}
+                  <div className="border-b border-slate-100 pb-6 dark:border-slate-800">
+                    <div className="flex items-center justify-between mb-4">
+                      <div>
+                        <h2 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-2xl">
+                          Create Your Business Profile
+                        </h2>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                          Category: <span className="font-semibold text-blue-600 dark:text-blue-400">{employerType.replaceAll("_", " ")}</span>
+                        </p>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFormError("");
+                          transitionToStep(0, "prev");
+                        }}
+                        className="text-xs font-bold text-slate-500 hover:text-blue-600 transition flex items-center gap-1"
+                      >
+                        <Sliders size={13} />
+                        Change Category
+                      </button>
+                    </div>
+
+                    {/* Progress Indicator: 1 Business Info | 2 Contact | 3 Verify */}
+                    <div className="relative pt-2 pb-1">
+                      {/* Connecting Line Bar */}
+                      <div className="absolute top-[22px] left-8 right-8 h-0.5 bg-slate-200 dark:bg-slate-800 z-0" />
+                      <div
+                        className="absolute top-[22px] left-8 h-0.5 bg-blue-600 transition-all duration-500 ease-in-out z-0"
+                        style={{
+                          width: activeStep === 1 ? "0%" : activeStep === 2 ? "50%" : "calc(100% - 4rem)",
+                        }}
+                      />
+
+                      <div className="relative z-10 flex items-center justify-between">
+                        {[
+                          { num: 1, label: "Business Information", short: "Business Info" },
+                          { num: 2, label: "Contact", short: "Contact" },
+                          { num: 3, label: "Verify", short: "Verify" },
+                        ].map((s) => {
+                          const isCompleted = activeStep > s.num;
+                          const isCurrent = activeStep === s.num;
+                          const isClickable = activeStep > s.num;
+
+                          return (
+                            <button
+                              key={s.num}
+                              type="button"
+                              disabled={!isClickable}
+                              onClick={() => {
+                                if (isClickable) {
+                                  setFormError("");
+                                  transitionToStep(s.num as 1 | 2 | 3, "prev");
+                                }
+                              }}
+                              className={`flex flex-col items-center gap-2 group ${
+                                isClickable ? "cursor-pointer" : "cursor-default"
+                              }`}
+                            >
+                              <div
+                                className={`flex h-9 w-9 items-center justify-center rounded-full text-xs font-extrabold transition-all duration-300 ${
+                                  isCurrent
+                                    ? "bg-blue-600 text-white ring-4 ring-blue-100 shadow-md shadow-blue-500/30 scale-105 dark:ring-blue-950"
+                                    : isCompleted
+                                    ? "bg-blue-600 text-white"
+                                    : "bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500"
+                                }`}
+                              >
+                                {isCompleted ? <Check size={16} strokeWidth={3} /> : s.num}
+                              </div>
+
+                              <span
+                                className={`text-xs font-bold transition-colors ${
+                                  isCurrent
+                                    ? "text-blue-600 dark:text-blue-400"
+                                    : isCompleted
+                                    ? "text-slate-800 dark:text-slate-200"
+                                    : "text-slate-400 dark:text-slate-500"
+                                }`}
+                              >
+                                <span className="hidden sm:inline">{s.label}</span>
+                                <span className="sm:hidden">{s.short}</span>
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* ANIMATED STEP CONTENT CONTAINER */}
+                  <div
+                    className={`transition-all duration-300 transform ${
+                      animPhase === "exit"
+                        ? transitionDirection === "next"
+                          ? "-translate-x-6 opacity-0 scale-98"
+                          : "translate-x-6 opacity-0 scale-98"
+                        : animPhase === "enter"
+                        ? transitionDirection === "next"
+                          ? "translate-x-6 opacity-0 scale-98"
+                          : "-translate-x-6 opacity-0 scale-98"
+                        : "translate-x-0 opacity-100 scale-100"
+                    }`}
+                  >
+                    {/* STEP 1: BUSINESS INFORMATION */}
+                    {activeStep === 1 && (
+                      <form onSubmit={handleProceedFromStep1} className="space-y-5">
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                          {isRegistered && (
+                            <>
+                              <FormField
+                                label="Name of Enterprise *"
+                                field="business_name"
+                                value={formData.business_name}
+                                onChange={updateField}
+                                placeholder="Enter your enterprise name"
+                                icon={Building2}
+                                error={fieldErrors.business_name}
+                                wide
+                              />
+                              {employerType === "REGISTERED_BUSINESS" && (
+                                <FormField
+                                  label="Business Type"
+                                  field="business_type"
+                                  value={formData.business_type}
+                                  onChange={updateField}
+                                  placeholder="e.g. Private Limited, LLP"
+                                  icon={Tag}
+                                  error={fieldErrors.business_type}
+                                />
+                              )}
+                              {employerType === "REGISTERED_INDUSTRY" && (
+                                <FormField
+                                  label="Industry Type *"
+                                  field="industry_type"
+                                  value={formData.industry_type}
+                                  onChange={updateField}
+                                  placeholder="e.g. Heavy Manufacturing"
+                                  icon={Tag}
+                                  error={fieldErrors.industry_type}
+                                />
+                              )}
+                              <FormField
+                                label="Business Category"
+                                field="business_category"
+                                value={formData.business_category}
+                                onChange={updateField}
+                                placeholder="e.g. Construction, Infrastructure"
+                                icon={Briefcase}
+                                error={fieldErrors.business_category}
+                              />
+                              <FormField
+                                label="Industry Category *"
+                                field="industry_category"
+                                value={formData.industry_category}
+                                onChange={updateField}
+                                placeholder="e.g. Engineering & Services"
+                                icon={Briefcase}
+                                error={fieldErrors.industry_category}
+                              />
+                              <FormField
+                                label="Registered Address *"
+                                field="registered_address"
+                                value={formData.registered_address}
+                                onChange={updateField}
+                                placeholder="Full registered office address"
+                                icon={MapPin}
+                                error={fieldErrors.registered_address}
+                                wide
+                              />
+                            </>
+                          )}
+
+                          {employerType === "UNREGISTERED_BUSINESS" && (
+                            <>
+                              <FormField
+                                label="Name of Enterprise *"
+                                field="business_name"
+                                value={formData.business_name}
+                                onChange={updateField}
+                                placeholder="Enter your business/shop name"
+                                icon={Building2}
+                                error={fieldErrors.business_name}
+                                wide
+                              />
+                              <FormField
+                                label="Business Type *"
+                                field="business_type"
+                                value={formData.business_type}
+                                onChange={updateField}
+                                placeholder="e.g. Sole Proprietorship"
+                                icon={Tag}
+                                error={fieldErrors.business_type}
+                              />
+                              <FormField
+                                label="Nature of Business *"
+                                field="nature_of_business"
+                                value={formData.nature_of_business}
+                                onChange={updateField}
+                                placeholder="e.g. Hardware Wholesale"
+                                icon={Briefcase}
+                                error={fieldErrors.nature_of_business}
+                              />
+                              <FormField
+                                label="Industry Category *"
+                                field="industry_category"
+                                value={formData.industry_category}
+                                onChange={updateField}
+                                placeholder="e.g. Trade & Services"
+                                icon={Briefcase}
+                                error={fieldErrors.industry_category}
+                              />
+                              <FormField
+                                label="Business Address *"
+                                field="address"
+                                value={formData.address}
+                                onChange={updateField}
+                                placeholder="Full address of shop/office"
+                                icon={MapPin}
+                                error={fieldErrors.address}
+                                wide
+                              />
+                            </>
+                          )}
+
+                          {employerType === "INDIVIDUAL" && (
+                            <FormField
+                              label="Primary Address *"
+                              field="address"
+                              value={formData.address}
+                              onChange={updateField}
+                              placeholder="Full site or residential address"
+                              icon={MapPin}
+                              error={fieldErrors.address}
+                              wide
+                            />
+                          )}
+
+                          <FormField
+                            label="Website URL"
+                            field="website_url"
+                            value={formData.website_url}
+                            onChange={updateField}
+                            placeholder="e.g. https://yourbusiness.com"
+                            icon={Globe}
+                            error={fieldErrors.website_url}
+                          />
+                          <FormField
+                            label="Annual Revenue (Approx)"
+                            field="annual_revenue"
+                            value={formData.annual_revenue}
+                            onChange={updateField}
+                            placeholder="e.g. ₹50 Lakhs - ₹1 Crore"
+                            icon={TrendingUp}
+                            error={fieldErrors.annual_revenue}
+                          />
+
+                          <FormField
+                            label="Business Description"
+                            field="description"
+                            value={formData.description}
+                            onChange={updateField}
+                            placeholder="Briefly describe your company operations"
+                            icon={FileText}
+                            error={fieldErrors.description}
+                            wide
+                          />
+                        </div>
+
+                        {/* Security Banner Callout Box (Reference Image 3) */}
+                        <div className="rounded-2xl border border-blue-100 bg-blue-50/60 p-4 dark:border-blue-950 dark:bg-blue-950/30">
+                          <div className="flex items-start gap-3">
+                            <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white shadow-xs">
+                              <Shield size={14} />
+                            </div>
+                            <div>
+                              <h4 className="text-xs font-bold text-blue-900 dark:text-blue-200">
+                                Your data is 100% secure...
+                              </h4>
+                              <p className="text-[11px] text-blue-700/80 dark:text-blue-300/80 leading-relaxed mt-0.5">
+                                We use advanced encryption to protect your enterprise information at all times.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        {formError && (
+                          <div className="rounded-xl border border-red-200 bg-red-50 p-3.5 text-xs font-semibold text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-300">
+                            {formError}
+                          </div>
+                        )}
+
+                        <div className="pt-2">
+                          <button
+                            type="submit"
+                            disabled={isSubmitting || isAnimating}
+                            className="w-full inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-600 px-6 py-4 text-xs font-bold text-white shadow-lg shadow-blue-500/25 transition hover:from-blue-700 hover:to-indigo-700 active:scale-[0.99] disabled:opacity-50"
+                          >
+                            {isSubmitting ? (
+                              <>
+                                <Loader2 size={16} className="animate-spin" /> Saving Business Info...
+                              </>
+                            ) : (
+                              <>
+                                Continue <ArrowRight size={16} />
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </form>
+                    )}
+
+                    {/* STEP 2: CONTACT / AUTHORIZED SIGNATORY */}
+                    {activeStep === 2 && (
+                      <form onSubmit={handleProceedFromStep2} className="space-y-5">
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                          {isRegistered && (
+                            <>
+                              <div className="sm:col-span-2 border-b border-slate-100 pb-2 dark:border-slate-800">
+                                <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-400">
+                                  Authorized Signatory Details
+                                </h3>
+                              </div>
+
+                              <FormField
+                                label="Authorized Signatory Name"
+                                field="director_name"
+                                value={formData.director_name}
+                                onChange={updateField}
+                                placeholder="Full name as per official ID"
+                                icon={User}
+                                error={fieldErrors.director_name}
+                              />
+                              <FormField
+                                label="Authorized Signatory Phone"
+                                field="director_phone"
+                                value={formData.director_phone}
+                                onChange={updateField}
+                                placeholder="Mobile number"
+                                icon={Phone}
+                                error={fieldErrors.director_phone}
+                              />
+                              <FormField
+                                label="Authorized Signatory Email"
+                                field="director_email"
+                                value={formData.director_email}
+                                onChange={updateField}
+                                placeholder="Official email address"
+                                icon={Mail}
+                                error={fieldErrors.director_email}
+                              />
+                              <FormField
+                                label="Authorized Signatory Aadhaar"
+                                field="director_aadhaar"
+                                value={formData.director_aadhaar}
+                                onChange={updateField}
+                                placeholder="12-digit Aadhaar number"
+                                icon={CreditCard}
+                                error={fieldErrors.director_aadhaar}
+                              />
+                              <FormField
+                                label="Authorized Signatory Address"
+                                field="director_address"
+                                value={formData.director_address}
+                                onChange={updateField}
+                                placeholder="Personal address"
+                                icon={MapPin}
+                                error={fieldErrors.director_address}
+                                wide
+                              />
+                            </>
+                          )}
+
+                          {employerType === "UNREGISTERED_BUSINESS" && (
+                            <>
+                              <div className="sm:col-span-2 border-b border-slate-100 pb-2 dark:border-slate-800">
+                                <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-400">
+                                  Proprietor Details
+                                </h3>
+                              </div>
+
+                              <FormField
+                                label="Proprietor Name *"
+                                field="proprietor_name"
+                                value={formData.proprietor_name}
+                                onChange={updateField}
+                                placeholder="Owner full name"
+                                icon={User}
+                                error={fieldErrors.proprietor_name}
+                              />
+                              <FormField
+                                label="Proprietor Aadhaar *"
+                                field="proprietor_aadhaar"
+                                value={formData.proprietor_aadhaar}
+                                onChange={updateField}
+                                placeholder="12-digit Aadhaar number"
+                                icon={CreditCard}
+                                error={fieldErrors.proprietor_aadhaar}
+                              />
+                              <FormField
+                                label="Number of Proprietors *"
+                                field="number_of_proprietors"
+                                value={formData.number_of_proprietors}
+                                onChange={updateField}
+                                placeholder="e.g. 2"
+                                icon={Users}
+                                error={fieldErrors.number_of_proprietors}
+                              />
+                            </>
+                          )}
+
+                          <div className="sm:col-span-2 border-b border-slate-100 pb-2 pt-2 dark:border-slate-800">
+                            <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-400">
+                              Account Contact & Work Location
+                            </h3>
+                          </div>
+
+                          <FormField
+                            label="Account Email *"
+                            field="company_email"
+                            value={formData.company_email}
+                            onChange={updateField}
+                            placeholder="contact@enterprise.com"
+                            icon={Mail}
+                            error={fieldErrors.company_email}
+                          />
+                          <FormField
+                            label="Account Phone *"
+                            field="company_phone"
+                            value={formData.company_phone}
+                            onChange={updateField}
+                            placeholder="10-digit mobile number"
+                            icon={Phone}
+                            error={fieldErrors.company_phone}
+                          />
+
+                          <FormField
+                            label="City *"
+                            field="city"
+                            value={formData.city}
+                            onChange={updateField}
+                            placeholder="e.g. Mumbai"
+                            icon={Compass}
+                            error={fieldErrors.city}
+                          />
+                          <FormField
+                            label="State *"
+                            field="state"
+                            value={formData.state}
+                            onChange={updateField}
+                            placeholder="e.g. Maharashtra"
+                            icon={Compass}
+                            error={fieldErrors.state}
+                          />
+                          <FormField
+                            label="Pincode *"
+                            field="pincode"
+                            value={formData.pincode}
+                            onChange={updateField}
+                            placeholder="6-digit pincode"
+                            icon={MapPin}
+                            error={fieldErrors.pincode}
+                          />
+
+                          <div className="sm:col-span-2 space-y-1.5 pt-1">
+                            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                              Primary Work Location *
+                            </label>
+                            <LocationPicker
+                              value={formData.work_location}
+                              onSelect={selectWorkLocation}
+                            />
+                            {fieldErrors.work_location && (
+                              <p className="text-[11px] font-semibold text-red-600">{fieldErrors.work_location}</p>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Security Banner Callout Box */}
+                        <div className="rounded-2xl border border-blue-100 bg-blue-50/60 p-4 dark:border-blue-950 dark:bg-blue-950/30">
+                          <div className="flex items-start gap-3">
+                            <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white shadow-xs">
+                              <Shield size={14} />
+                            </div>
+                            <div>
+                              <h4 className="text-xs font-bold text-blue-900 dark:text-blue-200">
+                                Your contact data is protected
+                              </h4>
+                              <p className="text-[11px] text-blue-700/80 dark:text-blue-300/80 leading-relaxed mt-0.5">
+                                Phone and email credentials are strictly encrypted and used only for candidate matching notifications.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        {formError && (
+                          <div className="rounded-xl border border-red-200 bg-red-50 p-3.5 text-xs font-semibold text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-300">
+                            {formError}
+                          </div>
+                        )}
+
+                        <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:justify-between">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setFormError("");
+                              transitionToStep(1, "prev");
+                            }}
+                            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 py-3.5 text-xs font-bold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                          >
+                            <ArrowLeft size={16} />
+                            Back
+                          </button>
+
+                          <button
+                            type="submit"
+                            disabled={isSubmitting || isAnimating}
+                            className="flex-1 inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-600 px-6 py-4 text-xs font-bold text-white shadow-lg shadow-blue-500/25 transition hover:from-blue-700 hover:to-indigo-700 active:scale-[0.99] disabled:opacity-50"
+                          >
+                            {isSubmitting ? (
+                              <>
+                                <Loader2 size={16} className="animate-spin" /> Saving Contact Info...
+                              </>
+                            ) : (
+                              <>
+                                Continue <ArrowRight size={16} />
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </form>
+                    )}
+
+                    {/* STEP 3: VERIFICATION & REGISTRATION */}
+                    {activeStep === 3 && (
+                      <div className="space-y-6">
+                        {/* Legal Numbers Input & Verification Action */}
+                        <div className="space-y-4 rounded-2xl border border-slate-200/80 bg-slate-50/60 p-5 dark:border-slate-800 dark:bg-slate-800/40">
+                          <div className="flex items-center justify-between border-b border-slate-200/60 pb-3 dark:border-slate-700">
+                            <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-500">
+                              Legal Identifiers & Verification
+                            </h3>
+                            <span className="text-[11px] font-bold text-blue-600">KYC Status Check</span>
+                          </div>
+
+                          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                            {isRegistered && (
+                              <>
+                                <div className="sm:col-span-2 space-y-2">
+                                  <FormField
+                                    label="CIN (Corporate Identification Number) *"
+                                    field="cin_number"
+                                    value={formData.cin_number}
+                                    onChange={updateField}
+                                    placeholder="e.g. U72200MH2020PTC123456"
+                                    icon={CreditCard}
+                                    error={fieldErrors.cin_number}
+                                    readOnly={hasVerifiedLegalIdentity(employerType, verification)}
+                                  />
+
+                                  <div className="flex items-center justify-between pt-1">
+                                    {hasVerifiedLegalIdentity(employerType, verification) ? (
+                                      <div className="inline-flex items-center gap-2 text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                                        <CheckCircle2 size={16} />
+                                        Legal Identity Verified (CIN: {formData.cin_number})
+                                      </div>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={handleVerifyLegalIdentity}
+                                        disabled={isSubmitting || !formData.cin_number}
+                                        className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-blue-700 disabled:opacity-50 shadow-xs"
+                                      >
+                                        {isSubmitting ? (
+                                          <>
+                                            <Loader2 size={14} className="animate-spin" /> Verifying CIN...
+                                          </>
+                                        ) : (
+                                          <>
+                                            Verify CIN Identity <ShieldCheck size={14} />
+                                          </>
+                                        )}
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+
+                                <FormField
+                                  label="GSTIN (Optional)"
+                                  field="gstin"
+                                  value={formData.gstin}
+                                  onChange={updateField}
+                                  placeholder="27AAAAA0000A1Z5"
+                                  icon={CreditCard}
+                                />
+                                <FormField
+                                  label="PAN (Optional)"
+                                  field="pan_number"
+                                  value={formData.pan_number}
+                                  onChange={updateField}
+                                  placeholder="ABCDE1234F"
+                                  icon={CreditCard}
+                                />
+                                <FormField
+                                  label="Registration Number (Optional)"
+                                  field="registration_number"
+                                  value={formData.registration_number}
+                                  onChange={updateField}
+                                  placeholder="State registration ref"
+                                  icon={CreditCard}
+                                />
+                              </>
+                            )}
+
+                            {employerType === "UNREGISTERED_BUSINESS" && (
+                              <FormField
+                                label="Udyam Number (Optional)"
+                                field="udyam_number"
+                                value={formData.udyam_number}
+                                onChange={updateField}
+                                placeholder="UDYAM-XX-00-0000000"
+                                icon={CreditCard}
+                              />
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Document Verification Items */}
+                        {verification.required.length > 0 && (
+                          <div className="space-y-3 rounded-2xl border border-slate-200/80 bg-white p-5 dark:border-slate-800 dark:bg-slate-800/40">
+                            <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-500">
+                              Document Verification Mapping
+                            </h3>
+
+                            {verification.required.map((type) => {
+                              const record = getVerificationRecord(type);
+                              const isVerifiedRecord = record?.status === "VERIFIED";
+
+                              return (
+                                <div
+                                  key={type}
+                                  className="flex flex-col gap-3 rounded-xl border border-slate-200 p-4 sm:flex-row sm:items-center sm:justify-between dark:border-slate-800"
+                                >
+                                  <div>
+                                    <p className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                                      Document: {type.replaceAll("_", " ")}
+                                    </p>
+                                    <p
+                                      className={`text-xs ${
+                                        isVerifiedRecord
+                                          ? "text-emerald-600 font-bold"
+                                          : record?.status === "FAILED"
+                                          ? "text-red-600"
+                                          : "text-slate-500"
+                                      }`}
+                                    >
+                                      Status: {record?.status || "PENDING"}
+                                    </p>
+                                  </div>
+
+                                  {!isVerifiedRecord && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRequestVerification(type)}
+                                      disabled={isSubmitting}
+                                      className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 px-3.5 py-2 text-xs font-bold text-blue-700 transition hover:bg-blue-100 disabled:opacity-50 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-300"
+                                    >
+                                      {isSubmitting ? <Loader2 size={14} className="animate-spin" /> : null}
+                                      {record?.status === "FAILED" ? "Retry Verification" : "Verify Document"}
+                                    </button>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {/* Summary Confirmation Box */}
+                        <div className="space-y-3 rounded-2xl border border-slate-200/80 bg-slate-50/60 p-5 dark:border-slate-800 dark:bg-slate-800/40">
+                          <div className="flex items-center justify-between border-b border-slate-200/60 pb-3 dark:border-slate-700">
+                            <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-500">
+                              Profile Summary Confirmation
+                            </h3>
+                            <span className="text-[10px] font-semibold text-slate-400">Ready to Submit</span>
+                          </div>
+
+                          <div className="grid grid-cols-1 gap-x-6 gap-y-2 text-xs sm:grid-cols-2">
+                            <div className="flex justify-between py-1 border-b border-slate-200/40 dark:border-slate-700/40">
+                              <span className="text-slate-500">Category:</span>
+                              <span className="font-bold text-slate-900 dark:text-white">
+                                {employerType.replaceAll("_", " ")}
+                              </span>
+                            </div>
+
+                            <div className="flex justify-between py-1 border-b border-slate-200/40 dark:border-slate-700/40">
+                              <span className="text-slate-500">Enterprise Name:</span>
+                              <span className="font-bold text-slate-900 dark:text-white">
+                                {formData.business_name || "N/A"}
+                              </span>
+                            </div>
+
+                            <div className="flex justify-between py-1 border-b border-slate-200/40 dark:border-slate-700/40">
+                              <span className="text-slate-500">Email:</span>
+                              <span className="font-bold text-slate-900 dark:text-white">
+                                {formData.company_email || "N/A"}
+                              </span>
+                            </div>
+
+                            <div className="flex justify-between py-1 border-b border-slate-200/40 dark:border-slate-700/40">
+                              <span className="text-slate-500">Phone:</span>
+                              <span className="font-bold text-slate-900 dark:text-white">
+                                {formData.company_phone || "N/A"}
+                              </span>
+                            </div>
+
+                            <div className="flex justify-between py-1 border-b border-slate-200/40 dark:border-slate-700/40">
+                              <span className="text-slate-500">City / State:</span>
+                              <span className="font-bold text-slate-900 dark:text-white">
+                                {formData.city ? `${formData.city}, ${formData.state || ""}` : "N/A"}
+                              </span>
+                            </div>
+
+                            <div className="flex justify-between py-1 border-b border-slate-200/40 dark:border-slate-700/40">
+                              <span className="text-slate-500">Work Location:</span>
+                              <span className="font-bold text-slate-900 dark:text-white truncate max-w-[170px]">
+                                {formData.work_location || "N/A"}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {formError && (
+                          <div className="rounded-xl border border-red-200 bg-red-50 p-3.5 text-xs font-semibold text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-300">
+                            {formError}
+                          </div>
+                        )}
+
+                        <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:justify-between">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setFormError("");
+                              transitionToStep(2, "prev");
+                            }}
+                            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 py-3.5 text-xs font-bold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                          >
+                            <ArrowLeft size={16} />
+                            Back
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={handleComplete}
+                            disabled={isSubmitting || isAnimating}
+                            className="flex-1 inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-600 px-7 py-4 text-xs font-bold text-white shadow-xl shadow-blue-500/30 transition hover:from-blue-700 hover:to-indigo-700 active:scale-[0.99] disabled:opacity-50"
+                          >
+                            {isSubmitting ? (
+                              <>
+                                <Loader2 size={16} className="animate-spin" /> Completing Onboarding...
+                              </>
+                            ) : (
+                              <>
+                                Verify & Complete Onboarding <CheckCircle2 size={16} />
+                              </>
+                            )}
+                          </button>
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            {formError && <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-400">{formError}</p>}
-
-            <div className="flex flex-col gap-3 sm:flex-row sm:justify-between pt-2">
-              <button
-                type="button"
-                onClick={() => { setFormError(""); setStep("type"); }}
-                className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-6 py-3 font-bold text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
-              >
-                Back to employer type
-              </button>
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className="inline-flex items-center justify-center gap-2 rounded-lg bg-linear-to-r from-blue-600 to-blue-700 px-6 py-3 font-bold text-white transition hover:from-blue-700 hover:to-blue-800 disabled:opacity-50"
-              >
-                {isSubmitting ? (
-                  <><Loader2 size={16} className="animate-spin" /> Verifying Legal Identity...</>
-                ) : (
-                  <>Verify Legal Identity <ArrowRight size={16} /></>
-                )}
-              </button>
-            </div>
-          </form>
-        )}
-
-        {/* STEP 3 (or Step 2 for Individual/Unregistered): Remaining Details */}
-        {step === "details" && (
-          <form onSubmit={handleSaveDetails} className="space-y-8 rounded-2xl border border-slate-200 bg-white p-8 dark:border-slate-800 dark:bg-slate-900 shadow-xs">
-            <div>
-              <div className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-blue-700 dark:bg-blue-950 dark:text-blue-300">
-                {isRegistered ? "Step 3 — Remaining Onboarding Details" : "Step 2 — Onboarding Details"}
-              </div>
-              <h2 className="mt-2 font-(--font-anton) text-2xl uppercase text-slate-900 dark:text-white">
-                {employerType === "REGISTERED_INDUSTRY"
-                  ? "Registered industry details"
-                  : employerType === "REGISTERED_BUSINESS"
-                    ? "Registered business details"
-                    : employerType === "UNREGISTERED_BUSINESS"
-                      ? "Unregistered business details"
-                      : "Individual employer details"}
-              </h2>
-              <p className="mt-1 text-slate-600 dark:text-slate-400">
-                Complete the required details to finish your employer profile.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              {employerType === "REGISTERED_INDUSTRY" && (
-                <>
-                  <FormField label="Legal / company name" field="business_name" value={formData.business_name} onChange={updateField} readOnly={isRegistered && hasVerifiedLegalIdentity(employerType, verification)} />
-                  <FormField label="CIN" field="cin_number" value={formData.cin_number} onChange={updateField} readOnly={isRegistered && hasVerifiedLegalIdentity(employerType, verification)} />
-                  <FormField label="Industry type" field="industry_type" value={formData.industry_type} onChange={updateField} />
-                  <FormField label="Industry category" field="industry_category" value={formData.industry_category} onChange={updateField} />
-                  <FormField label="Registered address" field="registered_address" value={formData.registered_address} onChange={updateField} wide />
-                </>
-              )}
-
-              {employerType === "REGISTERED_BUSINESS" && (
-                <>
-                  <FormField label="Business name" field="business_name" value={formData.business_name} onChange={updateField} readOnly={isRegistered && hasVerifiedLegalIdentity(employerType, verification)} />
-                  <FormField label="CIN" field="cin_number" value={formData.cin_number} onChange={updateField} readOnly={isRegistered && hasVerifiedLegalIdentity(employerType, verification)} />
-                  <FormField label="Business type" field="business_type" value={formData.business_type} onChange={updateField} />
-                  <FormField label="Business category" field="business_category" value={formData.business_category} onChange={updateField} />
-                  <FormField label="Industry category" field="industry_category" value={formData.industry_category} onChange={updateField} />
-                  <FormField label="Registered address" field="registered_address" value={formData.registered_address} onChange={updateField} wide />
-                </>
-              )}
-
-              {employerType === "UNREGISTERED_BUSINESS" && (
-                <>
-                  <FormField label="Business name" field="business_name" value={formData.business_name} onChange={updateField} />
-                  <FormField label="Business type" field="business_type" value={formData.business_type} onChange={updateField} />
-                  <FormField label="Business category" field="business_category" value={formData.business_category} onChange={updateField} />
-                  <FormField label="Industry category" field="industry_category" value={formData.industry_category} onChange={updateField} />
-                  <FormField label="Address" field="address" value={formData.address} onChange={updateField} wide />
-                  <FormField label="Nature of business" field="nature_of_business" value={formData.nature_of_business} onChange={updateField} />
-                  <FormField label="Number of proprietors" field="number_of_proprietors" value={formData.number_of_proprietors} onChange={updateField} />
-                  <FormField label="Proprietor name" field="proprietor_name" value={formData.proprietor_name} onChange={updateField} />
-                  <FormField label="Proprietor Aadhaar" field="proprietor_aadhaar" value={formData.proprietor_aadhaar} onChange={updateField} />
-                </>
-              )}
-
-              {employerType === "INDIVIDUAL" && (
-                <FormField label="Address" field="address" value={formData.address} onChange={updateField} wide />
-              )}
-
-              {(employerType === "REGISTERED_BUSINESS" || employerType === "UNREGISTERED_BUSINESS") && (
-                <>
-                  <FormField label="Website" field="website_url" value={formData.website_url} onChange={updateField} />
-                  <FormField label="Annual revenue" field="annual_revenue" value={formData.annual_revenue} onChange={updateField} />
-                  <FormField label="Business description" field="description" value={formData.description} onChange={updateField} wide />
-                </>
-              )}
-
-              {isRegistered && (
-                <>
-                  <FormField label="Authorized signatory name" field="director_name" value={formData.director_name} onChange={updateField} />
-                  <FormField label="Authorized signatory phone" field="director_phone" value={formData.director_phone} onChange={updateField} />
-                  <FormField label="Authorized signatory email" field="director_email" value={formData.director_email} onChange={updateField} />
-                  <FormField label="Authorized signatory address" field="director_address" value={formData.director_address} onChange={updateField} wide />
-                  <FormField label="Authorized signatory Aadhaar" field="director_aadhaar" value={formData.director_aadhaar} onChange={updateField} />
-                </>
-              )}
-
-              <FormField label="Account email" field="company_email" value={formData.company_email} onChange={updateField} />
-              <FormField label="Account phone" field="company_phone" value={formData.company_phone} onChange={updateField} />
-
-              <FormField label="City" field="city" value={formData.city} onChange={updateField} />
-              <FormField label="State" field="state" value={formData.state} onChange={updateField} />
-              <FormField label="Pincode" field="pincode" value={formData.pincode} onChange={updateField} />
-              <div className="sm:col-span-2">
-                <label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-300">Work location</label>
-                <LocationPicker value={formData.work_location} onSelect={selectWorkLocation} />
-              </div>
-
-              {isRegistered && (
-                <>
-                  <FormField label="GSTIN" field="gstin" value={formData.gstin} onChange={updateField} />
-                  <FormField label="PAN" field="pan_number" value={formData.pan_number} onChange={updateField} />
-                  <FormField label="Registration number" field="registration_number" value={formData.registration_number} onChange={updateField} />
-                </>
-              )}
-              {employerType === "UNREGISTERED_BUSINESS" && (
-                <FormField label="Udyam number" field="udyam_number" value={formData.udyam_number} onChange={updateField} />
-              )}
-            </div>
-
-            {formError && <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{formError}</p>}
-
-            <div className="flex flex-col gap-3 sm:flex-row sm:justify-between">
-              <button
-                type="button"
-                onClick={() => {
-                  setFormError("");
-                  setStep(isRegistered ? "identity" : "type");
-                }}
-                className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-6 py-3 font-bold text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
-              >
-                {isRegistered ? "Back to legal verification" : "Back to employer type"}
-              </button>
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className="inline-flex items-center justify-center gap-2 rounded-lg bg-linear-to-r from-blue-600 to-blue-700 px-6 py-3 font-bold text-white transition hover:from-blue-700 hover:to-blue-800 disabled:opacity-50"
-              >
-                {isSubmitting ? <><Loader2 size={16} className="animate-spin" /> Saving...</> : <>Next: Review <ArrowRight size={16} /></>}
-              </button>
-            </div>
-          </form>
-        )}
-
-        {/* Verification Step for Unregistered Business */}
-        {step === "verification" && (
-          <div className="space-y-8 rounded-2xl border border-slate-200 bg-white p-8 dark:border-slate-800 dark:bg-slate-900 shadow-xs">
-            <div>
-              <h2 className="font-(--font-anton) text-2xl uppercase text-slate-900 dark:text-white">Verification</h2>
-              <p className="mt-2 text-slate-600 dark:text-slate-400">Complete every configured verification before review.</p>
-            </div>
-
-            <div className="space-y-3">
-              {verification.required.map((type) => {
-                const record = getVerificationRecord(type);
-                const verified = record?.status === "VERIFIED";
-                const failureMessage = record?.failure_reason === "CASHFREE_AUTHENTICATION_FAILED"
-                  ? "Cashfree credentials were rejected. Contact the administrator."
-                  : record?.failure_reason;
-                return (
-                  <div key={type} className="flex flex-col gap-3 rounded-xl border border-slate-200 p-4 sm:flex-row sm:items-center sm:justify-between dark:border-slate-800">
-                    <div>
-                      <p className="font-bold text-slate-800 dark:text-slate-200">Document: {type.replaceAll("_", " ")}</p>
-                      <p className={`text-sm ${verified ? "text-emerald-600" : record?.status === "FAILED" ? "text-red-600" : record?.status === "NOT_CONFIGURED" ? "text-amber-700" : "text-slate-500"}`}>
-                        {record?.status === "NOT_CONFIGURED" ? "Verification is not configured; success cannot be claimed" : record?.status || "PENDING"}{failureMessage && record?.status !== "NOT_CONFIGURED" ? ` - ${failureMessage}` : ""}
-                      </p>
-                    </div>
-                    {!verified && record?.status !== "NOT_CONFIGURED" && (
-                      <button type="button" onClick={() => handleRequestVerification(type)} disabled={isSubmitting} className="inline-flex items-center justify-center gap-2 rounded-lg border border-blue-200 px-4 py-2 text-sm font-bold text-blue-700 transition hover:bg-blue-50 disabled:opacity-50">
-                        {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : null}
-                        {record?.status === "FAILED" ? "Retry" : "Verify"}
-                      </button>
                     )}
                   </div>
-                );
-              })}
-              {verification.required.length === 0 && (
-                <p className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-900">
-                  No mandatory verification mapping is configured for this employer type.
-                </p>
+                </div>
               )}
             </div>
-
-            {formError && <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{formError}</p>}
-            <div className="flex flex-col gap-3 sm:flex-row sm:justify-between">
-              <button type="button" onClick={() => { setFormError(""); setStep("details"); }} className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-6 py-3 font-bold text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">Back to details</button>
-              <button type="button" onClick={() => {
-                const incomplete = verification.required.find((type) => getVerificationRecord(type)?.status !== "VERIFIED");
-                if (incomplete) {
-                  const message = `${incomplete.replaceAll("_", " ")} verification is required`;
-                  setFormError(message);
-                  toast.error(message);
-                  return;
-                }
-                setFormError("");
-                setStep("review");
-              }} disabled={isSubmitting} className="inline-flex items-center justify-center gap-2 rounded-lg bg-linear-to-r from-blue-600 to-blue-700 px-6 py-3 font-bold text-white transition hover:from-blue-700 hover:to-blue-800 disabled:opacity-50">Next: Review <ArrowRight size={16} /></button>
-            </div>
           </div>
-        )}
-
-        {/* STEP 4: Review */}
-        {step === "review" && (
-          <div className="space-y-8 rounded-2xl border border-slate-200 bg-white p-8 dark:border-slate-800 dark:bg-slate-900 shadow-xs">
-            <div>
-              <div className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-blue-700 dark:bg-blue-950 dark:text-blue-300">
-                {isRegistered ? "Step 4 — Review" : "Step 3 — Review"}
-              </div>
-              <h2 className="mt-2 font-(--font-anton) text-2xl uppercase text-slate-900 dark:text-white">Review your details</h2>
-              <p className="mt-1 text-slate-600 dark:text-slate-400">Confirm the information before completing onboarding.</p>
-            </div>
-
-            <div className="grid grid-cols-1 gap-3 rounded-xl bg-slate-50 p-5 md:grid-cols-2 dark:bg-slate-800/50">
-              {ONBOARDING_FIELDS.filter((field) => {
-                if (!formData[field]) return false;
-                if (employerType === "INDIVIDUAL") {
-                  return ["address", "company_email", "company_phone", "city", "state", "pincode", "work_location", "latitude", "longitude"].includes(field);
-                }
-                if (employerType === "UNREGISTERED_BUSINESS") {
-                  return !["cin_number", "registered_address", "industry_type", "director_name", "director_phone", "director_email", "director_address", "director_aadhaar", "registration_number", "gstin", "pan_number"].includes(field);
-                }
-                return true;
-              }).map((field) => (
-                <div key={field} className="flex items-start justify-between gap-4 border-b border-slate-200 py-2 last:border-0 dark:border-slate-700">
-                  <span className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">{field.replaceAll("_", " ")}</span>
-                  <span className="text-right text-sm font-semibold text-slate-800 dark:text-slate-200">{field === "proprietor_aadhaar" || field === "director_aadhaar" ? maskAadhaar(formData[field]) : formData[field]}</span>
-                </div>
-              ))}
-            </div>
-
-            {verification.required.length > 0 && (
-              <div className="rounded-xl border border-slate-200 p-5 dark:border-slate-800">
-                <p className="mb-2 text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">Verification status</p>
-                {verification.required.map((type) => (
-                  <p key={type} className={`text-sm font-semibold ${getVerificationRecord(type)?.status === "VERIFIED" ? "text-emerald-700 dark:text-emerald-400" : getVerificationRecord(type)?.status === "FAILED" ? "text-red-700 dark:text-red-400" : getVerificationRecord(type)?.status === "NOT_CONFIGURED" ? "text-amber-700 dark:text-amber-400" : "text-slate-700 dark:text-slate-300"}`}>
-                    {type.replaceAll("_", " ")}: {getVerificationRecord(type)?.status === "NOT_CONFIGURED" ? "NOT CONFIGURED" : getVerificationRecord(type)?.status || "PENDING"}
-                  </p>
-                ))}
-              </div>
-            )}
-
-            {formError && <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-400">{formError}</p>}
-
-            <div className="flex flex-col gap-3 sm:flex-row sm:justify-between">
-              <div className="flex flex-col gap-3 sm:flex-row">
-                {isRegistered && (
-                  <button type="button" onClick={() => { setFormError(""); setStep("identity"); }} className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-6 py-3 font-bold text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                    Edit legal identity
-                  </button>
-                )}
-                <button type="button" onClick={() => { setFormError(""); setStep("details"); }} className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-6 py-3 font-bold text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                  Edit details
-                </button>
-              </div>
-              <button type="button" onClick={handleComplete} disabled={isSubmitting} className="inline-flex items-center justify-center gap-2 rounded-lg bg-linear-to-r from-blue-600 to-blue-700 px-6 py-3 font-bold text-white transition hover:from-blue-700 hover:to-blue-800 disabled:opacity-50">
-                {isSubmitting ? <><Loader2 size={16} className="animate-spin" /> Submitting...</> : <>Submit onboarding <ArrowRight size={16} /></>}
-              </button>
-            </div>
-          </div>
-        )}
+        </div>
       </main>
     </div>
   );
@@ -1073,6 +1766,9 @@ function FormField({
   field,
   value,
   onChange,
+  placeholder = "",
+  icon: Icon,
+  error,
   wide = false,
   readOnly = false,
 }: {
@@ -1080,19 +1776,41 @@ function FormField({
   field: string;
   value?: string;
   onChange: (field: string, value: string) => void;
+  placeholder?: string;
+  icon?: React.ComponentType<{ size?: number; className?: string }>;
+  error?: string;
   wide?: boolean;
   readOnly?: boolean;
 }) {
   return (
-    <label className={`space-y-1 ${wide ? "md:col-span-2" : ""}`}>
-      <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">{label}</span>
-      <input
-        type="text"
-        value={value || ""}
-        readOnly={readOnly}
-        onChange={(event) => onChange(field, event.target.value)}
-        className={`w-full rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 ${readOnly ? "bg-slate-100 cursor-not-allowed opacity-80 dark:bg-slate-800/80" : "bg-slate-50 dark:bg-slate-900"}`}
-      />
+    <label className={`space-y-1.5 ${wide ? "sm:col-span-2" : ""}`}>
+      <span className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+        {label}
+      </span>
+      <div className="relative">
+        {Icon && (
+          <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
+            <Icon size={16} />
+          </div>
+        )}
+        <input
+          type="text"
+          value={value || ""}
+          readOnly={readOnly}
+          placeholder={placeholder}
+          onChange={(event) => onChange(field, event.target.value)}
+          className={`w-full rounded-2xl border ${
+            error
+              ? "border-red-400 ring-2 ring-red-100 dark:border-red-700 dark:ring-red-950"
+              : "border-slate-200/90 dark:border-slate-700"
+          } ${Icon ? "pl-10" : "pl-4"} pr-4 py-3 text-xs font-medium text-slate-900 placeholder:text-slate-400 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100 dark:bg-slate-800/80 dark:text-slate-100 dark:focus:ring-blue-900/40 ${
+            readOnly
+              ? "bg-slate-100 cursor-not-allowed opacity-80 dark:bg-slate-800/80"
+              : "bg-slate-50/50 dark:bg-slate-900/80"
+          }`}
+        />
+      </div>
+      {error && <p className="text-[11px] font-semibold text-red-600 mt-1">{error}</p>}
     </label>
   );
 }
