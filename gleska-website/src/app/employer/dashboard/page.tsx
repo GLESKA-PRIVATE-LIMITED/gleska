@@ -33,6 +33,7 @@ import Link from "next/link";
 import apiClient from "@/lib/api";
 
 import LocationPicker, { LocationSelection } from "@/components/LocationPicker";
+import VoiceMicIcon from "@/components/ui/VoiceMicIcon";
 
 /**
  * Supported languages for job description input.
@@ -166,34 +167,6 @@ function formatSubscriptionDate(subscriptionValidUntil: string) {
   const day = String(date.getUTCDate()).padStart(2, "0");
   const month = String(date.getUTCMonth() + 1).padStart(2, "0");
   return `${day}/${month}/${date.getUTCFullYear()}`;
-}
-
-function VoiceMicIcon({ className = "w-5 h-5" }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      className={className}
-    >
-      <rect x="9" y="3" width="6" height="10.5" rx="3" fill="currentColor" />
-      <path
-        d="M18.5 10v1.2a6.5 6.5 0 0 1-13 0V10"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-      />
-      <line
-        x1="12"
-        y1="17.7"
-        x2="12"
-        y2="21"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
 }
 
 export default function EmployerDashboard() {
