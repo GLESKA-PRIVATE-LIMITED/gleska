@@ -39,7 +39,7 @@ export default function GetHiredSection() {
                   href="/worker/auth"
                   className="inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 px-8 py-4 text-base font-bold text-white shadow-lg shadow-indigo-500/25 transition hover:from-blue-700 hover:to-indigo-700"
                 >
-                  {t('hero.ctaWorker')} <ArrowRight size={20} />
+                  {t('hero.ctaJoin')} <ArrowRight size={20} />
                 </Link>
                 <Link
                   href="/employer/auth"

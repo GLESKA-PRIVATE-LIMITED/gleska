@@ -2,7 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
-import { ArrowRight, LayoutDashboard, Sparkles, Zap } from "lucide-react";
+import { ArrowRight, LayoutDashboard, Zap } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { getRouteForNextStep } from "@/lib/auth-routing";
 
@@ -145,11 +145,12 @@ export default function ServicesSection() {
         <div className="rounded-3xl border border-slate-200/80 bg-white/70 p-6 sm:p-10 md:p-12 shadow-2xl shadow-slate-900/5 backdrop-blur-xl dark:border-slate-800/80 dark:bg-slate-900/70">
           
           {/* Section Header */}
-          <div className="mb-12 text-left">
-            <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-blue-700 dark:border-blue-800 dark:bg-blue-950/50 dark:text-blue-300">
-              <Sparkles size={14} />
-              Deployable Agents
-            </div>
+          <div className="mb-12 text-center">
+            {/* HEADING: BUSINESS & INDUSTRIAL AI AGENTS */}
+            <h1 className="mb-2 block font-[var(--font-anton)] text-2xl sm:text-4xl md:text-5xl lg:text-6xl xl:text-7xl uppercase tracking-wide text-slate-900 md:whitespace-nowrap dark:text-white">
+              BUSINESS &amp; INDUSTRIAL AI AGENTS
+            </h1>
+
             <h2 className="inline-block pr-3 font-[var(--font-anton)] text-3xl sm:text-4xl md:text-5xl lg:text-5xl uppercase tracking-wide bg-gradient-to-r from-blue-600 via-indigo-600 to-emerald-600 bg-clip-text text-transparent sm:whitespace-nowrap">
               READY TO EXPERIENCE THE FUTURE
             </h2>
