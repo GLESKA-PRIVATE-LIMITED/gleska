@@ -589,10 +589,10 @@ export default function EmployerOnboarding() {
     const errors: Record<string, string> = {};
 
     if (!formData.company_email?.trim()) {
-      errors.company_email = "Account email is required";
+      errors.company_email = "Company email is required";
     }
     if (!formData.company_phone?.trim()) {
-      errors.company_phone = "Account phone is required";
+      errors.company_phone = "Company phone is required";
     }
     if (!formData.city?.trim()) {
       errors.city = "City is required";
@@ -605,6 +605,24 @@ export default function EmployerOnboarding() {
     }
     if (!formData.work_location?.trim()) {
       errors.work_location = "Work location is required";
+    }
+
+    if (employerType === "REGISTERED_BUSINESS" || employerType === "REGISTERED_INDUSTRY") {
+      if (!formData.director_name?.trim()) {
+        errors.director_name = "Authorized Signatory Name is required";
+      }
+      if (!formData.director_phone?.trim()) {
+        errors.director_phone = "Authorized Signatory Phone is required";
+      }
+      if (!formData.director_email?.trim()) {
+        errors.director_email = "Authorized Signatory Email is required";
+      }
+      if (!formData.director_aadhaar?.trim() || !/^\d{12}$/.test(formData.director_aadhaar.trim())) {
+        errors.director_aadhaar = "A valid 12-digit Authorized Signatory Aadhaar is required";
+      }
+      if (!formData.director_address?.trim()) {
+        errors.director_address = "Authorized Signatory Address is required";
+      }
     }
 
     if (employerType === "UNREGISTERED_BUSINESS") {
@@ -1404,7 +1422,7 @@ export default function EmployerOnboarding() {
                               </div>
 
                               <FormField
-                                label="Authorized Signatory Name"
+                                label="Authorized Signatory Name *"
                                 field="director_name"
                                 value={formData.director_name}
                                 onChange={updateField}
@@ -1413,7 +1431,7 @@ export default function EmployerOnboarding() {
                                 error={fieldErrors.director_name}
                               />
                               <FormField
-                                label="Authorized Signatory Phone"
+                                label="Authorized Signatory Phone *"
                                 field="director_phone"
                                 value={formData.director_phone}
                                 onChange={updateField}
@@ -1422,7 +1440,7 @@ export default function EmployerOnboarding() {
                                 error={fieldErrors.director_phone}
                               />
                               <FormField
-                                label="Authorized Signatory Email"
+                                label="Authorized Signatory Email *"
                                 field="director_email"
                                 value={formData.director_email}
                                 onChange={updateField}
@@ -1431,7 +1449,7 @@ export default function EmployerOnboarding() {
                                 error={fieldErrors.director_email}
                               />
                               <FormField
-                                label="Authorized Signatory Aadhaar"
+                                label="Authorized Signatory Aadhaar *"
                                 field="director_aadhaar"
                                 value={formData.director_aadhaar}
                                 onChange={updateField}
@@ -1440,7 +1458,7 @@ export default function EmployerOnboarding() {
                                 error={fieldErrors.director_aadhaar}
                               />
                               <FormField
-                                label="Authorized Signatory Address"
+                                label="Authorized Signatory Address *"
                                 field="director_address"
                                 value={formData.director_address}
                                 onChange={updateField}
@@ -1492,12 +1510,12 @@ export default function EmployerOnboarding() {
 
                           <div className="sm:col-span-2 border-b border-slate-100 pb-2 pt-2 dark:border-slate-800">
                             <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-400">
-                              Account Contact & Work Location
+                              Company Contact & Work Location
                             </h3>
                           </div>
 
                           <FormField
-                            label="Account Email *"
+                            label="Company Email *"
                             field="company_email"
                             value={formData.company_email}
                             onChange={updateField}
@@ -1506,7 +1524,7 @@ export default function EmployerOnboarding() {
                             error={fieldErrors.company_email}
                           />
                           <FormField
-                            label="Account Phone *"
+                            label="Company Phone *"
                             field="company_phone"
                             value={formData.company_phone}
                             onChange={updateField}
