@@ -127,7 +127,7 @@ class RegisteredBusinessOnboardingSchema(BaseModel):
     business_type: str
     industry_category: Optional[str] = None
     business_category: Optional[str] = None
-    registered_address: str
+    registered_address: Optional[str] = None
     city: Optional[str] = None
     state: Optional[str] = None
     pincode: Optional[str] = None

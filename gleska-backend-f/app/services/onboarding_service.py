@@ -111,12 +111,11 @@ class OnboardingService:
                 "business_name",
                 "business_type",
                 "business_category",
-                "registered_address",
                 "company_email",
                 "company_phone",
             ]
             if require_registered_business_location:
-                required_fields.extend(["city", "state", "pincode", "work_location"])
+                required_fields.extend(["registered_address", "city", "state", "pincode", "work_location"])
             for field in required_fields:
                 if OnboardingService._missing_required_value(data.get(field)):
                     return False, f"{field} is required for registered business"

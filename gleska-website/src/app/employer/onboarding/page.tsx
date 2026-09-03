@@ -390,7 +390,6 @@ export default function EmployerOnboarding() {
     if (type === "REGISTERED_BUSINESS") {
       return (
         !data.business_name?.trim() ||
-        !data.registered_address?.trim() ||
         !data.business_type?.trim() ||
         !data.business_category?.trim()
       );
@@ -542,11 +541,13 @@ export default function EmployerOnboarding() {
           errors.business_category = "Business category is required";
         }
       }
-      if (employerType === "REGISTERED_INDUSTRY" && !formData.industry_type?.trim()) {
-        errors.industry_type = "Industry type is required";
-      }
-      if (!formData.registered_address?.trim()) {
-        errors.registered_address = "Registered address is required";
+      if (employerType === "REGISTERED_INDUSTRY") {
+        if (!formData.industry_type?.trim()) {
+          errors.industry_type = "Industry type is required";
+        }
+        if (!formData.registered_address?.trim()) {
+          errors.registered_address = "Registered address is required";
+        }
       }
     } else if (employerType === "UNREGISTERED_BUSINESS") {
       if (!formData.business_name?.trim()) {
@@ -1236,18 +1237,18 @@ export default function EmployerOnboarding() {
                                     icon={Briefcase}
                                     error={fieldErrors.industry_category}
                                   />
+                                  <FormField
+                                    label="Registered Address *"
+                                    field="registered_address"
+                                    value={formData.registered_address}
+                                    onChange={updateField}
+                                    placeholder="Full registered office address"
+                                    icon={MapPin}
+                                    error={fieldErrors.registered_address}
+                                    wide
+                                  />
                                 </>
                               )}
-                              <FormField
-                                label="Registered Address *"
-                                field="registered_address"
-                                value={formData.registered_address}
-                                onChange={updateField}
-                                placeholder="Full registered office address"
-                                icon={MapPin}
-                                error={fieldErrors.registered_address}
-                                wide
-                              />
                             </>
                           )}
 
@@ -1513,6 +1514,19 @@ export default function EmployerOnboarding() {
                             icon={Phone}
                             error={fieldErrors.company_phone}
                           />
+
+                          {isRegistered && (
+                            <FormField
+                              label="Registered Address"
+                              field="registered_address"
+                              value={formData.registered_address}
+                              onChange={updateField}
+                              placeholder="Full registered office address"
+                              icon={MapPin}
+                              error={fieldErrors.registered_address}
+                              wide
+                            />
+                          )}
 
                           <FormField
                             label="City *"
