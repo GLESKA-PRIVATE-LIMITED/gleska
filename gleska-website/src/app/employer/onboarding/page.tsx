@@ -64,6 +64,37 @@ type VerificationState = {
   records: VerificationRecord[];
 };
 
+const BUSINESS_TYPE_OPTIONS = [
+  "Private Limited / Pvt Ltd",
+  "Public Limited Company",
+  "LLP",
+  "LLC",
+  "Limited Company (Ltd)",
+  "OPC (One Person Company)",
+  "Partnership",
+  "Sole Proprietorship",
+  "Corporation",
+  "S Corporation",
+  "C Corporation",
+  "Non-Profit / Non-Profit Organization",
+  "Enterprise",
+  "Other",
+];
+
+const BUSINESS_CATEGORY_OPTIONS = [
+  "Construction & Infrastructure",
+  "Manufacturing",
+  "Agriculture & Food",
+  "Information Technology & Software",
+  "Finance & Banking",
+  "Healthcare & Pharmaceuticals",
+  "Retail & E-commerce",
+  "Logistics & Transportation",
+  "Energy & Utilities",
+  "Professional & Business Services",
+  "Other",
+];
+
 const REQUIRED_FIELDS: Record<EmployerType, string[]> = {
   REGISTERED_INDUSTRY: [
     "business_name",
@@ -82,7 +113,7 @@ const REQUIRED_FIELDS: Record<EmployerType, string[]> = {
     "business_name",
     "cin_number",
     "business_type",
-    "industry_category",
+    "business_category",
     "registered_address",
     "company_email",
     "company_phone",
@@ -357,7 +388,12 @@ export default function EmployerOnboarding() {
 
   const checkStep1Incomplete = (type: EmployerType, data: OnboardingFormData) => {
     if (type === "REGISTERED_BUSINESS") {
-      return !data.business_name?.trim() || !data.registered_address?.trim();
+      return (
+        !data.business_name?.trim() ||
+        !data.registered_address?.trim() ||
+        !data.business_type?.trim() ||
+        !data.business_category?.trim()
+      );
     }
     if (type === "REGISTERED_INDUSTRY") {
       return !data.business_name?.trim() || !data.registered_address?.trim() || !data.industry_type?.trim();
@@ -497,6 +533,14 @@ export default function EmployerOnboarding() {
     if (employerType === "REGISTERED_BUSINESS" || employerType === "REGISTERED_INDUSTRY") {
       if (!formData.business_name?.trim()) {
         errors.business_name = "Business / Company name is required";
+      }
+      if (employerType === "REGISTERED_BUSINESS") {
+        if (!formData.business_type?.trim()) {
+          errors.business_type = "Business type is required";
+        }
+        if (!formData.business_category?.trim()) {
+          errors.business_category = "Business category is required";
+        }
       }
       if (employerType === "REGISTERED_INDUSTRY" && !formData.industry_type?.trim()) {
         errors.industry_type = "Industry type is required";
@@ -1138,45 +1182,62 @@ export default function EmployerOnboarding() {
                                 wide
                               />
                               {employerType === "REGISTERED_BUSINESS" && (
-                                <FormField
-                                  label="Business Type"
-                                  field="business_type"
-                                  value={formData.business_type}
-                                  onChange={updateField}
-                                  placeholder="e.g. Private Limited, LLP"
-                                  icon={Tag}
-                                  error={fieldErrors.business_type}
-                                />
+                                <>
+                                  <SelectFormField
+                                    label="Business Type *"
+                                    field="business_type"
+                                    value={formData.business_type}
+                                    options={BUSINESS_TYPE_OPTIONS}
+                                    onChange={updateField}
+                                    placeholder="Select business type"
+                                    customPlaceholder="Enter custom business type"
+                                    icon={Tag}
+                                    error={fieldErrors.business_type}
+                                  />
+                                  <SelectFormField
+                                    label="Business Category *"
+                                    field="business_category"
+                                    value={formData.business_category}
+                                    options={BUSINESS_CATEGORY_OPTIONS}
+                                    onChange={updateField}
+                                    placeholder="Select business category"
+                                    customPlaceholder="Enter custom business category"
+                                    icon={Briefcase}
+                                    error={fieldErrors.business_category}
+                                  />
+                                </>
                               )}
                               {employerType === "REGISTERED_INDUSTRY" && (
-                                <FormField
-                                  label="Industry Type *"
-                                  field="industry_type"
-                                  value={formData.industry_type}
-                                  onChange={updateField}
-                                  placeholder="e.g. Heavy Manufacturing"
-                                  icon={Tag}
-                                  error={fieldErrors.industry_type}
-                                />
+                                <>
+                                  <FormField
+                                    label="Industry Type *"
+                                    field="industry_type"
+                                    value={formData.industry_type}
+                                    onChange={updateField}
+                                    placeholder="e.g. Heavy Manufacturing"
+                                    icon={Tag}
+                                    error={fieldErrors.industry_type}
+                                  />
+                                  <FormField
+                                    label="Business Category"
+                                    field="business_category"
+                                    value={formData.business_category}
+                                    onChange={updateField}
+                                    placeholder="e.g. Construction, Infrastructure"
+                                    icon={Briefcase}
+                                    error={fieldErrors.business_category}
+                                  />
+                                  <FormField
+                                    label="Industry Category *"
+                                    field="industry_category"
+                                    value={formData.industry_category}
+                                    onChange={updateField}
+                                    placeholder="e.g. Engineering & Services"
+                                    icon={Briefcase}
+                                    error={fieldErrors.industry_category}
+                                  />
+                                </>
                               )}
-                              <FormField
-                                label="Business Category"
-                                field="business_category"
-                                value={formData.business_category}
-                                onChange={updateField}
-                                placeholder="e.g. Construction, Infrastructure"
-                                icon={Briefcase}
-                                error={fieldErrors.business_category}
-                              />
-                              <FormField
-                                label="Industry Category *"
-                                field="industry_category"
-                                value={formData.industry_category}
-                                onChange={updateField}
-                                placeholder="e.g. Engineering & Services"
-                                icon={Briefcase}
-                                error={fieldErrors.industry_category}
-                              />
                               <FormField
                                 label="Registered Address *"
                                 field="registered_address"
@@ -1848,5 +1909,110 @@ function FormField({
       </div>
       {error && <p className="text-[11px] font-semibold text-red-600 mt-1">{error}</p>}
     </label>
+  );
+}
+
+function SelectFormField({
+  label,
+  field,
+  value,
+  options,
+  onChange,
+  placeholder = "Select an option",
+  customPlaceholder = "Enter custom value",
+  icon: Icon,
+  error,
+  wide = false,
+}: {
+  label: string;
+  field: string;
+  value?: string;
+  options: string[];
+  onChange: (field: string, value: string) => void;
+  placeholder?: string;
+  customPlaceholder?: string;
+  icon?: React.ComponentType<{ size?: number; className?: string }>;
+  error?: string;
+  wide?: boolean;
+}) {
+  const isPresetOption = options.includes(value || "");
+  const isOtherSelected = value !== undefined && value !== "" && !isPresetOption;
+  const [showOtherInput, setShowOtherInput] = useState(isOtherSelected);
+
+  useEffect(() => {
+    if (value && !options.includes(value)) {
+      setShowOtherInput(true);
+    } else if (value && options.includes(value) && value !== "Other") {
+      setShowOtherInput(false);
+    }
+  }, [value, options]);
+
+  const selectValue = showOtherInput ? "Other" : isPresetOption ? value || "" : "";
+
+  const handleSelectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const selected = e.target.value;
+    if (selected === "Other") {
+      setShowOtherInput(true);
+      if (isPresetOption) {
+        onChange(field, "");
+      }
+    } else {
+      setShowOtherInput(false);
+      onChange(field, selected);
+    }
+  };
+
+  return (
+    <div className={`space-y-1.5 ${wide ? "sm:col-span-2" : ""}`}>
+      <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+        {label}
+      </label>
+      <div className="relative">
+        {Icon && (
+          <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none z-10">
+            <Icon size={16} />
+          </div>
+        )}
+        <select
+          value={selectValue}
+          onChange={handleSelectChange}
+          className={`w-full appearance-none rounded-2xl border ${
+            error
+              ? "border-red-400 ring-2 ring-red-100 dark:border-red-700 dark:ring-red-950"
+              : "border-slate-200/90 dark:border-slate-700"
+          } ${Icon ? "pl-10" : "pl-4"} pr-10 py-3 text-xs font-medium text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100 dark:bg-slate-900 dark:text-slate-100 dark:focus:ring-blue-900/40 bg-slate-50/50 cursor-pointer`}
+        >
+          <option value="" disabled className="text-slate-400 dark:bg-slate-900">
+            {placeholder}
+          </option>
+          {options.map((opt) => (
+            <option key={opt} value={opt} className="text-slate-900 dark:bg-slate-900 dark:text-slate-100">
+              {opt}
+            </option>
+          ))}
+        </select>
+        <div className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none z-10">
+          <ChevronRight size={16} className="rotate-90" />
+        </div>
+      </div>
+
+      {showOtherInput && (
+        <div className="pt-1.5">
+          <input
+            type="text"
+            value={value || ""}
+            placeholder={customPlaceholder}
+            onChange={(e) => onChange(field, e.target.value)}
+            className={`w-full rounded-2xl border ${
+              error
+                ? "border-red-400 ring-2 ring-red-100 dark:border-red-700 dark:ring-red-950"
+                : "border-blue-300 dark:border-blue-700"
+            } px-4 py-3 text-xs font-medium text-slate-900 placeholder:text-slate-400 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100 dark:bg-slate-800/80 dark:text-slate-100 dark:focus:ring-blue-900/40 bg-white`}
+          />
+        </div>
+      )}
+
+      {error && <p className="text-[11px] font-semibold text-red-600 mt-1">{error}</p>}
+    </div>
   );
 }
