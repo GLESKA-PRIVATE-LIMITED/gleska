@@ -22,6 +22,17 @@ class VerificationService:
     """Owns verification state and delegates real checks to provider adapters."""
 
     PROVIDER_NOT_CONFIGURED = "VERIFICATION_PROVIDER_NOT_CONFIGURED"
+    CIN_INVALID = "CIN_INVALID"
+    CIN_MISSING = "CIN_MISSING"
+    BUSINESS_NAME_MISSING = "BUSINESS_NAME_MISSING"
+    VERIFICATION_NOT_CONFIGURED = "VERIFICATION_NOT_CONFIGURED"
+    CASHFREE_INSUFFICIENT_BALANCE = "CASHFREE_INSUFFICIENT_BALANCE"
+    CASHFREE_AUTHENTICATION_FAILED = "CASHFREE_AUTHENTICATION_FAILED"
+    CASHFREE_VERIFICATION_FAILED = "CASHFREE_VERIFICATION_FAILED"
+    CASHFREE_RATE_LIMITED = "CASHFREE_RATE_LIMITED"
+    CASHFREE_TIMEOUT = "CASHFREE_TIMEOUT"
+    CASHFREE_UNAVAILABLE = "CASHFREE_UNAVAILABLE"
+    CASHFREE_MALFORMED_RESPONSE = "CASHFREE_MALFORMED_RESPONSE"
     IDENTITY_FIELDS = {
         "business_name",
         "cin_number",
@@ -298,8 +309,11 @@ class VerificationService:
             raise ValueError("A valid 15-character GSTIN is required")
         if normalized_type == "PAN" and not re.fullmatch(r"[A-Z]{5}[0-9]{4}[A-Z]", (reference or "").strip().upper()):
             raise ValueError("A valid 10-character PAN is required")
-        if normalized_type == "CIN" and not re.fullmatch(r"[A-Z][0-9]{5}[A-Z]{2}[0-9]{4}[A-Z]{3}[0-9]{6}", (reference or "").strip().upper()):
-            raise ValueError("A valid 21-character CIN is required")
+        if normalized_type == "CIN":
+            if not (reference or "").strip():
+                raise ValueError(VerificationService.CIN_MISSING)
+            if not re.fullmatch(r"[A-Z][0-9]{5}[A-Z]{2}[0-9]{4}[A-Z]{3}[0-9]{6}", reference.strip().upper()):
+                raise ValueError(VerificationService.CIN_INVALID)
         if normalized_type == "UDYAM" and not re.fullmatch(r"UDYAM-[A-Z]{2}-[0-9]{2}-[0-9]{7}", (reference or "").strip().upper()):
             raise ValueError("A valid Udyam registration number is required")
         if normalized_type == "REGISTRATION_NUMBER" and not (reference or "").strip():
@@ -404,10 +418,22 @@ class VerificationService:
                 response = await client.post(f"{base_url}/{endpoint}", json=payload, headers=headers)
             body = response.json() if response.content else {}
         except httpx.TimeoutException:
-            return "PENDING", "CASHFREE_TIMEOUT", None, None
-        except (httpx.HTTPError, ValueError):
-            return "FAILED", "CASHFREE_UNAVAILABLE", None, None
+            return "PENDING", VerificationService.CASHFREE_TIMEOUT, None, None
+        except httpx.HTTPError:
+            return "FAILED", VerificationService.CASHFREE_UNAVAILABLE, None, None
+        except ValueError:
+            return "FAILED", VerificationService.CASHFREE_MALFORMED_RESPONSE, None, None
 
+        provider_error_code = str(body.get("code") or body.get("error_code") or "").strip().lower() if isinstance(body, dict) else ""
+        provider_error_message = str(body.get("message") or body.get("error_message") or "").strip().lower() if isinstance(body, dict) else ""
+        provider_error_text = f"{provider_error_code} {provider_error_message}".replace("_", " ")
+        provider_error_metadata = {
+            "http_status": response.status_code,
+            "provider_code": provider_error_code[:120] or None,
+            "provider_message": provider_error_message[:240] or None,
+        }
+        if any(term in provider_error_text for term in ("insufficient balance", "insufficient funds", "insufficient credit", "balance exhausted", "credits exhausted", "quota exceeded")):
+            return "FAILED", VerificationService.CASHFREE_INSUFFICIENT_BALANCE, provider_error_metadata, None
         if response.status_code in {401, 403}:
             logger.error(
                 "Cashfree verification authentication failure: type=%s endpoint=%s status=%s code=%s message=%s",
@@ -417,20 +443,23 @@ class VerificationService:
                 str(body.get("code") or "")[:120] if isinstance(body, dict) else "",
                 str(body.get("message") or "")[:240] if isinstance(body, dict) else "",
             )
-            return "FAILED", "CASHFREE_AUTHENTICATION_FAILED", None, None
+            return "FAILED", VerificationService.CASHFREE_AUTHENTICATION_FAILED, provider_error_metadata, None
         if response.status_code == 429:
-            return "PENDING", "CASHFREE_RATE_LIMITED", None, None
-        if response.status_code >= 400 or not isinstance(body, dict):
-            provider_message = str(body.get("message") or "")[:240] if isinstance(body, dict) else "malformed JSON response"
+            return "PENDING", VerificationService.CASHFREE_RATE_LIMITED, provider_error_metadata, None
+        if response.status_code >= 500:
+            return "FAILED", VerificationService.CASHFREE_UNAVAILABLE, provider_error_metadata, None
+        if not isinstance(body, dict):
+            return "FAILED", VerificationService.CASHFREE_MALFORMED_RESPONSE, provider_error_metadata, None
+        if response.status_code >= 400:
             logger.error(
                 "Cashfree verification failed: type=%s endpoint=%s status=%s code=%s message=%s",
                 verification_type,
                 endpoint,
                 response.status_code,
                 str(body.get("code") or "")[:120] if isinstance(body, dict) else "",
-                provider_message,
+                str(body.get("message") or "")[:240],
             )
-            return "FAILED", provider_message or "CASHFREE_VERIFICATION_FAILED", None, None
+            return "FAILED", VerificationService.CASHFREE_VERIFICATION_FAILED, provider_error_metadata, None
 
         logger.info(
             "Cashfree verification response: type=%s endpoint=%s status=%s code=%s message=%s",
@@ -444,17 +473,17 @@ class VerificationService:
         metadata = VerificationService._safe_provider_metadata(body)
         provider_reference = str(body.get("reference_id")) if body.get("reference_id") is not None else None
         if body.get("valid") is False or str(body.get("status", "")).upper() in {"INVALID", "FAILED"}:
-            return "FAILED", str(body.get("message") or "Provider rejected the identifier")[:240], metadata, provider_reference
+            return "FAILED", VerificationService.CASHFREE_VERIFICATION_FAILED, {**metadata, **provider_error_metadata}, provider_reference
         if verification_type == "CIN":
             company_status = str(body.get("company_status") or body.get("companyStatus") or body.get("status") or "").upper()
             if company_status in {"INACTIVE", "DISSOLVED", "STRUCK_OFF", "CLOSED", "INVALID", "FAILED"}:
-                return "FAILED", "Provider reports the company is not active", metadata, provider_reference
+                return "FAILED", VerificationService.CASHFREE_VERIFICATION_FAILED, metadata, provider_reference
         if body.get("valid") is not True and str(body.get("status", "")).upper() not in {"VALID", "VERIFIED", "SUCCESS", "COMPLETED"}:
             return "PENDING", "Provider returned no definitive verification result", metadata, provider_reference
 
         comparison_error = VerificationService._comparison_error(verification_type, reference, body, expected_details)
         if comparison_error:
-            return "FAILED", comparison_error, metadata, provider_reference
+            return "FAILED", VerificationService.CASHFREE_VERIFICATION_FAILED, metadata, provider_reference
         return "VERIFIED", None, metadata, provider_reference
 
     @staticmethod

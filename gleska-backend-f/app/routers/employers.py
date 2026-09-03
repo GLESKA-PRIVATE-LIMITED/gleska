@@ -355,10 +355,10 @@ async def request_onboarding_verification(
     details = details_response.data or {}
     required = VerificationService.required_for(employer_type, details)
     if verification_type.upper() not in required:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Verification is not configured for this employer type")
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=VerificationService.VERIFICATION_NOT_CONFIGURED)
     normalized_verification_type = verification_type.upper()
     if normalized_verification_type == "CIN" and not str(details.get("business_name") or "").strip():
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Business name is required for CIN verification")
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=VerificationService.BUSINESS_NAME_MISSING)
     identifier = request.reference
     if normalized_verification_type == "GSTIN":
         identifier = details.get("gstin")
@@ -405,12 +405,30 @@ async def request_onboarding_verification(
     if record_response.status == "NOT_CONFIGURED":
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail={"code": VerificationService.PROVIDER_NOT_CONFIGURED, "verification": record_response.model_dump(mode="json")},
+            detail={"code": VerificationService.VERIFICATION_NOT_CONFIGURED, "verification": record_response.model_dump(mode="json")},
+        )
+    if record_response.status == "PENDING":
+        pending_status = (
+            status.HTTP_429_TOO_MANY_REQUESTS
+            if record_response.failure_reason == VerificationService.CASHFREE_RATE_LIMITED
+            else status.HTTP_504_GATEWAY_TIMEOUT
+            if record_response.failure_reason == VerificationService.CASHFREE_TIMEOUT
+            else status.HTTP_503_SERVICE_UNAVAILABLE
+        )
+        raise HTTPException(
+            status_code=pending_status,
+            detail={"code": record_response.failure_reason, "verification": record_response.model_dump(mode="json")},
         )
     failure_code = (
-        "CASHFREE_AUTHENTICATION_FAILED"
-        if record_response.failure_reason == "CASHFREE_AUTHENTICATION_FAILED"
-        else "CASHFREE_VERIFICATION_FAILED"
+        record_response.failure_reason
+        if record_response.failure_reason in {
+            VerificationService.CASHFREE_INSUFFICIENT_BALANCE,
+            VerificationService.CASHFREE_AUTHENTICATION_FAILED,
+            VerificationService.CASHFREE_VERIFICATION_FAILED,
+            VerificationService.CASHFREE_UNAVAILABLE,
+            VerificationService.CASHFREE_MALFORMED_RESPONSE,
+        }
+        else VerificationService.CASHFREE_VERIFICATION_FAILED
     )
     raise HTTPException(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -656,7 +674,9 @@ async def _update_onboarding(
 
         # Validate required fields for this type
         is_valid, error_msg = OnboardingService.validate_onboarding_fields(
-            employer_type, data
+            employer_type,
+            data,
+            require_registered_business_location=employer_type != "REGISTERED_BUSINESS",
         )
         if not is_valid:
             raise HTTPException(

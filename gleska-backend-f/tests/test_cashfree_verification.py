@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
 import pytest
+import httpx
 
 from app.core.config import settings
 from app.services import verification_service
@@ -198,6 +199,72 @@ async def test_cashfree_cin_ambiguous_response_is_not_verified(monkeypatch):
     )
 
     assert result[0] == "PENDING"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status_code", "body", "expected"),
+    [
+        (403, {"code": "INSUFFICIENT_BALANCE", "message": "insufficient balance"}, VerificationService.CASHFREE_INSUFFICIENT_BALANCE),
+        (401, {"code": "authentication_failed", "message": "invalid credentials"}, VerificationService.CASHFREE_AUTHENTICATION_FAILED),
+        (200, {"valid": False, "message": "CIN not found"}, VerificationService.CASHFREE_VERIFICATION_FAILED),
+        (429, {"message": "too many requests"}, VerificationService.CASHFREE_RATE_LIMITED),
+        (503, {"message": "service unavailable"}, VerificationService.CASHFREE_UNAVAILABLE),
+        (200, [], VerificationService.CASHFREE_MALFORMED_RESPONSE),
+    ],
+)
+async def test_cashfree_cin_provider_failures_are_classified(monkeypatch, status_code, body, expected):
+    monkeypatch.setattr(settings, "EMPLOYER_VERIFICATION_PROVIDER", "cashfree")
+    monkeypatch.setattr(settings, "CASHFREE_CLIENT_ID", "client")
+    monkeypatch.setattr(settings, "CASHFREE_CLIENT_SECRET", "secret")
+    response = SimpleNamespace(status_code=status_code, content=b"response", json=lambda: body)
+    monkeypatch.setattr(verification_service.httpx, "AsyncClient", lambda **kwargs: FakeClient(response))
+
+    result = await VerificationService._verify_cashfree_identifier(
+        "CIN",
+        "U12345678901234567890",
+        {"business_name": "Example Industries"},
+    )
+
+    assert result[0] in {"FAILED", "PENDING"}
+    assert result[1] == expected
+    assert result[2]["http_status"] == status_code
+    if isinstance(body, dict):
+        expected_code = str(body.get("code") or body.get("error_code") or "").lower() or None
+        assert result[2]["provider_code"] == expected_code
+
+
+@pytest.mark.asyncio
+async def test_cashfree_cin_timeout_is_classified(monkeypatch):
+    monkeypatch.setattr(settings, "EMPLOYER_VERIFICATION_PROVIDER", "cashfree")
+    monkeypatch.setattr(settings, "CASHFREE_CLIENT_ID", "client")
+    monkeypatch.setattr(settings, "CASHFREE_CLIENT_SECRET", "secret")
+
+    class TimeoutClient(FakeClient):
+        async def post(self, *args, **kwargs):
+            raise httpx.TimeoutException("timed out")
+
+    monkeypatch.setattr(verification_service.httpx, "AsyncClient", lambda **kwargs: TimeoutClient(None))
+
+    result = await VerificationService._verify_cashfree_identifier(
+        "CIN",
+        "U12345678901234567890",
+        {"business_name": "Example Industries"},
+    )
+
+    assert result[:2] == ("PENDING", VerificationService.CASHFREE_TIMEOUT)
+
+
+@pytest.mark.asyncio
+async def test_request_verification_rejects_missing_or_invalid_cin_before_provider(monkeypatch):
+    monkeypatch.setattr(settings, "EMPLOYER_VERIFICATION_PROVIDER", "cashfree")
+    monkeypatch.setattr(settings, "CASHFREE_CLIENT_ID", "client")
+    monkeypatch.setattr(settings, "CASHFREE_CLIENT_SECRET", "secret")
+
+    with pytest.raises(ValueError, match=VerificationService.CIN_MISSING):
+        await VerificationService.request_verification("employer-id", "CIN", "REGISTERED_BUSINESS", None)
+    with pytest.raises(ValueError, match=VerificationService.CIN_INVALID):
+        await VerificationService.request_verification("employer-id", "CIN", "REGISTERED_BUSINESS", "bad")
 
 
 @pytest.mark.asyncio

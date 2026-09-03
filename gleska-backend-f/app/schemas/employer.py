@@ -128,9 +128,9 @@ class RegisteredBusinessOnboardingSchema(BaseModel):
     industry_category: str
     business_category: Optional[str] = None
     registered_address: str
-    city: str
-    state: str
-    pincode: str
+    city: Optional[str] = None
+    state: Optional[str] = None
+    pincode: Optional[str] = None
     gstin: Optional[str] = None
     registration_number: Optional[str] = None
     cin_number: Optional[str] = None
@@ -141,7 +141,7 @@ class RegisteredBusinessOnboardingSchema(BaseModel):
     services_required: Optional[list] = None
     director_data: Optional[list] = None
     hiring_mode: Optional[str] = None
-    work_location: str
+    work_location: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     company_email: Optional[str] = None

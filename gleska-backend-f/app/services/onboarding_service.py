@@ -79,7 +79,11 @@ class OnboardingService:
         return OnboardingService.determine_next_step(user)
 
     @staticmethod
-    def validate_onboarding_fields(employer_type: str, data: dict) -> tuple[bool, str]:
+    def validate_onboarding_fields(
+        employer_type: str,
+        data: dict,
+        require_registered_business_location: bool = True,
+    ) -> tuple[bool, str]:
         """
         Validate onboarding data based on employer type.
         
@@ -110,11 +114,9 @@ class OnboardingService:
                 "registered_address",
                 "company_email",
                 "company_phone",
-                "city",
-                "state",
-                "pincode",
-                "work_location",
             ]
+            if require_registered_business_location:
+                required_fields.extend(["city", "state", "pincode", "work_location"])
             for field in required_fields:
                 if OnboardingService._missing_required_value(data.get(field)):
                     return False, f"{field} is required for registered business"
