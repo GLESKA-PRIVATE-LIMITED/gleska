@@ -2,6 +2,7 @@
 
 from datetime import datetime
 from math import isfinite
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -11,8 +12,12 @@ class JobSiteCreate(BaseModel):
 
     name: str = Field(..., min_length=1, max_length=160)
     address: str = Field(..., min_length=1, max_length=500)
+    city: str | None = Field(default=None, max_length=160)
+    state: str | None = Field(default=None, max_length=160)
+    pincode: str | None = Field(default=None, min_length=6, max_length=6)
     latitude: float = Field(..., ge=-90, le=90)
     longitude: float = Field(..., ge=-180, le=180)
+    location_source: Literal["PROFILE", "GPS", "SEARCH", "MAP"] = "MAP"
 
     @field_validator("name")
     @classmethod
@@ -44,7 +49,11 @@ class JobSiteResponse(BaseModel):
     employer_id: str
     name: str
     address: str | None = None
+    city: str | None = None
+    state: str | None = None
+    pincode: str | None = None
     latitude: float
     longitude: float
+    location_source: str | None = None
     created_at: datetime
     updated_at: datetime | None = None

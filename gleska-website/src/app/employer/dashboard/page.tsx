@@ -33,6 +33,7 @@ import {
 import { toast } from "sonner";
 import Link from "next/link";
 import apiClient from "@/lib/api";
+import { getBrowserLocation, InaccurateLocationError } from "@/lib/location";
 
 import LocationPicker, { LocationSelection } from "@/components/LocationPicker";
 import VoiceMicIcon from "@/components/ui/VoiceMicIcon";
@@ -139,6 +140,7 @@ interface JobMatches {
 
 type MatchSummaryState = "LOADING" | "FOUND" | "NO_MATCHES" | "ERROR";
 type JobViewMode = "details" | "workers" | null;
+type WorkSiteModalMode = "location" | "site" | "create" | null;
 
 interface JobMatchSummary {
   job_id: string;
@@ -219,7 +221,7 @@ export default function EmployerDashboard() {
   const { user, isLoading, nextStep, logout } = useAuth();
   const [employerProfile, setEmployerProfile] = React.useState<EmployerProfile | null>(null);
   const [jobSites, setJobSites] = React.useState<JobSite[]>([]);
-  const [siteForm, setSiteForm] = React.useState({ name: "", address: "", latitude: "", longitude: "" });
+  const [siteForm, setSiteForm] = React.useState({ name: "", address: "", city: "", state: "", pincode: "", latitude: "", longitude: "" });
   const [siteError, setSiteError] = React.useState("");
   const [isSiteLoading, setIsSiteLoading] = React.useState(false);
   const [isSiteSaving, setIsSiteSaving] = React.useState(false);
@@ -242,7 +244,13 @@ export default function EmployerDashboard() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = React.useState(false);
   const [isWorkSiteModalOpen, setIsWorkSiteModalOpen] = React.useState(false);
+  const [workSiteModalMode, setWorkSiteModalMode] = React.useState<WorkSiteModalMode>(null);
+  const [selectedJobSiteId, setSelectedJobSiteId] = React.useState("");
+  const [selectedJobSite, setSelectedJobSite] = React.useState<JobSite | null>(null);
+  const [selectedJobLocation, setSelectedJobLocation] = React.useState<LocationSelection | null>(null);
+  const [isJobLocationConfirmed, setIsJobLocationConfirmed] = React.useState(false);
   const [selectedSiteLocation, setSelectedSiteLocation] = React.useState<LocationSelection | null>(null);
+  const [isSiteLocationConfirmed, setIsSiteLocationConfirmed] = React.useState(false);
   const [selectedJob, setSelectedJob] = React.useState<JobDetails | null>(null);
   const [selectedJobId, setSelectedJobId] = React.useState<string | null>(null);
   const [isJobDetailsLoading, setIsJobDetailsLoading] = React.useState(false);
@@ -307,6 +315,9 @@ export default function EmployerDashboard() {
           ? { min_experience: String(item.parsed_data.min_experience) }
           : {}),
       }));
+      const recentSite = jobSites.find((site) => site.id === item.job_site_id);
+      setSelectedJobSiteId(item.job_site_id);
+      setSelectedJobSite(recentSite || null);
     }
     setIsMobileMenuOpen(false);
     scrollToJobForm();
@@ -330,14 +341,20 @@ export default function EmployerDashboard() {
 
   const scrollToJobForm = () => {
     setIsWorkSiteModalOpen(false);
+    setWorkSiteModalMode(null);
     document.getElementById("create-job")?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
-  const handleOpenWorkSiteModal = () => {
+  const openWorkSiteModal = (mode: Exclude<WorkSiteModalMode, null>) => {
     setIsProfileMenuOpen(false);
     setSiteError("");
+    setWorkSiteModalMode(mode);
     setIsWorkSiteModalOpen(true);
   };
+
+  const handleOpenWorkSiteModal = () => openWorkSiteModal("create");
+  const handleOpenJobLocationPicker = () => openWorkSiteModal("location");
+  const handleOpenJobSiteSelector = () => openWorkSiteModal("site");
 
   useEffect(() => {
     if (!isLoading && !user) {
@@ -591,8 +608,10 @@ export default function EmployerDashboard() {
       longitude <= 180 &&
       !(latitude === 0 && longitude === 0);
 
-    if (!selectedSiteLocation || !hasValidCoordinates) {
-      const message = "Select a valid location search result before adding a work site.";
+    if (!selectedSiteLocation || !hasValidCoordinates || !isSiteLocationConfirmed) {
+      const message = !isSiteLocationConfirmed
+        ? "Confirm the selected location before adding a work site."
+        : "Select a valid location search result before adding a work site.";
       setSiteError(message);
       toast.error(message);
       return;
@@ -604,12 +623,22 @@ export default function EmployerDashboard() {
       const response = await apiClient.post<JobSite>("/api/v1/job-sites/", {
         name: siteForm.name,
         address: siteForm.address,
+        city: siteForm.city || null,
+        state: siteForm.state || null,
+        pincode: siteForm.pincode || null,
         latitude,
         longitude,
+        location_source: selectedSiteLocation.location_source,
       }, { withCredentials: true });
       setJobSites((current) => [response.data, ...current]);
-      setSiteForm({ name: "", address: "", latitude: "", longitude: "" });
+      setSelectedJobSiteId(response.data.id);
+      setSelectedJobSite(response.data);
+      setJobForm((current) => ({ ...current, job_site_id: response.data.id }));
+      setSiteForm({ name: "", address: "", city: "", state: "", pincode: "", latitude: "", longitude: "" });
       setSelectedSiteLocation(null);
+      setIsSiteLocationConfirmed(false);
+      setIsWorkSiteModalOpen(false);
+      setWorkSiteModalMode(null);
       toast.success("Work site added");
     } catch (err: any) {
       const message = err.response?.data?.detail || "Unable to add work site";
@@ -622,12 +651,71 @@ export default function EmployerDashboard() {
 
   const selectSiteLocation = (location: LocationSelection) => {
     setSelectedSiteLocation(location);
-    setSiteForm((current) => ({ ...current, address: location.address, latitude: String(location.latitude), longitude: String(location.longitude) }));
+    setIsSiteLocationConfirmed(false);
+    setSiteForm((current) => ({
+      ...current,
+      address: location.address,
+      city: location.city || "",
+      state: location.state || "",
+      pincode: location.pincode || "",
+      latitude: String(location.latitude),
+      longitude: String(location.longitude),
+    }));
+  };
+
+  const selectJobLocation = (location: LocationSelection) => {
+    setSelectedJobLocation(location);
+    setIsJobLocationConfirmed(false);
+  };
+
+  const confirmJobLocation = () => {
+    if (!selectedJobLocation) return;
+    setIsJobLocationConfirmed(true);
+    setIsWorkSiteModalOpen(false);
+    setWorkSiteModalMode(null);
+  };
+
+  const selectJobSite = (site: JobSite) => {
+    setSelectedJobSiteId(site.id);
+    setSelectedJobSite(site);
+    setJobForm((current) => ({ ...current, job_site_id: site.id }));
+    setIsWorkSiteModalOpen(false);
+    setWorkSiteModalMode(null);
+  };
+
+  const useCurrentSiteLocation = async (): Promise<LocationSelection> => {
+    try {
+      const coordinates = await getBrowserLocation();
+      const response = await apiClient.get("/api/v1/locations/reverse", {
+        params: { latitude: coordinates.latitude, longitude: coordinates.longitude },
+      });
+      const location: LocationSelection = {
+        address: response.data.address,
+        city: response.data.city || null,
+        state: response.data.state || null,
+        pincode: response.data.pincode || null,
+        latitude: coordinates.latitude,
+        longitude: coordinates.longitude,
+        accuracy_m: coordinates.accuracy,
+        location_source: "GPS",
+      };
+      selectSiteLocation(location);
+      setSiteError("");
+      return location;
+    } catch (error) {
+      const message = error instanceof InaccurateLocationError
+        ? `Location accuracy is too low (${Math.round(error.accuracy)}m). Enable device location services or use Search/Map instead.`
+        : "Unable to determine your current location. You can continue with Search or Map instead.";
+      setSiteError(message);
+      toast.error(message);
+      throw error;
+    }
   };
 
   const invalidateSiteLocation = () => {
     setSelectedSiteLocation(null);
-    setSiteForm((current) => ({ ...current, latitude: "", longitude: "" }));
+    setIsSiteLocationConfirmed(false);
+    setSiteForm((current) => ({ ...current, city: "", state: "", pincode: "", latitude: "", longitude: "" }));
   };
 
   const handleSiteLocationQueryChange = (query: string) => {
@@ -650,6 +738,11 @@ export default function EmployerDashboard() {
     try {
       await apiClient.delete(`/api/v1/job-sites/${siteId}`, { withCredentials: true });
       setJobSites((current) => current.filter((site) => site.id !== siteId));
+      if (selectedJobSiteId === siteId) {
+        setSelectedJobSiteId("");
+        setSelectedJobSite(null);
+        setJobForm((current) => ({ ...current, job_site_id: "" }));
+      }
       toast.success("Work site removed");
     } catch (err: any) {
       const message = err.response?.data?.detail || "Unable to remove work site";
@@ -660,6 +753,12 @@ export default function EmployerDashboard() {
 
   const handleJobSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!jobForm.job_site_id) {
+      const message = "Select an existing Job Site or create a new Work Site before creating the job.";
+      setJobError(message);
+      toast.error(message);
+      return;
+    }
     setIsJobSaving(true);
     setJobError("");
     try {
@@ -1399,7 +1498,7 @@ export default function EmployerDashboard() {
               {/* Select Location Pill Button */}
               <button
                 type="button"
-                onClick={handleOpenWorkSiteModal}
+                onClick={handleOpenJobLocationPicker}
                 className="group flex items-center justify-between gap-3 sm:gap-4 rounded-full bg-blue-600 px-4 sm:px-5 py-2.5 text-white shadow-md hover:bg-blue-700 active:scale-95 transition cursor-pointer w-full sm:w-auto sm:min-w-[210px] max-w-full"
               >
                 <div className="flex items-center gap-3">
@@ -1408,7 +1507,7 @@ export default function EmployerDashboard() {
                   </div>
                   <div className="text-left">
                     <p className="text-sm font-bold text-white leading-tight">Select location</p>
-                    <p className="text-[11px] font-medium text-blue-100 opacity-90">Accurate and faster</p>
+                    <p className="max-w-[150px] truncate text-[11px] font-medium text-blue-100 opacity-90">{selectedJobLocation?.address || "For this job"}</p>
                   </div>
                 </div>
                 <ChevronRight size={18} className="text-white opacity-80 group-hover:translate-x-0.5 transition-transform shrink-0" />
@@ -1417,7 +1516,7 @@ export default function EmployerDashboard() {
               {/* Job Site Pill Button */}
               <button
                 type="button"
-                onClick={handleOpenWorkSiteModal}
+                onClick={handleOpenJobSiteSelector}
                 className="group flex items-center justify-between gap-3 sm:gap-4 rounded-full bg-blue-600 px-4 sm:px-5 py-2.5 text-white shadow-md hover:bg-blue-700 active:scale-95 transition cursor-pointer w-full sm:w-auto sm:min-w-[210px] max-w-full"
               >
                 <div className="flex items-center gap-3 min-w-0">
@@ -1426,10 +1525,10 @@ export default function EmployerDashboard() {
                   </div>
                   <div className="text-left min-w-0">
                     <p className="text-sm font-bold text-white leading-tight truncate max-w-[130px] sm:max-w-[150px]">
-                      {jobSites.find((s) => s.id === jobForm.job_site_id)?.name || "Job site"}
+                      {selectedJobSite?.name || "Job site"}
                     </p>
                     <p className="text-[11px] font-medium text-blue-100 opacity-90 truncate max-w-[130px] sm:max-w-[150px]">
-                      {jobSites.find((s) => s.id === jobForm.job_site_id)?.address || "Accurate and faster"}
+                      {selectedJobSite?.address || "Select a saved site"}
                     </p>
                   </div>
                 </div>
@@ -1513,7 +1612,12 @@ export default function EmployerDashboard() {
                   <select
                     required
                     value={jobForm.job_site_id}
-                    onChange={(event) => setJobForm({ ...jobForm, job_site_id: event.target.value })}
+                    onChange={(event) => {
+                      const site = jobSites.find((item) => item.id === event.target.value) || null;
+                      setSelectedJobSiteId(event.target.value);
+                      setSelectedJobSite(site);
+                      setJobForm({ ...jobForm, job_site_id: event.target.value });
+                    }}
                     className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-800/50 dark:text-white dark:focus:bg-slate-800"
                   >
                     <option value="">Select work site</option>
@@ -1685,7 +1789,7 @@ export default function EmployerDashboard() {
               <div className="flex items-center gap-2">
                 <MapPin size={22} className="text-blue-600 dark:text-blue-400" />
                 <span className="font-(--font-anton) text-xl uppercase tracking-wide text-slate-900 dark:text-white">
-                  Add Work Site
+                  {workSiteModalMode === "location" ? "Select Job Location" : workSiteModalMode === "site" ? "Select Job Site" : "Add Work Site"}
                 </span>
               </div>
               <button
@@ -1698,19 +1802,32 @@ export default function EmployerDashboard() {
               </button>
             </div>
 
-            <form onSubmit={handleSiteSubmit} className="grid gap-3 md:grid-cols-2 lg:grid-cols-5">
+            {workSiteModalMode === "location" && (
+              <div className="space-y-4">
+                <LocationPicker label="Location for this job" value={selectedJobLocation?.address || ""} onSelect={selectJobLocation} onUseCurrentLocation={async () => {
+                  const coordinates = await getBrowserLocation();
+                  const response = await apiClient.get("/api/v1/locations/reverse", { params: { latitude: coordinates.latitude, longitude: coordinates.longitude } });
+                  const location: LocationSelection = { ...response.data, latitude: coordinates.latitude, longitude: coordinates.longitude, accuracy_m: coordinates.accuracy, location_source: "GPS" };
+                  selectJobLocation(location);
+                  return location;
+                }} placeholder="Search area, locality, city or pincode" />
+                {selectedJobLocation && <div className="space-y-3 rounded-xl border border-slate-200 p-4 dark:border-slate-700"><p className="text-sm font-semibold text-slate-900 dark:text-white">{selectedJobLocation.address}</p><p className="text-xs text-slate-500 dark:text-slate-400">{selectedJobLocation.latitude}, {selectedJobLocation.longitude}{selectedJobLocation.accuracy_m ? ` · Accuracy ${Math.round(selectedJobLocation.accuracy_m)}m` : ""}</p><div className="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700"><iframe title="Selected job location" className="h-48 w-full border-0" src={`https://www.openstreetmap.org/export/embed.html?bbox=${selectedJobLocation.longitude - 0.005}%2C${selectedJobLocation.latitude - 0.005}%2C${selectedJobLocation.longitude + 0.005}%2C${selectedJobLocation.latitude + 0.005}&layer=mapnik&marker=${selectedJobLocation.latitude}%2C${selectedJobLocation.longitude}`} /></div><button type="button" onClick={confirmJobLocation} className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-bold text-white"><Check size={16} /> {isJobLocationConfirmed ? "Location confirmed" : "Confirm Location"}</button></div>}
+              </div>
+            )}
+
+            {workSiteModalMode === "create" && <form onSubmit={handleSiteSubmit} className="grid gap-3 md:grid-cols-2 lg:grid-cols-5">
               <input required maxLength={160} value={siteForm.name} onChange={(event) => setSiteForm({ ...siteForm, name: event.target.value })} placeholder="Site name" className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-hidden focus:border-blue-500 dark:border-slate-700 dark:bg-slate-800" />
-              <div className="md:col-span-2 lg:col-span-5"><LocationPicker label="Work Site Location" value={siteForm.address} onSelect={selectSiteLocation} onQueryChange={handleSiteLocationQueryChange} placeholder="Search area, locality, city or pincode" /></div>
+              <div className="md:col-span-2 lg:col-span-5"><LocationPicker label="Work Site Location" value={siteForm.address} onSelect={selectSiteLocation} onQueryChange={handleSiteLocationQueryChange} onUseCurrentLocation={useCurrentSiteLocation} placeholder="Search area, locality, city or pincode" /></div>
               <input required maxLength={500} value={siteForm.address} readOnly={Boolean(selectedSiteLocation)} onChange={(event) => { invalidateSiteLocation(); setSiteForm((current) => ({ ...current, address: event.target.value })); }} placeholder="Selected address" className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-hidden focus:border-blue-500 read-only:cursor-not-allowed read-only:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:read-only:bg-slate-800/70" />
-              {selectedSiteLocation && <div className="flex items-center gap-2 text-sm font-semibold text-emerald-700 dark:text-emerald-300 md:col-span-2 lg:col-span-5"><Check size={16} /> Location selected. Coordinates are ready for this address.</div>}
+              {selectedSiteLocation && <div className="md:col-span-2 lg:col-span-5 space-y-2"><div className="flex items-center gap-2 text-sm font-semibold text-emerald-700 dark:text-emerald-300"><Check size={16} /> Location selected from {selectedSiteLocation.location_source}. {selectedSiteLocation.accuracy_m ? `Accuracy: ${Math.round(selectedSiteLocation.accuracy_m)}m.` : ""}</div><div className="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700"><iframe title="Selected work site location" className="h-48 w-full border-0" src={`https://www.openstreetmap.org/export/embed.html?bbox=${selectedSiteLocation.longitude - 0.005}%2C${selectedSiteLocation.latitude - 0.005}%2C${selectedSiteLocation.longitude + 0.005}%2C${selectedSiteLocation.latitude + 0.005}&layer=mapnik&marker=${selectedSiteLocation.latitude}%2C${selectedSiteLocation.longitude}`} /></div><button type="button" onClick={() => setIsSiteLocationConfirmed(true)} disabled={isSiteLocationConfirmed} className="inline-flex items-center gap-2 rounded-lg border border-emerald-300 px-3 py-2 text-sm font-bold text-emerald-700 disabled:cursor-default disabled:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-300 dark:disabled:bg-emerald-950/30"><Check size={16} /> {isSiteLocationConfirmed ? "Location confirmed" : "Confirm Location"}</button></div>}
               <button type="submit" disabled={isSiteSaving} className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60">
                 {isSiteSaving ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
                 Add site
               </button>
-            </form>
+            </form>}
 
             {siteError && <p className="mt-3 text-sm text-rose-600 dark:text-rose-400">{siteError}</p>}
-            <div className="mt-6 divide-y divide-slate-100 dark:divide-slate-800 max-h-60 overflow-y-auto pr-1">
+            {(workSiteModalMode === "site" || workSiteModalMode === "create") && <div className="mt-6 divide-y divide-slate-100 dark:divide-slate-800 max-h-60 overflow-y-auto pr-1">
               {isSiteLoading ? (
                 <div className="flex items-center gap-2 py-4 text-sm text-slate-500"><Loader2 size={16} className="animate-spin" /> Loading sites...</div>
               ) : jobSites.length === 0 ? (
@@ -1721,12 +1838,11 @@ export default function EmployerDashboard() {
                     <p className="font-semibold text-slate-900 dark:text-white">{site.name}</p>
                     <p className="truncate text-sm text-slate-500 dark:text-slate-400">{site.address || "Location selected"}</p>
                   </div>
-                  <button type="button" title={`Remove ${site.name}`} aria-label={`Remove ${site.name}`} onClick={() => handleSiteDelete(site.id)} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:border-rose-200 hover:text-rose-600 dark:border-slate-700 dark:text-slate-400 dark:hover:border-rose-800 dark:hover:text-rose-400">
-                    <Trash2 size={16} />
-                  </button>
+                  {workSiteModalMode === "site" ? <button type="button" onClick={() => selectJobSite(site)} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-bold text-white"><Check size={16} /> Select</button> : <button type="button" title={`Remove ${site.name}`} aria-label={`Remove ${site.name}`} onClick={() => handleSiteDelete(site.id)} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:border-rose-200 hover:text-rose-600 dark:border-slate-700 dark:text-slate-400 dark:hover:border-rose-800 dark:hover:text-rose-400"><Trash2 size={16} /></button>}
                 </div>
               ))}
-            </div>
+            </div>}
+            {workSiteModalMode === "site" && <button type="button" onClick={() => { setSiteForm({ name: "", address: "", city: "", state: "", pincode: "", latitude: "", longitude: "" }); setSelectedSiteLocation(null); setIsSiteLocationConfirmed(false); setWorkSiteModalMode("create"); }} className="mt-4 inline-flex items-center gap-2 rounded-lg border border-blue-200 px-3 py-2 text-sm font-bold text-blue-700 dark:border-blue-800 dark:text-blue-300"><Plus size={16} /> Create New Work Site</button>}
           </div>
         </div>
       )}

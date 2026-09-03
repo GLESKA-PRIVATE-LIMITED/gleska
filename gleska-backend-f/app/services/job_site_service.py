@@ -50,8 +50,12 @@ class JobSiteService:
             employer_id=str(row["employer_id"]),
             name=row["name"],
             address=row.get("address"),
+            city=row.get("city"),
+            state=row.get("state"),
+            pincode=row.get("pincode"),
             latitude=float(latitude),
             longitude=float(longitude),
+            location_source=row.get("location_source"),
             created_at=row["created_at"],
             updated_at=row.get("updated_at"),
         )
@@ -64,6 +68,10 @@ class JobSiteService:
             "employer_id": employer_id,
             "name": request.name.strip(),
             "address": request.address,
+            "city": request.city,
+            "state": request.state,
+            "pincode": request.pincode,
+            "location_source": request.location_source,
             "location": f"POINT({request.longitude} {request.latitude})",
             "created_at": datetime.now(timezone.utc).isoformat(),
         }

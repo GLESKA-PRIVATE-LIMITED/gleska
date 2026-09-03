@@ -26,9 +26,26 @@ export class InaccurateLocationError extends Error {
   accuracy: number;
 
   constructor(accuracy: number) {
-    super(`Location accuracy is too low (${Math.round(accuracy / 1000)}km). Please enable device location services or try from a device with GPS.`);
+    const accuracyLabel = accuracy >= 10000 ? `${Math.round(accuracy / 1000)}km` : `${Math.round(accuracy)}m`;
+    super(`Location accuracy is too low (${accuracyLabel}). Please enable device location services or try from a device with GPS.`);
     this.accuracy = accuracy;
   }
+}
+
+export function getLocationErrorMessage(error: unknown): string {
+  if (error instanceof InaccurateLocationError) return error.message;
+  if (typeof error === "object" && error !== null && "code" in error && error.code === "INACCURATE" && "accuracy" in error && typeof error.accuracy === "number") {
+    return new InaccurateLocationError(error.accuracy).message;
+  }
+  if (error instanceof Error && error.message === "Location unavailable") {
+    return "Location services are not available on this device. You can continue with your saved or manual location.";
+  }
+
+  const code = typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+  if (code === 1) return "Location permission was denied. You can continue with your saved or manual location.";
+  if (code === 2) return "Your location could not be determined. Please try again or use your saved or manual location.";
+  if (code === 3) return "Location request timed out. Please try again or use your saved or manual location.";
+  return "Unable to determine your current location. You can continue with your saved or manual location.";
 }
 
 function getBrowserPosition(options: PositionOptions): Promise<GeolocationPosition> {
