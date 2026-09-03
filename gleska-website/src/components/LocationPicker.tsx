@@ -23,10 +23,11 @@ type LocationPickerProps = {
   label?: string;
   placeholder?: string;
   onUseCurrentLocation?: () => Promise<LocationSelection>;
+  getCurrentLocationErrorMessage?: (error: unknown) => string;
   error?: string;
 };
 
-export default function LocationPicker({ value = "", onSelect, onQueryChange, label, placeholder = "Search your area, city or pincode", onUseCurrentLocation, error }: LocationPickerProps) {
+export default function LocationPicker({ value = "", onSelect, onQueryChange, label, placeholder = "Search your area, city or pincode", onUseCurrentLocation, getCurrentLocationErrorMessage, error }: LocationPickerProps) {
   const [query, setQuery] = useState(value);
   const [results, setResults] = useState<LocationSelection[]>([]);
   const [searching, setSearching] = useState(false);
@@ -72,8 +73,8 @@ export default function LocationPicker({ value = "", onSelect, onQueryChange, la
     try {
       const location = await onUseCurrentLocation();
       void location;
-    } catch {
-      setMessage("Couldn't determine your current location. You can search for your location instead.");
+    } catch (error) {
+      setMessage(getCurrentLocationErrorMessage?.(error) || "Couldn't determine your current location. You can search for your location instead.");
     } finally {
       setUsingCurrent(false);
     }

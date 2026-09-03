@@ -33,7 +33,7 @@ import {
 import { toast } from "sonner";
 import Link from "next/link";
 import apiClient from "@/lib/api";
-import { getBrowserLocation, InaccurateLocationError } from "@/lib/location";
+import { getBrowserLocation, getLocationErrorMessage, InaccurateLocationError } from "@/lib/location";
 
 import LocationPicker, { LocationSelection } from "@/components/LocationPicker";
 import VoiceMicIcon from "@/components/ui/VoiceMicIcon";
@@ -1804,7 +1804,7 @@ export default function EmployerDashboard() {
 
             {workSiteModalMode === "location" && (
               <div className="space-y-4">
-                <LocationPicker label="Location for this job" value={selectedJobLocation?.address || ""} onSelect={selectJobLocation} onUseCurrentLocation={async () => {
+                <LocationPicker label="Location for this job" value={selectedJobLocation?.address || ""} onSelect={selectJobLocation} getCurrentLocationErrorMessage={getLocationErrorMessage} onUseCurrentLocation={async () => {
                   const coordinates = await getBrowserLocation();
                   const response = await apiClient.get("/api/v1/locations/reverse", { params: { latitude: coordinates.latitude, longitude: coordinates.longitude } });
                   const location: LocationSelection = { ...response.data, latitude: coordinates.latitude, longitude: coordinates.longitude, accuracy_m: coordinates.accuracy, location_source: "GPS" };
