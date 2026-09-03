@@ -167,7 +167,7 @@ def test_missing_employer_is_rejected(monkeypatch, site_request):
         JobSiteService.create(USER, site_request)
 
 
-@pytest.mark.parametrize("coordinates", [(91, 0), (-91, 0), (0, 181), (0, -181)])
+@pytest.mark.parametrize("coordinates", [(91, 0), (-91, 0), (0, 181), (0, -181), (0, 0), (float("inf"), 1), (1, float("-inf"))])
 def test_invalid_coordinates_are_rejected(coordinates):
     with pytest.raises(ValueError):
         JobSiteCreate(name="Site", address="Main Road", latitude=coordinates[0], longitude=coordinates[1])

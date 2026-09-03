@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import {
   LogOut,
+  Check,
   Zap,
   Building2,
   Users,
@@ -27,10 +28,12 @@ import {
   Mic,
   ArrowRight,
   ChevronRight,
+  Eye,
 } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
 import apiClient from "@/lib/api";
+import { getBrowserLocation, getLocationErrorMessage, InaccurateLocationError } from "@/lib/location";
 
 import LocationPicker, { LocationSelection } from "@/components/LocationPicker";
 import VoiceMicIcon from "@/components/ui/VoiceMicIcon";
@@ -99,7 +102,50 @@ interface Job {
   headcount_required: number;
   max_daily_salary?: number | string | null;
   min_experience?: number | null;
+  trade_id?: string | null;
+  required_skills?: string[];
   status: string;
+  created_at: string;
+  updated_at?: string | null;
+}
+
+interface JobDetails extends Job {
+  job_site: {
+    id: string;
+    name: string;
+    address: string | null;
+    latitude: number;
+    longitude: number;
+  };
+}
+
+interface JobMatchWorker {
+  worker_profile_id: string;
+  name?: string | null;
+  trade_id?: string | null;
+  skills: string[];
+  experience_years?: number | null;
+  expected_daily_wage?: number | string | null;
+  availability_status?: string | null;
+  distance_m?: number | null;
+  composite_score: number | string;
+  status: string;
+  created_at: string;
+}
+
+interface JobMatches {
+  matching_status: string;
+  matches: JobMatchWorker[];
+}
+
+type MatchSummaryState = "LOADING" | "FOUND" | "NO_MATCHES" | "ERROR";
+type JobViewMode = "details" | "workers" | null;
+type WorkSiteModalMode = "location" | "site" | "create" | null;
+
+interface JobMatchSummary {
+  job_id: string;
+  current_match_count: number;
+  matching_status: "FOUND" | "NO_MATCHES";
 }
 
 interface JobExtractionResponse {
@@ -108,6 +154,7 @@ interface JobExtractionResponse {
     headcount_required: number;
     max_daily_salary: number | null;
     min_experience: number;
+    skills?: string[];
   };
 }
 
@@ -174,12 +221,14 @@ export default function EmployerDashboard() {
   const { user, isLoading, nextStep, logout } = useAuth();
   const [employerProfile, setEmployerProfile] = React.useState<EmployerProfile | null>(null);
   const [jobSites, setJobSites] = React.useState<JobSite[]>([]);
-  const [siteForm, setSiteForm] = React.useState({ name: "", address: "", latitude: "", longitude: "" });
+  const [siteForm, setSiteForm] = React.useState({ name: "", address: "", city: "", state: "", pincode: "", latitude: "", longitude: "" });
   const [siteError, setSiteError] = React.useState("");
   const [isSiteLoading, setIsSiteLoading] = React.useState(false);
   const [isSiteSaving, setIsSiteSaving] = React.useState(false);
   const [jobs, setJobs] = React.useState<Job[]>([]);
-  const [jobForm, setJobForm] = React.useState({ job_site_id: "", title: "", headcount_required: "1", max_daily_salary: "", min_experience: "" });
+  const [availableWorkerCount, setAvailableWorkerCount] = React.useState(0);
+  const [jobForm, setJobForm] = React.useState({ job_site_id: "", title: "", headcount_required: "1", max_daily_salary: "", min_experience: "", trade_id: "", required_skills: [] as string[] });
+  const [skillInput, setSkillInput] = React.useState("");
   const [jobError, setJobError] = React.useState("");
   const [isJobSaving, setIsJobSaving] = React.useState(false);
   const [aiPrompt, setAiPrompt] = React.useState("");
@@ -195,6 +244,25 @@ export default function EmployerDashboard() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = React.useState(false);
   const [isWorkSiteModalOpen, setIsWorkSiteModalOpen] = React.useState(false);
+  const [workSiteModalMode, setWorkSiteModalMode] = React.useState<WorkSiteModalMode>(null);
+  const [selectedJobSiteId, setSelectedJobSiteId] = React.useState("");
+  const [selectedJobSite, setSelectedJobSite] = React.useState<JobSite | null>(null);
+  const [selectedJobLocation, setSelectedJobLocation] = React.useState<LocationSelection | null>(null);
+  const [isJobLocationConfirmed, setIsJobLocationConfirmed] = React.useState(false);
+  const [selectedSiteLocation, setSelectedSiteLocation] = React.useState<LocationSelection | null>(null);
+  const [isSiteLocationConfirmed, setIsSiteLocationConfirmed] = React.useState(false);
+  const [selectedJob, setSelectedJob] = React.useState<JobDetails | null>(null);
+  const [selectedJobId, setSelectedJobId] = React.useState<string | null>(null);
+  const [isJobDetailsLoading, setIsJobDetailsLoading] = React.useState(false);
+  const [jobDetailsError, setJobDetailsError] = React.useState("");
+  const [jobMatches, setJobMatches] = React.useState<JobMatches | null>(null);
+  const [isJobMatchesLoading, setIsJobMatchesLoading] = React.useState(false);
+  const [jobMatchesError, setJobMatchesError] = React.useState("");
+  const [acceptingWorkerId, setAcceptingWorkerId] = React.useState<string | null>(null);
+  const [jobMatchSummaries, setJobMatchSummaries] = React.useState<Record<string, JobMatchSummary>>({});
+  const [jobMatchSummaryState, setJobMatchSummaryState] = React.useState<MatchSummaryState>("LOADING");
+  const [jobViewMode, setJobViewMode] = React.useState<JobViewMode>(null);
+  const selectedJobRequestRef = React.useRef(0);
   const profileMenuRef = React.useRef<HTMLDivElement>(null);
 
   const recents = React.useMemo<RecentItem[]>(() => {
@@ -247,6 +315,9 @@ export default function EmployerDashboard() {
           ? { min_experience: String(item.parsed_data.min_experience) }
           : {}),
       }));
+      const recentSite = jobSites.find((site) => site.id === item.job_site_id);
+      setSelectedJobSiteId(item.job_site_id);
+      setSelectedJobSite(recentSite || null);
     }
     setIsMobileMenuOpen(false);
     scrollToJobForm();
@@ -270,13 +341,20 @@ export default function EmployerDashboard() {
 
   const scrollToJobForm = () => {
     setIsWorkSiteModalOpen(false);
+    setWorkSiteModalMode(null);
     document.getElementById("create-job")?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
-  const handleOpenWorkSiteModal = () => {
+  const openWorkSiteModal = (mode: Exclude<WorkSiteModalMode, null>) => {
     setIsProfileMenuOpen(false);
+    setSiteError("");
+    setWorkSiteModalMode(mode);
     setIsWorkSiteModalOpen(true);
   };
+
+  const handleOpenWorkSiteModal = () => openWorkSiteModal("create");
+  const handleOpenJobLocationPicker = () => openWorkSiteModal("location");
+  const handleOpenJobSiteSelector = () => openWorkSiteModal("site");
 
   useEffect(() => {
     if (!isLoading && !user) {
@@ -309,6 +387,17 @@ export default function EmployerDashboard() {
 
     loadEmployerProfile();
 
+    const loadAvailableWorkerCount = async () => {
+      try {
+        const response = await apiClient.get<{ count: number }>('/api/v1/employers/me/available-worker-count', { withCredentials: true });
+        setAvailableWorkerCount(response.data.count);
+      } catch {
+        setAvailableWorkerCount(0);
+      }
+    };
+
+    loadAvailableWorkerCount();
+
     const loadJobSites = async () => {
       setIsSiteLoading(true);
       try {
@@ -333,6 +422,14 @@ export default function EmployerDashboard() {
         });
         setJobs(response.data);
         setJobError("");
+        try {
+          const summaryResponse = await apiClient.get<JobMatchSummary[]>('/api/v1/jobs/match-summary', { withCredentials: true });
+          setJobMatchSummaries(Object.fromEntries(summaryResponse.data.map((summary) => [summary.job_id, summary])));
+          setJobMatchSummaryState("FOUND");
+        } catch {
+          setJobMatchSummaries({});
+          setJobMatchSummaryState("ERROR");
+        }
       } catch (err: any) {
         setJobError(err.response?.data?.detail || "Unable to load jobs");
       }
@@ -500,17 +597,48 @@ export default function EmployerDashboard() {
 
   const handleSiteSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    const latitude = Number(siteForm.latitude);
+    const longitude = Number(siteForm.longitude);
+    const hasValidCoordinates =
+      Number.isFinite(latitude) &&
+      Number.isFinite(longitude) &&
+      latitude >= -90 &&
+      latitude <= 90 &&
+      longitude >= -180 &&
+      longitude <= 180 &&
+      !(latitude === 0 && longitude === 0);
+
+    if (!selectedSiteLocation || !hasValidCoordinates || !isSiteLocationConfirmed) {
+      const message = !isSiteLocationConfirmed
+        ? "Confirm the selected location before adding a work site."
+        : "Select a valid location search result before adding a work site.";
+      setSiteError(message);
+      toast.error(message);
+      return;
+    }
+
     setIsSiteSaving(true);
     setSiteError("");
     try {
       const response = await apiClient.post<JobSite>("/api/v1/job-sites/", {
         name: siteForm.name,
         address: siteForm.address,
-        latitude: Number(siteForm.latitude),
-        longitude: Number(siteForm.longitude),
+        city: siteForm.city || null,
+        state: siteForm.state || null,
+        pincode: siteForm.pincode || null,
+        latitude,
+        longitude,
+        location_source: selectedSiteLocation.location_source,
       }, { withCredentials: true });
       setJobSites((current) => [response.data, ...current]);
-      setSiteForm({ name: "", address: "", latitude: "", longitude: "" });
+      setSelectedJobSiteId(response.data.id);
+      setSelectedJobSite(response.data);
+      setJobForm((current) => ({ ...current, job_site_id: response.data.id }));
+      setSiteForm({ name: "", address: "", city: "", state: "", pincode: "", latitude: "", longitude: "" });
+      setSelectedSiteLocation(null);
+      setIsSiteLocationConfirmed(false);
+      setIsWorkSiteModalOpen(false);
+      setWorkSiteModalMode(null);
       toast.success("Work site added");
     } catch (err: any) {
       const message = err.response?.data?.detail || "Unable to add work site";
@@ -522,13 +650,99 @@ export default function EmployerDashboard() {
   };
 
   const selectSiteLocation = (location: LocationSelection) => {
-    setSiteForm((current) => ({ ...current, address: location.address, latitude: String(location.latitude), longitude: String(location.longitude) }));
+    setSelectedSiteLocation(location);
+    setIsSiteLocationConfirmed(false);
+    setSiteForm((current) => ({
+      ...current,
+      address: location.address,
+      city: location.city || "",
+      state: location.state || "",
+      pincode: location.pincode || "",
+      latitude: String(location.latitude),
+      longitude: String(location.longitude),
+    }));
+  };
+
+  const selectJobLocation = (location: LocationSelection) => {
+    setSelectedJobLocation(location);
+    setIsJobLocationConfirmed(false);
+  };
+
+  const confirmJobLocation = () => {
+    if (!selectedJobLocation) return;
+    setIsJobLocationConfirmed(true);
+    setIsWorkSiteModalOpen(false);
+    setWorkSiteModalMode(null);
+  };
+
+  const selectJobSite = (site: JobSite) => {
+    setSelectedJobSiteId(site.id);
+    setSelectedJobSite(site);
+    setJobForm((current) => ({ ...current, job_site_id: site.id }));
+    setIsWorkSiteModalOpen(false);
+    setWorkSiteModalMode(null);
+  };
+
+  const useCurrentSiteLocation = async (): Promise<LocationSelection> => {
+    try {
+      const coordinates = await getBrowserLocation();
+      const response = await apiClient.get("/api/v1/locations/reverse", {
+        params: { latitude: coordinates.latitude, longitude: coordinates.longitude },
+      });
+      const location: LocationSelection = {
+        address: response.data.address,
+        city: response.data.city || null,
+        state: response.data.state || null,
+        pincode: response.data.pincode || null,
+        latitude: coordinates.latitude,
+        longitude: coordinates.longitude,
+        accuracy_m: coordinates.accuracy,
+        location_source: "GPS",
+      };
+      selectSiteLocation(location);
+      setSiteError("");
+      return location;
+    } catch (error) {
+      const message = error instanceof InaccurateLocationError
+        ? `Location accuracy is too low (${Math.round(error.accuracy)}m). Enable device location services or use Search/Map instead.`
+        : "Unable to determine your current location. You can continue with Search or Map instead.";
+      setSiteError(message);
+      toast.error(message);
+      throw error;
+    }
+  };
+
+  const invalidateSiteLocation = () => {
+    setSelectedSiteLocation(null);
+    setIsSiteLocationConfirmed(false);
+    setSiteForm((current) => ({ ...current, city: "", state: "", pincode: "", latitude: "", longitude: "" }));
+  };
+
+  const handleSiteLocationQueryChange = (query: string) => {
+    invalidateSiteLocation();
+    setSiteForm((current) => ({ ...current, address: query }));
+  };
+
+  const addRequiredSkill = () => {
+    const skill = skillInput.trim();
+    if (!skill || jobForm.required_skills.includes(skill)) return;
+    setJobForm((current) => ({ ...current, required_skills: [...current.required_skills, skill] }));
+    setSkillInput("");
+  };
+
+  const removeRequiredSkill = (skill: string) => {
+    setJobForm((current) => ({ ...current, required_skills: current.required_skills.filter((item) => item !== skill) }));
   };
 
   const handleSiteDelete = async (siteId: string) => {
     try {
       await apiClient.delete(`/api/v1/job-sites/${siteId}`, { withCredentials: true });
       setJobSites((current) => current.filter((site) => site.id !== siteId));
+      if (selectedJobSiteId === siteId) {
+        setSelectedJobSiteId("");
+        setSelectedJobSite(null);
+        setJobForm((current) => ({ ...current, job_site_id: "" }));
+      }
       toast.success("Work site removed");
     } catch (err: any) {
       const message = err.response?.data?.detail || "Unable to remove work site";
@@ -539,6 +753,12 @@ export default function EmployerDashboard() {
 
   const handleJobSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!jobForm.job_site_id) {
+      const message = "Select an existing Job Site or create a new Work Site before creating the job.";
+      setJobError(message);
+      toast.error(message);
+      return;
+    }
     setIsJobSaving(true);
     setJobError("");
     try {
@@ -548,9 +768,19 @@ export default function EmployerDashboard() {
         headcount_required: Number(jobForm.headcount_required),
         max_daily_salary: jobForm.max_daily_salary ? Number(jobForm.max_daily_salary) : null,
         min_experience: jobForm.min_experience ? Number(jobForm.min_experience) : null,
+        ...(jobForm.trade_id.trim() ? { trade_id: jobForm.trade_id.trim() } : {}),
+        required_skills: jobForm.required_skills,
       }, { withCredentials: true });
       setJobs((current) => [response.data, ...current]);
-      setJobForm({ job_site_id: jobForm.job_site_id, title: "", headcount_required: "1", max_daily_salary: "", min_experience: "" });
+      try {
+        const summaryResponse = await apiClient.get<JobMatchSummary[]>('/api/v1/jobs/match-summary', { withCredentials: true });
+        setJobMatchSummaries(Object.fromEntries(summaryResponse.data.map((summary) => [summary.job_id, summary])));
+        setJobMatchSummaryState("FOUND");
+      } catch {
+        setJobMatchSummaryState("ERROR");
+      }
+      setJobForm({ job_site_id: jobForm.job_site_id, title: "", headcount_required: "1", max_daily_salary: "", min_experience: "", trade_id: "", required_skills: [] });
+      setSkillInput("");
       toast.success("Job created");
     } catch (err: any) {
       const message = err.response?.data?.detail || "Unable to create job";
@@ -558,6 +788,106 @@ export default function EmployerDashboard() {
       toast.error(message);
     } finally {
       setIsJobSaving(false);
+    }
+  };
+
+  const closeJobDetails = () => {
+    selectedJobRequestRef.current += 1;
+    setJobViewMode(null);
+    setSelectedJobId(null);
+    setSelectedJob(null);
+    setIsJobDetailsLoading(false);
+    setJobDetailsError("");
+    setJobMatches(null);
+    setIsJobMatchesLoading(false);
+    setJobMatchesError("");
+  };
+
+  const handleViewJobDetails = async (jobId: string) => {
+    const requestId = selectedJobRequestRef.current + 1;
+    selectedJobRequestRef.current = requestId;
+    setJobViewMode("details");
+    setSelectedJobId(jobId);
+    setSelectedJob(null);
+    setJobDetailsError("");
+    setJobMatches(null);
+    setJobMatchesError("");
+    setIsJobMatchesLoading(false);
+    setIsJobDetailsLoading(true);
+    try {
+      const response = await apiClient.get<JobDetails>(`/api/v1/jobs/${jobId}`, { withCredentials: true });
+      if (selectedJobRequestRef.current !== requestId) return;
+      setSelectedJob(response.data);
+    } catch (err: any) {
+      if (selectedJobRequestRef.current !== requestId) return;
+      setJobDetailsError(err.response?.data?.detail || "Unable to load job details");
+    } finally {
+      if (selectedJobRequestRef.current === requestId) setIsJobDetailsLoading(false);
+    }
+  };
+
+  const handleViewJobWorkers = async (jobId: string) => {
+    const requestId = selectedJobRequestRef.current + 1;
+    selectedJobRequestRef.current = requestId;
+    setJobViewMode("workers");
+    setSelectedJobId(jobId);
+    setSelectedJob(null);
+    setJobDetailsError("");
+    setJobMatches(null);
+    setJobMatchesError("");
+    setIsJobDetailsLoading(false);
+    setIsJobMatchesLoading(true);
+    try {
+      const matchesResponse = await apiClient.get<JobMatches>(`/api/v1/jobs/${jobId}/matches`, { withCredentials: true });
+      if (selectedJobRequestRef.current !== requestId) return;
+      setJobMatches(matchesResponse.data);
+    } catch {
+      if (selectedJobRequestRef.current !== requestId) return;
+      setJobMatchesError("Unable to load matching workers right now.");
+    } finally {
+      if (selectedJobRequestRef.current === requestId) setIsJobMatchesLoading(false);
+    }
+  };
+
+  const handleSelectWorker = async (jobId: string, workerProfileId: string) => {
+    const requestId = selectedJobRequestRef.current;
+    setAcceptingWorkerId(workerProfileId);
+    setJobMatchesError("");
+    try {
+      const response = await apiClient.post<{ match_id: string; worker_profile_id: string; match_status: string; job_status: string; accepted_count: number }>(
+        `/api/v1/jobs/${jobId}/matches/accept`,
+        { worker_profile_id: workerProfileId },
+        { withCredentials: true },
+      );
+      if (selectedJobRequestRef.current !== requestId || selectedJobId !== jobId) return;
+      setJobs((current) => current.map((job) => job.id === jobId
+        ? { ...job, status: response.data.job_status }
+        : job));
+      setJobMatchSummaries((current) => {
+        const summary = current[jobId];
+        if (!summary) return current;
+        return {
+          ...current,
+          [jobId]: {
+            ...summary,
+            current_match_count: response.data.job_status === "FILLED" ? 0 : summary.current_match_count,
+            matching_status: response.data.job_status === "FILLED" ? "NO_MATCHES" : summary.matching_status,
+          },
+        };
+      });
+      setJobMatches((current) => current ? {
+        ...current,
+        matches: current.matches.map((match) => match.worker_profile_id === workerProfileId
+          ? { ...match, status: response.data.match_status }
+          : match),
+      } : current);
+      setSelectedJob((current) => current ? { ...current, status: response.data.job_status } : current);
+      toast.success("Worker selected");
+    } catch (err: any) {
+      if (selectedJobRequestRef.current !== requestId || selectedJobId !== jobId) return;
+      setJobMatchesError(err.response?.data?.detail || "Unable to select worker right now.");
+    } finally {
+      setAcceptingWorkerId(null);
     }
   };
 
@@ -581,6 +911,7 @@ export default function EmployerDashboard() {
         headcount_required: String(extracted.headcount_required),
         max_daily_salary: extracted.max_daily_salary == null ? "" : String(extracted.max_daily_salary),
         min_experience: String(extracted.min_experience),
+        required_skills: extracted.skills || [],
       }));
 
       toast.success("Job requirements extracted");
@@ -1151,7 +1482,7 @@ export default function EmployerDashboard() {
                 </h3>
               </div>
               <div className="space-y-2">
-                <p className="text-3xl font-bold text-slate-900 dark:text-white">0</p>
+                <p className="text-3xl font-bold text-slate-900 dark:text-white">{availableWorkerCount}</p>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
                   Available for jobs
                 </p>
@@ -1167,7 +1498,7 @@ export default function EmployerDashboard() {
               {/* Select Location Pill Button */}
               <button
                 type="button"
-                onClick={handleOpenWorkSiteModal}
+                onClick={handleOpenJobLocationPicker}
                 className="group flex items-center justify-between gap-3 sm:gap-4 rounded-full bg-blue-600 px-4 sm:px-5 py-2.5 text-white shadow-md hover:bg-blue-700 active:scale-95 transition cursor-pointer w-full sm:w-auto sm:min-w-[210px] max-w-full"
               >
                 <div className="flex items-center gap-3">
@@ -1176,7 +1507,7 @@ export default function EmployerDashboard() {
                   </div>
                   <div className="text-left">
                     <p className="text-sm font-bold text-white leading-tight">Select location</p>
-                    <p className="text-[11px] font-medium text-blue-100 opacity-90">Accurate and faster</p>
+                    <p className="max-w-[150px] truncate text-[11px] font-medium text-blue-100 opacity-90">{selectedJobLocation?.address || "For this job"}</p>
                   </div>
                 </div>
                 <ChevronRight size={18} className="text-white opacity-80 group-hover:translate-x-0.5 transition-transform shrink-0" />
@@ -1185,7 +1516,7 @@ export default function EmployerDashboard() {
               {/* Job Site Pill Button */}
               <button
                 type="button"
-                onClick={handleOpenWorkSiteModal}
+                onClick={handleOpenJobSiteSelector}
                 className="group flex items-center justify-between gap-3 sm:gap-4 rounded-full bg-blue-600 px-4 sm:px-5 py-2.5 text-white shadow-md hover:bg-blue-700 active:scale-95 transition cursor-pointer w-full sm:w-auto sm:min-w-[210px] max-w-full"
               >
                 <div className="flex items-center gap-3 min-w-0">
@@ -1194,10 +1525,10 @@ export default function EmployerDashboard() {
                   </div>
                   <div className="text-left min-w-0">
                     <p className="text-sm font-bold text-white leading-tight truncate max-w-[130px] sm:max-w-[150px]">
-                      {jobSites.find((s) => s.id === jobForm.job_site_id)?.name || "Job site"}
+                      {selectedJobSite?.name || "Job site"}
                     </p>
                     <p className="text-[11px] font-medium text-blue-100 opacity-90 truncate max-w-[130px] sm:max-w-[150px]">
-                      {jobSites.find((s) => s.id === jobForm.job_site_id)?.address || "Accurate and faster"}
+                      {selectedJobSite?.address || "Select a saved site"}
                     </p>
                   </div>
                 </div>
@@ -1281,7 +1612,12 @@ export default function EmployerDashboard() {
                   <select
                     required
                     value={jobForm.job_site_id}
-                    onChange={(event) => setJobForm({ ...jobForm, job_site_id: event.target.value })}
+                    onChange={(event) => {
+                      const site = jobSites.find((item) => item.id === event.target.value) || null;
+                      setSelectedJobSiteId(event.target.value);
+                      setSelectedJobSite(site);
+                      setJobForm({ ...jobForm, job_site_id: event.target.value });
+                    }}
                     className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-800/50 dark:text-white dark:focus:bg-slate-800"
                   >
                     <option value="">Select work site</option>
@@ -1308,6 +1644,17 @@ export default function EmployerDashboard() {
                   />
                 </div>
 
+                {/* Required Trade */}
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Required Trade</label>
+                  <input
+                    value={jobForm.trade_id}
+                    onChange={(event) => setJobForm({ ...jobForm, trade_id: event.target.value })}
+                    placeholder="e.g. Cook"
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-800/50 dark:text-white dark:placeholder:text-slate-500 dark:focus:bg-slate-800"
+                  />
+                </div>
+
                 {/* Workers Needed */}
                 <div className="flex flex-col gap-1.5">
                   <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
@@ -1323,6 +1670,27 @@ export default function EmployerDashboard() {
                     placeholder="Workers needed"
                     className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-800/50 dark:text-white dark:placeholder:text-slate-500 dark:focus:bg-slate-800"
                   />
+                </div>
+
+                {/* Required Skills */}
+                <div className="flex flex-col gap-1.5 sm:col-span-2">
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Required Skills</label>
+                  <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2 dark:border-slate-700 dark:bg-slate-800/50">
+                    {jobForm.required_skills.map((skill) => (
+                      <span key={skill} className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300">
+                        {skill}
+                        <button type="button" onClick={() => removeRequiredSkill(skill)} aria-label={`Remove ${skill}`} className="font-bold text-blue-500 hover:text-rose-600">×</button>
+                      </span>
+                    ))}
+                    <input
+                      value={skillInput}
+                      onChange={(event) => setSkillInput(event.target.value)}
+                      onKeyDown={(event) => { if (event.key === "Enter" || event.key === ",") { event.preventDefault(); addRequiredSkill(); } }}
+                      placeholder="Add a skill"
+                      className="min-w-32 flex-1 bg-transparent px-1 py-1 text-sm text-slate-900 outline-none placeholder:text-slate-400 dark:text-white"
+                    />
+                    <button type="button" onClick={addRequiredSkill} className="text-xs font-bold text-blue-600 hover:text-blue-700 dark:text-blue-400">Add</button>
+                  </div>
                 </div>
 
                 {/* Max Daily Salary */}
@@ -1374,13 +1742,35 @@ export default function EmployerDashboard() {
             {jobSites.length === 0 && <p className="mt-3 text-center text-sm text-amber-600 dark:text-amber-400">Add a work site before creating a job.</p>}
             {jobError && <p className="mt-3 text-center text-sm text-rose-600 dark:text-rose-400">{jobError}</p>}
             {jobs.length > 0 && <div className="mt-6 divide-y divide-slate-100 dark:divide-slate-800">
-              {jobs.map((job) => <div key={job.id} className="flex items-center justify-between gap-4 py-4">
+              {jobs.map((job) => {
+                const summary = jobMatchSummaries[job.id];
+                const matchCount = summary?.current_match_count || 0;
+                const selectableMatchCount = job.status === "FILLED" ? 0 : matchCount;
+                const summaryText = job.status === "FILLED"
+                  ? "Worker selected"
+                  : jobMatchSummaryState === "LOADING"
+                  ? "Checking suitable workers..."
+                  : jobMatchSummaryState === "ERROR"
+                    ? "Unable to load match results"
+                    : selectableMatchCount === 0
+                      ? "No suitable workers found"
+                      : `${selectableMatchCount} suitable worker${selectableMatchCount === 1 ? "" : "s"} found`;
+                return <div key={job.id} className="flex items-center justify-between gap-4 py-4">
                 <div>
                   <p className="font-semibold text-slate-900 dark:text-white">{job.title}</p>
                   <p className="text-sm text-slate-500 dark:text-slate-400">{job.headcount_required} worker{job.headcount_required === 1 ? "" : "s"} · {job.status}</p>
+                  <p className={`mt-1 text-sm font-semibold ${jobMatchSummaryState === "ERROR" ? "text-rose-600 dark:text-rose-400" : "text-slate-700 dark:text-slate-300"}`}>{summaryText}</p>
                 </div>
-                <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">Created</span>
-              </div>)}
+                <div className="flex shrink-0 items-center gap-2">
+                  {jobMatchSummaryState === "FOUND" && selectableMatchCount > 0 && <button type="button" onClick={() => void handleViewJobWorkers(job.id)} className="inline-flex items-center gap-2 rounded-lg border border-blue-200 px-3 py-2 text-sm font-semibold text-blue-600 hover:border-blue-300 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-400 dark:hover:bg-slate-800">
+                    <Users size={16} /> View Workers
+                  </button>}
+                  <button type="button" onClick={() => void handleViewJobDetails(job.id)} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-blue-600 hover:border-blue-300 hover:bg-blue-50 dark:border-slate-700 dark:text-blue-400 dark:hover:bg-slate-800">
+                    <Eye size={16} /> View Details
+                  </button>
+                </div>
+              </div>;
+              })}
             </div>}
           </section>
 
@@ -1399,7 +1789,7 @@ export default function EmployerDashboard() {
               <div className="flex items-center gap-2">
                 <MapPin size={22} className="text-blue-600 dark:text-blue-400" />
                 <span className="font-(--font-anton) text-xl uppercase tracking-wide text-slate-900 dark:text-white">
-                  Add Work Site
+                  {workSiteModalMode === "location" ? "Select Job Location" : workSiteModalMode === "site" ? "Select Job Site" : "Add Work Site"}
                 </span>
               </div>
               <button
@@ -1412,18 +1802,32 @@ export default function EmployerDashboard() {
               </button>
             </div>
 
-            <form onSubmit={handleSiteSubmit} className="grid gap-3 md:grid-cols-2 lg:grid-cols-5">
+            {workSiteModalMode === "location" && (
+              <div className="space-y-4">
+                <LocationPicker label="Location for this job" value={selectedJobLocation?.address || ""} onSelect={selectJobLocation} getCurrentLocationErrorMessage={getLocationErrorMessage} onUseCurrentLocation={async () => {
+                  const coordinates = await getBrowserLocation();
+                  const response = await apiClient.get("/api/v1/locations/reverse", { params: { latitude: coordinates.latitude, longitude: coordinates.longitude } });
+                  const location: LocationSelection = { ...response.data, latitude: coordinates.latitude, longitude: coordinates.longitude, accuracy_m: coordinates.accuracy, location_source: "GPS" };
+                  selectJobLocation(location);
+                  return location;
+                }} placeholder="Search area, locality, city or pincode" />
+                {selectedJobLocation && <div className="space-y-3 rounded-xl border border-slate-200 p-4 dark:border-slate-700"><p className="text-sm font-semibold text-slate-900 dark:text-white">{selectedJobLocation.address}</p><p className="text-xs text-slate-500 dark:text-slate-400">{selectedJobLocation.latitude}, {selectedJobLocation.longitude}{selectedJobLocation.accuracy_m ? ` · Accuracy ${Math.round(selectedJobLocation.accuracy_m)}m` : ""}</p><div className="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700"><iframe title="Selected job location" className="h-48 w-full border-0" src={`https://www.openstreetmap.org/export/embed.html?bbox=${selectedJobLocation.longitude - 0.005}%2C${selectedJobLocation.latitude - 0.005}%2C${selectedJobLocation.longitude + 0.005}%2C${selectedJobLocation.latitude + 0.005}&layer=mapnik&marker=${selectedJobLocation.latitude}%2C${selectedJobLocation.longitude}`} /></div><button type="button" onClick={confirmJobLocation} className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-bold text-white"><Check size={16} /> {isJobLocationConfirmed ? "Location confirmed" : "Confirm Location"}</button></div>}
+              </div>
+            )}
+
+            {workSiteModalMode === "create" && <form onSubmit={handleSiteSubmit} className="grid gap-3 md:grid-cols-2 lg:grid-cols-5">
               <input required maxLength={160} value={siteForm.name} onChange={(event) => setSiteForm({ ...siteForm, name: event.target.value })} placeholder="Site name" className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-hidden focus:border-blue-500 dark:border-slate-700 dark:bg-slate-800" />
-              <input required maxLength={500} value={siteForm.address} onChange={(event) => setSiteForm({ ...siteForm, address: event.target.value })} placeholder="Human-readable address" className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-hidden focus:border-blue-500 dark:border-slate-700 dark:bg-slate-800" />
-              <div className="sm:col-span-2"><LocationPicker value={siteForm.address} onSelect={selectSiteLocation} /></div>
+              <div className="md:col-span-2 lg:col-span-5"><LocationPicker label="Work Site Location" value={siteForm.address} onSelect={selectSiteLocation} onQueryChange={handleSiteLocationQueryChange} onUseCurrentLocation={useCurrentSiteLocation} placeholder="Search area, locality, city or pincode" /></div>
+              <input required maxLength={500} value={siteForm.address} readOnly={Boolean(selectedSiteLocation)} onChange={(event) => { invalidateSiteLocation(); setSiteForm((current) => ({ ...current, address: event.target.value })); }} placeholder="Selected address" className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-hidden focus:border-blue-500 read-only:cursor-not-allowed read-only:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:read-only:bg-slate-800/70" />
+              {selectedSiteLocation && <div className="md:col-span-2 lg:col-span-5 space-y-2"><div className="flex items-center gap-2 text-sm font-semibold text-emerald-700 dark:text-emerald-300"><Check size={16} /> Location selected from {selectedSiteLocation.location_source}. {selectedSiteLocation.accuracy_m ? `Accuracy: ${Math.round(selectedSiteLocation.accuracy_m)}m.` : ""}</div><div className="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700"><iframe title="Selected work site location" className="h-48 w-full border-0" src={`https://www.openstreetmap.org/export/embed.html?bbox=${selectedSiteLocation.longitude - 0.005}%2C${selectedSiteLocation.latitude - 0.005}%2C${selectedSiteLocation.longitude + 0.005}%2C${selectedSiteLocation.latitude + 0.005}&layer=mapnik&marker=${selectedSiteLocation.latitude}%2C${selectedSiteLocation.longitude}`} /></div><button type="button" onClick={() => setIsSiteLocationConfirmed(true)} disabled={isSiteLocationConfirmed} className="inline-flex items-center gap-2 rounded-lg border border-emerald-300 px-3 py-2 text-sm font-bold text-emerald-700 disabled:cursor-default disabled:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-300 dark:disabled:bg-emerald-950/30"><Check size={16} /> {isSiteLocationConfirmed ? "Location confirmed" : "Confirm Location"}</button></div>}
               <button type="submit" disabled={isSiteSaving} className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60">
                 {isSiteSaving ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
                 Add site
               </button>
-            </form>
+            </form>}
 
             {siteError && <p className="mt-3 text-sm text-rose-600 dark:text-rose-400">{siteError}</p>}
-            <div className="mt-6 divide-y divide-slate-100 dark:divide-slate-800 max-h-60 overflow-y-auto pr-1">
+            {(workSiteModalMode === "site" || workSiteModalMode === "create") && <div className="mt-6 divide-y divide-slate-100 dark:divide-slate-800 max-h-60 overflow-y-auto pr-1">
               {isSiteLoading ? (
                 <div className="flex items-center gap-2 py-4 text-sm text-slate-500"><Loader2 size={16} className="animate-spin" /> Loading sites...</div>
               ) : jobSites.length === 0 ? (
@@ -1434,13 +1838,61 @@ export default function EmployerDashboard() {
                     <p className="font-semibold text-slate-900 dark:text-white">{site.name}</p>
                     <p className="truncate text-sm text-slate-500 dark:text-slate-400">{site.address || "Location selected"}</p>
                   </div>
-                  <button type="button" title={`Remove ${site.name}`} aria-label={`Remove ${site.name}`} onClick={() => handleSiteDelete(site.id)} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:border-rose-200 hover:text-rose-600 dark:border-slate-700 dark:text-slate-400 dark:hover:border-rose-800 dark:hover:text-rose-400">
-                    <Trash2 size={16} />
-                  </button>
+                  {workSiteModalMode === "site" ? <button type="button" onClick={() => selectJobSite(site)} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-bold text-white"><Check size={16} /> Select</button> : <button type="button" title={`Remove ${site.name}`} aria-label={`Remove ${site.name}`} onClick={() => handleSiteDelete(site.id)} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:border-rose-200 hover:text-rose-600 dark:border-slate-700 dark:text-slate-400 dark:hover:border-rose-800 dark:hover:text-rose-400"><Trash2 size={16} /></button>}
                 </div>
               ))}
-            </div>
+            </div>}
+            {workSiteModalMode === "site" && <button type="button" onClick={() => { setSiteForm({ name: "", address: "", city: "", state: "", pincode: "", latitude: "", longitude: "" }); setSelectedSiteLocation(null); setIsSiteLocationConfirmed(false); setWorkSiteModalMode("create"); }} className="mt-4 inline-flex items-center gap-2 rounded-lg border border-blue-200 px-3 py-2 text-sm font-bold text-blue-700 dark:border-blue-800 dark:text-blue-300"><Plus size={16} /> Create New Work Site</button>}
           </div>
+        </div>
+      )}
+
+      {(jobViewMode || isJobDetailsLoading || selectedJob || jobDetailsError) && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-slate-900/60" onClick={closeJobDetails} />
+          <section className="relative w-full max-w-xl rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900">
+            <div className="mb-5 flex items-center justify-between border-b border-slate-100 pb-3 dark:border-slate-800">
+              <h2 className="text-xl font-bold text-slate-900 dark:text-white">{jobViewMode === "workers" ? "Matched Workers" : "Job Details"}</h2>
+              <button type="button" onClick={closeJobDetails} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Close job details"><X size={20} /></button>
+            </div>
+            {isJobDetailsLoading && <div className="flex items-center gap-2 text-sm text-slate-500"><Loader2 size={16} className="animate-spin" /> Loading job details...</div>}
+            {jobDetailsError && <p className="text-sm text-rose-600">{jobDetailsError}</p>}
+            {selectedJob && <div className="grid gap-4 text-sm sm:grid-cols-2">
+              <div className="sm:col-span-2"><p className="text-xs font-semibold uppercase text-slate-400">Job Title</p><p className="mt-1 text-lg font-bold">{selectedJob.title}</p></div>
+              <div><p className="text-xs font-semibold uppercase text-slate-400">Status</p><p className="mt-1 font-semibold">{selectedJob.status}</p></div>
+              <div><p className="text-xs font-semibold uppercase text-slate-400">Work Site</p><p className="mt-1 font-semibold">{selectedJob.job_site.name}</p></div>
+              <div className="sm:col-span-2"><p className="text-xs font-semibold uppercase text-slate-400">Site Address</p><p className="mt-1">{selectedJob.job_site.address || "No address recorded"}</p></div>
+              <div><p className="text-xs font-semibold uppercase text-slate-400">Required Trade</p><p className="mt-1">{selectedJob.trade_id || "Not specified"}</p></div>
+              <div><p className="text-xs font-semibold uppercase text-slate-400">Workers Needed</p><p className="mt-1">{selectedJob.headcount_required}</p></div>
+              <div><p className="text-xs font-semibold uppercase text-slate-400">Required Skills</p><p className="mt-1">{selectedJob.required_skills?.length ? selectedJob.required_skills.join(", ") : "No skills specified"}</p></div>
+              <div><p className="text-xs font-semibold uppercase text-slate-400">Max Daily Salary</p><p className="mt-1">{selectedJob.max_daily_salary != null ? `₹${selectedJob.max_daily_salary}` : "Not specified"}</p></div>
+              <div><p className="text-xs font-semibold uppercase text-slate-400">Min Experience</p><p className="mt-1">{selectedJob.min_experience != null ? `${selectedJob.min_experience} years` : "Not specified"}</p></div>
+              <div><p className="text-xs font-semibold uppercase text-slate-400">Created</p><p className="mt-1">{new Date(selectedJob.created_at).toLocaleString()}</p></div>
+            </div>}
+            {jobViewMode === "workers" && <div>
+              <h3 className="text-sm font-bold uppercase text-slate-600 dark:text-slate-300">Matching Workers</h3>
+              {isJobMatchesLoading && <div className="mt-3 flex items-center gap-2 text-sm text-slate-500"><Loader2 size={16} className="animate-spin" /> Matching workers...</div>}
+              {!isJobMatchesLoading && jobMatchesError && <p className="mt-3 text-sm text-rose-600 dark:text-rose-400">{jobMatchesError}</p>}
+              {!isJobMatchesLoading && !jobMatchesError && jobMatches?.matches.length === 0 && <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">No suitable workers found yet.</p>}
+              {!isJobMatchesLoading && !jobMatchesError && jobMatches?.matches.length ? <div className="mt-3 space-y-3">{jobMatches.matches.map((match) => (
+                <div key={match.worker_profile_id} className="rounded-xl border border-slate-200 p-3 dark:border-slate-700">
+                  <p className="font-semibold text-slate-900 dark:text-white">{match.name || "Matched worker"}</p>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{match.experience_years != null ? `${match.experience_years} years experience` : "Experience not specified"} · {match.expected_daily_wage != null ? `₹${match.expected_daily_wage}/day` : "Wage not specified"}</p>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{match.trade_id || "Trade not specified"} · {match.availability_status || "Availability unknown"} · {match.distance_m != null ? `${(match.distance_m / 1000).toFixed(1)} km away` : "Distance unavailable"}</p>
+                  {match.skills.length > 0 && <p className="mt-1 text-xs text-slate-400">{match.skills.join(", ")}</p>}
+                  <button
+                    type="button"
+                    disabled={selectedJob?.status === "FILLED" || match.status !== "PENDING" || acceptingWorkerId === match.worker_profile_id}
+                    onClick={() => selectedJobId && void handleSelectWorker(selectedJobId, match.worker_profile_id)}
+                    className="mt-3 inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {acceptingWorkerId === match.worker_profile_id ? <Loader2 size={15} className="animate-spin" /> : null}
+                    {match.status === "ACCEPTED" ? "Selected" : "Select Worker"}
+                  </button>
+                </div>
+              ))}</div> : null}
+            </div>}
+          </section>
         </div>
       )}
     </div>

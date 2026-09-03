@@ -26,7 +26,7 @@ import {
 import { toast } from "sonner";
 import Link from "next/link";
 import apiClient from "@/lib/api";
-import { shouldSendLiveLocationUpdate, type LiveLocationSnapshot, normalizeCoordinates } from "@/lib/location";
+import { getLocationErrorMessage, shouldSendLiveLocationUpdate, type LiveLocationSnapshot, normalizeCoordinates } from "@/lib/location";
 
 declare global {
   interface Window {
@@ -195,6 +195,7 @@ export default function WorkerDashboard() {
   const [routeLoading, setRouteLoading] = React.useState(false);
   const watcherIdRef = React.useRef<number | null>(null);
   const lastLiveLocationRef = React.useRef<LiveLocationSnapshot | null>(null);
+  const lastLocationWarningAtRef = React.useRef(0);
 
   useEffect(() => {
     if (!user || user.role !== "WORKER") return;
@@ -204,7 +205,14 @@ export default function WorkerDashboard() {
     const onPosition = (position: GeolocationPosition) => {
       const { latitude, longitude, accuracy } = position.coords;
       const normalized = normalizeCoordinates(latitude, longitude, accuracy);
-      if (!normalized) return;
+      if (!normalized) {
+        const now = Date.now();
+        if (now - lastLocationWarningAtRef.current >= 30000) {
+          lastLocationWarningAtRef.current = now;
+          toast.error(getLocationErrorMessage({ code: "INACCURATE", accuracy }));
+        }
+        return;
+      }
 
       const next: LiveLocationSnapshot = {
         latitude: normalized.latitude,
@@ -228,8 +236,10 @@ export default function WorkerDashboard() {
     };
 
     const onError = (error: GeolocationPositionError) => {
-      if (error.code === 1) {
-        toast.error("Location permission was denied. Using your saved profile location.");
+      const now = Date.now();
+      if (now - lastLocationWarningAtRef.current >= 30000) {
+        lastLocationWarningAtRef.current = now;
+        toast.error(getLocationErrorMessage(error));
       }
     };
 

@@ -147,6 +147,42 @@ function getErrorDetail(error: unknown, fallback: string): string {
   return candidate.message || fallback;
 }
 
+function getVerificationErrorMessage(error: unknown): string {
+  const candidate = error as { response?: { data?: { detail?: unknown } } };
+  const detail = candidate.response?.data?.detail;
+  const detailRecord = detail && typeof detail === "object" ? (detail as Record<string, unknown>) : null;
+  const code = typeof detailRecord?.code === "string" ? detailRecord.code : typeof detail === "string" ? detail : "";
+  const verification = detailRecord?.verification;
+  const verificationRecord = verification && typeof verification === "object" ? (verification as Record<string, unknown>) : null;
+  const providerMetadata = verificationRecord?.provider_metadata;
+  const providerMetadataRecord = providerMetadata && typeof providerMetadata === "object"
+    ? (providerMetadata as Record<string, unknown>)
+    : null;
+  const providerCode = typeof providerMetadataRecord?.provider_code === "string"
+    ? providerMetadataRecord.provider_code
+    : "";
+  const messages: Record<string, string> = {
+    CIN_INVALID: "Please enter a valid 21-character CIN.",
+    CIN_MISSING: "Please enter your CIN before verifying.",
+    BUSINESS_NAME_MISSING: "Please enter the business name before verifying the CIN.",
+    CASHFREE_INSUFFICIENT_BALANCE: "CIN verification is temporarily unavailable because verification credits are exhausted. Please try again later.",
+    CASHFREE_VERIFICATION_FAILED: "CIN verification failed. Please check the CIN and try again.",
+    CASHFREE_RATE_LIMITED: "Too many verification attempts. Please try again later.",
+    CASHFREE_TIMEOUT: "CIN verification is taking too long. Please try again.",
+    CASHFREE_UNAVAILABLE: "CIN verification service is temporarily unavailable. Please try again later.",
+    CASHFREE_MALFORMED_RESPONSE: "CIN verification failed because the verification service returned an invalid response. Please try again later.",
+    VERIFICATION_NOT_CONFIGURED: "CIN verification is not configured. Please try again later.",
+    VERIFICATION_PROVIDER_NOT_CONFIGURED: "CIN verification is not configured. Please try again later.",
+  };
+  if (code === "CASHFREE_AUTHENTICATION_FAILED" && providerCode === "ip_validation_failed") {
+    return "CIN verification service rejected the backend IP address. Please contact the administrator.";
+  }
+  if (code === "CASHFREE_AUTHENTICATION_FAILED") {
+    return "CIN verification could not connect to the verification service. Please try again later.";
+  }
+  return messages[code] || "CIN verification failed. Please try again later.";
+}
+
 function hasCompleteDetails(type: EmployerType, details: Record<string, unknown>): boolean {
   return requiredFieldsFor(type).every((field) => {
     const value = details[field];
@@ -555,11 +591,11 @@ export default function EmployerOnboarding() {
   };
 
   const validateIdentity = () => {
-    if (!formData.business_name?.trim()) return "Legal / company name is required before verification";
+    if (!formData.business_name?.trim()) return "Please enter the business name before verifying the CIN.";
     const cin = formData.cin_number?.trim().toUpperCase();
-    if (!cin) return "CIN is required before verification";
+    if (!cin) return "Please enter your CIN before verifying.";
     if (!/^[A-Z][0-9]{5}[A-Z]{2}[0-9]{4}[A-Z]{3}[0-9]{6}$/.test(cin)) {
-      return "A valid 21-character CIN is required (e.g. U72200MH2020PTC123456)";
+      return "Please enter a valid 21-character CIN.";
     }
     return "";
   };
@@ -613,7 +649,7 @@ export default function EmployerOnboarding() {
         toast.error(failureMessage);
       }
     } catch (err: unknown) {
-      const message = getErrorDetail(err, "Verification failed");
+      const message = getVerificationErrorMessage(err);
       setFormError(message);
       toast.error(message);
     } finally {
