@@ -110,7 +110,7 @@ class OnboardingService:
             required_fields = [
                 "business_name",
                 "business_type",
-                "industry_category",
+                "business_category",
                 "registered_address",
                 "company_email",
                 "company_phone",

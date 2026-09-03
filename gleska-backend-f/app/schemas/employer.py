@@ -125,7 +125,7 @@ class RegisteredBusinessOnboardingSchema(BaseModel):
     """Onboarding schema for registered business."""
     business_name: str
     business_type: str
-    industry_category: str
+    industry_category: Optional[str] = None
     business_category: Optional[str] = None
     registered_address: str
     city: Optional[str] = None
