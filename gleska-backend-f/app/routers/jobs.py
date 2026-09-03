@@ -5,9 +5,10 @@ import logging
 
 from app.core.security import require_employer
 from app.schemas.auth import UserResponse
-from app.schemas.job import JobCreate, JobResponse
+from app.schemas.job import JobCreate, JobDetailsResponse, JobMatchAcceptRequest, JobMatchAcceptResponse, JobMatchSummary, JobMatchesResponse, JobResponse
 from app.schemas.job_extraction import JobExtractionRequest, JobExtractionResponse
 from app.services.job_service import JobNotFound, JobPaymentRequired, JobService
+from app.services.job_match_service import JobMatchService
 from app.services.matching_service import MatchingError
 from app.services.gemini_service import (
     GeminiConfigurationError,
@@ -51,6 +52,55 @@ async def create_job(
     except Exception as exc:
         logger.exception("Job creation failed: exception_type=%s message=%s", type(exc).__name__, str(exc))
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="JOB_CREATE_FAILED") from exc
+
+
+@router.get("/match-summary", response_model=list[JobMatchSummary])
+async def get_job_match_summaries(user: UserResponse = Depends(require_employer)):
+    try:
+        return JobMatchService.summaries_for_user(user)
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except JobNotFound as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@router.get("/{job_id}", response_model=JobDetailsResponse)
+async def get_job(job_id: str, user: UserResponse = Depends(require_employer)):
+    try:
+        return JobService.get_for_user(user, job_id)
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except JobNotFound as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@router.get("/{job_id}/matches", response_model=JobMatchesResponse)
+async def get_job_matches(job_id: str, user: UserResponse = Depends(require_employer)):
+    try:
+        return JobMatchService.list_for_user(user, job_id)
+    except JobNotFound as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@router.post("/{job_id}/matches/accept", response_model=JobMatchAcceptResponse)
+async def accept_job_match(
+    job_id: str,
+    request: JobMatchAcceptRequest,
+    user: UserResponse = Depends(require_employer),
+):
+    try:
+        return JobMatchService.accept_for_user(user, job_id, str(request.worker_profile_id))
+    except JobNotFound as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ValueError as exc:
+        error_code = str(exc)
+        if error_code in {"MATCH_NOT_FOUND", "WORKER_NOT_ELIGIBLE"}:
+            error_status = status.HTTP_404_NOT_FOUND
+        elif error_code in {"JOB_NOT_OPEN_FOR_HIRING", "MATCH_NOT_PENDING", "MATCH_EXPIRED", "HEADCOUNT_FILLED"}:
+            error_status = status.HTTP_409_CONFLICT
+        else:
+            error_status = status.HTTP_422_UNPROCESSABLE_ENTITY
+        raise HTTPException(status_code=error_status, detail=error_code) from exc
 
 
 @router.post("/nlp", response_model=JobExtractionResponse)

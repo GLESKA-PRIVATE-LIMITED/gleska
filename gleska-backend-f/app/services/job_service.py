@@ -7,7 +7,7 @@ from uuid import uuid4
 
 from app.core.supabase import supabase
 from app.schemas.auth import UserResponse
-from app.schemas.job import JobCreate, JobResponse
+from app.schemas.job import JobCreate, JobDetailsResponse, JobResponse, JobSiteDetailsResponse
 from app.services.matching_service import MatchingError, MatchingService
 
 logger = logging.getLogger(__name__)
@@ -98,6 +98,8 @@ class JobService:
             headcount_required=int(row["headcount_required"]),
             max_daily_salary=row.get("max_daily_salary"),
             min_experience=row.get("min_experience"),
+            trade_id=row.get("trade_id"),
+            required_skills=row.get("required_skills") or [],
             status=row["status"],
             created_at=row["created_at"],
             updated_at=row.get("updated_at"),
@@ -115,6 +117,8 @@ class JobService:
                 "p_headcount_required": request.headcount_required,
                 "p_max_daily_salary": float(request.max_daily_salary) if request.max_daily_salary is not None else None,
                 "p_min_experience": request.min_experience,
+                "p_trade_id": request.trade_id,
+                "p_required_skills": request.required_skills or [],
             }).execute()
         except Exception as exc:
             message = str(exc)
@@ -146,3 +150,44 @@ class JobService:
             .execute()
         )
         return [cls._to_response(row) for row in (response.data or [])]
+
+    @classmethod
+    def get_for_user(cls, user: UserResponse, job_id: str) -> JobDetailsResponse:
+        employer_id = cls._employer_profile(user)["id"]
+        response = (
+            supabase.table("jobs")
+            .select("*")
+            .eq("id", job_id)
+            .eq("employer_id", employer_id)
+            .single()
+            .execute()
+        )
+        job = response.data or {}
+        if not job:
+            raise JobNotFound("JOB_NOT_FOUND")
+
+        site_response = (
+            supabase.table("job_sites")
+            .select("*")
+            .eq("id", job["job_site_id"])
+            .eq("employer_id", employer_id)
+            .single()
+            .execute()
+        )
+        site = site_response.data or {}
+        if not site:
+            raise JobNotFound("JOB_SITE_NOT_FOUND")
+
+        location = site.get("location") or {}
+        coordinates = location.get("coordinates") if isinstance(location, dict) else str(location).removeprefix("POINT(").removesuffix(")").split()
+        longitude, latitude = coordinates[:2]
+        return JobDetailsResponse(
+            **cls._to_response(job).model_dump(),
+            job_site=JobSiteDetailsResponse(
+                id=str(site["id"]),
+                name=site["name"],
+                address=site.get("address"),
+                latitude=float(latitude),
+                longitude=float(longitude),
+            ),
+        )

@@ -83,6 +83,27 @@ async def get_employer_profile(user: UserResponse = Depends(require_employer)):
         )
 
 
+@router.get("/me/available-worker-count")
+async def get_available_worker_count(user: UserResponse = Depends(require_employer)):
+    """Return workers currently available for matching."""
+    del user
+    try:
+        response = (
+            supabase.table("worker_profiles")
+            .select("id", count="exact", head=True)
+            .eq("availability_status", "AVAILABLE")
+            .eq("profile_completed", True)
+            .execute()
+        )
+        return {"count": response.count or 0}
+    except Exception as exc:
+        logger.exception("Available worker count request failed")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unable to load available worker count",
+        ) from exc
+
+
 @router.get("/onboarding")
 async def get_onboarding_status(user: UserResponse = Depends(require_employer)):
     """Get employer's onboarding status and details."""

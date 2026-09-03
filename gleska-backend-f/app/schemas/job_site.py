@@ -1,8 +1,9 @@
 """Schemas for employer-owned work locations."""
 
 from datetime import datetime
+from math import isfinite
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class JobSiteCreate(BaseModel):
@@ -26,6 +27,14 @@ class JobSiteCreate(BaseModel):
         if not value.strip():
             raise ValueError("address must not be blank")
         return value.strip()
+
+    @model_validator(mode="after")
+    def coordinates_must_be_finite_and_not_null_island(self) -> "JobSiteCreate":
+        if not isfinite(self.latitude) or not isfinite(self.longitude):
+            raise ValueError("latitude and longitude must be finite")
+        if self.latitude == 0 and self.longitude == 0:
+            raise ValueError("latitude and longitude cannot both be zero")
+        return self
 
 
 class JobSiteResponse(BaseModel):

@@ -52,6 +52,8 @@ class Query:
             return SimpleNamespace(data=[row])
         if self.table in {"employers", "employer_profiles", "job_sites"}:
             return SimpleNamespace(data=self.rows[0] if self.rows else {})
+        if self.table == "jobs" and any(field == "id" for field, _ in self.filters):
+            return SimpleNamespace(data=self.rows[0] if self.rows else {})
         return SimpleNamespace(data=self.rows)
 
 
@@ -77,6 +79,8 @@ class FakeSupabase:
             "headcount_required": params["p_headcount_required"],
             "max_daily_salary": params["p_max_daily_salary"],
             "min_experience": params["p_min_experience"],
+            "trade_id": params["p_trade_id"],
+            "required_skills": params["p_required_skills"],
             "status": "SEARCHING",
         }
         return query
@@ -87,6 +91,21 @@ def test_job_schema_applies_defaults_and_normalizes_title():
     assert job.title == "Plumber"
     assert job.max_daily_salary is None
     assert job.min_experience is None
+    assert job.trade_id is None
+    assert job.required_skills is None
+
+
+def test_job_schema_normalizes_trade_and_required_skills():
+    job = JobCreate(
+        job_site_id=SITE_ID,
+        title="Cook",
+        headcount_required=1,
+        trade_id="  Cook  ",
+        required_skills=[" Cooking ", "", "Cooking", " Tandoor "],
+    )
+
+    assert job.trade_id == "Cook"
+    assert job.required_skills == ["Cooking", "Tandoor"]
 
 
 @pytest.mark.parametrize("payload", [
@@ -105,7 +124,7 @@ def test_create_job_uses_authenticated_employer_and_searching_status(monkeypatch
     fake = FakeSupabase()
     monkeypatch.setattr(job_service, "supabase", fake)
     monkeypatch.setattr(job_service.MatchingService, "create_matches", lambda job_id: [])
-    request = JobCreate(job_site_id=SITE_ID, title="Plumber", headcount_required=3, max_daily_salary=Decimal("800"), min_experience=2)
+    request = JobCreate(job_site_id=SITE_ID, title="Plumber", headcount_required=3, max_daily_salary=Decimal("800"), min_experience=2, trade_id="Plumber", required_skills=["Pipe fitting"])
 
     result = JobService.create(USER, request)
 
@@ -115,6 +134,8 @@ def test_create_job_uses_authenticated_employer_and_searching_status(monkeypatch
     assert fake.tables["jobs"].payload["id"]
     assert fake.tables["jobs"].payload["employer_id"] == "profile-id"
     assert fake.tables["jobs"].payload["max_daily_salary"] == 800.0
+    assert fake.tables["jobs"].payload["trade_id"] == "Plumber"
+    assert fake.tables["jobs"].payload["required_skills"] == ["Pipe fitting"]
     assert result.created_at
     assert ("user_id", "user-id") in fake.tables["employer_profiles"].filters
 
@@ -160,4 +181,74 @@ def test_list_jobs_is_scoped_to_authenticated_employer(monkeypatch):
     assert len(result) == 1
     assert result[0].title == "Construction Worker"
     assert result[0].status == "SEARCHING"
+
+
+def test_get_job_returns_requirements_and_owned_site(monkeypatch):
+    fake = FakeSupabase(site_rows=[{
+        "id": SITE_ID,
+        "name": "Kitchen site",
+        "address": "Main Road, Pune",
+        "location": {"type": "Point", "coordinates": [73.8567, 18.5204]},
+    }])
+    fake.tables["jobs"].rows = [{
+        "id": "job-id",
+        "employer_id": "profile-id",
+        "job_site_id": SITE_ID,
+        "title": "Cook",
+        "headcount_required": 1,
+        "max_daily_salary": "1000",
+        "min_experience": 1,
+        "trade_id": "Cook",
+        "required_skills": ["Cooking", "Tandoor"],
+        "status": "SEARCHING",
+        "created_at": datetime.now(timezone.utc),
+        "updated_at": datetime.now(timezone.utc),
+    }]
+    monkeypatch.setattr(job_service, "supabase", fake)
+
+    result = JobService.get_for_user(USER, "job-id")
+
+    assert result.trade_id == "Cook"
+    assert result.required_skills == ["Cooking", "Tandoor"]
+    assert result.job_site.name == "Kitchen site"
+    assert result.job_site.latitude == 18.5204
+    assert result.job_site.longitude == 73.8567
+
+
+def test_get_job_rejects_job_owned_by_another_employer(monkeypatch):
+    fake = FakeSupabase()
+    fake.tables["jobs"].rows = []
+    monkeypatch.setattr(job_service, "supabase", fake)
+
+    with pytest.raises(JobNotFound, match="JOB_NOT_FOUND"):
+        JobService.get_for_user(USER, "other-job")
+
+
+def test_get_job_keeps_older_null_requirements_valid(monkeypatch):
+    fake = FakeSupabase(site_rows=[{
+        "id": SITE_ID,
+        "name": "Legacy site",
+        "address": None,
+        "location": {"type": "Point", "coordinates": [73.8567, 18.5204]},
+    }])
+    fake.tables["jobs"].rows = [{
+        "id": "legacy-job",
+        "employer_id": "profile-id",
+        "job_site_id": SITE_ID,
+        "title": "General worker",
+        "headcount_required": 1,
+        "max_daily_salary": None,
+        "min_experience": None,
+        "trade_id": None,
+        "required_skills": None,
+        "status": "SEARCHING",
+        "created_at": datetime.now(timezone.utc),
+        "updated_at": datetime.now(timezone.utc),
+    }]
+    monkeypatch.setattr(job_service, "supabase", fake)
+
+    result = JobService.get_for_user(USER, "legacy-job")
+
+    assert result.trade_id is None
+    assert result.required_skills == []
     assert ("employer_id", "profile-id") in fake.tables["jobs"].filters

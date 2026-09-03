@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Optional
 from supabase import Client
 from supabase.lib.client_options import ClientOptions
-from storage3.exceptions import StorageApiError
+from storage3.utils import StorageException
 
 from app.schemas.worker import WorkerDocumentResponse, DocumentUploadRequest
 
@@ -213,7 +213,7 @@ class WorkerDocumentService:
         storage_path = response.data["storage_path"]
         try:
             signed = self.get_signed_download_url(storage_path)
-        except StorageApiError as exc:
+        except StorageException as exc:
             if "Object not found" not in str(exc):
                 raise
             directory = "/".join(storage_path.split("/")[:-1])
