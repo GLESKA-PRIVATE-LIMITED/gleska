@@ -13,9 +13,9 @@ import { useLanguage } from '@/context/LanguageContext';
 
 // Configurable social media link placeholders
 const SOCIAL_LINKS = {
-  linkedin: '#',
+  linkedin: 'https://www.linkedin.com/company/gleska-private-limited/',
   instagram: '#',
-  youtube: '#',
+  youtube: 'https://www.youtube.com/channel/UC5VlGdcHwmPLMfS6IL9sp3A',
 };
 
 function LinkedinIcon({ size = 18, className = "" }: { size?: number; className?: string }) {
