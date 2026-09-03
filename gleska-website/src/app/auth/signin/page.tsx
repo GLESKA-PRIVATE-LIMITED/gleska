@@ -70,10 +70,10 @@ export default function SignInSelectionPage() {
                 </div>
                 <div className="space-y-2">
                   <h2 className="font-[var(--font-anton)] text-2xl uppercase tracking-wider text-white transition-colors group-hover:text-blue-400">
-                    {t("hero.ctaEmployer")}
+                    {t("signin.businessAccountTitle")}
                   </h2>
                   <p className="text-sm font-medium leading-relaxed text-slate-300">
-                    Hire verified workers, manage staffing requirements, and view candidates.
+                    {t("signin.businessAccountDesc")}
                   </p>
                 </div>
               </div>
@@ -84,7 +84,7 @@ export default function SignInSelectionPage() {
             </Link>
 
             {/*
-             * I WANT WORK — same destination as GetHiredSection: /worker/auth
+             * INDIVIDUAL ACCOUNT — destination: /worker/auth
              */}
             <Link
               href="/worker/auth"
@@ -96,10 +96,10 @@ export default function SignInSelectionPage() {
                 </div>
                 <div className="space-y-2">
                   <h2 className="font-[var(--font-anton)] text-2xl uppercase tracking-wider text-white transition-colors group-hover:text-amber-400">
-                    {t("hero.ctaWorker")}
+                    {t("signin.individualAccountTitle")}
                   </h2>
                   <p className="text-sm font-medium leading-relaxed text-slate-300">
-                    Get verified once, find real industrial jobs, and manage your work profile.
+                    {t("signin.individualAccountDesc")}
                   </p>
                 </div>
               </div>

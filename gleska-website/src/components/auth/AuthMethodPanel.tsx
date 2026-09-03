@@ -236,22 +236,118 @@ export default function AuthMethodPanel({ role }: { role: Role }) {
   );
 
   return (
-    <div className="mb-6 space-y-4 border-b border-slate-700 pb-6">
+    <div className="mb-6 space-y-4 border-b border-slate-200/80 pb-6 dark:border-slate-800">
       <div className="flex gap-2 text-xs font-bold uppercase tracking-wider">
-        <button type="button" onClick={() => { clearOtpTransaction(); setMode("login"); }} className={`rounded-lg px-3 py-2 ${mode === "login" ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-400"}`}>Login</button>
-        <button type="button" onClick={() => { clearOtpTransaction(); setMode("signup"); }} className={`rounded-lg px-3 py-2 ${mode === "signup" ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-400"}`}>Sign up</button>
+        <button
+          type="button"
+          onClick={() => { clearOtpTransaction(); setMode("login"); }}
+          className={`rounded-xl px-4 py-2.5 transition-all ${
+            mode === "login"
+              ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-indigo-500/20"
+              : "bg-slate-100/90 text-slate-600 hover:bg-slate-200 dark:bg-slate-800/80 dark:text-slate-400 dark:hover:bg-slate-800"
+          }`}
+        >
+          Login
+        </button>
+        <button
+          type="button"
+          onClick={() => { clearOtpTransaction(); setMode("signup"); }}
+          className={`rounded-xl px-4 py-2.5 transition-all ${
+            mode === "signup"
+              ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-indigo-500/20"
+              : "bg-slate-100/90 text-slate-600 hover:bg-slate-200 dark:bg-slate-800/80 dark:text-slate-400 dark:hover:bg-slate-800"
+          }`}
+        >
+          Sign up
+        </button>
       </div>
-      {mode === "login" && <div className="flex rounded-xl bg-slate-800 p-1 text-xs font-semibold"><button type="button" onClick={() => { clearOtpTransaction(); setLoginMethod("email"); }} className={`flex-1 rounded-lg py-2 ${loginMethod === "email" ? "bg-slate-600 text-white" : "text-slate-400"}`}>Email & password</button><button type="button" onClick={() => { clearOtpTransaction(); setLoginMethod("mobile"); }} className={`flex-1 rounded-lg py-2 ${loginMethod === "mobile" ? "bg-slate-600 text-white" : "text-slate-400"}`}>Mobile OTP</button></div>}
+      {mode === "login" && (
+        <div className="flex rounded-xl bg-slate-100/90 p-1 text-xs font-semibold dark:bg-slate-800/80">
+          <button
+            type="button"
+            onClick={() => { clearOtpTransaction(); setLoginMethod("email"); }}
+            className={`flex-1 rounded-lg py-2 transition-all ${
+              loginMethod === "email"
+                ? "bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white"
+                : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white"
+            }`}
+          >
+            Email &amp; password
+          </button>
+          <button
+            type="button"
+            onClick={() => { clearOtpTransaction(); setLoginMethod("mobile"); }}
+            className={`flex-1 rounded-lg py-2 transition-all ${
+              loginMethod === "mobile"
+                ? "bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white"
+                : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white"
+            }`}
+          >
+            Mobile OTP
+          </button>
+        </div>
+      )}
       <form onSubmit={submitEmail} className="space-y-3">
-        {mode === "signup" && <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Full name" className="w-full rounded-xl border border-slate-600 bg-slate-800 px-4 py-3 text-sm text-white placeholder:text-slate-400 focus:border-blue-400 focus:outline-none" />}
-        {mode === "login" && loginMethod === "mobile" && <div className="flex items-center gap-2 rounded-xl border border-slate-600 bg-slate-800 px-4"><span className="text-sm font-semibold text-slate-300">+91</span><input value={mobile} onChange={(event) => setMobile(event.target.value.replace(/\D/g, "").slice(0, 10))} placeholder="Phone number" className="min-w-0 flex-1 bg-transparent py-3 text-sm text-white placeholder:text-slate-400 focus:outline-none" /></div>}
-        {!(mode === "login" && loginMethod === "mobile") && <div className="flex items-center gap-2 rounded-xl border border-slate-600 bg-slate-800 px-4">
-          <Mail size={16} className="text-slate-400" />
-          <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Email address" className="min-w-0 flex-1 bg-transparent py-3 text-sm text-white placeholder:text-slate-400 focus:outline-none" />
-        </div>}
-        {!(mode === "login" && loginMethod === "mobile") && <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Password (8+ characters)" className="w-full rounded-xl border border-slate-600 bg-slate-800 px-4 py-3 text-sm text-white placeholder:text-slate-400 focus:border-blue-400 focus:outline-none" />}
-        {mode === "signup" && <input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="Confirm password" className="w-full rounded-xl border border-slate-600 bg-slate-800 px-4 py-3 text-sm text-white placeholder:text-slate-400 focus:border-blue-400 focus:outline-none" />}
-        {mode === "signup" && <div className="flex items-center gap-2 rounded-xl border border-slate-600 bg-slate-800 px-4"><span className="text-sm font-semibold text-slate-300">+91</span><input value={mobile} onChange={(event) => setMobile(event.target.value.replace(/\D/g, "").slice(0, 10))} placeholder="Phone number" className="min-w-0 flex-1 bg-transparent py-3 text-sm text-white placeholder:text-slate-400 focus:outline-none" /></div>}
+        {mode === "signup" && (
+          <input
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            placeholder="Full name"
+            className="w-full rounded-xl border border-slate-200 bg-white/90 px-4 py-3 text-sm font-medium text-slate-900 placeholder:text-slate-400 outline-none transition focus:border-indigo-400 focus:bg-white focus:ring-2 focus:ring-indigo-100 dark:border-slate-700/80 dark:bg-slate-800/90 dark:text-white dark:placeholder:text-slate-500 dark:focus:border-indigo-500 dark:focus:ring-indigo-900/40"
+          />
+        )}
+        {mode === "login" && loginMethod === "mobile" && (
+          <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white/90 px-4 transition focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-100 dark:border-slate-700/80 dark:bg-slate-800/90 dark:focus-within:border-indigo-500 dark:focus-within:ring-indigo-900/40">
+            <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">+91</span>
+            <input
+              value={mobile}
+              onChange={(event) => setMobile(event.target.value.replace(/\D/g, "").slice(0, 10))}
+              placeholder="Phone number"
+              className="min-w-0 flex-1 bg-transparent py-3 text-sm font-medium text-slate-900 placeholder:text-slate-400 outline-none dark:text-white dark:placeholder:text-slate-500"
+            />
+          </div>
+        )}
+        {!(mode === "login" && loginMethod === "mobile") && (
+          <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white/90 px-4 transition focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-100 dark:border-slate-700/80 dark:bg-slate-800/90 dark:focus-within:border-indigo-500 dark:focus-within:ring-indigo-900/40">
+            <Mail size={16} className="text-slate-400 dark:text-slate-500" />
+            <input
+              type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder="Email address"
+              className="min-w-0 flex-1 bg-transparent py-3 text-sm font-medium text-slate-900 placeholder:text-slate-400 outline-none dark:text-white dark:placeholder:text-slate-500"
+            />
+          </div>
+        )}
+        {!(mode === "login" && loginMethod === "mobile") && (
+          <input
+            type="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            placeholder="Password (8+ characters)"
+            className="w-full rounded-xl border border-slate-200 bg-white/90 px-4 py-3 text-sm font-medium text-slate-900 placeholder:text-slate-400 outline-none transition focus:border-indigo-400 focus:bg-white focus:ring-2 focus:ring-indigo-100 dark:border-slate-700/80 dark:bg-slate-800/90 dark:text-white dark:placeholder:text-slate-500 dark:focus:border-indigo-500 dark:focus:ring-indigo-900/40"
+          />
+        )}
+        {mode === "signup" && (
+          <input
+            type="password"
+            value={confirmPassword}
+            onChange={(event) => setConfirmPassword(event.target.value)}
+            placeholder="Confirm password"
+            className="w-full rounded-xl border border-slate-200 bg-white/90 px-4 py-3 text-sm font-medium text-slate-900 placeholder:text-slate-400 outline-none transition focus:border-indigo-400 focus:bg-white focus:ring-2 focus:ring-indigo-100 dark:border-slate-700/80 dark:bg-slate-800/90 dark:text-white dark:placeholder:text-slate-500 dark:focus:border-indigo-500 dark:focus:ring-indigo-900/40"
+          />
+        )}
+        {mode === "signup" && (
+          <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white/90 px-4 transition focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-100 dark:border-slate-700/80 dark:bg-slate-800/90 dark:focus-within:border-indigo-500 dark:focus-within:ring-indigo-900/40">
+            <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">+91</span>
+            <input
+              value={mobile}
+              onChange={(event) => setMobile(event.target.value.replace(/\D/g, "").slice(0, 10))}
+              placeholder="Phone number"
+              className="min-w-0 flex-1 bg-transparent py-3 text-sm font-medium text-slate-900 placeholder:text-slate-400 outline-none dark:text-white dark:placeholder:text-slate-500"
+            />
+          </div>
+        )}
         
         {mode === "signup" && (
           <div className="flex items-start gap-3 pt-1">
@@ -260,9 +356,9 @@ export default function AuthMethodPanel({ role }: { role: Role }) {
               id="terms-acceptance"
               checked={termsAccepted}
               onChange={(event) => setTermsAccepted(event.target.checked)}
-              className="mt-1 h-4 w-4 shrink-0 rounded border-slate-600 bg-slate-800 text-blue-600 accent-blue-600 focus:ring-2 focus:ring-blue-500 focus:ring-offset-0 focus:outline-none cursor-pointer"
+              className="mt-1 h-4 w-4 shrink-0 rounded border-slate-300 bg-white text-indigo-600 accent-indigo-600 focus:ring-2 focus:ring-indigo-500 focus:ring-offset-0 focus:outline-none cursor-pointer dark:border-slate-600 dark:bg-slate-800"
             />
-            <label htmlFor="terms-acceptance" className="text-xs leading-relaxed text-slate-300 select-none cursor-pointer">
+            <label htmlFor="terms-acceptance" className="text-xs leading-relaxed text-slate-600 dark:text-slate-300 select-none cursor-pointer">
               I have read and agree to the{" "}
               <button
                 type="button"
@@ -271,7 +367,7 @@ export default function AuthMethodPanel({ role }: { role: Role }) {
                   e.stopPropagation();
                   setTermsModalOpen(true);
                 }}
-                className="font-semibold text-blue-300 underline transition hover:text-blue-200 focus:outline-none"
+                className="font-semibold text-indigo-600 underline transition hover:text-indigo-500 dark:text-indigo-400 dark:hover:text-indigo-300 focus:outline-none"
               >
                 Terms &amp; Conditions
               </button>
@@ -282,29 +378,32 @@ export default function AuthMethodPanel({ role }: { role: Role }) {
         <button
           type="submit"
           disabled={submitting || (mode === "signup" && !isManualSignupComplete)}
-          className="flex w-full items-center justify-center gap-2 rounded-xl border border-blue-500 bg-blue-500/10 py-3 text-sm font-bold text-blue-200 transition hover:bg-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-blue-600 via-indigo-600 to-emerald-600 py-3.5 text-sm font-bold text-white shadow-lg shadow-indigo-500/25 transition hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {submitting && <Loader2 size={16} className="animate-spin" />}{mode === "signup" ? "Verify phone & create account" : loginMethod === "mobile" ? "Send mobile OTP" : "Login with email"}
+          {submitting && <Loader2 size={16} className="animate-spin" />}
+          {mode === "signup" ? "Verify phone & create account" : loginMethod === "mobile" ? "Send mobile OTP" : "Login with email"}
         </button>
       </form>
 
       {mode === "signup" && (
-        <p className="text-center text-xs text-slate-400">Phone verification is required before onboarding</p>
+        <p className="text-center text-xs text-slate-500 dark:text-slate-400">Phone verification is required before onboarding</p>
       )}
 
       {mode === "login" && (
         <>
-          <a href="/auth/forgot-password" className="block text-center text-xs font-semibold text-blue-300 hover:text-blue-200">Forgot password?</a>
+          <a href="/auth/forgot-password" className="block text-center text-xs font-semibold text-indigo-600 transition hover:text-indigo-500 dark:text-indigo-400 dark:hover:text-indigo-300">
+            Forgot password?
+          </a>
           <div className="relative flex items-center justify-center pt-2">
-            <div className="border-t border-slate-700 w-full" />
-            <span className="bg-slate-900 px-3 text-xs uppercase text-slate-400 font-semibold">Or</span>
-            <div className="border-t border-slate-700 w-full" />
+            <div className="border-t border-slate-200 w-full dark:border-slate-800" />
+            <span className="bg-white/80 px-3 text-xs uppercase text-slate-400 font-semibold dark:bg-slate-900">Or</span>
+            <div className="border-t border-slate-200 w-full dark:border-slate-800" />
           </div>
           <button
             type="button"
             disabled={submitting}
             onClick={handleGoogleAuth}
-            className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-600 bg-white py-3 text-sm font-bold text-slate-800 transition hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex w-full items-center justify-center gap-2 rounded-full border border-slate-200/90 bg-white/95 py-3.5 text-sm font-bold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed dark:border-slate-700 dark:bg-slate-800/90 dark:text-slate-200 dark:hover:bg-slate-800"
           >
             <svg className="h-4 w-4" viewBox="0 0 24 24">
               <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -314,34 +413,34 @@ export default function AuthMethodPanel({ role }: { role: Role }) {
             </svg>
             Sign in with Google
           </button>
-          <p className="text-center text-xs text-slate-400">Secure sign-in with your email or Google</p>
+          <p className="text-center text-xs text-slate-500 dark:text-slate-400">Secure sign-in with your email or Google</p>
         </>
       )}
 
       {/* TERMS & CONDITIONS SUMMARY MODAL */}
       {termsModalOpen && (
         <div
-          className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-950/80 p-4 sm:p-6 backdrop-blur-sm"
+          className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-950/60 p-4 sm:p-6 backdrop-blur-xs"
           role="dialog"
           aria-modal="true"
           aria-labelledby="terms-modal-title"
           onClick={() => setTermsModalOpen(false)}
         >
           <div
-            className="relative flex w-full max-w-xl max-h-[85vh] flex-col rounded-3xl border border-slate-700 bg-slate-900 shadow-2xl shadow-black/80 overflow-hidden"
+            className="relative flex w-full max-w-xl max-h-[85vh] flex-col rounded-3xl border border-slate-200 bg-white shadow-2xl overflow-hidden dark:border-slate-800 dark:bg-slate-900"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Header */}
-            <div className="flex items-center justify-between border-b border-slate-700/80 px-6 py-5 bg-slate-900/90">
+            <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5 bg-white/90 dark:border-slate-800 dark:bg-slate-900/90">
               <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 border border-indigo-100 dark:bg-indigo-950/60 dark:text-indigo-400 dark:border-indigo-900/50">
                   <Shield size={20} />
                 </div>
                 <div>
-                  <h2 id="terms-modal-title" className="text-lg font-bold text-white">
+                  <h2 id="terms-modal-title" className="text-lg font-bold text-slate-900 dark:text-white">
                     Terms &amp; Conditions Summary
                   </h2>
-                  <p className="text-xs text-slate-400">
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
                     Important rules and relationship summary
                   </p>
                 </div>
@@ -349,7 +448,7 @@ export default function AuthMethodPanel({ role }: { role: Role }) {
               <button
                 type="button"
                 onClick={() => setTermsModalOpen(false)}
-                className="rounded-xl p-2 text-slate-400 transition hover:bg-slate-800 hover:text-white"
+                className="rounded-xl p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-white"
                 aria-label="Close dialog"
               >
                 <X size={18} />
@@ -357,28 +456,28 @@ export default function AuthMethodPanel({ role }: { role: Role }) {
             </div>
 
             {/* Modal Body */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-4 text-sm leading-relaxed text-slate-300">
+            <div className="flex-1 overflow-y-auto p-6 space-y-4 text-sm leading-relaxed text-slate-600 dark:text-slate-300">
               <div className="space-y-3">
                 {termsSummaryPoints.map((point, index) => (
-                  <div key={index} className="flex items-start gap-3 rounded-xl border border-slate-800/80 bg-slate-800/40 p-3.5">
-                    <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-blue-400" />
-                    <p className="text-xs sm:text-sm font-medium text-slate-200">{point}</p>
+                  <div key={index} className="flex items-start gap-3 rounded-xl border border-slate-100 bg-slate-50/70 p-3.5 dark:border-slate-800/80 dark:bg-slate-800/40">
+                    <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-indigo-600 dark:text-indigo-400" />
+                    <p className="text-xs sm:text-sm font-medium text-slate-800 dark:text-slate-200">{point}</p>
                   </div>
                 ))}
               </div>
 
-              <div className="mt-4 rounded-2xl border border-blue-500/30 bg-blue-500/10 p-4 text-xs font-medium text-blue-200">
+              <div className="mt-4 rounded-2xl border border-indigo-100 bg-indigo-50/60 p-4 text-xs font-medium text-indigo-900 dark:border-indigo-900/50 dark:bg-indigo-950/40 dark:text-indigo-200">
                 By creating an account, you confirm that you have read and agree to the Terms &amp; Conditions.
               </div>
             </div>
 
             {/* Modal Footer */}
-            <div className="flex items-center justify-between border-t border-slate-700/80 bg-slate-900/90 px-6 py-4">
+            <div className="flex items-center justify-between border-t border-slate-100 bg-white/90 px-6 py-4 dark:border-slate-800 dark:bg-slate-900/90">
               <Link
                 href="/terms"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-400 hover:text-blue-300 underline transition"
+                className="inline-flex items-center gap-1.5 text-xs font-bold text-indigo-600 hover:text-indigo-500 underline transition dark:text-indigo-400 dark:hover:text-indigo-300"
               >
                 <FileText size={14} />
                 View Full Terms
@@ -387,7 +486,7 @@ export default function AuthMethodPanel({ role }: { role: Role }) {
               <button
                 type="button"
                 onClick={() => setTermsModalOpen(false)}
-                className="rounded-xl bg-slate-800 border border-slate-700 px-5 py-2 text-sm font-bold text-slate-200 transition hover:bg-slate-700 hover:text-white"
+                className="rounded-xl bg-slate-100 border border-slate-200 px-5 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-200 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-700 dark:hover:text-white"
               >
                 Close
               </button>
@@ -398,18 +497,18 @@ export default function AuthMethodPanel({ role }: { role: Role }) {
 
       {/* OTP VERIFICATION DIALOG */}
       {otpOpen && otpTransaction && (
-        <div className="fixed inset-0 z-100 flex items-center justify-center bg-slate-950/80 p-5 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="otp-title">
-          <div className="relative w-full max-w-sm rounded-2xl border border-slate-600 bg-slate-900 p-6 shadow-2xl">
-            <button type="button" onClick={clearOtpTransaction} className="absolute right-4 top-4 rounded-lg p-1 text-slate-400 transition hover:bg-slate-800 hover:text-white" aria-label="Close verification dialog"><X size={18} /></button>
+        <div className="fixed inset-0 z-100 flex items-center justify-center bg-slate-950/60 p-5 backdrop-blur-xs" role="dialog" aria-modal="true" aria-labelledby="otp-title">
+          <div className="relative w-full max-w-sm rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900">
+            <button type="button" onClick={clearOtpTransaction} className="absolute right-4 top-4 rounded-xl p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-white" aria-label="Close verification dialog"><X size={18} /></button>
             <div className="mb-6 pr-8">
-              <p className="text-xs font-bold uppercase tracking-widest text-blue-300">{otpPurpose === "signup" ? "Secure signup" : "Secure login"}</p>
-              <h2 id="otp-title" className="mt-2 text-2xl font-bold text-white">{otpPurpose === "signup" ? "Verify your phone" : "Sign in with mobile"}</h2>
-              <p className="mt-2 text-sm leading-relaxed text-slate-400">Enter the 6-digit code sent to <span className="font-semibold text-slate-200">+91 {otpTransaction.mobile.replace(/^91/, "")}</span>.</p>
+              <p className="text-xs font-bold uppercase tracking-widest text-indigo-600 dark:text-indigo-400">{otpPurpose === "signup" ? "Secure signup" : "Secure login"}</p>
+              <h2 id="otp-title" className="mt-2 text-2xl font-bold text-slate-900 dark:text-white">{otpPurpose === "signup" ? "Verify your phone" : "Sign in with mobile"}</h2>
+              <p className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">Enter the 6-digit code sent to <span className="font-semibold text-slate-900 dark:text-slate-200">+91 {otpTransaction.mobile.replace(/^91/, "")}</span>.</p>
             </div>
             <form onSubmit={verifySignupOTP} className="space-y-5">
-              <input autoFocus inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={otp} onChange={(event) => setOtp(event.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="000000" aria-label="6-digit verification code" className="w-full rounded-xl border border-slate-600 bg-slate-800 px-4 py-4 text-center text-2xl font-bold tracking-[0.45em] text-white outline-none transition focus:border-blue-400" />
-              <button type="submit" disabled={submitting || otp.length !== 6} className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3.5 font-bold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50">{submitting && <Loader2 size={17} className="animate-spin" />} {submitting ? "Verifying..." : otpPurpose === "signup" ? "Verify & create account" : "Verify & sign in"}</button>
-              <div className="flex items-center justify-between text-xs"><button type="button" onClick={clearOtpTransaction} className="font-semibold text-slate-400 hover:text-white">Cancel</button><button type="button" disabled={countdown > 0 || submitting} onClick={resendSignupOTP} className="font-semibold text-blue-300 hover:text-blue-200 disabled:cursor-not-allowed disabled:opacity-50">{countdown > 0 ? `Resend in ${countdown}s` : "Resend OTP"}</button></div>
+              <input autoFocus inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={otp} onChange={(event) => setOtp(event.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="000000" aria-label="6-digit verification code" className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 text-center text-2xl font-bold tracking-[0.45em] text-slate-900 outline-none transition focus:border-indigo-400 focus:bg-white focus:ring-2 focus:ring-indigo-100 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:focus:border-indigo-500" />
+              <button type="submit" disabled={submitting || otp.length !== 6} className="flex w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-blue-600 via-indigo-600 to-emerald-600 py-3.5 font-bold text-white shadow-lg shadow-indigo-500/25 transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-50">{submitting && <Loader2 size={17} className="animate-spin" />} {submitting ? "Verifying..." : otpPurpose === "signup" ? "Verify & create account" : "Verify & sign in"}</button>
+              <div className="flex items-center justify-between text-xs"><button type="button" onClick={clearOtpTransaction} className="font-semibold text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white">Cancel</button><button type="button" disabled={countdown > 0 || submitting} onClick={resendSignupOTP} className="font-semibold text-indigo-600 hover:text-indigo-500 dark:text-indigo-400 dark:hover:text-indigo-300 disabled:cursor-not-allowed disabled:opacity-50">{countdown > 0 ? `Resend in ${countdown}s` : "Resend OTP"}</button></div>
             </form>
           </div>
         </div>

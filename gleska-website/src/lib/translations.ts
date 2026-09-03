@@ -26,6 +26,10 @@ export const TRANSLATIONS: Record<LanguageCode, Record<string, string>> = {
     'footer.companyName': 'Gleska Private Limited',
     'footer.allRightsReserved': 'All rights reserved.',
     'footer.madeIn': 'Made in Bharat 🇮🇳',
+    'signin.businessAccountTitle': 'BUSINESS ACCOUNT',
+    'signin.businessAccountDesc': "Manage your business and make your company's AI Brain.",
+    'signin.individualAccountTitle': 'INDIVIDUAL ACCOUNT',
+    'signin.individualAccountDesc': "Get verified once, find real industrial jobs and hire people and manage your work.",
   },
   HI: {
     'hero.titleLine1': 'कार्य भागीदार के रूप में',
@@ -52,6 +56,10 @@ export const TRANSLATIONS: Record<LanguageCode, Record<string, string>> = {
     'footer.companyName': 'ग्लेस्का प्राइवेट लिमिटेड',
     'footer.allRightsReserved': 'सर्वाधिकार सुरक्षित।',
     'footer.madeIn': 'भारत में निर्मित 🇮🇳',
+    'signin.businessAccountTitle': 'बिजनेस अकाउंट',
+    'signin.businessAccountDesc': "अपने व्यवसाय का प्रबंधन करें और अपनी कंपनी का AI ब्रेन बनाएं।",
+    'signin.individualAccountTitle': 'व्यक्तिगत अकाउंट',
+    'signin.individualAccountDesc': "एक बार सत्यापित हों, वास्तविक औद्योगिक नौकरियां खोजें और लोगों को काम पर रखें और अपना काम प्रबंधित करें।",
   },
   MR: {
     'hero.titleLine1': 'कार्य भागीदार म्हणून',
@@ -78,6 +86,10 @@ export const TRANSLATIONS: Record<LanguageCode, Record<string, string>> = {
     'footer.companyName': 'ग्लेस्का प्रायव्हेट लिमिटेड',
     'footer.allRightsReserved': 'सर्व हक्क राखीव.',
     'footer.madeIn': 'भारतात निर्मित 🇮🇳',
+    'signin.businessAccountTitle': 'बिझनेस अकाउंट',
+    'signin.businessAccountDesc': "तुमचा व्यवसाय व्यवस्थापित करा आणि तुमच्या कंपनीचे AI ब्रेन तयार करा.",
+    'signin.individualAccountTitle': 'वैयक्तिक अकाउंट',
+    'signin.individualAccountDesc': "एकदा पडताळणी करा, वास्तविक औद्योगिक नोकऱ्या शोधा आणि लोकांना कामावर घ्या आणि तुमचे काम व्यवस्थापित करा.",
   },
   TA: {
     'hero.titleLine1': 'பணிப் பங்குதாரராக',
@@ -104,5 +116,9 @@ export const TRANSLATIONS: Record<LanguageCode, Record<string, string>> = {
     'footer.companyName': 'கிளெஸ்கா பிரைவேட் லிமிடெட்',
     'footer.allRightsReserved': 'அனைத்து உரிமைகளும் பாதுகாக்கப்பட்டவை.',
     'footer.madeIn': 'பாரதத்தில் உருவாக்கப்பட்டது 🇮🇳',
+    'signin.businessAccountTitle': 'வணிகக் கணக்கு',
+    'signin.businessAccountDesc': "உங்கள் வணிகத்தை நிர்வகிக்கவும், உங்கள் நிறுவனத்தின் AI மூளையை உருவாக்கவும்.",
+    'signin.individualAccountTitle': 'தனிநபர் கணக்கு',
+    'signin.individualAccountDesc': "ஒருமுறை சரிபார்க்கப்பட்டு, உண்மையான தொழில்துறை வேலைகளைக் கண்டறிந்து ஆட்களை வேலைக்கு அமர்த்தி உங்கள் வேலையை நிர்வகிக்கவும்.",
   },
 };
