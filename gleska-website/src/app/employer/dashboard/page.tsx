@@ -68,9 +68,6 @@ interface SpeechRecognitionLike {
 
 declare global {
   interface Window {
-    Cashfree?: (options: { mode: "sandbox" | "production" }) => {
-      checkout: (options: { paymentSessionId: string; redirectTarget: "_self" }) => Promise<void> | void;
-    };
     SpeechRecognition?: new () => SpeechRecognitionLike;
     webkitSpeechRecognition?: new () => SpeechRecognitionLike;
   }
@@ -205,17 +202,6 @@ function getRecentPreviewText(description: string, defaultTitle?: string): strin
   return defaultTitle || "Job Request";
 }
 
-function isActiveSubscription(subscriptionValidUntil?: string | null) {
-  return Boolean(subscriptionValidUntil && new Date(subscriptionValidUntil).getTime() > Date.now());
-}
-
-function formatSubscriptionDate(subscriptionValidUntil: string) {
-  const date = new Date(subscriptionValidUntil);
-  const day = String(date.getUTCDate()).padStart(2, "0");
-  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
-  return `${day}/${month}/${date.getUTCFullYear()}`;
-}
-
 export default function EmployerDashboard() {
   const router = useRouter();
   const { user, isLoading, nextStep, logout } = useAuth();
@@ -238,8 +224,6 @@ export default function EmployerDashboard() {
   const [isListening, setIsListening] = React.useState(false);
   const [voiceError, setVoiceError] = React.useState("");
   const speechRecognitionRef = React.useRef<SpeechRecognitionLike | null>(null);
-  const [isPaymentLoading, setIsPaymentLoading] = React.useState(false);
-  const [paymentMessage, setPaymentMessage] = React.useState("");
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(true);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = React.useState(false);
@@ -445,25 +429,6 @@ export default function EmployerDashboard() {
     loadRecentJobRequests();
   }, [isLoading, user]);
 
-  useEffect(() => {
-    if (isLoading || !user || user.role !== "EMPLOYER") return;
-    const orderId = new URLSearchParams(window.location.search).get("order_id");
-    if (!orderId) return;
-    setPaymentMessage("Confirming payment with Cashfree...");
-    apiClient.post(`/api/v1/payments/verify/${encodeURIComponent(orderId)}`)
-      .then(async (response) => {
-        const profileResponse = await apiClient.get("/api/v1/employers/me", { withCredentials: true });
-        setEmployerProfile(profileResponse.data);
-        setPaymentMessage(response.data.status === "SUCCESS" ? "Subscription active for 30 days." : `Payment status: ${response.data.status}`);
-        if (response.data.status === "SUCCESS") {
-          router.replace(window.location.pathname, { scroll: false });
-        }
-      })
-      .catch((error: any) => {
-        setPaymentMessage(error.response?.data?.detail || "Unable to confirm payment. Please try again.");
-      });
-  }, [isLoading, user]);
-
   const handleVoiceInput = React.useCallback(() => {
     const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognitionCtor) {
@@ -559,39 +524,6 @@ export default function EmployerDashboard() {
       toast.success("Logged out successfully");
     } catch (err) {
       toast.error("Logout failed");
-    }
-  };
-
-  const loadCashfree = async () => {
-    if (window.Cashfree) return window.Cashfree;
-    await new Promise<void>((resolve, reject) => {
-      const script = document.createElement("script");
-      script.src = "https://sdk.cashfree.com/js/v3/cashfree.js";
-      script.async = true;
-      script.onload = () => resolve();
-      script.onerror = () => reject(new Error("Unable to load Cashfree checkout"));
-      document.head.appendChild(script);
-    });
-    if (!window.Cashfree) throw new Error("Cashfree checkout is unavailable");
-    return window.Cashfree;
-  };
-
-  const handleSubscribe = async () => {
-    if (isPaymentLoading) return;
-    setIsPaymentLoading(true);
-    setPaymentMessage("");
-    try {
-      const response = await apiClient.post("/api/v1/payments/create-subscription-order");
-      const cashfree = await loadCashfree();
-      const mode = process.env.NEXT_PUBLIC_CASHFREE_ENV === "production" ? "production" : "sandbox";
-      await cashfree({ mode }).checkout({
-        paymentSessionId: response.data.payment_session_id,
-        redirectTarget: "_self",
-      });
-    } catch (error: any) {
-      setPaymentMessage(error.response?.data?.detail || error.message || "Unable to start payment");
-    } finally {
-      setIsPaymentLoading(false);
     }
   };
 
@@ -1097,17 +1029,14 @@ export default function EmployerDashboard() {
 
               {/* Visual Menu Items */}
               <div className="space-y-0.5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsProfileMenuOpen(false);
-                    void handleSubscribe();
-                  }}
+                <Link
+                  href="/employer/subscription"
+                  onClick={() => setIsProfileMenuOpen(false)}
                   className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800 transition cursor-pointer"
                 >
                   <CreditCard size={17} className="text-slate-500 dark:text-slate-400 shrink-0" />
                   <span>Subscription</span>
-                </button>
+                </Link>
                 <Link
                   href="/employer/company-profile"
                   onClick={() => setIsProfileMenuOpen(false)}
@@ -1332,18 +1261,17 @@ export default function EmployerDashboard() {
                   <div className="my-1.5 border-t border-slate-100 dark:border-slate-800" />
 
                   <div className="space-y-0.5">
-                    <button
-                      type="button"
+                    <Link
+                      href="/employer/subscription"
                       onClick={() => {
                         setIsMobileMenuOpen(false);
                         setIsProfileMenuOpen(false);
-                        void handleSubscribe();
                       }}
                       className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800 transition cursor-pointer"
                     >
                       <CreditCard size={17} className="text-slate-500 dark:text-slate-400 shrink-0" />
                       <span>Subscription</span>
-                    </button>
+                    </Link>
                     <Link
                       href="/employer/company-profile"
                       onClick={() => {

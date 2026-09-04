@@ -500,10 +500,10 @@ export default function WorkerDashboard() {
 
               {/* Popover Items */}
               <div className="space-y-0.5">
-                <div className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-slate-400 dark:text-slate-500 cursor-not-allowed opacity-60">
+                <Link href="/worker/subscription" onClick={() => setIsProfileMenuOpen(false)} className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800 transition">
                   <CreditCard size={17} className="shrink-0" />
                   <span>Subscription</span>
-                </div>
+                </Link>
                 
                 {/* Profile Entry Point #2 */}
                 <Link

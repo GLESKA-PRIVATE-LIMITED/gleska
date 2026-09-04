@@ -8,10 +8,10 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
-from app.core.security import require_employer
+from app.core.security import require_employer, require_worker
 from app.core.supabase import supabase
 from app.schemas.auth import UserResponse
-from app.schemas.payment import PaymentStatusResponse, SubscriptionOrderResponse
+from app.schemas.payment import IndividualSubscriptionOrderRequest, PaymentStatusResponse, SubscriptionOrderResponse
 from app.services.cashfree_payment_service import CashfreePaymentError, CashfreePaymentService
 
 router = APIRouter(prefix="/payments", tags=["payments"])
@@ -74,8 +74,18 @@ async def _employer(user: UserResponse, fields: str = "id") -> dict[str, Any]:
 
 
 @router.post("/create-subscription-order", response_model=SubscriptionOrderResponse)
-async def create_subscription_order(user: UserResponse = Depends(require_employer)):
-    employer = await _employer(user)
+async def create_subscription_order(
+    user: UserResponse = Depends(require_employer),
+    request: IndividualSubscriptionOrderRequest | None = None,
+):
+    employer = await _employer(user, "id, employer_type")
+    is_individual = employer.get("employer_type") == "INDIVIDUAL"
+    if is_individual and request is None:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="EMPLOYEE_COUNT_REQUIRED")
+    if not is_individual and request is not None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="EMPLOYEE_COUNT_NOT_ALLOWED")
+    employee_count = request.employee_count if request else None
+    amount = 30.0 * employee_count if employee_count is not None else CashfreePaymentService.PAYMENT_AMOUNT
     
     # Mark any stale PENDING payments as EXPIRED before creating a fresh order.
     # This ensures renewal always creates a valid, current payment session.
@@ -91,11 +101,20 @@ async def create_subscription_order(user: UserResponse = Depends(require_employe
             supabase.table("payment_transactions").update({"status": "EXPIRED"}).eq("id", stale["id"]).execute()
 
     try:
-        order = await CashfreePaymentService.create_subscription_order(
-            str(employer["id"]),
-            user.mobile,
-            str(user.email) if user.email else None,
-        )
+        if is_individual:
+            order = await CashfreePaymentService.create_subscription_order(
+                str(employer["id"]),
+                user.mobile,
+                str(user.email) if user.email else None,
+                amount=amount,
+                order_note="Individual Hirer Employee Subscription",
+            )
+        else:
+            order = await CashfreePaymentService.create_subscription_order(
+                str(employer["id"]),
+                user.mobile,
+                str(user.email) if user.email else None,
+            )
     except CashfreePaymentError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
 
@@ -105,7 +124,8 @@ async def create_subscription_order(user: UserResponse = Depends(require_employe
         "order_id": order["order_id"],
         "cf_order_id": order.get("cf_order_id"),
         "employer_id": employer["id"],
-        "amount": CashfreePaymentService.PAYMENT_AMOUNT,
+        "amount": amount,
+        "employee_count": employee_count,
         "currency": CashfreePaymentService.PAYMENT_CURRENCY,
         "status": "PENDING",
         "payment_session_id": order["payment_session_id"],
@@ -171,6 +191,77 @@ async def verify_payment(order_id: str, user: UserResponse = Depends(require_emp
     )
 
 
+async def _worker(user: UserResponse, fields: str = "id") -> dict[str, Any]:
+    response = supabase.table("worker_profiles").select(fields).eq("user_id", user.id).single().execute()
+    worker = _as_dict(response.data)
+    if not worker.get("id"):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Worker profile not found")
+    return worker
+
+
+@router.post("/worker/create-subscription-order", response_model=SubscriptionOrderResponse)
+async def create_worker_subscription_order(user: UserResponse = Depends(require_worker)):
+    worker = await _worker(user)
+    pending = (
+        supabase.table("payment_transactions")
+        .select("id")
+        .eq("worker_profile_id", worker["id"])
+        .eq("status", "PENDING")
+        .execute()
+    )
+    for stale in pending.data or []:
+        supabase.table("payment_transactions").update({"status": "EXPIRED"}).eq("id", stale["id"]).execute()
+
+    try:
+        order = await CashfreePaymentService.create_subscription_order(
+            str(worker["id"]), user.mobile, str(user.email) if user.email else None,
+            amount=200.0, order_note="Worker Monthly Subscription", return_path="/worker/subscription",
+        )
+    except CashfreePaymentError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+
+    timestamp = datetime.now(timezone.utc)
+    transaction = supabase.table("payment_transactions").insert({
+        "id": str(uuid.uuid4()), "order_id": order["order_id"], "cf_order_id": order.get("cf_order_id"),
+        "worker_profile_id": worker["id"], "amount": 200.0, "currency": "INR", "status": "PENDING",
+        "payment_session_id": order["payment_session_id"], "created_at": timestamp.isoformat(), "updated_at": timestamp.isoformat(),
+    }).execute()
+    if not transaction.data:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="PAYMENT_TRANSACTION_CREATE_FAILED")
+    return SubscriptionOrderResponse(**order)
+
+
+@router.post("/worker/verify/{order_id}", response_model=PaymentStatusResponse)
+async def verify_worker_payment(order_id: str, user: UserResponse = Depends(require_worker)):
+    worker = await _worker(user, "id, subscription_valid_until")
+    response = (
+        supabase.table("payment_transactions").select("*").eq("order_id", order_id)
+        .eq("worker_profile_id", worker["id"]).maybe_single().execute()
+    )
+    transaction = _as_dict(response.data)
+    if not transaction:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="PAYMENT_ORDER_NOT_FOUND")
+    if transaction.get("status") == "SUCCESS":
+        return PaymentStatusResponse(order_id=order_id, status="SUCCESS", subscription_valid_until=worker.get("subscription_valid_until"))
+    try:
+        cashfree_order = await CashfreePaymentService.get_order_status(order_id)
+    except CashfreePaymentError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    payment_status = _payment_status(str(cashfree_order["order_status"]))
+    cf_order_id = cashfree_order.get("cf_order_id")
+    if payment_status == "SUCCESS":
+        _validate_paid_order(cashfree_order, order_id, transaction)
+        result = supabase.rpc("process_subscription_payment_success", {"p_order_id": order_id, "p_cf_order_id": cf_order_id}).execute()
+        rpc_result = result.data[0] if isinstance(result.data, list) and result.data else result.data
+        rpc_value = rpc_result if isinstance(rpc_result, str) else next(iter(rpc_result.values()), None) if isinstance(rpc_result, dict) else None
+        if rpc_value not in {"SUCCESS", "ALREADY_SUCCESS"}:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="PAYMENT_STATE_INVALID")
+        worker = await _worker(user, "id, subscription_valid_until")
+    else:
+        supabase.table("payment_transactions").update({"status": payment_status, "cf_order_id": cf_order_id}).eq("order_id", order_id).eq("worker_profile_id", worker["id"]).eq("status", "PENDING").execute()
+    return PaymentStatusResponse(order_id=order_id, status=payment_status, subscription_valid_until=worker.get("subscription_valid_until"))
+
+
 @router.post("/webhook")
 async def cashfree_webhook(request: Request):
     signature = request.headers.get("x-webhook-signature")
@@ -191,7 +282,7 @@ async def cashfree_webhook(request: Request):
 
     transaction_response = (
         supabase.table("payment_transactions")
-        .select("order_id, employer_id, status, amount, currency")
+        .select("order_id, employer_id, worker_profile_id, status, amount, currency")
         .eq("order_id", order_id)
         .maybe_single()
         .execute()

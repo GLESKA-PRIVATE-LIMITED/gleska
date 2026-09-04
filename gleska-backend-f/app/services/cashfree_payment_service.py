@@ -43,23 +43,32 @@ class CashfreePaymentService:
         }
 
     @classmethod
-    async def create_subscription_order(cls, employer_id: str, phone: str | None, email: str | None) -> dict[str, Any]:
+    async def create_subscription_order(
+        cls,
+        owner_id: str,
+        phone: str | None,
+        email: str | None,
+        amount: float | None = None,
+        order_note: str = "Employer Monthly Subscription",
+        return_path: str = "/employer/subscription",
+    ) -> dict[str, Any]:
         order_id = f"sub_{uuid.uuid4().hex[:16]}"
-        order_meta = {"return_url": f"{settings.FRONTEND_URL}/employer/dashboard?order_id={{order_id}}"}
+        order_meta = {"return_url": f"{settings.FRONTEND_URL}{return_path}?order_id={{order_id}}"}
         if settings.WEBHOOK_URL.strip():
             order_meta["notify_url"] = f"{settings.WEBHOOK_URL.rstrip('/')}/api/v1/payments/webhook"
         payload = {
             "customer_details": {
-                "customer_id": employer_id,
+                "customer_id": owner_id,
                 "customer_email": email or "",
                 "customer_phone": (phone or "").replace("+", ""),
             },
             "order_meta": order_meta,
-            "order_amount": cls.PAYMENT_AMOUNT,
+            "order_amount": cls.PAYMENT_AMOUNT if amount is None else amount,
             "order_currency": cls.PAYMENT_CURRENCY,
             "order_id": order_id,
-            "order_note": "Employer Monthly Subscription",
+            "order_note": order_note,
         }
+        provider_error: str | None = None
         try:
             async with httpx.AsyncClient(timeout=settings.CASHFREE_PAYMENT_TIMEOUT_SECONDS) as client:
                 endpoint = f"{cls._base_url()}/orders"
@@ -83,12 +92,20 @@ class CashfreePaymentService:
                         bool(settings.CASHFREE_PG_CLIENT_SECRET.strip()),
                         settings.CASHFREE_PG_API_VERSION,
                     )
+                    provider_error = ": ".join(
+                        str(error_response.get(field)).strip()
+                        for field in ("code", "type", "message")
+                        if error_response.get(field)
+                    ) or None
                 response.raise_for_status()
                 data = response.json()
         except CashfreePaymentError:
             raise
         except (httpx.HTTPError, ValueError) as exc:
-            raise CashfreePaymentError("CASHFREE_ORDER_CREATE_FAILED") from exc
+            detail = "CASHFREE_ORDER_CREATE_FAILED"
+            if provider_error:
+                detail = f"{detail}: {provider_error}"
+            raise CashfreePaymentError(detail) from exc
 
         payment_session_id = data.get("payment_session_id") if isinstance(data, dict) else None
         if not payment_session_id:

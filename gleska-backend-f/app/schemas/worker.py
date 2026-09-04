@@ -9,6 +9,7 @@ class WorkerProfileResponse(BaseModel):
     """Worker profile response."""
     id: str
     user_id: str
+    account_type: str = "EMPLOYEE"
     trade_id: Optional[str] = None
     experience_years: Optional[int] = None
     expected_daily_wage: Optional[float] = None
@@ -28,6 +29,7 @@ class WorkerProfileResponse(BaseModel):
     onboarding_status: str = "NOT_STARTED"
     created_at: datetime
     updated_at: datetime
+    subscription_valid_until: Optional[datetime] = None
 
     class Config:
         from_attributes = True
