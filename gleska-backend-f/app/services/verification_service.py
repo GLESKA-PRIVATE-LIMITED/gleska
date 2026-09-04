@@ -77,21 +77,26 @@ class VerificationService:
         configured = VerificationService._clean_setting(settings.EMPLOYER_REQUIRED_VERIFICATIONS)
         required: list[str] = []
         normalized_type = employer_type.upper().strip()
-        if normalized_type in {"REGISTERED_INDUSTRY", "REGISTERED_BUSINESS"}:
+        if normalized_type == "REGISTERED_INDUSTRY":
             required.append("CIN")
-            if details and str(details.get("gstin") or "").strip():
-                for mapping in configured.split(";"):
-                    if not mapping.strip():
-                        continue
-                    mapped_type, separator, mapped_verifications = mapping.partition(":")
-                    if separator and mapped_type.strip().upper() == normalized_type:
-                        configured_types = {
-                            value.strip().upper()
-                            for value in mapped_verifications.replace(",", "|").split("|")
-                            if value.strip()
-                        }
-                        if "GSTIN" in configured_types:
-                            required.append("GSTIN")
+            required.append("AADHAAR")
+            if details:
+                for field, verification_type in (
+                    ("gstin", "GSTIN"),
+                    ("pan_number", "PAN"),
+                    ("registration_number", "REGISTRATION_NUMBER"),
+                ):
+                    if str(details.get(field) or "").strip():
+                        required.append(verification_type)
+            return list(dict.fromkeys(required))
+
+        if normalized_type == "REGISTERED_BUSINESS":
+            required.append("CIN")
+            required.append("AADHAAR")
+            if details:
+                for field, verification_type in (("gstin", "GSTIN"), ("pan_number", "PAN")):
+                    if str(details.get(field) or "").strip():
+                        required.append(verification_type)
             return list(dict.fromkeys(required))
 
         for mapping in configured.split(";"):
@@ -287,6 +292,20 @@ class VerificationService:
         }
         reference = str(body.get("reference_id")) if body.get("reference_id") is not None else None
         if body.get("valid") is True and str(body.get("gst_in_status", "")).lower() == "active":
+            returned_gstin = body.get("GSTIN") or body.get("gstin")
+            returned_name = (
+                body.get("legal_name_of_business")
+                or body.get("trade_name_of_business")
+            )
+            expected_name = business_name or ""
+            if not returned_gstin:
+                return "FAILED", "GSTIN response did not include the verified GSTIN", metadata, reference
+            if expected_name and not returned_name:
+                return "FAILED", "GSTIN response did not include the verified business name", metadata, reference
+            if returned_gstin and str(returned_gstin).strip().upper() != gstin.strip().upper():
+                return "FAILED", "GSTIN identity mismatch", metadata, reference
+            if expected_name and returned_name and VerificationService._normalize_name(expected_name) != VerificationService._normalize_name(returned_name):
+                return "FAILED", "GSTIN business name mismatch", metadata, reference
             return "VERIFIED", None, metadata, reference
         return "FAILED", provider_message or "GSTIN is not valid or active", metadata, reference
 
@@ -472,6 +491,10 @@ class VerificationService:
 
         metadata = VerificationService._safe_provider_metadata(body)
         provider_reference = str(body.get("reference_id")) if body.get("reference_id") is not None else None
+        if verification_type == "AADHAAR" and str(body.get("status") or "").upper() == "SUCCESS":
+            ref_id = body.get("ref_id") or body.get("reference_id")
+            if ref_id is not None:
+                return "PENDING", "OTP_SENT", {**metadata, "cashfree_ref_id": str(ref_id)}, None
         if body.get("valid") is False or str(body.get("status", "")).upper() in {"INVALID", "FAILED"}:
             return "FAILED", VerificationService.CASHFREE_VERIFICATION_FAILED, {**metadata, **provider_error_metadata}, provider_reference
         if verification_type == "CIN":
@@ -483,8 +506,69 @@ class VerificationService:
 
         comparison_error = VerificationService._comparison_error(verification_type, reference, body, expected_details)
         if comparison_error:
-            return "FAILED", VerificationService.CASHFREE_VERIFICATION_FAILED, metadata, provider_reference
+            return "FAILED", comparison_error, metadata, provider_reference
         return "VERIFIED", None, metadata, provider_reference
+
+    @staticmethod
+    async def verify_aadhaar_otp(
+        employer_id: str,
+        otp: str,
+        expected_details: dict[str, Any],
+    ) -> dict[str, Any]:
+        records = VerificationService.list_for_employer(employer_id)
+        record = next((item for item in records if item.get("verification_type") == "AADHAAR"), None)
+        ref_id = (record or {}).get("provider_metadata", {}).get("cashfree_ref_id")
+        if not ref_id or (record or {}).get("status") != "PENDING":
+            raise ValueError("Aadhaar OTP verification is not awaiting an OTP")
+        status, reason, metadata = await VerificationService._verify_cashfree_aadhaar_otp(
+            otp.strip(), str(ref_id), expected_details
+        )
+        return VerificationService._save_state(
+            employer_id,
+            "AADHAAR",
+            status,
+            reason or "",
+            None,
+            provider="cashfree",
+            provider_metadata=metadata,
+            verified=status == "VERIFIED",
+        )
+
+    @staticmethod
+    async def _verify_cashfree_aadhaar_otp(
+        otp: str,
+        ref_id: str,
+        expected_details: dict[str, Any],
+    ) -> tuple[str, str | None, dict[str, Any] | None]:
+        endpoint = f"{VerificationService._cashfree_base_url()}/offline-aadhaar/verify"
+        headers = {
+            "x-client-id": VerificationService._clean_setting(settings.CASHFREE_CLIENT_ID),
+            "x-client-secret": VerificationService._clean_setting(settings.CASHFREE_CLIENT_SECRET),
+            "x-api-version": VerificationService._clean_setting(settings.CASHFREE_API_VERSION),
+            "content-type": "application/json",
+            "accept": "application/json",
+        }
+        try:
+            async with httpx.AsyncClient(timeout=settings.EMPLOYER_VERIFICATION_TIMEOUT_SECONDS) as client:
+                response = await client.post(endpoint, json={"otp": otp, "ref_id": ref_id}, headers=headers)
+            body = response.json() if response.content else {}
+        except httpx.TimeoutException:
+            return "PENDING", VerificationService.CASHFREE_TIMEOUT, None
+        except (httpx.HTTPError, ValueError):
+            return "FAILED", VerificationService.CASHFREE_UNAVAILABLE, None
+
+        metadata = VerificationService._safe_provider_metadata(body) if isinstance(body, dict) else None
+        provider_message = str(body.get("message") or body.get("error_message") or "").strip() if isinstance(body, dict) else ""
+        if response.status_code >= 400 or not isinstance(body, dict):
+            return "FAILED", provider_message or VerificationService.CASHFREE_VERIFICATION_FAILED, metadata
+        if body.get("valid") is False or str(body.get("status") or "").upper() in {"INVALID", "FAILED"}:
+            return "FAILED", provider_message or VerificationService.CASHFREE_VERIFICATION_FAILED, metadata
+        if body.get("valid") is not True and str(body.get("status") or "").upper() not in {"SUCCESS", "VALID", "VERIFIED", "COMPLETED"}:
+            return "PENDING", provider_message or "OTP verification is still in progress", metadata
+        comparison_error = VerificationService._comparison_error("AADHAAR", "", body, expected_details)
+        if comparison_error:
+            return "FAILED", comparison_error, metadata
+        return "VERIFIED", None, metadata
 
     @staticmethod
     def _safe_provider_metadata(body: dict[str, Any]) -> dict[str, Any]:
@@ -513,11 +597,17 @@ class VerificationService:
             returned_name = body.get("company_name") or body.get("companyName") or body.get("registered_name") or body.get("enterpriseName") or body.get("name")
             if verification_type == "CIN" and not returned_name:
                 return "Provider response did not include the verified company name"
+            if verification_type == "PAN" and not returned_identifier:
+                return "Provider response did not include the verified PAN"
+            if verification_type == "PAN" and entered_name and not returned_name:
+                return "Provider response did not include the verified company name"
             if entered_name and returned_name and VerificationService._normalize_name(entered_name) != VerificationService._normalize_name(returned_name):
                 return "Provider business name does not match onboarding business name"
         if verification_type == "AADHAAR":
             entered_name = expected.get("proprietor_name") or expected.get("director_name")
             returned_name = body.get("name") or body.get("name_on_aadhaar")
+            if not returned_name:
+                return "Provider response did not include the verified person name"
             if entered_name and returned_name and VerificationService._normalize_name(entered_name) != VerificationService._normalize_name(returned_name):
                 return "Provider identity name does not match onboarding person"
         return None
@@ -562,3 +652,17 @@ class VerificationService:
             raise ValueError(
                 "Required verification incomplete: " + ", ".join(incomplete)
             )
+
+    @staticmethod
+    def assert_verified_types(employer_id: str, verification_types: list[str]) -> None:
+        records = {
+            record["verification_type"]: record
+            for record in VerificationService.list_for_employer(employer_id)
+        }
+        incomplete = [
+            verification_type
+            for verification_type in verification_types
+            if records.get(verification_type, {}).get("status") != "VERIFIED"
+        ]
+        if incomplete:
+            raise ValueError("Required verification incomplete: " + ", ".join(incomplete))

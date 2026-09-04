@@ -20,6 +20,10 @@ class VerificationRequestSchema(BaseModel):
     reference: Optional[str] = Field(default=None, max_length=128)
 
 
+class VerificationOTPRequestSchema(BaseModel):
+    otp: str = Field(..., min_length=4, max_length=8)
+
+
 class VerificationRecordResponse(BaseModel):
     id: str
     employer_id: str

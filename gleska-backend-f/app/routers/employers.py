@@ -22,6 +22,7 @@ from app.services.onboarding_service import OnboardingService
 from app.services.verification_service import VerificationService
 from app.schemas.verification import (
     VerificationRecordResponse,
+    VerificationOTPRequestSchema,
     VerificationRequestSchema,
     VerificationRequirementsResponse,
 )
@@ -345,6 +346,30 @@ async def get_onboarding_verifications(user: UserResponse = Depends(require_empl
     )
 
 
+def _public_verification_record(record: dict[str, Any]) -> dict[str, Any]:
+    """Expose verification state without provider references or raw metadata."""
+    public_record = {**record, "provider_metadata": None}
+    metadata = record.get("provider_metadata")
+    if isinstance(metadata, dict):
+        safe_name_keys = {
+            "company_name",
+            "companyName",
+            "registered_name",
+            "legal_name_of_business",
+            "trade_name_of_business",
+            "name",
+            "name_on_aadhaar",
+        }
+        safe_names = {
+            key: value
+            for key, value in metadata.items()
+            if key in safe_name_keys and isinstance(value, str) and value.strip()
+        }
+        if safe_names:
+            public_record["provider_metadata"] = safe_names
+    return public_record
+
+
 @router.post(
     "/onboarding/verifications/{verification_type}",
     response_model=VerificationRecordResponse,
@@ -392,9 +417,14 @@ async def request_onboarding_verification(
     elif normalized_verification_type == "REGISTRATION_NUMBER":
         identifier = details.get("registration_number")
     elif normalized_verification_type == "AADHAAR":
-        identifier = details.get("proprietor_aadhaar")
+        identifier = (
+            details.get("director_aadhaar")
+            if employer_type in {"REGISTERED_INDUSTRY", "REGISTERED_BUSINESS"}
+            else details.get("proprietor_aadhaar")
+        )
         if not identifier or not str(identifier).strip():
-            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Proprietor Aadhaar is required")
+            field_name = "Director Aadhaar" if employer_type in {"REGISTERED_INDUSTRY", "REGISTERED_BUSINESS"} else "Proprietor Aadhaar"
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"{field_name} is required")
 
     try:
         record = await VerificationService.request_verification(
@@ -413,7 +443,7 @@ async def request_onboarding_verification(
             detail={"code": VerificationService.PROVIDER_NOT_CONFIGURED},
         ) from exc
 
-    record_response = VerificationRecordResponse(**record)
+    record_response = VerificationRecordResponse(**_public_verification_record(record))
     if record_response.status == "VERIFIED":
         calculated_status = VerificationService.calculate_overall_status(
             employer_type,
@@ -422,6 +452,8 @@ async def request_onboarding_verification(
         )
         if calculated_status == "VERIFIED":
             supabase.table("employer_profiles").update({"verification_status": "VERIFIED"}).eq("id", profile_response.data["id"]).execute()
+        return record_response
+    if record_response.status == "PENDING" and record_response.failure_reason == "OTP_SENT":
         return record_response
     if record_response.status == "NOT_CONFIGURED":
         raise HTTPException(
@@ -455,6 +487,25 @@ async def request_onboarding_verification(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         detail={"code": failure_code, "verification": record_response.model_dump(mode="json")},
     )
+
+
+@router.post("/onboarding/verifications/AADHAAR/otp", response_model=VerificationRecordResponse)
+async def verify_onboarding_aadhaar_otp(
+    request: VerificationOTPRequestSchema,
+    user: UserResponse = Depends(require_employer),
+):
+    """Complete the Cashfree Aadhaar OTP challenge for the current employer."""
+    profile_response = supabase.table("employer_profiles").select("*").eq("user_id", user.id).single().execute()
+    employer = profile_response.data
+    if not employer:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employer profile not found")
+    details_response = supabase.table("employer_onboarding_details").select("*").eq("employer_id", employer["id"]).single().execute()
+    details = details_response.data or {}
+    try:
+        record = await VerificationService.verify_aadhaar_otp(employer["id"], request.otp, details)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    return VerificationRecordResponse(**_public_verification_record(record))
 
 
 @router.put("/company-profile", response_model=EmployerOnboardingDetailsResponse)
@@ -564,7 +615,8 @@ async def update_director_profile(
         if "director_aadhaar" in data and str(data["director_aadhaar"]).strip():
             aadhaar_val = str(data["director_aadhaar"]).strip()
             update_dict["director_aadhaar"] = aadhaar_val
-            update_dict["proprietor_aadhaar"] = aadhaar_val
+            if employer.get("employer_type") != "REGISTERED_INDUSTRY":
+                update_dict["proprietor_aadhaar"] = aadhaar_val
         if "director_pan" in data and str(data["director_pan"]).strip():
             update_dict["pan_number"] = str(data["director_pan"]).strip().upper()
 
@@ -670,6 +722,18 @@ async def _update_onboarding(
         )
         previous_details = existing_details_response.data[0] if existing_details_response.data else {}
         merged_details = {**previous_details, **data}
+        if employer_type == "REGISTERED_INDUSTRY":
+            director_fields = {"director_name", "director_phone", "director_email", "director_address"}
+            if director_fields.intersection(data):
+                try:
+                    VerificationService.assert_verified_types(employer["id"], ["CIN"])
+                except ValueError as exc:
+                    raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+            if "work_location" in data:
+                try:
+                    VerificationService.assert_verified_types(employer["id"], ["CIN", "AADHAAR"])
+                except ValueError as exc:
+                    raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
         identity_for_comparison = merged_details
         if employer_type in {"REGISTERED_INDUSTRY", "REGISTERED_BUSINESS"}:
             identity_for_comparison = {
@@ -689,15 +753,12 @@ async def _update_onboarding(
         if identity_changed:
             VerificationService.invalidate_for_identity_change(employer["id"])
 
-        # Legal verification is required for final completion, not for saving
-        # onboarding details. This keeps the step order aligned with the frontend:
-        # details -> review -> verification -> complete.
-
         # Validate required fields for this type
         is_valid, error_msg = OnboardingService.validate_onboarding_fields(
             employer_type,
             data,
             require_registered_business_location=employer_type != "REGISTERED_BUSINESS",
+            require_all_fields=employer_type not in {"REGISTERED_INDUSTRY", "REGISTERED_BUSINESS"},
         )
         if not is_valid:
             raise HTTPException(

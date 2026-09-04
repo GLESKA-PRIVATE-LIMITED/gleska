@@ -52,6 +52,79 @@ async def test_cashfree_gstin_requires_valid_and_active_response(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_cashfree_aadhaar_otp_initiation_is_pending_and_preserves_ref_id(monkeypatch):
+    monkeypatch.setattr(settings, "EMPLOYER_VERIFICATION_PROVIDER", "cashfree")
+    monkeypatch.setattr(settings, "CASHFREE_CLIENT_ID", "client")
+    monkeypatch.setattr(settings, "CASHFREE_CLIENT_SECRET", "secret")
+    response = SimpleNamespace(
+        status_code=200,
+        content=b"{}",
+        json=lambda: {"status": "SUCCESS", "message": "OTP sent successfully", "ref_id": 85506865},
+    )
+    monkeypatch.setattr(verification_service.httpx, "AsyncClient", lambda **kwargs: FakeClient(response))
+
+    status, reason, metadata, provider_reference = await VerificationService._verify_cashfree_identifier(
+        "AADHAAR", "123456789012", {"director_name": "Authorized Signatory"}
+    )
+
+    assert (status, reason, provider_reference) == ("PENDING", "OTP_SENT", None)
+    assert metadata["cashfree_ref_id"] == "85506865"
+
+
+@pytest.mark.asyncio
+async def test_cashfree_aadhaar_otp_final_verification_uses_ref_id(monkeypatch):
+    monkeypatch.setattr(settings, "CASHFREE_ENV", "sandbox")
+    monkeypatch.setattr(settings, "EMPLOYER_VERIFICATION_API_BASE_URL", "https://sandbox.cashfree.com/verification")
+    calls = []
+    response = SimpleNamespace(
+        status_code=200,
+        content=b"{}",
+        json=lambda: {"status": "SUCCESS", "name": "Authorized Signatory"},
+    )
+    monkeypatch.setattr(verification_service.httpx, "AsyncClient", lambda **kwargs: FakeClient(response, calls))
+
+    status, reason, _ = await VerificationService._verify_cashfree_aadhaar_otp(
+        "123456", "85506865", {"director_name": "Authorized Signatory"}
+    )
+
+    assert (status, reason) == ("VERIFIED", None)
+    assert calls[0][0][0] == "https://sandbox.cashfree.com/verification/offline-aadhaar/verify"
+    assert calls[0][1]["json"] == {"otp": "123456", "ref_id": "85506865"}
+
+
+@pytest.mark.asyncio
+async def test_cashfree_aadhaar_otp_name_mismatch_is_failed(monkeypatch):
+    response = SimpleNamespace(
+        status_code=200,
+        content=b"{}",
+        json=lambda: {"status": "SUCCESS", "name": "Different Person"},
+    )
+    monkeypatch.setattr(verification_service.httpx, "AsyncClient", lambda **kwargs: FakeClient(response))
+
+    status, reason, _ = await VerificationService._verify_cashfree_aadhaar_otp(
+        "123456", "85506865", {"director_name": "Authorized Signatory"}
+    )
+
+    assert status == "FAILED"
+    assert reason == "Provider identity name does not match onboarding person"
+
+
+@pytest.mark.asyncio
+async def test_cashfree_aadhaar_otp_provider_rejection_is_failed(monkeypatch):
+    response = SimpleNamespace(
+        status_code=422,
+        content=b"{}",
+        json=lambda: {"status": "FAILED", "message": "Invalid OTP"},
+    )
+    monkeypatch.setattr(verification_service.httpx, "AsyncClient", lambda **kwargs: FakeClient(response))
+
+    status, reason, _ = await VerificationService._verify_cashfree_aadhaar_otp(
+        "000000", "85506865", {"director_name": "Authorized Signatory"}
+    )
+
+    assert (status, reason) == ("FAILED", "Invalid OTP")
+
+@pytest.mark.asyncio
 async def test_cashfree_gstin_sends_production_vrs_request_with_normalized_credentials(monkeypatch):
     monkeypatch.setattr(settings, "EMPLOYER_VERIFICATION_PROVIDER", "cashfree")
     monkeypatch.setattr(settings, "CASHFREE_ENV", " production ")
@@ -180,8 +253,8 @@ async def test_cashfree_cin_requires_matching_identifier_and_company_name(monkey
 def test_registered_industry_does_not_require_empty_gstin(monkeypatch):
     monkeypatch.setattr(settings, "EMPLOYER_REQUIRED_VERIFICATIONS", "REGISTERED_INDUSTRY:CIN|GSTIN")
 
-    assert VerificationService.required_for("REGISTERED_INDUSTRY", {"gstin": ""}) == ["CIN"]
-    assert VerificationService.required_for("REGISTERED_INDUSTRY", {"gstin": "27AAAAA0000A1Z5"}) == ["CIN", "GSTIN"]
+    assert VerificationService.required_for("REGISTERED_INDUSTRY", {"gstin": ""}) == ["CIN", "AADHAAR"]
+    assert VerificationService.required_for("REGISTERED_INDUSTRY", {"gstin": "27AAAAA0000A1Z5"}) == ["CIN", "AADHAAR", "GSTIN"]
 
 
 @pytest.mark.asyncio

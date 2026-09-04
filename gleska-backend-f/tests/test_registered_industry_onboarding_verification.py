@@ -122,12 +122,12 @@ def onboarding_details(**overrides):
     return RegisteredIndustryOnboardingSchema(**data).dict()
 
 
-def verified_record(employer_id="employer-id", status="VERIFIED"):
+def verified_record(employer_id="employer-id", status="VERIFIED", verification_type="CIN"):
     now = datetime.now(timezone.utc).isoformat()
     return {
         "id": "verification-id",
         "employer_id": employer_id,
-        "verification_type": "CIN",
+        "verification_type": verification_type,
         "status": status,
         "provider_reference_id": "provider-id",
         "failure_reason": None,
@@ -174,8 +174,9 @@ async def test_registered_industry_keeps_verified_cin_through_onboarding_sequenc
     monkeypatch.setattr(VerificationService, "request_verification", verify)
     verification = await employers.request_onboarding_verification("CIN", VerificationRequestSchema(), USER)
     listing = await employers.get_onboarding_verifications(USER)
+    fake_supabase.database["employer_verifications"].append(verified_record(verification_type="AADHAAR"))
     saved = await employers.update_registered_industry_onboarding(
-        RegisteredIndustryOnboardingSchema(**onboarding_details()), USER,
+        RegisteredIndustryOnboardingSchema(**onboarding_details(director_aadhaar="123456789012")), USER,
     )
 
     assert verification.employer_id == saved.employer_id == "employer-id"
@@ -243,6 +244,60 @@ async def test_identity_change_invalidates_cin_and_blocks_details(fake_supabase,
     assert error.value.status_code == 409
 
 
+    @pytest.mark.asyncio
+    async def test_registered_industry_requires_cin_aadhaar_and_provided_optional_identifiers(monkeypatch):
+        monkeypatch.setattr(verification_service.settings, "EMPLOYER_REQUIRED_VERIFICATIONS", "")
+
+        assert VerificationService.required_for("REGISTERED_INDUSTRY", {}) == ["CIN", "AADHAAR"]
+        assert VerificationService.required_for(
+            "REGISTERED_INDUSTRY",
+            {"gstin": "29AAICP2912R1ZR", "pan_number": "AAAPA0000A", "registration_number": "REG-1"},
+        ) == ["CIN", "AADHAAR", "GSTIN", "PAN", "REGISTRATION_NUMBER"]
+
+
+    @pytest.mark.asyncio
+    async def test_registered_industry_aadhaar_uses_director_field(fake_supabase, monkeypatch):
+        fake_supabase.database["employer_onboarding_details"].append(
+            persisted_identity() | {
+                "director_name": "Authorized Signatory",
+                "director_aadhaar": "123456789012",
+            }
+        )
+        captured = {}
+
+        async def verify(employer_id, verification_type, employer_type, reference, expected_details=None):
+            captured.update({"type": verification_type, "reference": reference, "details": expected_details})
+            return VerificationService._save_state(
+                employer_id, verification_type, "VERIFIED", "", "provider-id", provider="test", verified=True,
+            )
+
+        monkeypatch.setattr(VerificationService, "request_verification", verify)
+        result = await employers.request_onboarding_verification("AADHAAR", VerificationRequestSchema(), USER)
+
+        assert result.status == "VERIFIED"
+        assert captured["type"] == "AADHAAR"
+        assert captured["reference"] == "123456789012"
+        assert captured["details"]["director_name"] == "Authorized Signatory"
+
+
+    @pytest.mark.asyncio
+    async def test_registered_industry_blocks_director_and_work_stages_without_preceding_verification(fake_supabase):
+        with pytest.raises(HTTPException) as director_error:
+            await employers.update_registered_industry_onboarding(
+                RegisteredIndustryOnboardingSchema(
+                    director_name="Authorized Signatory",
+                ), USER,
+            )
+        assert director_error.value.status_code == 409
+
+        fake_supabase.database["employer_verifications"].append(verified_record())
+        with pytest.raises(HTTPException) as location_error:
+            await employers.update_registered_industry_onboarding(
+                RegisteredIndustryOnboardingSchema(work_location="Pune"), USER,
+            )
+        assert location_error.value.status_code == 409
+
+
 @pytest.mark.asyncio
 async def test_registered_business_requires_and_keeps_cin_verification(fake_supabase, monkeypatch):
     fake_supabase.database["employer_profiles"][0]["employer_type"] = "REGISTERED_BUSINESS"
@@ -266,6 +321,7 @@ async def test_registered_business_requires_and_keeps_cin_verification(fake_supa
         RegisteredBusinessOnboardingSchema(
             business_name="Example Business Pvt Ltd",
             business_type="Private Limited",
+            business_category="Technology",
             industry_category="Technology",
             registered_address="12 IT Park",
             city="Pune",
@@ -282,3 +338,109 @@ async def test_registered_business_requires_and_keeps_cin_verification(fake_supa
     assert listing.records[0].status == "VERIFIED"
     assert saved.employer_id == "employer-id"
     assert fake_supabase.database["employer_verifications"][0]["status"] == "VERIFIED"
+
+
+def test_registered_business_requires_cin_aadhaar_and_provided_optional_identifiers(monkeypatch):
+    monkeypatch.setattr(verification_service.settings, "EMPLOYER_REQUIRED_VERIFICATIONS", "REGISTERED_BUSINESS:GSTIN")
+
+    assert VerificationService.required_for("REGISTERED_BUSINESS", {}) == ["CIN", "AADHAAR"]
+    assert VerificationService.required_for(
+        "REGISTERED_BUSINESS",
+        {"gstin": "29AAICP2912R1ZR", "pan_number": "AAAPA0000A", "registration_number": "REG-1"},
+    ) == ["CIN", "AADHAAR", "GSTIN", "PAN"]
+
+
+def test_registered_business_uses_authorized_signatory_aadhaar_as_always_required(monkeypatch):
+    monkeypatch.setattr(
+        verification_service.settings,
+        "EMPLOYER_REQUIRED_VERIFICATIONS",
+        "REGISTERED_INDUSTRY:CIN;UNREGISTERED_BUSINESS:AADHAAR",
+    )
+
+    assert VerificationService.required_for("REGISTERED_BUSINESS", {}) == ["CIN", "AADHAAR"]
+    assert VerificationService.required_for(
+        "REGISTERED_BUSINESS",
+        {"director_aadhaar": "123456789012", "proprietor_aadhaar": "999999999999"},
+    ) == ["CIN", "AADHAAR"]
+
+
+@pytest.mark.asyncio
+async def test_registered_business_aadhaar_uses_director_field(fake_supabase, monkeypatch):
+    fake_supabase.database["employer_profiles"][0]["employer_type"] = "REGISTERED_BUSINESS"
+    fake_supabase.database["employer_onboarding_details"].append(
+        persisted_identity() | {
+            "director_name": "Authorized Signatory",
+            "director_aadhaar": "123456789012",
+            "proprietor_aadhaar": "999999999999",
+        }
+    )
+    captured = {}
+
+    async def verify(employer_id, verification_type, employer_type, reference, expected_details=None):
+        captured.update({"employer_id": employer_id, "type": verification_type, "reference": reference, "details": expected_details})
+        return VerificationService._save_state(
+            employer_id, verification_type, "VERIFIED", "", "provider-id", provider="test", verified=True,
+        )
+
+    monkeypatch.setattr(VerificationService, "request_verification", verify)
+    result = await employers.request_onboarding_verification("AADHAAR", VerificationRequestSchema(), USER)
+
+    assert result.status == "VERIFIED"
+    assert captured["employer_id"] == "employer-id"
+    assert captured["type"] == "AADHAAR"
+    assert captured["reference"] == "123456789012"
+    assert captured["details"]["director_name"] == "Authorized Signatory"
+
+
+def test_registered_business_registration_number_is_not_falsely_supported(fake_supabase):
+    fake_supabase.database["employer_profiles"][0]["employer_type"] = "REGISTERED_BUSINESS"
+    fake_supabase.database["employer_onboarding_details"].append(
+        persisted_identity() | {"registration_number": "REG-1"}
+    )
+
+    with pytest.raises(HTTPException) as error:
+        import asyncio
+        asyncio.run(
+            employers.request_onboarding_verification("REGISTRATION_NUMBER", VerificationRequestSchema(), USER)
+        )
+
+    assert error.value.status_code == 422
+
+
+@pytest.mark.parametrize("missing_type", ["CIN", "AADHAAR", "GSTIN", "PAN"])
+def test_registered_business_completion_requires_each_applicable_verification(fake_supabase, missing_type):
+    details = persisted_identity() | {
+        "business_name": "Example Business Pvt Ltd",
+        "business_type": "Private Limited",
+        "business_category": "Technology",
+        "gstin": "29AAICP2912R1ZR",
+        "pan_number": "AAAPA0000A",
+        "director_name": "Authorized Signatory",
+        "director_aadhaar": "123456789012",
+    }
+    records = []
+    for verification_type in ["CIN", "AADHAAR", "GSTIN", "PAN"]:
+        if verification_type != missing_type:
+            records.append(verified_record(verification_type=verification_type))
+    fake_supabase.database["employer_profiles"][0]["employer_type"] = "REGISTERED_BUSINESS"
+    fake_supabase.database["employer_onboarding_details"].append(details)
+    fake_supabase.database["employer_verifications"].extend(records)
+
+    with pytest.raises(ValueError, match=missing_type):
+        VerificationService.assert_required_complete("employer-id", "REGISTERED_BUSINESS", details)
+
+
+def test_registered_business_ignores_other_employer_verification(fake_supabase):
+    details = persisted_identity() | {
+        "business_name": "Example Business Pvt Ltd",
+        "business_type": "Private Limited",
+        "business_category": "Technology",
+        "director_name": "Authorized Signatory",
+        "director_aadhaar": "123456789012",
+    }
+    fake_supabase.database["employer_profiles"][0]["employer_type"] = "REGISTERED_BUSINESS"
+    fake_supabase.database["employer_onboarding_details"].append(details)
+    fake_supabase.database["employer_verifications"].append(verified_record(employer_id="other-employer", verification_type="CIN"))
+
+    with pytest.raises(ValueError, match="CIN"):
+        VerificationService.assert_required_complete("employer-id", "REGISTERED_BUSINESS", details)

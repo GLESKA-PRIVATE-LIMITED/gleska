@@ -52,7 +52,7 @@ type OnboardingFormData = Record<string, string>;
 
 type VerificationRecord = {
   verification_type: string;
-  status: "PENDING" | "VERIFIED" | "FAILED" | "NOT_CONFIGURED";
+  status: "PENDING" | "VERIFIED" | "FAILED" | "NOT_CONFIGURED" | "REJECTED" | "MISMATCHED";
   failure_reason?: string | null;
   provider_reference_id?: string | null;
   verified_at?: string | null;
@@ -108,6 +108,11 @@ const REQUIRED_FIELDS: Record<EmployerType, string[]> = {
     "state",
     "pincode",
     "work_location",
+    "director_name",
+    "director_phone",
+    "director_email",
+    "director_address",
+    "director_aadhaar",
   ],
   REGISTERED_BUSINESS: [
     "business_name",
@@ -121,6 +126,11 @@ const REQUIRED_FIELDS: Record<EmployerType, string[]> = {
     "state",
     "pincode",
     "work_location",
+    "director_name",
+    "director_phone",
+    "director_email",
+    "director_address",
+    "director_aadhaar",
   ],
   UNREGISTERED_BUSINESS: [
     "business_name",
@@ -214,6 +224,51 @@ function getVerificationErrorMessage(error: unknown): string {
   return messages[code] || "CIN verification failed. Please try again later.";
 }
 
+function getVerificationStatus(record: VerificationRecord | undefined, provided: boolean): string {
+  if (!provided) return "NOT VERIFIED";
+  if (record?.status === "VERIFIED") return "VERIFIED";
+  if (record?.status === "FAILED" || record?.status === "NOT_CONFIGURED") return "FAILED";
+  if (record?.status === "PENDING") return "VERIFYING";
+  return "NOT VERIFIED";
+}
+
+function getSafeVerifiedName(record: VerificationRecord | undefined): string {
+  const metadata = record?.provider_metadata;
+  if (!metadata) return "";
+  for (const key of ["company_name", "companyName", "registered_name", "legal_name_of_business", "trade_name_of_business", "name", "name_on_aadhaar"]) {
+    const value = metadata[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return "";
+}
+
+function getVerificationFailureMessage(
+  type: string,
+  reason: string | null | undefined,
+  record: VerificationRecord | undefined,
+  enteredName: string,
+): string {
+  const normalized = (reason || "").trim();
+  const lower = normalized.toLowerCase();
+  const label = type === "AADHAAR" ? "Authorized Signatory Aadhaar" : type;
+  const verifiedName = getSafeVerifiedName(record);
+
+  if (lower.includes("name") && (lower.includes("match") || lower.includes("different")) && verifiedName) {
+    return `The entered business name does not match the verified company name. Entered: ${enteredName || "Not provided"}. Verified: ${verifiedName}.`;
+  }
+  if (!normalized) return `${label} verification failed. Please check the entered details and try again.`;
+  if (lower.includes("doesn't exist") || lower.includes("does not exist") || lower.includes("not found")) {
+    return `${label} doesn't exist or could not be found in the verification database.`;
+  }
+  if (lower.includes("inactive")) return `${label} is inactive and could not be verified.`;
+  if (lower.includes("invalid")) return `${label} is invalid and could not be verified.`;
+  if (lower === "cashfree_verification_failed") return `${label} was rejected by the verification provider.`;
+  if (lower.includes("unavailable") || lower.includes("timeout") || lower.includes("network") || lower.includes("configuration") || lower.includes("ip")) {
+    return `${label} verification service is temporarily unavailable. Please try again later.`;
+  }
+  return normalized;
+}
+
 function hasCompleteDetails(type: EmployerType, details: Record<string, unknown>): boolean {
   return requiredFieldsFor(type).every((field) => {
     const value = details[field];
@@ -234,6 +289,12 @@ function hasVerifiedLegalIdentity(type: EmployerType | "", verification: Verific
   return cinRecord?.status === "VERIFIED";
 }
 
+function hasVerifiedRecord(verification: VerificationState, type: string): boolean {
+  return verification.records.some(
+    (record) => record.verification_type === type && record.status === "VERIFIED"
+  );
+}
+
 const ONBOARDING_FIELDS = [
   "business_name",
   "business_type",
@@ -248,7 +309,6 @@ const ONBOARDING_FIELDS = [
   "registration_number",
   "cin_number",
   "pan_number",
-  "udyam_number",
   "nature_of_business",
   "number_of_proprietors",
   "company_email",
@@ -273,8 +333,8 @@ export default function EmployerOnboarding() {
   const router = useRouter();
   const { user, isLoading, nextStep, logout, refreshUser } = useAuth();
 
-  // 1: Business Information, 2: Contact, 3: Verify, 0: Type Selection
-  const [activeStep, setActiveStep] = useState<0 | 1 | 2 | 3>(0);
+  // 1: Company, 2: Legal verification, 3: Director, 4: Location
+  const [activeStep, setActiveStep] = useState<0 | 1 | 2 | 3 | 4 | 5>(0);
   const [employerType, setEmployerType] = useState<EmployerType | "">("");
   const [formData, setFormData] = useState<OnboardingFormData>({});
   const [formError, setFormError] = useState("");
@@ -282,6 +342,7 @@ export default function EmployerOnboarding() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isHydrating, setIsHydrating] = useState(true);
   const [verification, setVerification] = useState<VerificationState>({ required: [], records: [] });
+  const [aadhaarOtp, setAadhaarOtp] = useState("");
 
   // Animation Transition States
   const [transitionDirection, setTransitionDirection] = useState<"next" | "prev">("next");
@@ -357,7 +418,12 @@ export default function EmployerOnboarding() {
 
           const savedDetailsComplete = hasCompleteDetails(selectedType, details);
 
-          if (!savedDetailsComplete) {
+          if (selectedType === "REGISTERED_INDUSTRY") {
+            if (checkStep1Incomplete(selectedType, savedFormData)) setActiveStep(1);
+            else if (!savedFormData.cin_number || !hasVerifiedRecord(currentVerification, "CIN")) setActiveStep(2);
+            else if (!savedFormData.director_name || !savedFormData.director_aadhaar || !hasVerifiedRecord(currentVerification, "AADHAAR")) setActiveStep(3);
+            else setActiveStep(4);
+          } else if (!savedDetailsComplete) {
             const step1Incomplete = checkStep1Incomplete(selectedType, savedFormData);
             if (step1Incomplete) {
               setActiveStep(1);
@@ -398,7 +464,15 @@ export default function EmployerOnboarding() {
       return !data.business_name?.trim() || !data.registered_address?.trim() || !data.industry_type?.trim();
     }
     if (type === "UNREGISTERED_BUSINESS") {
-      return !data.business_name?.trim() || !data.address?.trim() || !data.nature_of_business?.trim();
+      return (
+        !data.business_name?.trim() ||
+        !data.business_type?.trim() ||
+        !data.nature_of_business?.trim() ||
+        !data.number_of_proprietors ||
+        Number(data.number_of_proprietors) < 1 ||
+        !data.industry_category?.trim() ||
+        !data.address?.trim()
+      );
     }
     if (type === "INDIVIDUAL") {
       return !data.address?.trim();
@@ -407,7 +481,7 @@ export default function EmployerOnboarding() {
   };
 
   // Animated Step Transition Handler
-  const transitionToStep = (targetStep: 0 | 1 | 2 | 3, dir: "next" | "prev" = "next") => {
+  const transitionToStep = (targetStep: 0 | 1 | 2 | 3 | 4 | 5, dir: "next" | "prev" = "next") => {
     if (isAnimating || targetStep === activeStep) return;
     setIsAnimating(true);
     setTransitionDirection(dir);
@@ -497,10 +571,40 @@ export default function EmployerOnboarding() {
     INDIVIDUAL: "/api/v1/employers/onboarding/individual",
   };
 
-  const buildPayload = () =>
-    Object.fromEntries(
-      Object.entries(formData).filter(([, value]) => value && value.trim() !== "")
+  const buildPayload = () => {
+    const registeredIndustryCompanyFields = new Set([
+      "business_name",
+      "industry_type",
+      "business_category",
+      "industry_category",
+      "registered_address",
+      "company_email",
+      "company_phone",
+      "city",
+      "state",
+      "pincode",
+      "website_url",
+      "annual_revenue",
+      "description",
+    ]);
+    const payload = Object.fromEntries(
+      Object.entries(formData).filter(([field, value]) => {
+        if (employerType === "REGISTERED_INDUSTRY" && activeStep === 1) {
+          return registeredIndustryCompanyFields.has(field) && value && value.trim() !== "";
+        }
+        return value && value.trim() !== "";
+      })
     );
+    if (employerType === "UNREGISTERED_BUSINESS") {
+      delete payload.udyam_number;
+    }
+    if (employerType === "REGISTERED_INDUSTRY" && activeStep < 4) {
+      delete payload.work_location;
+      delete payload.latitude;
+      delete payload.longitude;
+    }
+    return payload;
+  };
 
   const saveCurrentDraft = async () => {
     if (!employerType) return true;
@@ -548,16 +652,31 @@ export default function EmployerOnboarding() {
         if (!formData.registered_address?.trim()) {
           errors.registered_address = "Registered address is required";
         }
+        for (const field of ["company_email", "company_phone", "city", "state", "pincode"]) {
+          if (!formData[field]?.trim()) errors[field] = `${field.replaceAll("_", " ")} is required`;
+        }
+        if (formData.pincode && !/^\d{6}$/.test(formData.pincode.trim())) {
+          errors.pincode = "A valid 6-digit pincode is required";
+        }
       }
     } else if (employerType === "UNREGISTERED_BUSINESS") {
       if (!formData.business_name?.trim()) {
         errors.business_name = "Business name is required";
       }
+      if (!formData.business_type?.trim()) {
+        errors.business_type = "Business type is required";
+      }
       if (!formData.nature_of_business?.trim()) {
         errors.nature_of_business = "Nature of business is required";
       }
+      if (!formData.number_of_proprietors || Number(formData.number_of_proprietors) < 1) {
+        errors.number_of_proprietors = "Number of proprietors must be at least 1";
+      }
       if (!formData.address?.trim()) {
         errors.address = "Business address is required";
+      }
+      if (!formData.industry_category?.trim()) {
+        errors.industry_category = "Industry category is required";
       }
     } else if (employerType === "INDIVIDUAL") {
       if (!formData.address?.trim()) {
@@ -572,7 +691,7 @@ export default function EmployerOnboarding() {
     }
 
     setIsSubmitting(true);
-    const saved = await saveCurrentDraft();
+    const saved = employerType === "UNREGISTERED_BUSINESS" || await saveCurrentDraft();
     setIsSubmitting(false);
 
     if (saved) {
@@ -587,6 +706,24 @@ export default function EmployerOnboarding() {
     if (isSubmitting || isAnimating) return;
     setFormError("");
     const errors: Record<string, string> = {};
+
+    if (employerType === "REGISTERED_INDUSTRY") {
+      if (!formData.cin_number?.trim()) errors.cin_number = "CIN is required";
+      if (Object.keys(errors).length > 0) {
+        setFieldErrors(errors);
+        setFormError("Enter and verify the CIN before continuing");
+        return;
+      }
+      if (!hasVerifiedRecord(verification, "CIN")) {
+        setFormError("CIN must be verified before Director Details are unlocked");
+        return;
+      }
+      setIsSubmitting(true);
+      const saved = await saveCurrentDraft();
+      setIsSubmitting(false);
+      if (saved) transitionToStep(3, "next");
+      return;
+    }
 
     if (!formData.company_email?.trim()) {
       errors.company_email = "Company email is required";
@@ -607,7 +744,7 @@ export default function EmployerOnboarding() {
       errors.work_location = "Work location is required";
     }
 
-    if (employerType === "REGISTERED_BUSINESS" || employerType === "REGISTERED_INDUSTRY") {
+    if (employerType === "REGISTERED_BUSINESS") {
       if (!formData.director_name?.trim()) {
         errors.director_name = "Authorized Signatory Name is required";
       }
@@ -617,7 +754,7 @@ export default function EmployerOnboarding() {
       if (!formData.director_email?.trim()) {
         errors.director_email = "Authorized Signatory Email is required";
       }
-      if (!formData.director_aadhaar?.trim() || !/^\d{12}$/.test(formData.director_aadhaar.trim())) {
+      if (employerType !== "REGISTERED_BUSINESS" && (!formData.director_aadhaar?.trim() || !/^\d{12}$/.test(formData.director_aadhaar.trim()))) {
         errors.director_aadhaar = "A valid 12-digit Authorized Signatory Aadhaar is required";
       }
       if (!formData.director_address?.trim()) {
@@ -629,11 +766,10 @@ export default function EmployerOnboarding() {
       if (!formData.proprietor_name?.trim()) {
         errors.proprietor_name = "Proprietor name is required";
       }
-      if (formData.proprietor_aadhaar && !/^\d{12}$/.test(formData.proprietor_aadhaar.trim())) {
+      if (!formData.proprietor_aadhaar?.trim()) {
+        errors.proprietor_aadhaar = "Proprietor Aadhaar is required";
+      } else if (!/^\d{12}$/.test(formData.proprietor_aadhaar.trim())) {
         errors.proprietor_aadhaar = "Proprietor Aadhaar must be a 12-digit number";
-      }
-      if (!formData.number_of_proprietors || Number(formData.number_of_proprietors) < 1) {
-        errors.number_of_proprietors = "Number of proprietors must be at least 1";
       }
     }
 
@@ -651,6 +787,31 @@ export default function EmployerOnboarding() {
       transitionToStep(3, "next");
       toast.success("Contact details saved");
     }
+  };
+
+  const handleProceedFromStep3 = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isSubmitting || isAnimating) return;
+    const errors: Record<string, string> = {};
+    for (const field of ["director_name", "director_phone", "director_email", "director_address", "city", "state", "pincode", "director_aadhaar"]) {
+      if (!formData[field]?.trim()) errors[field] = `${field.replaceAll("_", " ")} is required`;
+    }
+    if (formData.director_aadhaar && !/^\d{12}$/.test(formData.director_aadhaar)) {
+      errors.director_aadhaar = "A valid 12-digit Director Aadhaar is required";
+    }
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      setFormError("Complete the Director Details before continuing");
+      return;
+    }
+    if (!hasVerifiedRecord(verification, "AADHAAR")) {
+      setFormError("Director Aadhaar must be verified before Work Location is unlocked");
+      return;
+    }
+    setIsSubmitting(true);
+    const saved = await saveCurrentDraft();
+    setIsSubmitting(false);
+    if (saved) transitionToStep(4, "next");
   };
 
   const validateIdentity = () => {
@@ -728,6 +889,10 @@ export default function EmployerOnboarding() {
     setFormError("");
     setIsSubmitting(true);
     try {
+      if (employerType === "REGISTERED_INDUSTRY" || employerType === "REGISTERED_BUSINESS") {
+        const saved = await saveCurrentDraft();
+        if (!saved) return;
+      }
       const response = await apiClient.post(
         `/api/v1/employers/onboarding/verifications/${type}`,
         {},
@@ -741,9 +906,92 @@ export default function EmployerOnboarding() {
           record,
         ],
       }));
-      toast.success(`${type.replaceAll("_", " ")} verification ${record.status.toLowerCase()}`);
+      if (record.status === "VERIFIED") {
+        toast.success(`✓ ${type === "AADHAAR" ? "Authorized Signatory Aadhaar" : type} verified`);
+      } else if (record.status === "FAILED" || record.status === "NOT_CONFIGURED") {
+        const message = getVerificationFailureMessage(
+          type,
+          record.failure_reason,
+          record,
+          formData.business_name || "",
+        );
+        setFormError(message);
+        toast.error(message);
+      } else if (record.status === "PENDING" && record.failure_reason === "OTP_SENT") {
+        toast.success("✓ OTP sent successfully");
+      } else {
+        toast.info(`${type.replaceAll("_", " ")} verification is in progress`);
+      }
     } catch (err: unknown) {
-      const message = getErrorDetail(err, "Verification failed");
+      const detail = (err as { response?: { data?: { detail?: unknown } } }).response?.data?.detail;
+      const detailRecord = detail && typeof detail === "object" ? (detail as Record<string, unknown>) : null;
+      const verificationRecord = detailRecord?.verification;
+      if (verificationRecord && typeof verificationRecord === "object" && "verification_type" in verificationRecord) {
+        const record = verificationRecord as VerificationRecord;
+        setVerification((current) => ({
+          ...current,
+          records: [
+            ...current.records.filter((item) => item.verification_type !== record.verification_type),
+            record,
+          ],
+        }));
+      }
+      const message = verificationRecord && typeof verificationRecord === "object"
+        ? getVerificationFailureMessage(
+            String((verificationRecord as Record<string, unknown>).verification_type || "verification"),
+            typeof (verificationRecord as Record<string, unknown>).failure_reason === "string"
+              ? (verificationRecord as Record<string, unknown>).failure_reason as string
+              : null,
+            verificationRecord as VerificationRecord,
+            formData.business_name || "",
+          )
+        : getVerificationErrorMessage(err);
+      setFormError(message);
+      toast.error(message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleVerifyAadhaarOtp = async () => {
+    if (isSubmitting || isAnimating || !aadhaarOtp.trim()) return;
+    setIsSubmitting(true);
+    setFormError("");
+    try {
+      const response = await apiClient.post(
+        "/api/v1/employers/onboarding/verifications/AADHAAR/otp",
+        { otp: aadhaarOtp.trim() },
+        { withCredentials: true },
+      );
+      const record = response.data as VerificationRecord;
+      setVerification((current) => ({
+        ...current,
+        records: [...current.records.filter((item) => item.verification_type !== "AADHAAR"), record],
+      }));
+      if (record.status === "VERIFIED") {
+        setAadhaarOtp("");
+        toast.success(`✓ ${employerType === "UNREGISTERED_BUSINESS" ? "Proprietor" : "Authorized Signatory"} Aadhaar verified`);
+      } else if (record.status === "FAILED") {
+        const message = getVerificationFailureMessage("AADHAAR", record.failure_reason, record, formData.business_name || "");
+        setFormError(message);
+        toast.error(message);
+      } else {
+        toast.info("Aadhaar verification is still in progress");
+      }
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: unknown } } }).response?.data?.detail;
+      const detailRecord = detail && typeof detail === "object" ? (detail as Record<string, unknown>) : null;
+      const verificationRecord = detailRecord?.verification;
+      const message = verificationRecord && typeof verificationRecord === "object"
+        ? getVerificationFailureMessage(
+            "AADHAAR",
+            typeof (verificationRecord as Record<string, unknown>).failure_reason === "string"
+              ? (verificationRecord as Record<string, unknown>).failure_reason as string
+              : null,
+            verificationRecord as VerificationRecord,
+            formData.business_name || "",
+          )
+        : getVerificationErrorMessage(err);
       setFormError(message);
       toast.error(message);
     } finally {
@@ -813,6 +1061,19 @@ export default function EmployerOnboarding() {
 
   const isRegistered =
     employerType === "REGISTERED_BUSINESS" || employerType === "REGISTERED_INDUSTRY";
+
+  const progressSteps = employerType === "REGISTERED_INDUSTRY"
+    ? [
+        { num: 1, label: "Company", short: "Company" },
+        { num: 2, label: "Legal Verification", short: "Legal" },
+        { num: 3, label: "Director", short: "Director" },
+        { num: 4, label: "Work Location", short: "Location" },
+      ]
+    : [
+        { num: 1, label: "Business Information", short: "Business Info" },
+        { num: 2, label: "Contact", short: "Contact" },
+        { num: 3, label: "Verify", short: "Verify" },
+      ];
 
   return (
     <div className="min-h-screen bg-slate-50/80 font-sans text-slate-900 dark:bg-slate-950 dark:text-slate-100 flex flex-col selection:bg-blue-500 selection:text-white">
@@ -1103,23 +1364,19 @@ export default function EmployerOnboarding() {
                       </button>
                     </div>
 
-                    {/* Progress Indicator: 1 Business Info | 2 Contact | 3 Verify */}
+                    {/* Progress Indicator */}
                     <div className="relative pt-2 pb-1">
                       {/* Connecting Line Bar */}
                       <div className="absolute top-[22px] left-8 right-8 h-0.5 bg-slate-200 dark:bg-slate-800 z-0" />
                       <div
                         className="absolute top-[22px] left-8 h-0.5 bg-blue-600 transition-all duration-500 ease-in-out z-0"
                         style={{
-                          width: activeStep === 1 ? "0%" : activeStep === 2 ? "50%" : "calc(100% - 4rem)",
+                          width: employerType === "REGISTERED_INDUSTRY"
+                            ? `${Math.max(0, Math.min(100, (activeStep - 1) * 25))}%`
+                            : activeStep === 1 ? "0%" : activeStep === 2 ? "50%" : "calc(100% - 4rem)",
                         }}
                       />
-
-                      <div className="relative z-10 flex items-center justify-between">
-                        {[
-                          { num: 1, label: "Business Information", short: "Business Info" },
-                          { num: 2, label: "Contact", short: "Contact" },
-                          { num: 3, label: "Verify", short: "Verify" },
-                        ].map((s) => {
+                        {progressSteps.map((s) => {
                           const isCompleted = activeStep > s.num;
                           const isCurrent = activeStep === s.num;
                           const isClickable = activeStep > s.num;
@@ -1132,7 +1389,7 @@ export default function EmployerOnboarding() {
                               onClick={() => {
                                 if (isClickable) {
                                   setFormError("");
-                                  transitionToStep(s.num as 1 | 2 | 3, "prev");
+                                  transitionToStep(s.num as 1 | 2 | 3 | 4 | 5, "prev");
                                 }
                               }}
                               className={`flex flex-col items-center gap-2 group ${
@@ -1168,7 +1425,6 @@ export default function EmployerOnboarding() {
                         })}
                       </div>
                     </div>
-                  </div>
 
                   {/* ANIMATED STEP CONTENT CONTAINER */}
                   <div
@@ -1301,6 +1557,17 @@ export default function EmployerOnboarding() {
                                 error={fieldErrors.nature_of_business}
                               />
                               <FormField
+                                label="Number of Proprietors *"
+                                field="number_of_proprietors"
+                                value={formData.number_of_proprietors}
+                                onChange={updateField}
+                                placeholder="e.g. 2"
+                                icon={Users}
+                                error={fieldErrors.number_of_proprietors}
+                                type="number"
+                                min={1}
+                              />
+                              <FormField
                                 label="Industry Category *"
                                 field="industry_category"
                                 value={formData.industry_category}
@@ -1364,6 +1631,16 @@ export default function EmployerOnboarding() {
                             error={fieldErrors.description}
                             wide
                           />
+
+                          {employerType === "REGISTERED_INDUSTRY" && (
+                            <>
+                              <FormField label="Company Email *" field="company_email" value={formData.company_email} onChange={updateField} placeholder="contact@enterprise.com" icon={Mail} error={fieldErrors.company_email} />
+                              <FormField label="Company Phone *" field="company_phone" value={formData.company_phone} onChange={updateField} placeholder="10-digit mobile number" icon={Phone} error={fieldErrors.company_phone} />
+                              <FormField label="City *" field="city" value={formData.city} onChange={updateField} placeholder="e.g. Mumbai" icon={Compass} error={fieldErrors.city} />
+                              <FormField label="State *" field="state" value={formData.state} onChange={updateField} placeholder="e.g. Maharashtra" icon={Compass} error={fieldErrors.state} />
+                              <FormField label="Pincode *" field="pincode" value={formData.pincode} onChange={updateField} placeholder="6-digit pincode" icon={MapPin} error={fieldErrors.pincode} />
+                            </>
+                          )}
                         </div>
 
                         {/* Security Banner Callout Box (Reference Image 3) */}
@@ -1409,8 +1686,44 @@ export default function EmployerOnboarding() {
                       </form>
                     )}
 
+                    {/* STEP 2: REGISTERED INDUSTRY LEGAL VERIFICATION */}
+                    {activeStep === 2 && employerType === "REGISTERED_INDUSTRY" && (
+                      <form onSubmit={handleProceedFromStep2} className="space-y-5">
+                        <div className="space-y-4 rounded-2xl border border-slate-200/80 bg-slate-50/60 p-5 dark:border-slate-800 dark:bg-slate-800/40">
+                          <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-500">Legal Identifiers & Verification</h3>
+                          {[
+                            { type: "CIN", label: "CIN *", field: "cin_number", required: true },
+                            { type: "GSTIN", label: "GSTIN (Optional)", field: "gstin", required: false },
+                            { type: "PAN", label: "PAN (Optional)", field: "pan_number", required: false },
+                            { type: "REGISTRATION_NUMBER", label: "Registration Number (Optional)", field: "registration_number", required: false },
+                          ].map((item) => {
+                            const record = getVerificationRecord(item.type);
+                            const provided = Boolean(formData[item.field]?.trim());
+                            const isVerified = record?.status === "VERIFIED";
+                            return (
+                              <div key={item.type} className="grid grid-cols-1 gap-2 rounded-xl border border-slate-200 p-4 sm:grid-cols-[1fr_auto] dark:border-slate-700">
+                                <FormField label={item.label} field={item.field} value={formData[item.field]} onChange={updateField} placeholder={`Enter ${item.type.replaceAll("_", " ")}`} icon={CreditCard} error={fieldErrors[item.field]} readOnly={isVerified} />
+                                <div className="flex items-end justify-between gap-3 sm:flex-col sm:items-end sm:justify-center">
+                                  <span className={`text-xs font-bold ${isVerified ? "text-emerald-600" : "text-slate-500"}`}>Status: {provided ? record?.status || "PENDING" : "NOT PROVIDED"}</span>
+                                  <button type="button" onClick={() => handleRequestVerification(item.type)} disabled={isSubmitting || !provided || isVerified} className="inline-flex items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 px-3.5 py-2 text-xs font-bold text-blue-700 disabled:opacity-50 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-300">
+                                    {isVerified ? <CheckCircle2 size={14} /> : <ShieldCheck size={14} />}
+                                    {isVerified ? "Verified" : `Verify ${item.type}`}
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        {formError && <div className="rounded-xl border border-red-200 bg-red-50 p-3.5 text-xs font-semibold text-red-700">{formError}</div>}
+                        <div className="flex justify-between gap-3 pt-2">
+                          <button type="button" onClick={() => transitionToStep(1, "prev")} className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 py-3.5 text-xs font-bold text-slate-700"><ArrowLeft size={16} /> Back</button>
+                          <button type="submit" disabled={isSubmitting || isAnimating || !hasVerifiedRecord(verification, "CIN")} className="flex-1 inline-flex items-center justify-center gap-2 rounded-2xl bg-blue-600 px-6 py-4 text-xs font-bold text-white disabled:opacity-50">Continue <ArrowRight size={16} /></button>
+                        </div>
+                      </form>
+                    )}
+
                     {/* STEP 2: CONTACT / AUTHORIZED SIGNATORY */}
-                    {activeStep === 2 && (
+                    {activeStep === 2 && employerType !== "REGISTERED_INDUSTRY" && (
                       <form onSubmit={handleProceedFromStep2} className="space-y-5">
                         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                           {isRegistered && (
@@ -1448,15 +1761,17 @@ export default function EmployerOnboarding() {
                                 icon={Mail}
                                 error={fieldErrors.director_email}
                               />
-                              <FormField
-                                label="Authorized Signatory Aadhaar *"
-                                field="director_aadhaar"
-                                value={formData.director_aadhaar}
-                                onChange={updateField}
-                                placeholder="12-digit Aadhaar number"
-                                icon={CreditCard}
-                                error={fieldErrors.director_aadhaar}
-                              />
+                              {employerType !== "REGISTERED_BUSINESS" && (
+                                <FormField
+                                  label="Authorized Signatory Aadhaar *"
+                                  field="director_aadhaar"
+                                  value={formData.director_aadhaar}
+                                  onChange={updateField}
+                                  placeholder="12-digit Aadhaar number"
+                                  icon={CreditCard}
+                                  error={fieldErrors.director_aadhaar}
+                                />
+                              )}
                               <FormField
                                 label="Authorized Signatory Address *"
                                 field="director_address"
@@ -1486,24 +1801,6 @@ export default function EmployerOnboarding() {
                                 placeholder="Owner full name"
                                 icon={User}
                                 error={fieldErrors.proprietor_name}
-                              />
-                              <FormField
-                                label="Proprietor Aadhaar *"
-                                field="proprietor_aadhaar"
-                                value={formData.proprietor_aadhaar}
-                                onChange={updateField}
-                                placeholder="12-digit Aadhaar number"
-                                icon={CreditCard}
-                                error={fieldErrors.proprietor_aadhaar}
-                              />
-                              <FormField
-                                label="Number of Proprietors *"
-                                field="number_of_proprietors"
-                                value={formData.number_of_proprietors}
-                                onChange={updateField}
-                                placeholder="e.g. 2"
-                                icon={Users}
-                                error={fieldErrors.number_of_proprietors}
                               />
                             </>
                           )}
@@ -1643,8 +1940,78 @@ export default function EmployerOnboarding() {
                       </form>
                     )}
 
-                    {/* STEP 3: VERIFICATION & REGISTRATION */}
-                    {activeStep === 3 && (
+                    {/* STEP 3: REGISTERED INDUSTRY DIRECTOR DETAILS */}
+                    {activeStep === 3 && employerType === "REGISTERED_INDUSTRY" && (
+                      <form onSubmit={handleProceedFromStep3} className="space-y-5">
+                        <div className="grid grid-cols-1 gap-4 rounded-2xl border border-slate-200/80 bg-white p-5 sm:grid-cols-2 dark:border-slate-800 dark:bg-slate-800/40">
+                          <div className="sm:col-span-2 border-b border-slate-100 pb-2 dark:border-slate-800"><h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-400">Authorized Director / Signatory</h3></div>
+                          <FormField label="Authorized Director Name *" field="director_name" value={formData.director_name} onChange={updateField} placeholder="Full name as per official ID" icon={User} error={fieldErrors.director_name} />
+                          <FormField label="Director Phone *" field="director_phone" value={formData.director_phone} onChange={updateField} placeholder="Mobile number" icon={Phone} error={fieldErrors.director_phone} />
+                          <FormField label="Director Email *" field="director_email" value={formData.director_email} onChange={updateField} placeholder="Official email address" icon={Mail} error={fieldErrors.director_email} />
+                          <FormField label="Director Address *" field="director_address" value={formData.director_address} onChange={updateField} placeholder="Personal address" icon={MapPin} error={fieldErrors.director_address} wide />
+                          <FormField label="City *" field="city" value={formData.city} onChange={updateField} placeholder="e.g. Mumbai" icon={Compass} error={fieldErrors.city} />
+                          <FormField label="State *" field="state" value={formData.state} onChange={updateField} placeholder="e.g. Maharashtra" icon={Compass} error={fieldErrors.state} />
+                          <FormField label="Pincode *" field="pincode" value={formData.pincode} onChange={updateField} placeholder="6-digit pincode" icon={MapPin} error={fieldErrors.pincode} />
+                          {(() => {
+                            const record = getVerificationRecord("AADHAAR");
+                            const verified = record?.status === "VERIFIED";
+                            const otpSent = record?.status === "PENDING" && record.failure_reason === "OTP_SENT";
+                            const failureMessage = record?.status === "FAILED" || record?.status === "NOT_CONFIGURED"
+                              ? getVerificationFailureMessage("AADHAAR", record.failure_reason, record, formData.business_name || "")
+                              : "";
+                            return (
+                              <div className="sm:col-span-2 space-y-3 rounded-xl border border-slate-200 p-4 dark:border-slate-700">
+                                <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-500">Director Verification</h4>
+                                <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
+                                  <FormField label={`Director Aadhaar for ${formData.director_name || "Authorized Director"} *`} field="director_aadhaar" value={formData.director_aadhaar} onChange={updateField} placeholder="12-digit Aadhaar number" icon={CreditCard} error={fieldErrors.director_aadhaar} readOnly={verified} />
+                                  <div className="flex items-center justify-between gap-3 sm:flex-col sm:items-end">
+                                    <span className={`text-xs font-bold ${verified ? "text-emerald-600" : record?.status === "FAILED" || record?.status === "NOT_CONFIGURED" ? "text-red-600" : "text-slate-500"}`}>
+                                      {verified ? "✓" : record?.status === "FAILED" ? "❌" : ""} Director Aadhaar {record?.failure_reason === "OTP_SENT" ? "OTP SENT / AWAITING OTP" : getVerificationStatus(record, Boolean(formData.director_aadhaar?.trim()))}
+                                    </span>
+                                    {failureMessage && <span className="max-w-xs text-right text-xs font-semibold text-red-600">{failureMessage}</span>}
+                                    {otpSent && (
+                                      <span className="max-w-xs text-right text-xs font-semibold text-blue-700">
+                                        OTP sent successfully. Enter the OTP sent to the Aadhaar-linked mobile number.
+                                      </span>
+                                    )}
+                                    {otpSent && (
+                                      <div className="flex items-center gap-2">
+                                        <input
+                                          value={aadhaarOtp}
+                                          onChange={(event) => setAadhaarOtp(event.target.value.replace(/\D/g, "").slice(0, 8))}
+                                          inputMode="numeric"
+                                          autoComplete="one-time-code"
+                                          placeholder="OTP"
+                                          aria-label="Aadhaar OTP"
+                                          className="w-24 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold dark:border-slate-700 dark:bg-slate-900"
+                                        />
+                                        <button
+                                          type="button"
+                                          onClick={handleVerifyAadhaarOtp}
+                                          disabled={isSubmitting || !aadhaarOtp.trim()}
+                                          className="inline-flex items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 px-3.5 py-2 text-xs font-bold text-blue-700 disabled:opacity-50 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-300"
+                                        >
+                                          <ShieldCheck size={14} /> Verify OTP
+                                        </button>
+                                      </div>
+                                    )}
+                                    <button type="button" onClick={() => handleRequestVerification("AADHAAR")} disabled={isSubmitting || !/^\d{12}$/.test(formData.director_aadhaar || "") || verified} className="inline-flex items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 px-3.5 py-2 text-xs font-bold text-blue-700 disabled:opacity-50"><ShieldCheck size={14} /> {verified ? "Verified" : record?.status === "FAILED" ? "Verify Again" : "Verify Aadhaar"}</button>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })()}
+                        </div>
+                        {formError && <div className="rounded-xl border border-red-200 bg-red-50 p-3.5 text-xs font-semibold text-red-700">{formError}</div>}
+                        <div className="flex justify-between gap-3 pt-2">
+                          <button type="button" onClick={() => transitionToStep(2, "prev")} className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 py-3.5 text-xs font-bold text-slate-700"><ArrowLeft size={16} /> Back</button>
+                          <button type="submit" disabled={isSubmitting || isAnimating} className="flex-1 inline-flex items-center justify-center gap-2 rounded-2xl bg-blue-600 px-6 py-4 text-xs font-bold text-white disabled:opacity-50">Continue <ArrowRight size={16} /></button>
+                        </div>
+                      </form>
+                    )}
+
+                    {/* STEP 4: VERIFICATION & REGISTRATION */}
+                    {activeStep === 3 && employerType !== "REGISTERED_INDUSTRY" && (
                       <div className="space-y-6">
                         {/* Legal Numbers Input & Verification Action */}
                         <div className="space-y-4 rounded-2xl border border-slate-200/80 bg-slate-50/60 p-5 dark:border-slate-800 dark:bg-slate-800/40">
@@ -1656,89 +2023,162 @@ export default function EmployerOnboarding() {
                           </div>
 
                           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                            {isRegistered && (
-                              <>
-                                <div className="sm:col-span-2 space-y-2">
+                            {employerType === "UNREGISTERED_BUSINESS" && (() => {
+                              const record = getVerificationRecord("AADHAAR");
+                              const provided = Boolean(formData.proprietor_aadhaar?.trim());
+                              const verified = record?.status === "VERIFIED";
+                              const otpSent = record?.status === "PENDING" && record.failure_reason === "OTP_SENT";
+                              const failureMessage = record?.status === "FAILED" || record?.status === "NOT_CONFIGURED"
+                                ? getVerificationFailureMessage("AADHAAR", record.failure_reason, record, formData.proprietor_name || "")
+                                : "";
+                              return (
+                                <div className="sm:col-span-2 grid grid-cols-1 gap-3 rounded-xl border border-slate-200 p-4 sm:grid-cols-[1fr_auto] sm:items-end dark:border-slate-700">
                                   <FormField
-                                    label="CIN (Corporate Identification Number) *"
-                                    field="cin_number"
-                                    value={formData.cin_number}
+                                    label="Proprietor Aadhaar *"
+                                    field="proprietor_aadhaar"
+                                    value={formData.proprietor_aadhaar}
                                     onChange={updateField}
-                                    placeholder="e.g. U72200MH2020PTC123456"
+                                    placeholder="12-digit Aadhaar number"
                                     icon={CreditCard}
-                                    error={fieldErrors.cin_number}
-                                    readOnly={hasVerifiedLegalIdentity(employerType, verification)}
+                                    error={fieldErrors.proprietor_aadhaar}
+                                    readOnly={verified}
                                   />
-
-                                  <div className="flex items-center justify-between pt-1">
-                                    {hasVerifiedLegalIdentity(employerType, verification) ? (
-                                      <div className="inline-flex items-center gap-2 text-xs font-bold text-emerald-600 dark:text-emerald-400">
-                                        <CheckCircle2 size={16} />
-                                        Legal Identity Verified (CIN: {formData.cin_number})
-                                      </div>
-                                    ) : (
-                                      <button
-                                        type="button"
-                                        onClick={handleVerifyLegalIdentity}
-                                        disabled={isSubmitting || !formData.cin_number}
-                                        className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-blue-700 disabled:opacity-50 shadow-xs"
-                                      >
-                                        {isSubmitting ? (
-                                          <>
-                                            <Loader2 size={14} className="animate-spin" /> Verifying CIN...
-                                          </>
-                                        ) : (
-                                          <>
-                                            Verify CIN Identity <ShieldCheck size={14} />
-                                          </>
-                                        )}
-                                      </button>
+                                  <div className="flex items-center justify-between gap-3 sm:flex-col sm:items-end">
+                                    <span className={`text-xs font-bold ${verified ? "text-emerald-600" : record?.status === "FAILED" || record?.status === "NOT_CONFIGURED" ? "text-red-600" : "text-slate-500"}`}>
+                                      {verified ? "✓" : record?.status === "FAILED" ? "❌" : ""} Proprietor Aadhaar {record?.failure_reason === "OTP_SENT" ? "OTP SENT / AWAITING OTP" : getVerificationStatus(record, provided)}
+                                    </span>
+                                    {failureMessage && (
+                                      <span className="max-w-xs text-right text-xs font-semibold text-red-600">{failureMessage}</span>
                                     )}
+                                    {otpSent && (
+                                      <span className="max-w-xs text-right text-xs font-semibold text-blue-700">
+                                        OTP sent successfully. Enter the OTP sent to the Aadhaar-linked mobile number.
+                                      </span>
+                                    )}
+                                    {otpSent && (
+                                      <div className="flex items-center gap-2">
+                                        <input
+                                          value={aadhaarOtp}
+                                          onChange={(event) => setAadhaarOtp(event.target.value.replace(/\D/g, "").slice(0, 8))}
+                                          inputMode="numeric"
+                                          autoComplete="one-time-code"
+                                          placeholder="OTP"
+                                          aria-label="Aadhaar OTP"
+                                          className="w-24 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold dark:border-slate-700 dark:bg-slate-900"
+                                        />
+                                        <button
+                                          type="button"
+                                          onClick={handleVerifyAadhaarOtp}
+                                          disabled={isSubmitting || !aadhaarOtp.trim()}
+                                          className="inline-flex items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 px-3.5 py-2 text-xs font-bold text-blue-700 disabled:opacity-50 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-300"
+                                        >
+                                          <ShieldCheck size={14} /> Verify OTP
+                                        </button>
+                                      </div>
+                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRequestVerification("AADHAAR")}
+                                      disabled={isSubmitting || !/^\d{12}$/.test(formData.proprietor_aadhaar || "") || verified}
+                                      className="inline-flex items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 px-3.5 py-2 text-xs font-bold text-blue-700 disabled:opacity-50 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-300"
+                                    >
+                                      {verified ? <CheckCircle2 size={14} /> : <ShieldCheck size={14} />}
+                                      {verified ? "Verified" : record?.status === "FAILED" ? "Verify Again" : "Verify Aadhaar"}
+                                    </button>
                                   </div>
                                 </div>
-
-                                <FormField
-                                  label="GSTIN (Optional)"
-                                  field="gstin"
-                                  value={formData.gstin}
-                                  onChange={updateField}
-                                  placeholder="27AAAAA0000A1Z5"
-                                  icon={CreditCard}
-                                />
-                                <FormField
-                                  label="PAN (Optional)"
-                                  field="pan_number"
-                                  value={formData.pan_number}
-                                  onChange={updateField}
-                                  placeholder="ABCDE1234F"
-                                  icon={CreditCard}
-                                />
-                                <FormField
-                                  label="Registration Number (Optional)"
-                                  field="registration_number"
-                                  value={formData.registration_number}
-                                  onChange={updateField}
-                                  placeholder="State registration ref"
-                                  icon={CreditCard}
-                                />
-                              </>
-                            )}
-
-                            {employerType === "UNREGISTERED_BUSINESS" && (
-                              <FormField
-                                label="Udyam Number (Optional)"
-                                field="udyam_number"
-                                value={formData.udyam_number}
-                                onChange={updateField}
-                                placeholder="UDYAM-XX-00-0000000"
-                                icon={CreditCard}
-                              />
-                            )}
+                              );
+                            })()}
                           </div>
                         </div>
 
+                        {employerType === "REGISTERED_BUSINESS" && (
+                          <div className="space-y-3 rounded-2xl border border-slate-200/80 bg-white p-5 dark:border-slate-800 dark:bg-slate-800/40">
+                            <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-500">Registered Business Verification</h3>
+                            {[
+                              { type: "CIN", label: "CIN *", field: "cin_number", supported: true },
+                              { type: "GSTIN", label: "GSTIN (Optional)", field: "gstin", supported: true },
+                              { type: "PAN", label: "PAN (Optional)", field: "pan_number", supported: true },
+                              { type: "REGISTRATION_NUMBER", label: "Registration Number (Optional)", field: "registration_number", supported: false },
+                              { type: "AADHAAR", label: "Authorized Signatory Aadhaar *", field: "director_aadhaar", supported: true },
+                            ].map((item) => {
+                              const record = getVerificationRecord(item.type);
+                              const provided = Boolean(formData[item.field]?.trim());
+                              const verified = record?.status === "VERIFIED";
+                              const displayStatus = !item.supported
+                                ? "NOT SUPPORTED"
+                                : record?.failure_reason === "OTP_SENT"
+                                ? "OTP SENT / AWAITING OTP"
+                                : getVerificationStatus(record, provided);
+                              const failureMessage = record?.status === "FAILED" || record?.status === "NOT_CONFIGURED"
+                                ? getVerificationFailureMessage(item.type, record.failure_reason, record, formData.business_name || "")
+                                : "";
+                              const otpSent = item.type === "AADHAAR" && record?.status === "PENDING" && record.failure_reason === "OTP_SENT";
+                              return (
+                                <div key={item.type} className="grid grid-cols-1 gap-3 rounded-xl border border-slate-200 p-4 sm:grid-cols-[1fr_auto] sm:items-end dark:border-slate-700">
+                                  <FormField
+                                    label={item.label}
+                                    field={item.field}
+                                    value={formData[item.field]}
+                                    onChange={updateField}
+                                    placeholder={item.type === "AADHAAR" ? "12-digit Aadhaar number" : `Enter ${item.type.replaceAll("_", " ")}`}
+                                    icon={CreditCard}
+                                    error={fieldErrors[item.field]}
+                                    readOnly={verified}
+                                  />
+                                  <div className="flex items-center justify-between gap-3 sm:flex-col sm:items-end">
+                                    <span className={`text-xs font-bold ${verified ? "text-emerald-600" : record?.status === "FAILED" || record?.status === "NOT_CONFIGURED" ? "text-red-600" : "text-slate-500"}`}>
+                                      {verified ? "✓" : record?.status === "FAILED" ? "❌" : ""} {item.type === "AADHAAR" ? "Authorized Signatory Aadhaar" : item.type} {displayStatus}
+                                    </span>
+                                    {failureMessage && (
+                                      <span className="max-w-xs text-right text-xs font-semibold text-red-600">
+                                        {failureMessage}
+                                      </span>
+                                    )}
+                                    {otpSent && (
+                                      <span className="max-w-xs text-right text-xs font-semibold text-blue-700">
+                                        OTP sent successfully. Enter the OTP sent to the Aadhaar-linked mobile number.
+                                      </span>
+                                    )}
+                                    {otpSent && (
+                                      <div className="flex items-center gap-2">
+                                        <input
+                                          value={aadhaarOtp}
+                                          onChange={(event) => setAadhaarOtp(event.target.value.replace(/\D/g, "").slice(0, 8))}
+                                          inputMode="numeric"
+                                          autoComplete="one-time-code"
+                                          placeholder="OTP"
+                                          aria-label="Aadhaar OTP"
+                                          className="w-24 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold dark:border-slate-700 dark:bg-slate-900"
+                                        />
+                                        <button
+                                          type="button"
+                                          onClick={handleVerifyAadhaarOtp}
+                                          disabled={isSubmitting || !aadhaarOtp.trim()}
+                                          className="inline-flex items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 px-3.5 py-2 text-xs font-bold text-blue-700 disabled:opacity-50 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-300"
+                                        >
+                                          <ShieldCheck size={14} /> Verify OTP
+                                        </button>
+                                      </div>
+                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRequestVerification(item.type)}
+                                      disabled={isSubmitting || !provided || !item.supported || verified}
+                                      className="inline-flex items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 px-3.5 py-2 text-xs font-bold text-blue-700 disabled:opacity-50 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-300"
+                                    >
+                                      {verified ? <CheckCircle2 size={14} /> : <ShieldCheck size={14} />}
+                                      {verified ? "Verified" : record?.status === "FAILED" ? "Verify Again" : `Verify ${item.type === "AADHAAR" ? "Aadhaar" : item.type}`}
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+
                         {/* Document Verification Items */}
-                        {verification.required.length > 0 && (
+                        {verification.required.length > 0 && employerType !== "REGISTERED_BUSINESS" && employerType !== "UNREGISTERED_BUSINESS" && (
                           <div className="space-y-3 rounded-2xl border border-slate-200/80 bg-white p-5 dark:border-slate-800 dark:bg-slate-800/40">
                             <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-500">
                               Document Verification Mapping
@@ -1879,6 +2319,23 @@ export default function EmployerOnboarding() {
                         </div>
                       </div>
                     )}
+
+                    {activeStep === 4 && employerType === "REGISTERED_INDUSTRY" && (
+                      <div className="space-y-6">
+                        <div className="space-y-3 rounded-2xl border border-slate-200/80 bg-white p-5 dark:border-slate-800 dark:bg-slate-800/40">
+                          <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-500">Work Location</h3>
+                          <LocationPicker value={formData.work_location} onSelect={selectWorkLocation} />
+                          {fieldErrors.work_location && <p className="text-[11px] font-semibold text-red-600">{fieldErrors.work_location}</p>}
+                        </div>
+                        {formError && <div className="rounded-xl border border-red-200 bg-red-50 p-3.5 text-xs font-semibold text-red-700">{formError}</div>}
+                        <div className="flex justify-between gap-3 pt-2">
+                          <button type="button" onClick={() => transitionToStep(3, "prev")} className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 py-3.5 text-xs font-bold text-slate-700"><ArrowLeft size={16} /> Back</button>
+                          <button type="button" onClick={handleComplete} disabled={isSubmitting || isAnimating} className="flex-1 inline-flex items-center justify-center gap-2 rounded-2xl bg-blue-600 px-6 py-4 text-xs font-bold text-white disabled:opacity-50">
+                            {isSubmitting ? <><Loader2 size={16} className="animate-spin" /> Completing Onboarding...</> : <>Complete Onboarding <CheckCircle2 size={16} /></>}
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -1900,6 +2357,8 @@ function FormField({
   error,
   wide = false,
   readOnly = false,
+  type = "text",
+  min,
 }: {
   label: string;
   field: string;
@@ -1910,6 +2369,8 @@ function FormField({
   error?: string;
   wide?: boolean;
   readOnly?: boolean;
+  type?: "text" | "number";
+  min?: number;
 }) {
   return (
     <label className={`space-y-1.5 ${wide ? "sm:col-span-2" : ""}`}>
@@ -1923,8 +2384,9 @@ function FormField({
           </div>
         )}
         <input
-          type="text"
+          type={type}
           value={value || ""}
+          min={min}
           readOnly={readOnly}
           placeholder={placeholder}
           onChange={(event) => onChange(field, event.target.value)}

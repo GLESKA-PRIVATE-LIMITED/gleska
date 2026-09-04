@@ -83,6 +83,7 @@ class OnboardingService:
         employer_type: str,
         data: dict,
         require_registered_business_location: bool = True,
+        require_all_fields: bool = True,
     ) -> tuple[bool, str]:
         """
         Validate onboarding data based on employer type.
@@ -92,6 +93,7 @@ class OnboardingService:
         """
         if employer_type == "REGISTERED_INDUSTRY":
             required_fields = [
+                "business_name",
                 "industry_type",
                 "industry_category",
                 "registered_address",
@@ -101,10 +103,16 @@ class OnboardingService:
                 "state",
                 "pincode",
                 "work_location",
+                "director_name",
+                "director_phone",
+                "director_email",
+                "director_address",
+                "director_aadhaar",
             ]
-            for field in required_fields:
-                if OnboardingService._missing_required_value(data.get(field)):
-                    return False, f"{field} is required for registered industry"
+            if require_all_fields:
+                for field in required_fields:
+                    if OnboardingService._missing_required_value(data.get(field)):
+                        return False, f"{field} is required for registered industry"
 
         elif employer_type == "REGISTERED_BUSINESS":
             required_fields = [
@@ -113,12 +121,18 @@ class OnboardingService:
                 "business_category",
                 "company_email",
                 "company_phone",
+                "director_name",
+                "director_phone",
+                "director_email",
+                "director_address",
+                "director_aadhaar",
             ]
             if require_registered_business_location:
                 required_fields.extend(["registered_address", "city", "state", "pincode", "work_location"])
-            for field in required_fields:
-                if OnboardingService._missing_required_value(data.get(field)):
-                    return False, f"{field} is required for registered business"
+            if require_all_fields:
+                for field in required_fields:
+                    if OnboardingService._missing_required_value(data.get(field)):
+                        return False, f"{field} is required for registered business"
 
         elif employer_type == "UNREGISTERED_BUSINESS":
             required_fields = [
@@ -137,9 +151,10 @@ class OnboardingService:
                 "pincode",
                 "work_location",
             ]
-            for field in required_fields:
-                if OnboardingService._missing_required_value(data.get(field)):
-                    return False, f"{field} is required for unregistered business"
+            if require_all_fields:
+                for field in required_fields:
+                    if OnboardingService._missing_required_value(data.get(field)):
+                        return False, f"{field} is required for unregistered business"
 
             num_proprietors = data.get("number_of_proprietors")
             if num_proprietors is not None:
@@ -159,9 +174,10 @@ class OnboardingService:
                 "pincode",
                 "work_location",
             ]
-            for field in required_fields:
-                if OnboardingService._missing_required_value(data.get(field)):
-                    return False, f"{field} is required for individual employer"
+            if require_all_fields:
+                for field in required_fields:
+                    if OnboardingService._missing_required_value(data.get(field)):
+                        return False, f"{field} is required for individual employer"
 
         pincode = str(data.get("pincode", "")).strip()
         if pincode and not re.fullmatch(r"[0-9]{6}", pincode):

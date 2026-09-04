@@ -76,6 +76,7 @@ class EmployerOnboardingDetailsResponse(BaseModel):
     director_phone: Optional[str] = None
     director_email: Optional[str] = None
     director_address: Optional[str] = None
+    director_aadhaar: Optional[str] = None
     work_location: Optional[str] = None
     bank_ifsc: Optional[str] = None
     bank_account_holder_name: Optional[str] = None
@@ -91,14 +92,14 @@ class EmployerOnboardingDetailsResponse(BaseModel):
 
 class RegisteredIndustryOnboardingSchema(BaseModel):
     """Onboarding schema for registered industry."""
-    industry_type: str
-    industry_category: str
+    industry_type: Optional[str] = None
+    industry_category: Optional[str] = None
     business_name: Optional[str] = None
     business_category: Optional[str] = None
-    registered_address: str
-    city: str
-    state: str
-    pincode: str
+    registered_address: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    pincode: Optional[str] = None
     gstin: Optional[str] = None
     registration_number: Optional[str] = None
     cin_number: Optional[str] = None
@@ -109,7 +110,7 @@ class RegisteredIndustryOnboardingSchema(BaseModel):
     services_required: Optional[list] = None
     director_data: Optional[list] = None
     hiring_mode: Optional[str] = None
-    work_location: str
+    work_location: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     company_email: Optional[str] = None
