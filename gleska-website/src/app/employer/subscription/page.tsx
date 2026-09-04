@@ -63,7 +63,7 @@ async function loadCashfree() {
 
 export default function SubscriptionPage() {
   const router = useRouter();
-  const { user, isLoading, logout } = useAuth();
+  const { user, isLoading, nextStep, logout } = useAuth();
   const [profile, setProfile] = React.useState<EmployerProfile | null>(null);
   const [isProfileLoading, setIsProfileLoading] = React.useState(true);
   const [isPaymentLoading, setIsPaymentLoading] = React.useState(false);
@@ -104,22 +104,26 @@ export default function SubscriptionPage() {
       router.push("/");
       return;
     }
+    if (nextStep !== "DASHBOARD") {
+      router.push("/employer/onboarding");
+      return;
+    }
 
     apiClient.get<EmployerProfile>("/api/v1/employers/me", { withCredentials: true })
       .then((response) => setProfile(response.data))
       .catch((requestError: unknown) => setError(getRequestError(requestError)))
       .finally(() => setIsProfileLoading(false));
-  }, [isLoading, user, verifyReturnedOrder]);
+  }, [isLoading, nextStep, router, user, verifyReturnedOrder]);
 
   React.useEffect(() => {
-    if (isLoading || user?.role !== "EMPLOYER") return;
+    if (isLoading || user?.role !== "EMPLOYER" || nextStep !== "DASHBOARD") return;
     const orderId = new URLSearchParams(window.location.search).get("order_id");
     if (!orderId) return;
 
     if (verifiedOrderRef.current === orderId) return;
     verifiedOrderRef.current = orderId;
     void verifyReturnedOrder(orderId);
-  }, [isLoading, router, user]);
+  }, [isLoading, nextStep, router, user, verifyReturnedOrder]);
 
   const handleSubscribe = async () => {
     if (isPaymentLoading) return;

@@ -2,7 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
-import { Building2, Briefcase, CreditCard, FileText, HelpCircle, LayoutDashboard, LogOut, PanelLeft, Settings, User, Users, X } from "lucide-react";
+import { Briefcase, CreditCard, FileText, HelpCircle, LayoutDashboard, LogOut, MapPin, PanelLeft, Settings, User, Users, X, Clock } from "lucide-react";
 
 interface AccountManagementShellProps {
   kind: "employer" | "worker";
@@ -24,8 +24,10 @@ export default function AccountManagementShell({ kind, name, accountLabel, profi
   const navigation = employer
     ? [
         { href: dashboardHref, label: "Dashboard", icon: LayoutDashboard },
+        { href: `${dashboardHref}#create-job`, label: "Post a Job", icon: Briefcase },
         { href: "/employer/workers", label: "Workers", icon: Users },
-        { href: "/employer/attendance", label: "Attendance", icon: Briefcase },
+        { href: "/employer/attendance", label: "Attendance", icon: Clock },
+        { href: dashboardHref, label: "Add Work Site", icon: MapPin },
       ]
     : [
         { href: dashboardHref, label: "Dashboard", icon: LayoutDashboard },

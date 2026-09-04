@@ -350,7 +350,7 @@ export default function EmployerDashboard() {
     }
 
     // If onboarding is not complete, redirect to onboarding
-    if (!isLoading && nextStep !== "DASHBOARD") {
+    if (!isLoading && user && nextStep !== "DASHBOARD") {
       router.push("/employer/onboarding");
     }
   }, [user, isLoading, nextStep, router]);

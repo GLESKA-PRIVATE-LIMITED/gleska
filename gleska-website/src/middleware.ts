@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 // Define protected route prefixes
-const WORKER_PROTECTED_PREFIXES = ["/worker/dashboard", "/worker/profile", "/worker/documents", "/worker/onboarding"];
-const EMPLOYER_PROTECTED_PREFIXES = ["/employer/dashboard", "/employer/onboarding", "/employer/workers", "/employer/attendance"];
+const WORKER_PROTECTED_PREFIXES = ["/worker/dashboard", "/worker/profile", "/worker/documents", "/worker/onboarding", "/worker/subscription"];
+const EMPLOYER_PROTECTED_PREFIXES = ["/employer/dashboard", "/employer/onboarding", "/employer/workers", "/employer/attendance", "/employer/subscription"];
 
 export function middleware(request: NextRequest) {
   const { pathname, searchParams } = request.nextUrl;
@@ -50,10 +50,12 @@ export const config = {
     "/worker/profile/:path*",
     "/worker/documents/:path*",
     "/worker/onboarding/:path*",
+    "/worker/subscription/:path*",
     "/employer/dashboard/:path*",
     "/employer/onboarding/:path*",
     "/employer/workers/:path*",
     "/employer/attendance/:path*",
+    "/employer/subscription/:path*",
   ],
 };
 

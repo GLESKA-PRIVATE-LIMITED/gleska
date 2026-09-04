@@ -4,7 +4,6 @@ import React from "react";
 import Link from "next/link";
 import { ArrowRight, LayoutDashboard, Zap } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
-import { getRouteForNextStep } from "@/lib/auth-routing";
 
 interface AgentCard {
   id: string;
@@ -19,8 +18,7 @@ interface AgentCard {
 }
 
 function AgentCardsGrid({ agentCards }: { agentCards: AgentCard[] }) {
-  const { user, isSubscribed, nextStep } = useAuth();
-  const dashboardHref = user ? getRouteForNextStep(user.role, nextStep) : "/employer/dashboard";
+  const { user } = useAuth();
 
   return (
     <div className="grid grid-cols-1 gap-6 md:grid-cols-3 sm:gap-8">
@@ -52,20 +50,17 @@ function AgentCardsGrid({ agentCards }: { agentCards: AgentCard[] }) {
           {/* Footer / CTA */}
           <div className="mt-8 flex items-center justify-between border-t border-slate-100 pt-5 text-sm font-semibold text-slate-500 dark:border-slate-800 dark:text-slate-400">
             <span className="font-mono text-xs uppercase tracking-wider">Custom pricing</span>
-            {isSubscribed ? (
+            {agent.title === "Hiring Agent" ? (
               <Link
-                href={dashboardHref}
+                href={user ? "/employer/dashboard" : "/employer/auth"}
                 className={`inline-flex items-center gap-1.5 font-bold transition-colors ${agent.dashboardCtaColor}`}
               >
-                Dashboard <LayoutDashboard size={16} />
+                {user ? "Dashboard" : "Subscribe"} {user ? <LayoutDashboard size={16} /> : <ArrowRight size={16} />}
               </Link>
             ) : (
-              <Link
-                href="/#contact"
-                className={`inline-flex items-center gap-1.5 font-bold transition-colors ${agent.ctaColor}`}
-              >
-                Subscribe <ArrowRight size={16} />
-              </Link>
+              <span className={`inline-flex items-center gap-1.5 font-bold ${agent.ctaColor}`}>
+                Coming Soon
+              </span>
             )}
           </div>
         </div>
