@@ -341,6 +341,6 @@ async def resend_otp(request: ResendOTPSchema):
 
 
 @router.post("/logout")
-async def logout(response: Response, user: UserResponse = Depends(get_current_user)):
+async def logout(response: Response):
     response.delete_cookie(key="goleska_session", path="/")
     return {"success": True, "message": "Logged out successfully"}

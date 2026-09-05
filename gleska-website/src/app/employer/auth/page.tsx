@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
@@ -12,6 +12,12 @@ import { getRouteForNextStep } from "@/lib/auth-routing";
 export default function EmployerAuthPage() {
   const router = useRouter();
   const { user, isLoading: authLoading, nextStep } = useAuth();
+  const [accountType, setAccountType] = useState<"BUSINESS" | "INDIVIDUAL">("BUSINESS");
+
+  useEffect(() => {
+    const requestedAccountType = new URLSearchParams(window.location.search).get("account");
+    if (requestedAccountType === "individual") setAccountType("INDIVIDUAL");
+  }, []);
 
   useEffect(() => {
     if (!authLoading && user) {
@@ -50,7 +56,7 @@ export default function EmployerAuthPage() {
               </p>
             </div>
 
-            <AuthMethodPanel role="EMPLOYER" />
+            <AuthMethodPanel role="EMPLOYER" accountType={accountType} />
           </div>
 
           <div className="mt-6 space-y-3 rounded-2xl border border-slate-200/80 bg-white/80 p-5 shadow-lg shadow-slate-900/5 backdrop-blur-xl dark:border-slate-800/80 dark:bg-slate-900/80">

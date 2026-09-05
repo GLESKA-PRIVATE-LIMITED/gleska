@@ -49,8 +49,6 @@ class MSG91Service:
         logger.info("MSG91 verify method=POST")
         logger.info("MSG91 token present=%s", bool(token))
         logger.info("MSG91 token length=%s", len(token))
-        logger.info("MSG91 token prefix=%s", token[:10])
-        logger.info("MSG91 token suffix=%s", token[-10:])
 
         try:
             async with httpx.AsyncClient(timeout=settings.MSG91_TIMEOUT_SECONDS) as client:
@@ -66,7 +64,6 @@ class MSG91Service:
         response_text = response.text or ""
         logger.info("MSG91 response status=%s", response.status_code)
         logger.info("MSG91 response content-type=%s", response.headers.get("content-type"))
-        logger.info("MSG91 response body preview=%s", response_text[:500])
 
         if response.status_code in (401, 403):
             logger.warning("MSG91 rejected the verification token: status=%s", response.status_code)

@@ -12,7 +12,7 @@ import { normalizeIndianMobile } from "@/lib/msg91";
 type Role = "WORKER" | "EMPLOYER";
 type OTPTransaction = { name: string; email: string; password: string; mobile: string; termsAccepted: boolean; requestId: string | null; channel: "SMS" | "EMAIL" };
 
-export default function AuthMethodPanel({ role }: { role: Role }) {
+export default function AuthMethodPanel({ role, accountType = "BUSINESS" }: { role: Role; accountType?: "BUSINESS" | "INDIVIDUAL" }) {
   const router = useRouter();
   const { signInWithEmail, signInWithGoogle, signupPreflight, requestOTP, resendOTP, completeEmailSignup, loginWithMobile, refreshUser, isLoading: authLoading } = useAuth();
   const [mode, setMode] = useState<"login" | "signup">("login");
@@ -160,7 +160,7 @@ export default function AuthMethodPanel({ role }: { role: Role }) {
   const handleGoogleAuth = () => {
     clearOtpTransaction();
     setSubmitting(true);
-    signInWithGoogle(role).catch((error: Error) => {
+    signInWithGoogle(role, accountType).catch((error: Error) => {
       toast.error(error.message);
       setSubmitting(false);
     });
@@ -183,6 +183,7 @@ export default function AuthMethodPanel({ role }: { role: Role }) {
           otp,
           role,
           otpTransaction.termsAccepted,
+          accountType,
         );
       } else {
         await loginWithMobile(otpTransaction.mobile, otp, role);

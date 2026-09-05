@@ -84,10 +84,10 @@ export default function SignInSelectionPage() {
             </Link>
 
             {/*
-             * INDIVIDUAL ACCOUNT — destination: /worker/auth
+             * INDIVIDUAL ACCOUNT — employer authentication with Individual intent
              */}
             <Link
-              href="/worker/auth"
+              href="/employer/auth?account=individual"
               className="group relative flex flex-col justify-between rounded-3xl border border-slate-200/80 bg-white/80 p-6 sm:p-8 shadow-2xl shadow-slate-900/5 backdrop-blur-xl transition-all duration-300 hover:-translate-y-1.5 hover:border-amber-500/60 hover:shadow-xl dark:border-slate-800/80 dark:bg-slate-900/90"
             >
               <div className="space-y-4">

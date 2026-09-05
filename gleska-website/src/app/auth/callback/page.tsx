@@ -21,11 +21,23 @@ function getStoredRole(): "WORKER" | "EMPLOYER" | null {
   return null;
 }
 
+function getStoredAccountType(): "BUSINESS" | "INDIVIDUAL" {
+  if (typeof window === "undefined") return "BUSINESS";
+  const sessionType = sessionStorage.getItem("goleska_oauth_account_type");
+  if (sessionType === "INDIVIDUAL") return "INDIVIDUAL";
+  const localType = localStorage.getItem("goleska_oauth_account_type");
+  if (localType === "INDIVIDUAL") return "INDIVIDUAL";
+  const match = document.cookie.match(/(?:^|;\s*)goleska_oauth_account_type=([^;]+)/);
+  return match?.[1] === "INDIVIDUAL" ? "INDIVIDUAL" : "BUSINESS";
+}
+
 function clearStoredRole() {
   if (typeof window === "undefined") return;
   sessionStorage.removeItem("goleska_oauth_role");
   localStorage.removeItem("goleska_oauth_role");
+  localStorage.removeItem("goleska_oauth_account_type");
   document.cookie = "goleska_oauth_role=; path=/; max-age=0; SameSite=Lax";
+  document.cookie = "goleska_oauth_account_type=; path=/; max-age=0; SameSite=Lax";
 }
 
 export default function AuthCallbackPage() {
@@ -134,12 +146,13 @@ export default function AuthCallbackPage() {
           "(3) you navigated directly to this page."
         );
       }
+      const storedAccountType = getStoredAccountType();
 
       console.log("[OAuth] Provisioning new user with role:", storedRole);
       try {
         // Provision the user in the backend using the Supabase session established in PHASE 2
         // provisionSession now returns the user and nextStep directly without needing a third API call here
-        const provisionedData = await provisionSession(storedRole);
+        const provisionedData = await provisionSession(storedRole, "", storedAccountType);
         console.log("[OAuth] User provisioned successfully");
 
         const authenticatedRole = provisionedData.user.role as "WORKER" | "EMPLOYER";
