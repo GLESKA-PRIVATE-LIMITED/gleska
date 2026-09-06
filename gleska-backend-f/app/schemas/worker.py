@@ -5,6 +5,9 @@ from typing import Optional
 from datetime import datetime
 
 
+MAX_EXPECTED_DAILY_WAGE = 1_000_000
+
+
 class WorkerProfileResponse(BaseModel):
     """Worker profile response."""
     id: str
@@ -39,7 +42,7 @@ class UpdateWorkerProfileSchema(BaseModel):
     """Schema for updating worker profile."""
     trade_id: Optional[str] = Field(default=None, min_length=1, max_length=120)
     experience_years: Optional[int] = Field(default=None, ge=0)
-    expected_daily_wage: Optional[float] = Field(default=None, ge=0)
+    expected_daily_wage: Optional[float] = Field(default=None, ge=0, le=MAX_EXPECTED_DAILY_WAGE)
     availability_status: Optional[str] = None
     city: Optional[str] = None
     state: Optional[str] = None

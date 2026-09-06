@@ -26,7 +26,7 @@ import {
 import { toast } from "sonner";
 import Link from "next/link";
 import apiClient from "@/lib/api";
-import { getLocationErrorMessage, shouldSendLiveLocationUpdate, type LiveLocationSnapshot, normalizeCoordinates } from "@/lib/location";
+import { getBrowserLocation, getLocationErrorMessage, shouldSendLiveLocationUpdate, type LiveLocationSnapshot, normalizeCoordinates } from "@/lib/location";
 
 declare global {
   interface Window {
@@ -56,6 +56,37 @@ type RouteResponse = {
     encoded_polyline: string;
   };
 };
+
+type WorkerActiveJob = {
+  match_id: string;
+  job_id: string;
+  title: string;
+  status: string;
+};
+
+type WorkerAttendance = {
+  id: string;
+  attendance_date: string;
+  job_title: string;
+  site_name: string;
+  status: "PRESENT" | "LATE" | "ABSENT";
+  check_in_at?: string | null;
+  check_out_at?: string | null;
+};
+
+type WorkerAttendanceHistory = {
+  items: WorkerAttendance[];
+  page: number;
+  limit: number;
+  total: number;
+  has_more: boolean;
+};
+
+function formatAttendanceDuration(checkIn?: string | null, checkOut?: string | null): string {
+  if (!checkIn || !checkOut) return "-";
+  const minutes = Math.max(0, Math.round((new Date(checkOut).getTime() - new Date(checkIn).getTime()) / 60000));
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+}
 
 function GoogleRouteMap({ route }: { route: RouteResponse }) {
   const mapRef = useRef<HTMLDivElement | null>(null);
@@ -193,6 +224,16 @@ export default function WorkerDashboard() {
   const [jobsError, setJobsError] = React.useState("");
   const [routeError, setRouteError] = React.useState("");
   const [routeLoading, setRouteLoading] = React.useState(false);
+  const [activeJob, setActiveJob] = React.useState<WorkerActiveJob | null>(null);
+  const [todayAttendance, setTodayAttendance] = React.useState<WorkerAttendance | null>(null);
+  const [attendanceLoading, setAttendanceLoading] = React.useState(true);
+  const [attendanceAction, setAttendanceAction] = React.useState<"check-in" | "check-out" | null>(null);
+  const [attendanceError, setAttendanceError] = React.useState("");
+  const [attendanceHistory, setAttendanceHistory] = React.useState<WorkerAttendanceHistory | null>(null);
+  const [attendanceHistoryPage, setAttendanceHistoryPage] = React.useState(1);
+  const [attendanceHistoryLoading, setAttendanceHistoryLoading] = React.useState(true);
+  const [attendanceHistoryError, setAttendanceHistoryError] = React.useState("");
+  const [attendanceHistoryRetry, setAttendanceHistoryRetry] = React.useState(0);
   const watcherIdRef = React.useRef<number | null>(null);
   const lastLiveLocationRef = React.useRef<LiveLocationSnapshot | null>(null);
   const lastLocationWarningAtRef = React.useRef(0);
@@ -257,6 +298,28 @@ export default function WorkerDashboard() {
       }
       lastLiveLocationRef.current = null;
     };
+  }, [user]);
+
+  useEffect(() => {
+    if (!user || user.role !== "WORKER") return;
+    let active = true;
+    apiClient.get<WorkerAttendanceHistory>(`/api/v1/workers/me/attendance?page=${attendanceHistoryPage}&limit=10`)
+      .then((response) => { if (active) setAttendanceHistory(response.data); })
+      .catch(() => { if (active) setAttendanceHistoryError("Unable to load attendance history."); })
+      .finally(() => { if (active) setAttendanceHistoryLoading(false); });
+    return () => { active = false; };
+  }, [attendanceHistoryPage, attendanceHistoryRetry, user]);
+
+  useEffect(() => {
+    if (!user || user.role !== "WORKER") return;
+    Promise.all([
+      apiClient.get<{ active_job?: WorkerActiveJob | null }>("/api/v1/workers/me/jobs"),
+      apiClient.get<{ items: WorkerAttendance[] }>("/api/v1/workers/me/attendance/today"),
+    ]).then(([jobsResponse, attendanceResponse]) => {
+      setActiveJob(jobsResponse.data.active_job || null);
+      setTodayAttendance(attendanceResponse.data.items?.[0] || null);
+    }).catch(() => setAttendanceError("Unable to load attendance right now."))
+      .finally(() => setAttendanceLoading(false));
   }, [user]);
 
   // Layout UI states
@@ -343,6 +406,29 @@ export default function WorkerDashboard() {
       setRouteError(detail || (error instanceof Error ? error.message : undefined) || "Unable to calculate the route right now. Please try again.");
     } finally {
       setRouteLoading(false);
+    }
+  };
+
+  const handleAttendanceAction = async (action: "check-in" | "check-out") => {
+    if (attendanceAction || !activeJob && action === "check-in" || !todayAttendance && action === "check-out") return;
+    setAttendanceAction(action);
+    setAttendanceError("");
+    try {
+      const location = await getBrowserLocation();
+      const payload = { latitude: location.latitude, longitude: location.longitude, accuracy: location.accuracy };
+      await (action === "check-in"
+        ? await apiClient.post<WorkerAttendance>("/api/v1/workers/me/attendance/check-in", { ...payload, job_match_id: activeJob?.match_id })
+        : await apiClient.post<WorkerAttendance>("/api/v1/workers/me/attendance/check-out", { ...payload, attendance_id: todayAttendance?.id }));
+      const refreshed = await apiClient.get<{ items: WorkerAttendance[] }>("/api/v1/workers/me/attendance/today");
+      setTodayAttendance(refreshed.data.items?.[0] || null);
+      setAttendanceHistoryRetry((value) => value + 1);
+    } catch (error: unknown) {
+      const detail = typeof error === "object" && error !== null
+        ? (error as { response?: { data?: { detail?: unknown } } }).response?.data?.detail
+        : undefined;
+      setAttendanceError(detail === "OUTSIDE_ATTENDANCE_GEOFENCE" ? "You're too far from the work site to check in." : detail === "CURRENT_LOCATION_REQUIRED" ? "Location is required to check in." : "Unable to update attendance right now.");
+    } finally {
+      setAttendanceAction(null);
     }
   };
 
@@ -720,6 +806,26 @@ export default function WorkerDashboard() {
               </Link>
             </div>
           </div>
+
+          <section className="mb-8 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wide text-blue-700 dark:text-blue-300">Attendance</p>
+                <h2 className="mt-1 text-xl font-bold text-slate-900 dark:text-white">Today&apos;s work record</h2>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Check in and out at your accepted job site.</p>
+              </div>
+              {todayAttendance && <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">{todayAttendance.status}</span>}
+            </div>
+            {attendanceLoading ? <div className="mt-5 flex items-center gap-2 text-sm text-slate-500"><Loader2 size={16} className="animate-spin" /> Loading attendance...</div> : activeJob || todayAttendance ? <div className="mt-5 flex flex-col gap-4 rounded-xl bg-slate-50 p-4 dark:bg-slate-800/60 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-semibold text-slate-900 dark:text-white">{todayAttendance?.job_title || activeJob?.title || "Accepted job"}</p><p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{todayAttendance?.check_in_at ? `Checked in at ${new Date(todayAttendance.check_in_at).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })}` : "No check-in recorded today"}{todayAttendance?.check_out_at ? ` · Checked out at ${new Date(todayAttendance.check_out_at).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })}` : ""}</p></div><div className="flex flex-wrap gap-2">{!todayAttendance && activeJob && <button type="button" onClick={() => void handleAttendanceAction("check-in")} disabled={Boolean(attendanceAction)} className="min-h-11 rounded-xl bg-blue-600 px-4 text-sm font-bold text-white disabled:opacity-60">{attendanceAction === "check-in" ? "Checking you in..." : "Check in"}</button>}{todayAttendance && !todayAttendance.check_out_at && <button type="button" onClick={() => void handleAttendanceAction("check-out")} disabled={Boolean(attendanceAction)} className="min-h-11 rounded-xl bg-blue-600 px-4 text-sm font-bold text-white disabled:opacity-60">{attendanceAction === "check-out" ? "Checking you out..." : "Check out"}</button>}</div></div> : <p className="mt-5 rounded-xl bg-slate-50 p-4 text-sm text-slate-500 dark:bg-slate-800/60 dark:text-slate-400">Attendance becomes available after a job match is accepted.</p>}
+            {attendanceError && <p className="mt-3 text-sm text-rose-600 dark:text-rose-400">{attendanceError}</p>}
+            {todayAttendance?.check_out_at && <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/20 dark:text-emerald-300"><p className="font-bold">Checked out</p><p className="mt-1">Check-in: {new Date(todayAttendance.check_in_at || "").toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })}</p><p>Check-out: {new Date(todayAttendance.check_out_at).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })}</p><p className="mt-1 font-bold">Hours worked: {formatAttendanceDuration(todayAttendance.check_in_at, todayAttendance.check_out_at)}</p></div>}
+          </section>
+
+          <section className="mb-8 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6">
+            <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Attendance history</p><h2 className="mt-1 text-xl font-bold text-slate-900 dark:text-white">Your records</h2></div>{attendanceHistory && <p className="text-sm text-slate-500 dark:text-slate-400">{attendanceHistory.total} record{attendanceHistory.total === 1 ? "" : "s"}</p>}</div>
+            {attendanceHistoryLoading ? <div className="mt-5 flex items-center gap-2 text-sm text-slate-500"><Loader2 size={16} className="animate-spin" /> Loading attendance history...</div> : attendanceHistoryError ? <div className="mt-5 rounded-xl bg-rose-50 p-4 text-sm text-rose-700 dark:bg-rose-950/20 dark:text-rose-300"><p>{attendanceHistoryError}</p><button type="button" onClick={() => { setAttendanceHistoryLoading(true); setAttendanceHistoryError(""); setAttendanceHistoryRetry((value) => value + 1); }} className="mt-3 font-bold underline">Try again</button></div> : attendanceHistory?.items.length ? <div className="mt-5 space-y-3">{attendanceHistory.items.map((item) => <article key={item.id} className="rounded-xl border border-slate-200 p-4 dark:border-slate-700"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-semibold text-slate-900 dark:text-white">{item.job_title}</p><p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{item.site_name} · {new Date(`${item.attendance_date}T00:00:00`).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</p></div><span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold dark:bg-slate-800">{item.status}</span></div><div className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-3"><p><span className="block text-xs text-slate-400">Check-in</span><strong>{item.check_in_at ? new Date(item.check_in_at).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" }) : "-"}</strong></p><p><span className="block text-xs text-slate-400">Check-out</span><strong>{item.check_out_at ? new Date(item.check_out_at).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" }) : "-"}</strong></p><p><span className="block text-xs text-slate-400">Hours</span><strong>{formatAttendanceDuration(item.check_in_at, item.check_out_at)}</strong></p></div></article>)}</div> : <p className="mt-5 rounded-xl bg-slate-50 p-4 text-sm text-slate-500 dark:bg-slate-800/60 dark:text-slate-400">No attendance records yet.</p>}
+            {attendanceHistory && attendanceHistory.total > attendanceHistory.limit && <div className="mt-5 flex justify-end gap-2"><button type="button" disabled={attendanceHistoryPage === 1} onClick={() => { setAttendanceHistoryLoading(true); setAttendanceHistoryPage((page) => page - 1); }} className="min-h-10 rounded-xl border px-3 text-sm font-bold disabled:opacity-40">Previous</button><button type="button" disabled={!attendanceHistory.has_more} onClick={() => { setAttendanceHistoryLoading(true); setAttendanceHistoryPage((page) => page + 1); }} className="min-h-10 rounded-xl border px-3 text-sm font-bold disabled:opacity-40">Next</button></div>}
+          </section>
 
           {/* Jobs Section */}
           <div className="mt-12">

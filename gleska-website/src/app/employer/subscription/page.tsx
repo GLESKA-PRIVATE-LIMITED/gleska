@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { CheckCircle2, Loader2, AlertCircle } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import apiClient from "@/lib/api";
-import AccountManagementShell from "@/components/AccountManagementShell";
+import AccountManagementShell, { formatEmployerType } from "@/components/AccountManagementShell";
 
 interface EmployerProfile {
   contact_person_name?: string | null;
@@ -176,7 +176,7 @@ export default function SubscriptionPage() {
     <AccountManagementShell
       kind="employer"
       name={profile.contact_person_name || user.name}
-      accountLabel={employerType.replaceAll("_", " ") || "Employer"}
+      accountLabel={formatEmployerType(employerType)}
       profileHref="/employer/company-profile"
       onLogout={() => void logout()}
     >

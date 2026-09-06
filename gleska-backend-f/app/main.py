@@ -3,7 +3,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
-from app.routers import health, auth, workers, employers, jobs, job_sites, locations, payments, contact
+from app.routers import health, auth, workers, employers, employer_workers, attendance, jobs, job_sites, locations, payments, contact
 
 # Create FastAPI app
 app = FastAPI(
@@ -49,6 +49,9 @@ app.include_router(health.router, tags=["health"])
 app.include_router(auth.router, prefix=settings.API_V1_PREFIX, tags=["auth"])
 app.include_router(workers.router, prefix=settings.API_V1_PREFIX, tags=["workers"])
 app.include_router(employers.router, prefix=settings.API_V1_PREFIX, tags=["employers"])
+app.include_router(employer_workers.router, prefix=settings.API_V1_PREFIX, tags=["employer-workers"])
+app.include_router(attendance.worker_router, prefix=settings.API_V1_PREFIX)
+app.include_router(attendance.employer_router, prefix=settings.API_V1_PREFIX)
 app.include_router(jobs.router, prefix=settings.API_V1_PREFIX, tags=["jobs"])
 app.include_router(job_sites.router, prefix=settings.API_V1_PREFIX, tags=["job-sites"])
 app.include_router(locations.router, prefix=settings.API_V1_PREFIX, tags=["locations"])

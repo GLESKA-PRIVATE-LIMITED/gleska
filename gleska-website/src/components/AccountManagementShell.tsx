@@ -2,6 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { Briefcase, CreditCard, FileText, HelpCircle, LayoutDashboard, LogOut, MapPin, PanelLeft, Settings, User, Users, X, Clock } from "lucide-react";
 
 interface AccountManagementShellProps {
@@ -13,9 +14,20 @@ interface AccountManagementShellProps {
   children: React.ReactNode;
 }
 
+export function formatEmployerType(value?: string | null): string {
+  const labels: Record<string, string> = {
+    INDIVIDUAL: "Individual Employer",
+    REGISTERED_BUSINESS: "Registered Business",
+    REGISTERED_INDUSTRY: "Registered Industry",
+    UNREGISTERED_BUSINESS: "Unregistered Business",
+  };
+  return (value && labels[value]) || "Employer";
+}
+
 export default function AccountManagementShell({ kind, name, accountLabel, profileHref, onLogout, children }: AccountManagementShellProps) {
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(true);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
+  const pathname = usePathname();
 
   const employer = kind === "employer";
   const dashboardHref = employer ? "/employer/dashboard" : "/worker/dashboard";
@@ -23,27 +35,37 @@ export default function AccountManagementShell({ kind, name, accountLabel, profi
 
   const navigation = employer
     ? [
-        { href: dashboardHref, label: "Dashboard", icon: LayoutDashboard },
-        { href: `${dashboardHref}#create-job`, label: "Post a Job", icon: Briefcase },
-        { href: "/employer/workers", label: "Workers", icon: Users },
-        { href: "/employer/attendance", label: "Attendance", icon: Clock },
-        { href: dashboardHref, label: "Add Work Site", icon: MapPin },
+        { href: dashboardHref, label: "Dashboard", icon: LayoutDashboard, isPage: true },
+        { href: `${dashboardHref}#create-job`, label: "Post a Job", icon: Briefcase, isPage: false },
+        { href: "/employer/workers", label: "Workers", icon: Users, isPage: true },
+        { href: "/employer/attendance", label: "Attendance", icon: Clock, isPage: true },
+        { href: dashboardHref, label: "Add Work Site", icon: MapPin, isPage: false },
       ]
     : [
-        { href: dashboardHref, label: "Dashboard", icon: LayoutDashboard },
-        { href: "/worker/documents", label: "Documents", icon: FileText },
+        { href: dashboardHref, label: "Dashboard", icon: LayoutDashboard, isPage: true },
+        { href: "/worker/documents", label: "Documents", icon: FileText, isPage: true },
       ];
 
   const accountLinks = [
-    { href: "/" + kind + "/subscription", label: "Subscription", icon: CreditCard, active: true },
+    { href: "/" + kind + "/subscription", label: "Subscription", icon: CreditCard },
     { href: profileHref, label: "Profile", icon: User },
   ];
+
+  const linkIsActive = (href: string) => {
+    if (!href) return false;
+    if (href.includes("#")) return false;
+    const path = href.split("#")[0];
+    if (path === dashboardHref) return pathname === dashboardHref && href === dashboardHref;
+    return pathname === path || pathname.startsWith(`${path}/`);
+  };
+
+  const linkClass = (href: string, mobile: boolean, base = "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white") => `flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition ${linkIsActive(href) ? "bg-blue-600 text-white shadow-xs" : base} ${!isSidebarOpen && !mobile ? "justify-center" : ""}`;
 
   const renderLinks = (mobile = false) => (
     <>
       <div className="space-y-1.5">
-        {navigation.map(({ href, label, icon: Icon }) => (
-          <Link key={href} href={href} onClick={mobile ? closeMobile : undefined} className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white ${!isSidebarOpen && !mobile ? "justify-center" : ""}`} title={label}>
+        {navigation.map(({ href, label, icon: Icon, isPage }) => (
+          <Link key={label} href={href} onClick={mobile ? closeMobile : undefined} className={linkClass(isPage ? href : "", mobile)} title={label}>
             <Icon size={19} className="shrink-0" />
             {(isSidebarOpen || mobile) && <span>{label}</span>}
           </Link>
@@ -51,20 +73,20 @@ export default function AccountManagementShell({ kind, name, accountLabel, profi
       </div>
       {(isSidebarOpen || mobile) && <p className="px-3 pt-5 text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Account Management</p>}
       <div className="space-y-1.5 pt-2">
-        {accountLinks.map(({ href, label, icon: Icon, active }) => (
-          <Link key={href} href={href} onClick={mobile ? closeMobile : undefined} className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition ${active ? "bg-blue-600 text-white shadow-xs" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"} ${!isSidebarOpen && !mobile ? "justify-center" : ""}`} title={label}>
+        {accountLinks.map(({ href, label, icon: Icon }) => (
+          <Link key={href} href={href} onClick={mobile ? closeMobile : undefined} className={linkClass(href, mobile)} title={label}>
             <Icon size={19} className="shrink-0" />
             {(isSidebarOpen || mobile) && <span>{label}</span>}
           </Link>
         ))}
-        <div className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-500 ${!isSidebarOpen && !mobile ? "justify-center" : ""}`}>
+        <Link href={employer ? "/employer/security" : "/worker/profile"} onClick={mobile ? closeMobile : undefined} className={linkClass(employer ? "/employer/security" : "/worker/profile", mobile)} title="Settings">
           <Settings size={19} className="shrink-0" />
           {(isSidebarOpen || mobile) && <span>Settings</span>}
-        </div>
-        <div className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-500 ${!isSidebarOpen && !mobile ? "justify-center" : ""}`}>
+        </Link>
+        <Link href="/contact" onClick={mobile ? closeMobile : undefined} className={linkClass("/contact", mobile)} title="Help">
           <HelpCircle size={19} className="shrink-0" />
           {(isSidebarOpen || mobile) && <span>Help</span>}
-        </div>
+        </Link>
       </div>
     </>
   );

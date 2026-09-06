@@ -37,6 +37,7 @@ import { getBrowserLocation, getLocationErrorMessage, InaccurateLocationError } 
 
 import LocationPicker, { LocationSelection } from "@/components/LocationPicker";
 import VoiceMicIcon from "@/components/ui/VoiceMicIcon";
+import { formatEmployerType } from "@/components/AccountManagementShell";
 
 /**
  * Supported languages for job description input.
@@ -133,6 +134,16 @@ interface JobMatchWorker {
 interface JobMatches {
   matching_status: string;
   matches: JobMatchWorker[];
+}
+
+function formatExperience(value?: number | null): string {
+  if (value == null) return "Experience not specified";
+  return `${value} ${value === 1 ? "year" : "years"} experience`;
+}
+
+function formatWage(value?: number | string | null): string {
+  if (value == null || !Number.isFinite(Number(value))) return "Wage not specified";
+  return `₹${Number(value).toLocaleString("en-IN", { maximumFractionDigits: 0 })}/day`;
 }
 
 type MatchSummaryState = "LOADING" | "FOUND" | "NO_MATCHES" | "ERROR";
@@ -1020,7 +1031,7 @@ export default function EmployerDashboard() {
                     {employerProfile?.contact_person_name || user?.name}
                   </p>
                   <p className="truncate text-xs text-slate-500 dark:text-slate-400">
-                    {employerProfile?.employer_type?.replaceAll("_", " ") || user?.email || "Employer Account"}
+                    {formatEmployerType(employerProfile?.employer_type) || user?.email || "Employer Account"}
                   </p>
                 </div>
               </div>
@@ -1097,7 +1108,7 @@ export default function EmployerDashboard() {
                     {employerProfile?.contact_person_name || user?.name}
                   </p>
                   <p className="truncate text-xs text-slate-500 dark:text-slate-400">
-                    {employerProfile?.employer_type?.replaceAll("_", " ") || "Employer"}
+                    {formatEmployerType(employerProfile?.employer_type)}
                   </p>
                 </div>
                 <ChevronUp
@@ -1253,7 +1264,7 @@ export default function EmployerDashboard() {
                         {employerProfile?.contact_person_name || user?.name}
                       </p>
                       <p className="truncate text-xs text-slate-500 dark:text-slate-400">
-                        {employerProfile?.employer_type?.replaceAll("_", " ") || user?.email || "Employer Account"}
+                        {formatEmployerType(employerProfile?.employer_type) || user?.email || "Employer Account"}
                       </p>
                     </div>
                   </div>
@@ -1329,7 +1340,7 @@ export default function EmployerDashboard() {
                     {employerProfile?.contact_person_name || user?.name}
                   </p>
                   <p className="truncate text-xs text-slate-500 dark:text-slate-400">
-                    {employerProfile?.employer_type?.replaceAll("_", " ") || "Employer"}
+                    {formatEmployerType(employerProfile?.employer_type)}
                   </p>
                 </div>
                 <ChevronUp
@@ -1358,7 +1369,7 @@ export default function EmployerDashboard() {
                   {employerProfile?.contact_person_name || user.name}
                 </h1>
                 <p className="mt-1 sm:mt-2 text-base sm:text-lg text-blue-700 dark:text-blue-300">
-                  {employerProfile?.employer_type?.replaceAll("_", " ") || "Employer profile"}
+                  {formatEmployerType(employerProfile?.employer_type)}
                 </p>
               </div>
               <Link
@@ -1805,7 +1816,7 @@ export default function EmployerDashboard() {
               {!isJobMatchesLoading && !jobMatchesError && jobMatches?.matches.length ? <div className="mt-3 space-y-3">{jobMatches.matches.map((match) => (
                 <div key={match.worker_profile_id} className="rounded-xl border border-slate-200 p-3 dark:border-slate-700">
                   <p className="font-semibold text-slate-900 dark:text-white">{match.name || "Matched worker"}</p>
-                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{match.experience_years != null ? `${match.experience_years} years experience` : "Experience not specified"} · {match.expected_daily_wage != null ? `₹${match.expected_daily_wage}/day` : "Wage not specified"}</p>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{formatExperience(match.experience_years)} · {formatWage(match.expected_daily_wage)}</p>
                   <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{match.trade_id || "Trade not specified"} · {match.availability_status || "Availability unknown"} · {match.distance_m != null ? `${(match.distance_m / 1000).toFixed(1)} km away` : "Distance unavailable"}</p>
                   {match.skills.length > 0 && <p className="mt-1 text-xs text-slate-400">{match.skills.join(", ")}</p>}
                   <button

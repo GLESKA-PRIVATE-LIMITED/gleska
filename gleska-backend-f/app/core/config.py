@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     # API
     API_V1_PREFIX: str = Field(default="/api/v1", validation_alias=AliasChoices("API_V1_PREFIX", "api_v1_prefix"))
 
+    # Attendance late threshold remains unset until the product defines a scheduled start boundary.
+    LATE_THRESHOLD_MINUTES: int | None = Field(default=None, validation_alias=AliasChoices("LATE_THRESHOLD_MINUTES", "late_threshold_minutes"))
+
     # JWT / auth
     JWT_SECRET_KEY: str = Field(default="change-me-in-production", validation_alias=AliasChoices("JWT_SECRET_KEY", "jwt_secret_key"))
     JWT_ALGORITHM: str = Field(default="HS256", validation_alias=AliasChoices("JWT_ALGORITHM", "jwt_algorithm"))
