@@ -295,6 +295,39 @@ function hasVerifiedRecord(verification: VerificationState, type: string): boole
   );
 }
 
+function checkStep1Incomplete(type: EmployerType, data: OnboardingFormData): boolean {
+  if (type === "REGISTERED_BUSINESS") {
+    return (
+      !data.business_name?.trim() ||
+      !data.business_type?.trim() ||
+      !data.business_category?.trim()
+    );
+  }
+  if (type === "REGISTERED_INDUSTRY") {
+    return (
+      !data.business_name?.trim() ||
+      !data.registered_address?.trim() ||
+      !data.industry_type?.trim() ||
+      !data.industry_category?.trim()
+    );
+  }
+  if (type === "UNREGISTERED_BUSINESS") {
+    return (
+      !data.business_name?.trim() ||
+      !data.business_type?.trim() ||
+      !data.nature_of_business?.trim() ||
+      !data.number_of_proprietors ||
+      Number(data.number_of_proprietors) < 1 ||
+      !data.industry_category?.trim() ||
+      !data.address?.trim()
+    );
+  }
+  if (type === "INDIVIDUAL") {
+    return !data.address?.trim();
+  }
+  return false;
+}
+
 const ONBOARDING_FIELDS = [
   "business_name",
   "business_type",
@@ -451,34 +484,6 @@ export default function EmployerOnboarding() {
       active = false;
     };
   }, [isLoading, user, nextStep, router]);
-
-  const checkStep1Incomplete = (type: EmployerType, data: OnboardingFormData) => {
-    if (type === "REGISTERED_BUSINESS") {
-      return (
-        !data.business_name?.trim() ||
-        !data.business_type?.trim() ||
-        !data.business_category?.trim()
-      );
-    }
-    if (type === "REGISTERED_INDUSTRY") {
-      return !data.business_name?.trim() || !data.registered_address?.trim() || !data.industry_type?.trim();
-    }
-    if (type === "UNREGISTERED_BUSINESS") {
-      return (
-        !data.business_name?.trim() ||
-        !data.business_type?.trim() ||
-        !data.nature_of_business?.trim() ||
-        !data.number_of_proprietors ||
-        Number(data.number_of_proprietors) < 1 ||
-        !data.industry_category?.trim() ||
-        !data.address?.trim()
-      );
-    }
-    if (type === "INDIVIDUAL") {
-      return !data.address?.trim();
-    }
-    return false;
-  };
 
   // Animated Step Transition Handler
   const transitionToStep = (targetStep: 0 | 1 | 2 | 3 | 4 | 5, dir: "next" | "prev" = "next") => {

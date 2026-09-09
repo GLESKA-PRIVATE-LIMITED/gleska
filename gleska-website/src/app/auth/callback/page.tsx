@@ -34,6 +34,7 @@ function getStoredAccountType(): "BUSINESS" | "INDIVIDUAL" {
 function clearStoredRole() {
   if (typeof window === "undefined") return;
   sessionStorage.removeItem("goleska_oauth_role");
+  sessionStorage.removeItem("goleska_oauth_account_type");
   localStorage.removeItem("goleska_oauth_role");
   localStorage.removeItem("goleska_oauth_account_type");
   document.cookie = "goleska_oauth_role=; path=/; max-age=0; SameSite=Lax";

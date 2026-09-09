@@ -1,7 +1,6 @@
 "use client";
 
 import React from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
@@ -14,6 +13,7 @@ import {
   timeAgo,
   formatDate,
 } from "@/lib/security";
+import AccountManagementShell, { formatEmployerType } from "@/components/AccountManagementShell";
 import {
   ShieldCheck,
   Shield,
@@ -26,13 +26,12 @@ import {
   Monitor,
   Lightbulb,
   ChevronRight,
-  User,
-  Building2,
   Users,
+  Briefcase,
+  Clock,
+  CreditCard,
   FileText,
-  LogOut,
-  PanelLeft,
-  X,
+  HelpCircle,
   LayoutDashboard,
   Loader2,
   AlertTriangle,
@@ -92,10 +91,6 @@ function activityIcon(eventType: string) {
 export default function EmployerSecurityPage() {
   const router = useRouter();
   const { user, isLoading, logout } = useAuth();
-
-  const [isSidebarOpen, setIsSidebarOpen] = React.useState(true);
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
-
   // --- Real data state ---
   const [sessions, setSessions] = React.useState<UserSession[]>([]);
   const [activities, setActivities] = React.useState<SecurityActivity[]>([]);
@@ -242,217 +237,15 @@ export default function EmployerSecurityPage() {
     );
   }
 
+  if (!user || user.role !== "EMPLOYER") {
+    return null;
+  }
+
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
   return (
-    <div className="flex flex-col md:flex-row min-h-screen bg-[#f4f6fc] font-sans text-slate-900 dark:bg-slate-950 dark:text-slate-100">
-      {/* Desktop Left Sidebar */}
-      <aside
-        className={`hidden md:flex flex-col justify-between border-r border-slate-200/80 bg-white p-4 transition-all duration-300 dark:border-slate-800 dark:bg-slate-900 ${
-          isSidebarOpen ? "w-64" : "w-20"
-        }`}
-      >
-        <div className="space-y-6">
-          {/* Top Brand Header */}
-          <div className="flex items-center justify-between px-2 py-1">
-            {isSidebarOpen ? (
-              <Link href="/employer/dashboard" className="flex items-center gap-2">
-                <span className="font-[var(--font-anton)] text-xl uppercase tracking-wider bg-[linear-gradient(180deg,#E86100_0%,#FFF5EA_48%,#128807_100%)] bg-clip-text text-transparent select-none whitespace-nowrap">
-                  GO LESKA AI
-                </span>
-              </Link>
-            ) : (
-              <Link href="/employer/dashboard" className="mx-auto text-blue-600 font-bold text-xl">
-                G
-              </Link>
-            )}
-            <button
-              type="button"
-              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-              className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300 transition cursor-pointer"
-              title="Toggle sidebar"
-            >
-              <PanelLeft size={18} />
-            </button>
-          </div>
-
-          {/* Sidebar Menu Items */}
-          <nav className="space-y-1.5 w-full">
-            <Link
-              href="/employer/dashboard"
-              className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 transition ${
-                isSidebarOpen ? "" : "justify-center"
-              }`}
-              title="Dashboard"
-            >
-              <LayoutDashboard size={19} className="shrink-0" />
-              {isSidebarOpen && <span>Dashboard</span>}
-            </Link>
-
-            <Link
-              href="/employer/director-profile"
-              className={`flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-sm font-semibold transition text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 ${
-                isSidebarOpen ? "" : "justify-center"
-              }`}
-              title="Director profile"
-            >
-              <User size={19} className="shrink-0" />
-              {isSidebarOpen && <span>Director profile</span>}
-            </Link>
-
-            <Link
-              href="/employer/company-profile"
-              className={`flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-sm font-semibold transition text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 ${
-                isSidebarOpen ? "" : "justify-center"
-              }`}
-              title="Company profile"
-            >
-              <Building2 size={19} className="shrink-0" />
-              {isSidebarOpen && <span>Company profile</span>}
-            </Link>
-
-            <button
-              type="button"
-              onClick={() => toast.info("Employee profile view")}
-              className={`flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-sm font-semibold transition text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 ${
-                isSidebarOpen ? "text-left" : "justify-center"
-              }`}
-              title="Employee profile"
-            >
-              <Users size={19} className="shrink-0" />
-              {isSidebarOpen && <span>Employee profile</span>}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => toast.info("Documents view")}
-              className={`flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-sm font-semibold transition text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 ${
-                isSidebarOpen ? "text-left" : "justify-center"
-              }`}
-              title="Documents"
-            >
-              <FileText size={19} className="shrink-0" />
-              {isSidebarOpen && <span>Documents</span>}
-            </button>
-
-            <Link
-              href="/employer/security"
-              className={`flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-sm font-semibold transition bg-blue-600 text-white shadow-xs ${
-                isSidebarOpen ? "" : "justify-center"
-              }`}
-              title="Security"
-            >
-              <ShieldCheck size={19} className="shrink-0" />
-              {isSidebarOpen && <span>Security</span>}
-            </Link>
-          </nav>
-        </div>
-
-        {/* Log Out Anchored at Absolute Bottom */}
-        <div className="pt-4 border-t border-slate-200/80 dark:border-slate-800 w-full mt-auto">
-          <button
-            type="button"
-            onClick={handleLogout}
-            className={`flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-sm font-semibold text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40 transition cursor-pointer ${
-              isSidebarOpen ? "text-left" : "justify-center"
-            }`}
-            title="Log out"
-          >
-            <LogOut size={19} className="shrink-0" />
-            {isSidebarOpen && <span>Log out</span>}
-          </button>
-        </div>
-      </aside>
-
-      {/* Mobile Top Header Bar */}
-      <div className="md:hidden sticky top-0 z-30 flex items-center justify-between border-b border-slate-200 bg-white/95 px-4 py-3 shadow-xs backdrop-blur dark:border-slate-800 dark:bg-slate-900/95 w-full">
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-            className="rounded-lg p-2 text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
-          >
-            {isMobileMenuOpen ? <X size={20} /> : <PanelLeft size={20} />}
-          </button>
-          <Link href="/employer/dashboard" className="flex items-center">
-            <span className="font-[var(--font-anton)] text-xl uppercase tracking-wider bg-[linear-gradient(180deg,#E86100_0%,#FFF5EA_48%,#128807_100%)] bg-clip-text text-transparent select-none whitespace-nowrap">
-              GO LESKA AI
-            </span>
-          </Link>
-        </div>
-      </div>
-
-      {/* Mobile Drawer Overlay */}
-      {isMobileMenuOpen && (
-        <div className="md:hidden fixed inset-0 z-50 flex">
-          <div
-            className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs"
-            onClick={() => setIsMobileMenuOpen(false)}
-          />
-          <div className="relative flex w-72 max-w-[80vw] flex-col justify-between border-r border-slate-200 bg-white p-4 shadow-xl dark:border-slate-800 dark:bg-slate-900 z-10">
-            <div className="space-y-6">
-              <div className="flex items-center justify-between px-1">
-                <Link href="/employer/dashboard" onClick={() => setIsMobileMenuOpen(false)}>
-                  <span className="font-[var(--font-anton)] text-xl uppercase tracking-wider bg-[linear-gradient(180deg,#E86100_0%,#FFF5EA_48%,#128807_100%)] bg-clip-text text-transparent select-none whitespace-nowrap">
-                    GO LESKA AI
-                  </span>
-                </Link>
-                <button
-                  type="button"
-                  onClick={() => setIsMobileMenuOpen(false)}
-                  className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
-                >
-                  <X size={20} />
-                </button>
-              </div>
-              <nav className="space-y-1.5">
-                <Link
-                  href="/employer/dashboard"
-                  onClick={() => setIsMobileMenuOpen(false)}
-                  className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100"
-                >
-                  <LayoutDashboard size={20} />
-                  <span>Dashboard</span>
-                </Link>
-                <Link
-                  href="/employer/director-profile"
-                  onClick={() => setIsMobileMenuOpen(false)}
-                  className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100"
-                >
-                  <User size={20} />
-                  <span>Director profile</span>
-                </Link>
-                <Link
-                  href="/employer/company-profile"
-                  onClick={() => setIsMobileMenuOpen(false)}
-                  className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100"
-                >
-                  <Building2 size={20} />
-                  <span>Company profile</span>
-                </Link>
-                <Link
-                  href="/employer/security"
-                  onClick={() => setIsMobileMenuOpen(false)}
-                  className="flex items-center gap-3 rounded-xl bg-blue-600 px-3 py-2.5 text-sm font-semibold text-white"
-                >
-                  <ShieldCheck size={20} />
-                  <span>Security</span>
-                </Link>
-                <button
-                  onClick={handleLogout}
-                  className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-rose-600 hover:bg-rose-50"
-                >
-                  <LogOut size={20} />
-                  <span>Log out</span>
-                </button>
-              </nav>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Main Content Area */}
+    <AccountManagementShell kind="employer" name={user.name} accountLabel={formatEmployerType(user.employer_type)} employerType={user.employer_type} onLogout={handleLogout}>
       <div className="flex-1 min-w-0">
         <main className="mx-auto max-w-7xl px-4 py-8 sm:px-8 sm:py-10">
           {/* Header */}
@@ -949,6 +742,7 @@ export default function EmployerSecurityPage() {
           </div>
         </main>
       </div>
-    </div>
+    </AccountManagementShell>
+
   );
 }

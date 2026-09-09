@@ -9,7 +9,6 @@ import { supabase } from "@/lib/supabase";
 import {
   Building2,
   User,
-  Users,
   FileText,
   ShieldCheck,
   LogOut,
@@ -20,7 +19,6 @@ import {
   MapPin,
   Hash,
   CreditCard,
-  Landmark,
   Info,
   Calendar,
   Briefcase,
@@ -28,7 +26,6 @@ import {
   PanelLeft,
   X,
   LayoutDashboard,
-  Crown,
   Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -124,8 +121,12 @@ export default function CompanyProfilePage() {
           company_phone: det.company_phone || user?.mobile || "",
           company_email: det.company_email || user?.email || "",
           address: fullAddress,
+          city: det.city || "",
+          state: det.state || "",
+          pincode: det.pincode || "",
+          work_location: det.work_location || "",
           gstin: det.gstin || "",
-          cin_number: det.cin_number || det.registration_number || "",
+          cin_number: det.cin_number || "",
           pan_number: det.pan_number || "",
           tan_number: det.tan_number || "",
           logo_url: det.logo_url || emp?.logo_url || "",
@@ -154,8 +155,12 @@ export default function CompanyProfilePage() {
                 company_phone: det.company_phone || user.mobile || "",
                 company_email: det.company_email || user.email || "",
                 address: det.address || det.registered_address || "",
+                city: det.city || "",
+                state: det.state || "",
+                pincode: det.pincode || "",
+                work_location: det.work_location || "",
                 gstin: det.gstin || "",
-                cin_number: det.cin_number || det.registration_number || "",
+                cin_number: det.cin_number || "",
                 pan_number: det.pan_number || "",
                 tan_number: det.tan_number || "",
                 logo_url: det.logo_url || "",
@@ -187,14 +192,22 @@ export default function CompanyProfilePage() {
     e.preventDefault();
     setIsSaving(true);
     try {
+      const isIndividual = employerProfile?.employer_type === "INDIVIDUAL";
+      const isUnregistered = employerProfile?.employer_type === "UNREGISTERED_BUSINESS";
       const updatePayload = {
-        business_name: formData.business_name?.trim() || null,
+        ...(isIndividual ? {} : { business_name: formData.business_name?.trim() || null }),
         company_phone: formData.company_phone?.trim() || null,
         company_email: formData.company_email?.trim() || null,
         address: formData.address?.trim() || null,
-        gstin: formData.gstin?.trim() || null,
-        cin_number: formData.cin_number?.trim() || null,
-        pan_number: formData.pan_number?.trim() || null,
+        city: formData.city?.trim() || null,
+        state: formData.state?.trim() || null,
+        pincode: formData.pincode?.trim() || null,
+        work_location: formData.work_location?.trim() || null,
+        ...(!isIndividual && !isUnregistered ? {
+          gstin: formData.gstin?.trim() || null,
+          cin_number: formData.cin_number?.trim() || null,
+          pan_number: formData.pan_number?.trim() || null,
+        } : {}),
       };
 
       const response = await apiClient.put(
@@ -204,7 +217,7 @@ export default function CompanyProfilePage() {
       );
 
       if (response.data) {
-        toast.success("Company profile saved successfully!");
+        toast.success(`${isIndividual ? "Individual" : isUnregistered ? "Business" : "Company"} profile saved successfully!`);
       }
     } catch (err: any) {
       const msg = err.response?.data?.detail || "An error occurred while saving profile";
@@ -263,7 +276,7 @@ export default function CompanyProfilePage() {
         <div className="flex flex-col items-center gap-3">
           <Loader2 size={36} className="animate-spin text-blue-600" />
           <p className="text-sm font-semibold text-slate-600 dark:text-slate-400">
-            Loading real company profile...
+            Loading profile...
           </p>
         </div>
       </div>
@@ -280,6 +293,16 @@ export default function CompanyProfilePage() {
     : "Recently Joined";
 
   const completionPercentage = calculateProfileCompletion();
+  const employerType = employerProfile?.employer_type;
+  const isIndividual = employerType === "INDIVIDUAL";
+  const isUnregistered = employerType === "UNREGISTERED_BUSINESS";
+  const isRegistered = employerType === "REGISTERED_INDUSTRY" || employerType === "REGISTERED_BUSINESS";
+  const profileTitle = isIndividual ? "Individual Profile" : isUnregistered ? "Business Profile" : "Company Profile";
+  const profileDescription = isIndividual
+    ? "Manage your contact and work-location details."
+    : isUnregistered
+      ? "Manage your business and proprietor details."
+      : "Manage your business identity and verification details.";
 
   return (
     <div className="flex flex-col md:flex-row min-h-screen bg-[#f4f6fc] font-sans text-slate-900 dark:bg-slate-950 dark:text-slate-100">
@@ -303,14 +326,14 @@ export default function CompanyProfilePage() {
                 G
               </Link>
             )}
-            <button
+            {!isIndividual && <button
               type="button"
               onClick={() => setIsSidebarOpen(!isSidebarOpen)}
               className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300 transition"
               title="Toggle sidebar"
             >
               <PanelLeft size={18} />
-            </button>
+            </button>}
           </div>
 
           {/* Sidebar Menu Items */}
@@ -326,16 +349,16 @@ export default function CompanyProfilePage() {
               {isSidebarOpen && <span>Dashboard</span>}
             </Link>
 
-            <Link
+            {(isRegistered || isUnregistered) && <Link
               href="/employer/director-profile"
               className={`flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-sm font-semibold transition text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 ${
                 isSidebarOpen ? "" : "justify-center"
               }`}
-              title="Director profile"
+              title={isUnregistered ? "Proprietor profile" : "Director profile"}
             >
               <User size={19} className="shrink-0" />
-              {isSidebarOpen && <span>Director profile</span>}
-            </Link>
+              {isSidebarOpen && <span>{isUnregistered ? "Proprietor profile" : "Director profile"}</span>}
+            </Link>}
 
             <button
               type="button"
@@ -345,38 +368,10 @@ export default function CompanyProfilePage() {
                   ? "bg-blue-600 text-white shadow-xs"
                   : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800"
               } ${isSidebarOpen ? "text-left" : "justify-center"}`}
-              title="Company profile"
+              title={isIndividual ? "Individual Profile" : isUnregistered ? "Business Profile" : "Company profile"}
             >
               <Building2 size={19} className="shrink-0" />
-              {isSidebarOpen && <span>Company profile</span>}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveTab("employee-profile")}
-              className={`flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-sm font-semibold transition ${
-                activeTab === "employee-profile"
-                  ? "bg-blue-600 text-white shadow-xs"
-                  : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800"
-              } ${isSidebarOpen ? "text-left" : "justify-center"}`}
-              title="Employee profile"
-            >
-              <Users size={19} className="shrink-0" />
-              {isSidebarOpen && <span>Employee profile</span>}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveTab("documents")}
-              className={`flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-sm font-semibold transition ${
-                activeTab === "documents"
-                  ? "bg-blue-600 text-white shadow-xs"
-                  : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800"
-              } ${isSidebarOpen ? "text-left" : "justify-center"}`}
-              title="Documents"
-            >
-              <FileText size={19} className="shrink-0" />
-              {isSidebarOpen && <span>Documents</span>}
+              {isSidebarOpen && <span>{isIndividual ? "Individual Profile" : isUnregistered ? "Business Profile" : "Company profile"}</span>}
             </button>
 
             <Link
@@ -466,7 +461,7 @@ export default function CompanyProfilePage() {
                   className="flex w-full items-center gap-3 rounded-xl bg-blue-600 px-3 py-2.5 text-sm font-semibold text-white"
                 >
                   <Building2 size={20} />
-                  <span>Company profile</span>
+                  <span>{isIndividual ? "Individual Profile" : isUnregistered ? "Business Profile" : "Company profile"}</span>
                 </button>
                 <button
                   onClick={handleLogout}
@@ -486,9 +481,9 @@ export default function CompanyProfilePage() {
         <main className="mx-auto max-w-7xl px-4 py-8 sm:px-8 sm:py-10">
           {/* Header */}
           <div className="mb-8">
-            <h1 className="font-bold text-3xl text-slate-900 dark:text-white">Company Profile</h1>
+            <h1 className="font-bold text-3xl text-slate-900 dark:text-white">{profileTitle}</h1>
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              Manage your business identities and verify documentation details.
+              {profileDescription}
             </p>
           </div>
 
@@ -527,14 +522,14 @@ export default function CompanyProfilePage() {
                     </div>
 
                     <h2 className="text-xl font-bold text-slate-900 dark:text-white">
-                      {formData.business_name || employerProfile?.contact_person_name || "Company Profile"}
+                      {formData.business_name || employerProfile?.contact_person_name || profileTitle}
                     </h2>
 
                     {/* Dynamic Verification Badge */}
                     {employerProfile?.verification_status === "VERIFIED" ? (
                       <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800">
                         <CheckCircle2 size={13} className="text-emerald-600 dark:text-emerald-400" />
-                        <span>Verified Enterprise</span>
+                        <span>{isIndividual ? "Verified Individual" : "Verified Enterprise"}</span>
                       </div>
                     ) : (
                       <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200/60 dark:border-amber-800">
@@ -614,7 +609,7 @@ export default function CompanyProfilePage() {
                 </div>
               </div>
 
-              {/* Right Column: Company Information Form */}
+              {/* Right Column: Type-specific profile form */}
               <div className="lg:col-span-8 p-6 sm:p-8">
                 <form onSubmit={handleSave} className="space-y-6">
                   {/* Form Header with Save Action */}
@@ -622,7 +617,7 @@ export default function CompanyProfilePage() {
                     <div className="flex items-center gap-2">
                       <div className="h-6 w-1 rounded-full bg-blue-600"></div>
                       <h3 className="text-lg font-bold text-slate-900 dark:text-white">
-                        Company Information
+                        {isIndividual ? "Contact Information" : isUnregistered ? "Business Information" : "Company Information"}
                       </h3>
                     </div>
 
@@ -642,7 +637,7 @@ export default function CompanyProfilePage() {
                     <div>
                       <label className="mb-1.5 flex items-center gap-2 text-xs font-bold text-blue-700 dark:text-blue-400">
                         <Building2 size={14} />
-                        <span>Company Name</span>
+                        <span>{isIndividual ? "Name" : isUnregistered ? "Business Name" : "Company Name"}</span>
                       </label>
                       <div className="relative">
                         <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
@@ -653,7 +648,8 @@ export default function CompanyProfilePage() {
                           required
                           value={formData.business_name || ""}
                           onChange={(e) => setFormData({ ...formData, business_name: e.target.value })}
-                          placeholder="e.g. Business Mall Pvt Ltd"
+                          disabled={isIndividual}
+                          placeholder={isIndividual ? "Your name" : "e.g. Business Mall Pvt Ltd"}
                           className="w-full rounded-xl border border-slate-200 bg-slate-50/70 py-2.5 pl-10 pr-3 text-sm text-slate-900 outline-hidden transition focus:border-blue-500 focus:bg-white dark:border-slate-800 dark:bg-slate-800 dark:text-white"
                         />
                       </div>
@@ -663,7 +659,7 @@ export default function CompanyProfilePage() {
                     <div>
                       <label className="mb-1.5 flex items-center gap-2 text-xs font-bold text-blue-700 dark:text-blue-400">
                         <Phone size={14} />
-                        <span>Company Number</span>
+                        <span>{isIndividual ? "Phone" : "Company Number"}</span>
                       </label>
                       <div className="relative">
                         <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
@@ -684,7 +680,7 @@ export default function CompanyProfilePage() {
                     <div>
                       <label className="mb-1.5 flex items-center gap-2 text-xs font-bold text-blue-700 dark:text-blue-400">
                         <Mail size={14} />
-                        <span>Company Email</span>
+                        <span>{isIndividual ? "Email" : "Company Email"}</span>
                       </label>
                       <div className="relative">
                         <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
@@ -705,7 +701,7 @@ export default function CompanyProfilePage() {
                     <div>
                       <label className="mb-1.5 flex items-center gap-2 text-xs font-bold text-blue-700 dark:text-blue-400">
                         <MapPin size={14} />
-                        <span>Company Address</span>
+                        <span>{isIndividual ? "Address" : "Company Address"}</span>
                       </label>
                       <div className="relative">
                         <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
@@ -723,7 +719,7 @@ export default function CompanyProfilePage() {
                     </div>
 
                     {/* GST Number */}
-                    <div>
+                    {isRegistered && <div>
                       <label className="mb-1.5 flex items-center gap-2 text-xs font-bold text-blue-700 dark:text-blue-400">
                         <FileText size={14} />
                         <span>GST Number</span>
@@ -740,10 +736,10 @@ export default function CompanyProfilePage() {
                           className="w-full rounded-xl border border-slate-200 bg-slate-50/70 py-2.5 pl-10 pr-3 text-sm text-slate-900 outline-hidden transition focus:border-blue-500 focus:bg-white dark:border-slate-800 dark:bg-slate-800 dark:text-white"
                         />
                       </div>
-                    </div>
+                    </div>}
 
                     {/* CIN Number */}
-                    <div>
+                    {isRegistered && <div>
                       <label className="mb-1.5 flex items-center gap-2 text-xs font-bold text-blue-700 dark:text-blue-400">
                         <Hash size={14} />
                         <span>CIN Number</span>
@@ -760,10 +756,10 @@ export default function CompanyProfilePage() {
                           className="w-full rounded-xl border border-slate-200 bg-slate-50/70 py-2.5 pl-10 pr-3 text-sm text-slate-900 outline-hidden transition focus:border-blue-500 focus:bg-white dark:border-slate-800 dark:bg-slate-800 dark:text-white"
                         />
                       </div>
-                    </div>
+                    </div>}
 
                     {/* PAN Number */}
-                    <div>
+                    {isRegistered && <div>
                       <label className="mb-1.5 flex items-center gap-2 text-xs font-bold text-blue-700 dark:text-blue-400">
                         <CreditCard size={14} />
                         <span>PAN Number</span>
@@ -780,31 +776,27 @@ export default function CompanyProfilePage() {
                           className="w-full rounded-xl border border-slate-200 bg-slate-50/70 py-2.5 pl-10 pr-3 text-sm text-slate-900 outline-hidden transition focus:border-blue-500 focus:bg-white dark:border-slate-800 dark:bg-slate-800 dark:text-white"
                         />
                       </div>
-                    </div>
+                    </div>}
 
-                    {/* TAN Number */}
-                    <div>
-                      <label className="mb-1.5 flex items-center gap-2 text-xs font-bold text-blue-700 dark:text-blue-400">
-                        <Landmark size={14} />
-                        <span>TAN Number</span>
-                      </label>
-                      <div className="relative">
-                        <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
-                          <Landmark size={16} />
-                        </div>
-                        <input
-                          type="text"
-                          value={formData.tan_number || ""}
-                          onChange={(e) => setFormData({ ...formData, tan_number: e.target.value })}
-                          placeholder="DELB12345C"
-                          className="w-full rounded-xl border border-slate-200 bg-slate-50/70 py-2.5 pl-10 pr-3 text-sm text-slate-900 outline-hidden transition focus:border-blue-500 focus:bg-white dark:border-slate-800 dark:bg-slate-800 dark:text-white"
-                        />
-                      </div>
-                    </div>
+                    {/* TAN is not part of the current employer onboarding contracts. */}
                   </div>
 
+                  {(isIndividual || isUnregistered) && <div className="grid gap-5 md:grid-cols-2">
+                    {(["city", "state", "pincode", "work_location"] as const).map((field) => (
+                      <div key={field}>
+                        <label className="mb-1.5 flex items-center gap-2 text-xs font-bold capitalize text-blue-700 dark:text-blue-400"><MapPin size={14} /><span>{field.replace("_", " ")}</span></label>
+                        <input
+                          type="text"
+                          value={formData[field] || ""}
+                          onChange={(e) => setFormData({ ...formData, [field]: e.target.value })}
+                          className="w-full rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2.5 text-sm text-slate-900 outline-hidden transition focus:border-blue-500 focus:bg-white dark:border-slate-800 dark:bg-slate-800 dark:text-white"
+                        />
+                      </div>
+                    ))}
+                  </div>}
+
                   {/* Verification Callout Alert Notice */}
-                  <div className="mt-6 flex items-start gap-3 rounded-2xl bg-blue-50/80 p-4 border border-blue-100 dark:border-blue-900/50 dark:bg-blue-950/30">
+                  {isRegistered && <div className="mt-6 flex items-start gap-3 rounded-2xl bg-blue-50/80 p-4 border border-blue-100 dark:border-blue-900/50 dark:bg-blue-950/30">
                     <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-xs">
                       <Info size={18} />
                     </div>
@@ -816,7 +808,7 @@ export default function CompanyProfilePage() {
                         Changing your tax identification numbers (GST, PAN, TAN) will trigger a mandatory re-verification process. Your account status might temporarily change to &lsquo;Pending&rsquo; during this time.
                       </p>
                     </div>
-                  </div>
+                  </div>}
                 </form>
               </div>
             </div>

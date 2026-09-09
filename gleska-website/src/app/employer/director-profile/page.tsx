@@ -64,6 +64,7 @@ export default function DirectorProfilePage() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
   const [isSaving, setIsSaving] = React.useState(false);
   const [isDataLoading, setIsDataLoading] = React.useState(true);
+  const [isUnregistered, setIsUnregistered] = React.useState(false);
 
   // Director Information Form State
   const [formData, setFormData] = React.useState<DirectorFormData>({
@@ -101,8 +102,16 @@ export default function DirectorProfilePage() {
 
         if (emp) {
           setEmployerProfile(emp);
+          if (emp.employer_type === "INDIVIDUAL") {
+            router.replace("/employer/dashboard");
+            return;
+          }
+          setIsUnregistered(emp.employer_type === "UNREGISTERED_BUSINESS");
         }
 
+        const directorMetadata = Array.isArray(det.director_data) && det.director_data[0] && typeof det.director_data[0] === "object"
+          ? det.director_data[0] as Record<string, unknown>
+          : {};
         setFormData({
           director_name:
             det.director_name || det.proprietor_name || emp?.contact_person_name || user?.name || "",
@@ -116,8 +125,8 @@ export default function DirectorProfilePage() {
             "",
           director_aadhaar: det.director_aadhaar || det.proprietor_aadhaar || "",
           director_pan: det.director_pan || det.pan_number || "",
-          director_din: det.director_din || det.cin_number || "",
-          director_blood_group: det.director_blood_group || "",
+          director_din: det.director_din || String(directorMetadata.din || "") || (emp?.employer_type === "REGISTERED_INDUSTRY" ? "" : det.cin_number || ""),
+          director_blood_group: det.director_blood_group || String(directorMetadata.blood_group || ""),
           logo_url: det.logo_url || emp?.logo_url || "",
         });
       } catch (err: any) {
@@ -139,6 +148,9 @@ export default function DirectorProfilePage() {
               .maybeSingle();
 
             if (det) {
+              const directorMetadata = Array.isArray(det.director_data) && det.director_data[0] && typeof det.director_data[0] === "object"
+                ? det.director_data[0] as Record<string, unknown>
+                : {};
               setFormData({
                 director_name: det.director_name || prof.contact_person_name || user.name || "",
                 director_email: det.director_email || user.email || "",
@@ -146,8 +158,8 @@ export default function DirectorProfilePage() {
                 director_address: det.director_address || det.address || "",
                 director_aadhaar: det.director_aadhaar || "",
                 director_pan: det.director_pan || det.pan_number || "",
-                director_din: det.director_din || "",
-                director_blood_group: det.director_blood_group || "",
+                director_din: det.director_din || String(directorMetadata.din || "") || (prof.employer_type === "REGISTERED_INDUSTRY" ? "" : det.cin_number || ""),
+                director_blood_group: det.director_blood_group || String(directorMetadata.blood_group || ""),
                 logo_url: det.logo_url || "",
               });
             }
@@ -195,7 +207,7 @@ export default function DirectorProfilePage() {
       );
 
       if (response.data) {
-        toast.success("Director Profile saved successfully!");
+        toast.success(`${isUnregistered ? "Proprietor" : "Director"} Profile saved successfully!`);
       }
     } catch (err: any) {
       const msg = err.response?.data?.detail || "An error occurred while saving director details";
@@ -247,7 +259,7 @@ export default function DirectorProfilePage() {
         <div className="flex flex-col items-center gap-3">
           <Loader2 size={36} className="animate-spin text-blue-600" />
           <p className="text-sm font-semibold text-slate-600 dark:text-slate-400">
-            Loading Director Profile...
+            Loading {isUnregistered ? "Proprietor" : "Director"} Profile...
           </p>
         </div>
       </div>
@@ -315,10 +327,10 @@ export default function DirectorProfilePage() {
               className={`flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-sm font-semibold transition bg-blue-600 text-white shadow-xs ${
                 isSidebarOpen ? "" : "justify-center"
               }`}
-              title="Director profile"
+              title={isUnregistered ? "Proprietor profile" : "Director profile"}
             >
               <User size={19} className="shrink-0" />
-              {isSidebarOpen && <span>Director profile</span>}
+              {isSidebarOpen && <span>{isUnregistered ? "Proprietor profile" : "Director profile"}</span>}
             </Link>
 
             <Link
@@ -331,28 +343,6 @@ export default function DirectorProfilePage() {
               <Building2 size={19} className="shrink-0" />
               {isSidebarOpen && <span>Company profile</span>}
             </Link>
-
-            <button
-              type="button"
-              className={`flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 transition ${
-                isSidebarOpen ? "text-left" : "justify-center"
-              }`}
-              title="Employee profile"
-            >
-              <Users size={19} className="shrink-0" />
-              {isSidebarOpen && <span>Employee profile</span>}
-            </button>
-
-            <button
-              type="button"
-              className={`flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 transition ${
-                isSidebarOpen ? "text-left" : "justify-center"
-              }`}
-              title="Documents"
-            >
-              <FileText size={19} className="shrink-0" />
-              {isSidebarOpen && <span>Documents</span>}
-            </button>
 
             <Link
               href="/employer/security"
@@ -439,7 +429,7 @@ export default function DirectorProfilePage() {
                   className="flex items-center gap-3 rounded-xl bg-blue-600 px-3 py-2.5 text-sm font-semibold text-white"
                 >
                   <User size={20} />
-                  <span>Director profile</span>
+                  <span>{isUnregistered ? "Proprietor profile" : "Director profile"}</span>
                 </Link>
                 <Link
                   href="/employer/company-profile"
@@ -467,9 +457,9 @@ export default function DirectorProfilePage() {
         <main className="mx-auto max-w-7xl px-4 py-8 sm:px-8 sm:py-10">
           {/* Header */}
           <div className="mb-8">
-            <h1 className="font-bold text-3xl text-slate-900 dark:text-white">Director Profile</h1>
+            <h1 className="font-bold text-3xl text-slate-900 dark:text-white">{isUnregistered ? "Proprietor Profile" : "Director Profile"}</h1>
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              Manage your personal identity and verification details.
+              Manage your {isUnregistered ? "proprietor" : "director"} identity and verification details.
             </p>
           </div>
 
@@ -595,7 +585,7 @@ export default function DirectorProfilePage() {
                     <div className="flex items-center gap-2">
                       <div className="h-6 w-1 rounded-full bg-blue-600"></div>
                       <h3 className="text-lg font-bold text-slate-900 dark:text-white">
-                        Director Information
+                        {isUnregistered ? "Proprietor Information" : "Director Information"}
                       </h3>
                     </div>
 
@@ -699,7 +689,7 @@ export default function DirectorProfilePage() {
                     <div>
                       <label className="mb-1.5 flex items-center gap-2 text-xs font-bold text-blue-700 dark:text-blue-400">
                         <FileText size={14} />
-                        <span>Aadhaar Number</span>
+                        <span>{isUnregistered ? "Proprietor Aadhaar" : "Director Aadhaar"}</span>
                       </label>
                       <div className="relative">
                         <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
@@ -715,8 +705,8 @@ export default function DirectorProfilePage() {
                       </div>
                     </div>
 
-                    {/* Right Column 3: DIN Number */}
-                    <div>
+                    {/* DIN Number */}
+                    {!isUnregistered && <div>
                       <label className="mb-1.5 flex items-center gap-2 text-xs font-bold text-blue-700 dark:text-blue-400">
                         <Hash size={14} />
                         <span>DIN Number</span>
@@ -733,10 +723,10 @@ export default function DirectorProfilePage() {
                           className="w-full rounded-xl border border-slate-200 bg-slate-50/70 py-2.5 pl-10 pr-3 text-sm text-slate-900 outline-hidden transition focus:border-blue-500 focus:bg-white dark:border-slate-800 dark:bg-slate-800 dark:text-white"
                         />
                       </div>
-                    </div>
+                    </div>}
 
-                    {/* Left Column 4: PAN Number */}
-                    <div>
+                    {/* PAN Number */}
+                    {!isUnregistered && <div>
                       <label className="mb-1.5 flex items-center gap-2 text-xs font-bold text-blue-700 dark:text-blue-400">
                         <CreditCard size={14} />
                         <span>PAN Number</span>
@@ -753,10 +743,10 @@ export default function DirectorProfilePage() {
                           className="w-full rounded-xl border border-slate-200 bg-slate-50/70 py-2.5 pl-10 pr-3 text-sm text-slate-900 outline-hidden transition focus:border-blue-500 focus:bg-white dark:border-slate-800 dark:bg-slate-800 dark:text-white"
                         />
                       </div>
-                    </div>
+                    </div>}
 
-                    {/* Right Column 4: Blood Group */}
-                    <div>
+                    {/* Blood Group */}
+                    {!isUnregistered && <div>
                       <label className="mb-1.5 flex items-center gap-2 text-xs font-bold text-blue-700 dark:text-blue-400">
                         <Heart size={14} />
                         <span>Blood Group</span>
@@ -773,7 +763,7 @@ export default function DirectorProfilePage() {
                           className="w-full rounded-xl border border-slate-200 bg-slate-50/70 py-2.5 pl-10 pr-3 text-sm text-slate-900 outline-hidden transition focus:border-blue-500 focus:bg-white dark:border-slate-800 dark:bg-slate-800 dark:text-white"
                         />
                       </div>
-                    </div>
+                    </div>}
                   </div>
 
                   {/* Verification Callout Alert Notice */}

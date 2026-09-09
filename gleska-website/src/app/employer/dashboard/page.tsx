@@ -11,20 +11,17 @@ import {
   Users,
   Briefcase,
   Clock,
+  CreditCard,
+  HelpCircle,
   Loader2,
   MapPin,
   Plus,
-  Sparkles,
   Trash2,
-  CreditCard,
   PanelLeft,
   LayoutDashboard,
-  X,
+  ShieldCheck,
   User,
-  Settings,
-  HelpCircle,
-  ChevronUp,
-  History,
+  X,
   Mic,
   ArrowRight,
   ChevronRight,
@@ -149,6 +146,7 @@ function formatWage(value?: number | string | null): string {
 type MatchSummaryState = "LOADING" | "FOUND" | "NO_MATCHES" | "ERROR";
 type JobViewMode = "details" | "workers" | null;
 type WorkSiteModalMode = "location" | "site" | "create" | null;
+type EmployerMenuIcon = React.ComponentType<{ size?: number; className?: string }>;
 
 interface JobMatchSummary {
   job_id: string;
@@ -166,51 +164,50 @@ interface JobExtractionResponse {
   };
 }
 
-interface RecentItem {
-  id: string;
-  job_site_id: string;
-  site_name: string;
-  description: string;
-  created_at: string;
-  parsed_data?: {
-    title?: string;
-    headcount_required?: number;
-    max_daily_salary?: number | null;
-    min_experience?: number | null;
-  };
-}
+function EmployerProfileMenuItems({
+  employerType,
+  onNavigate,
+  onLogout,
+}: {
+  employerType?: string | null;
+  onNavigate: () => void;
+  onLogout: () => void;
+}) {
+  const profileItems: { label: string; href: string; icon: EmployerMenuIcon }[] = employerType === "INDIVIDUAL"
+    ? [{ label: "Individual Profile", href: "/employer/company-profile", icon: User }]
+    : employerType === "UNREGISTERED_BUSINESS"
+      ? [
+          { label: "Business Profile", href: "/employer/company-profile", icon: Building2 },
+          { label: "Proprietor Profile", href: "/employer/director-profile", icon: User },
+        ]
+      : [
+          { label: "Company Profile", href: "/employer/company-profile", icon: Building2 },
+          { label: "Director Profile", href: "/employer/director-profile", icon: User },
+        ];
 
-function formatRecentDateGroup(isoDateStr: string): string {
-  const date = new Date(isoDateStr);
-  const now = new Date();
-
-  const isToday =
-    date.getDate() === now.getDate() &&
-    date.getMonth() === now.getMonth() &&
-    date.getFullYear() === now.getFullYear();
-
-  const yesterday = new Date(now);
-  yesterday.setDate(now.getDate() - 1);
-  const isYesterday =
-    date.getDate() === yesterday.getDate() &&
-    date.getMonth() === yesterday.getMonth() &&
-    date.getFullYear() === yesterday.getFullYear();
-
-  if (isToday) return "Today";
-  if (isYesterday) return "Yesterday";
-
-  const day = date.getDate();
-  const month = date.toLocaleString("en-US", { month: "long" });
-  const year = date.getFullYear();
-  return `${day} ${month} ${year}`;
-}
-
-function getRecentPreviewText(description: string, defaultTitle?: string): string {
-  const words = description.trim().split(/\s+/).filter(Boolean);
-  if (words.length > 0) {
-    return words.slice(0, 3).join(" ");
-  }
-  return defaultTitle || "Job Request";
+  return (
+    <div className="space-y-0.5">
+      {profileItems.map(({ label, href, icon: Icon }) => (
+        <Link
+          key={href}
+          href={href}
+          onClick={onNavigate}
+          className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
+        >
+          <Icon size={17} className="shrink-0 text-slate-500 dark:text-slate-400" />
+          <span>{label}</span>
+        </Link>
+      ))}
+      <button
+        type="button"
+        onClick={onLogout}
+        className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
+      >
+        <LogOut size={17} className="shrink-0" />
+        <span>Log out</span>
+      </button>
+    </div>
+  );
 }
 
 export default function EmployerDashboard() {
@@ -258,81 +255,6 @@ export default function EmployerDashboard() {
   const [jobMatchSummaryState, setJobMatchSummaryState] = React.useState<MatchSummaryState>("LOADING");
   const [jobViewMode, setJobViewMode] = React.useState<JobViewMode>(null);
   const selectedJobRequestRef = React.useRef(0);
-  const profileMenuRef = React.useRef<HTMLDivElement>(null);
-
-  const recents = React.useMemo<RecentItem[]>(() => {
-    return jobs.map((job) => {
-      const site = jobSites.find((s) => s.id === job.job_site_id);
-      const siteName = site?.name || "Work Site";
-      const description = `${job.title} (${job.headcount_required} worker${job.headcount_required === 1 ? "" : "s"})`;
-      return {
-        id: job.id,
-        job_site_id: job.job_site_id,
-        site_name: siteName,
-        description: description,
-        created_at: (job as any).created_at || new Date().toISOString(),
-        parsed_data: {
-          title: job.title,
-          headcount_required: job.headcount_required,
-          max_daily_salary: job.max_daily_salary != null ? Number(job.max_daily_salary) : null,
-          min_experience: job.min_experience,
-        },
-      };
-    });
-  }, [jobs, jobSites]);
-
-  const groupedRecents = React.useMemo(() => {
-    const groups: { [dateLabel: string]: RecentItem[] } = {};
-    recents.forEach((item) => {
-      const label = formatRecentDateGroup(item.created_at);
-      if (!groups[label]) {
-        groups[label] = [];
-      }
-      groups[label].push(item);
-    });
-    return groups;
-  }, [recents]);
-
-  const handleSelectRecentItem = (item: RecentItem) => {
-    setAiPrompt(item.description);
-    if (item.job_site_id) {
-      setJobForm((prev) => ({
-        ...prev,
-        job_site_id: item.job_site_id,
-        ...(item.parsed_data?.title ? { title: item.parsed_data.title } : {}),
-        ...(item.parsed_data?.headcount_required
-          ? { headcount_required: String(item.parsed_data.headcount_required) }
-          : {}),
-        ...(item.parsed_data?.max_daily_salary != null
-          ? { max_daily_salary: String(item.parsed_data.max_daily_salary) }
-          : {}),
-        ...(item.parsed_data?.min_experience != null
-          ? { min_experience: String(item.parsed_data.min_experience) }
-          : {}),
-      }));
-      const recentSite = jobSites.find((site) => site.id === item.job_site_id);
-      setSelectedJobSiteId(item.job_site_id);
-      setSelectedJobSite(recentSite || null);
-    }
-    setIsMobileMenuOpen(false);
-    scrollToJobForm();
-    toast.info(`Loaded recent: "${getRecentPreviewText(item.description, item.parsed_data?.title)}"`);
-  };
-
-  React.useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (profileMenuRef.current && !profileMenuRef.current.contains(event.target as Node)) {
-        setIsProfileMenuOpen(false);
-      }
-    };
-
-    if (isProfileMenuOpen) {
-      document.addEventListener("mousedown", handleClickOutside);
-    }
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, [isProfileMenuOpen]);
 
   const scrollToJobForm = () => {
     setIsWorkSiteModalOpen(false);
@@ -341,7 +263,6 @@ export default function EmployerDashboard() {
   };
 
   const openWorkSiteModal = (mode: Exclude<WorkSiteModalMode, null>) => {
-    setIsProfileMenuOpen(false);
     setSiteError("");
     setWorkSiteModalMode(mode);
     setIsWorkSiteModalOpen(true);
@@ -431,13 +352,6 @@ export default function EmployerDashboard() {
     };
 
     loadJobs();
-
-    const loadRecentJobRequests = async () => {
-      // Direct Supabase query to employer_job_requests removed as the table does not exist
-      // Rely on the initial static recents or local state for now
-    };
-
-    loadRecentJobRequests();
   }, [isLoading, user]);
 
   const handleVoiceInput = React.useCallback(() => {
@@ -926,10 +840,10 @@ export default function EmployerDashboard() {
               className={`flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white transition ${
                 isSidebarOpen ? "text-left" : "justify-center"
               }`}
-              title="Post a Job"
+              title="Post a Job & Sites"
             >
               <Briefcase size={20} className="shrink-0" />
-              {isSidebarOpen && <span>Post a Job</span>}
+              {isSidebarOpen && <span>Post a Job & Sites</span>}
             </button>
 
             <Link
@@ -954,172 +868,65 @@ export default function EmployerDashboard() {
               {isSidebarOpen && <span>Attendance</span>}
             </Link>
 
-            <button
-              type="button"
-              onClick={handleOpenWorkSiteModal}
-              className={`flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white transition ${
-                isSidebarOpen ? "text-left" : "justify-center"
+            <Link
+              href="/employer/subscription"
+              className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white transition ${
+                isSidebarOpen ? "" : "justify-center"
               }`}
-              title="Add Work Site"
+              title="Subscription"
             >
-              <MapPin size={20} className="shrink-0" />
-              {isSidebarOpen && <span>Add Work Site</span>}
-            </button>
+              <CreditCard size={20} className="shrink-0" />
+              {isSidebarOpen && <span>Subscription</span>}
+            </Link>
 
-            {/* Sidebar Recents Section */}
-            <div className="pt-3 border-t border-slate-200/80 dark:border-slate-800/80 w-full">
-              {isSidebarOpen ? (
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between px-3 py-1 text-[11px] font-bold tracking-wider text-slate-400 dark:text-slate-500 uppercase">
-                    <span>Recents</span>
-                    <History size={14} className="text-slate-400 dark:text-slate-500" />
-                  </div>
-                  <div className="space-y-3 max-h-52 overflow-y-auto pr-1">
-                    {Object.keys(groupedRecents).length === 0 ? (
-                      <p className="px-3 text-xs text-slate-400 dark:text-slate-500 italic">No recent searches yet</p>
-                    ) : (
-                      Object.entries(groupedRecents).map(([dateLabel, items]) => (
-                        <div key={dateLabel} className="space-y-1">
-                          <div className="px-3 text-[10px] font-bold tracking-wider uppercase text-slate-400 dark:text-slate-500">
-                            {dateLabel}
-                          </div>
-                          {items.map((item) => (
-                            <button
-                              key={item.id}
-                              type="button"
-                              onClick={() => handleSelectRecentItem(item)}
-                              className="group flex flex-col w-full text-left rounded-xl px-3 py-1.5 transition hover:bg-slate-100 dark:hover:bg-slate-800/80"
-                            >
-                              <span className="truncate text-[11px] font-medium text-slate-400 dark:text-slate-500 group-hover:text-slate-600 dark:group-hover:text-slate-300 transition">
-                                {item.site_name || "Work Site"}
-                              </span>
-                              <span className="truncate text-xs font-semibold text-slate-700 dark:text-slate-200 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition">
-                                {getRecentPreviewText(item.description, item.parsed_data?.title)}
-                              </span>
-                            </button>
-                          ))}
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-              ) : (
-                <div className="flex justify-center py-2" title="Recents">
-                  <History size={20} className="text-slate-400 dark:text-slate-500" />
-                </div>
-              )}
-            </div>
+            <Link
+              href="/employer/security"
+              className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white transition ${
+                isSidebarOpen ? "" : "justify-center"
+              }`}
+              title="Security & Settings"
+            >
+              <ShieldCheck size={20} className="shrink-0" />
+              {isSidebarOpen && <span>Security & Settings</span>}
+            </Link>
+
+            <Link
+              href="/employer/help"
+              className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white transition ${
+                isSidebarOpen ? "" : "justify-center"
+              }`}
+              title="Help"
+            >
+              <HelpCircle size={20} className="shrink-0" />
+              {isSidebarOpen && <span>Help</span>}
+            </Link>
+
           </nav>
         </div>
 
-        {/* Sidebar Bottom: Clickable User Profile & Popover Menu */}
-        <div className="relative pt-4 border-t border-slate-200 dark:border-slate-800 w-full" ref={profileMenuRef}>
-          {/* Profile Popover Menu */}
-          {isProfileMenuOpen && (
-            <div
-              className={`absolute bottom-full mb-2 z-50 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl backdrop-blur dark:border-slate-800 dark:bg-slate-900 ${
-                isSidebarOpen ? "left-0 right-0 w-full min-w-[220px]" : "left-0 w-64"
-              }`}
-            >
-              {/* Employer / Company Identity */}
-              <div className="flex items-center gap-3 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-sm font-bold text-white shadow-xs">
-                  {(employerProfile?.contact_person_name || user?.name || "E").charAt(0).toUpperCase()}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-bold text-slate-900 dark:text-white">
-                    {employerProfile?.contact_person_name || user?.name}
-                  </p>
-                  <p className="truncate text-xs text-slate-500 dark:text-slate-400">
-                    {formatEmployerType(employerProfile?.employer_type) || user?.email || "Employer Account"}
-                  </p>
-                </div>
-              </div>
-
-              <div className="my-1.5 border-t border-slate-100 dark:border-slate-800" />
-
-              {/* Visual Menu Items */}
-              <div className="space-y-0.5">
-                <Link
-                  href="/employer/subscription"
-                  onClick={() => setIsProfileMenuOpen(false)}
-                  className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800 transition cursor-pointer"
-                >
-                  <CreditCard size={17} className="text-slate-500 dark:text-slate-400 shrink-0" />
-                  <span>Subscription</span>
-                </Link>
-                <Link
-                  href="/employer/company-profile"
-                  onClick={() => setIsProfileMenuOpen(false)}
-                  className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800 transition"
-                >
-                  <User size={17} className="text-slate-500 dark:text-slate-400 shrink-0" />
-                  <span>Profile</span>
-                </Link>
-                <button
-                  type="button"
-                  className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800 transition"
-                >
-                  <Settings size={17} className="text-slate-500 dark:text-slate-400 shrink-0" />
-                  <span>Settings</span>
-                </button>
-                <button
-                  type="button"
-                  className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800 transition"
-                >
-                  <HelpCircle size={17} className="text-slate-500 dark:text-slate-400 shrink-0" />
-                  <span>Help</span>
-                </button>
-              </div>
-
-              <div className="my-1.5 border-t border-slate-100 dark:border-slate-800" />
-
-              {/* Log out Item */}
-              <button
-                type="button"
-                onClick={() => {
-                  setIsProfileMenuOpen(false);
-                  handleLogout();
-                }}
-                className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40 transition"
-              >
-                <LogOut size={17} className="text-red-600 dark:text-red-400 shrink-0" />
-                <span>Log out</span>
-              </button>
-            </div>
-          )}
-
-          {/* Trigger Area */}
+        {/* Sidebar Bottom: identity account menu and logout */}
+        <div className="relative border-t border-slate-200 pt-4 dark:border-slate-800">
           <button
             type="button"
-            onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
-            className={`flex items-center gap-3 w-full rounded-xl p-2 transition text-left hover:bg-slate-100 dark:hover:bg-slate-800 ${
-              isSidebarOpen ? "" : "justify-center"
-            }`}
-            title={employerProfile?.contact_person_name || user?.name}
+            onClick={() => setIsProfileMenuOpen((open) => !open)}
+            className={`mb-3 flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left transition hover:bg-slate-100 dark:hover:bg-slate-800 ${isSidebarOpen ? "" : "justify-center"}`}
+            title="Open account menu"
           >
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-sm font-bold text-white shadow-xs">
               {(employerProfile?.contact_person_name || user?.name || "E").charAt(0).toUpperCase()}
             </div>
             {isSidebarOpen && (
-              <>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold text-slate-900 dark:text-white leading-tight">
-                    {employerProfile?.contact_person_name || user?.name}
-                  </p>
-                  <p className="truncate text-xs text-slate-500 dark:text-slate-400">
-                    {formatEmployerType(employerProfile?.employer_type)}
-                  </p>
-                </div>
-                <ChevronUp
-                  size={16}
-                  className={`text-slate-400 transition-transform duration-200 shrink-0 ${
-                    isProfileMenuOpen ? "rotate-180" : ""
-                  }`}
-                />
-              </>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-bold text-slate-900 dark:text-white">{employerProfile?.contact_person_name || user?.name}</p>
+                <p className="truncate text-xs text-slate-500 dark:text-slate-400">{formatEmployerType(employerProfile?.employer_type)}</p>
+              </div>
             )}
           </button>
+          {isProfileMenuOpen && (
+            <div className="absolute bottom-full left-0 right-0 z-50 mb-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl dark:border-slate-800 dark:bg-slate-900">
+              <EmployerProfileMenuItems employerType={employerProfile?.employer_type} onNavigate={() => setIsProfileMenuOpen(false)} onLogout={() => { setIsProfileMenuOpen(false); void handleLogout(); }} />
+            </div>
+          )}
         </div>
       </aside>
 
@@ -1185,7 +992,7 @@ export default function EmployerDashboard() {
                   className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
                 >
                   <Briefcase size={20} />
-                  <span>Post a Job</span>
+                  <span>Post a Job & Sites</span>
                 </button>
                 <Link
                   href="/employer/workers"
@@ -1203,153 +1010,54 @@ export default function EmployerDashboard() {
                   <Clock size={20} />
                   <span>Attendance</span>
                 </Link>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsMobileMenuOpen(false);
-                    handleOpenWorkSiteModal();
-                  }}
-                  className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+                <Link
+                  href="/employer/subscription"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
                 >
-                  <MapPin size={20} />
-                  <span>Add Work Site</span>
-                </button>
+                  <CreditCard size={20} />
+                  <span>Subscription</span>
+                </Link>
+                <Link
+                  href="/employer/security"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+                >
+                  <ShieldCheck size={20} />
+                  <span>Security & Settings</span>
+                </Link>
+                <Link
+                  href="/employer/help"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+                >
+                  <HelpCircle size={20} />
+                  <span>Help</span>
+                </Link>
 
-                <div className="pt-3 border-t border-slate-200/80 dark:border-slate-800/80 w-full space-y-1">
-                  <div className="flex items-center justify-between px-3 py-1 text-[11px] font-bold tracking-wider text-slate-400 dark:text-slate-500 uppercase">
-                    <span>Recents</span>
-                    <History size={14} className="text-slate-400 dark:text-slate-500" />
-                  </div>
-                  <div className="space-y-3 max-h-48 overflow-y-auto pr-1">
-                    {Object.keys(groupedRecents).length === 0 ? (
-                      <p className="px-3 text-xs text-slate-400 dark:text-slate-500 italic">No recent searches yet</p>
-                    ) : (
-                      Object.entries(groupedRecents).map(([dateLabel, items]) => (
-                        <div key={dateLabel} className="space-y-1">
-                          <div className="px-3 text-[10px] font-bold tracking-wider uppercase text-slate-400 dark:text-slate-500">
-                            {dateLabel}
-                          </div>
-                          {items.map((item) => (
-                            <button
-                              key={item.id}
-                              type="button"
-                              onClick={() => handleSelectRecentItem(item)}
-                              className="group flex flex-col w-full text-left rounded-xl px-3 py-1.5 transition hover:bg-slate-100 dark:hover:bg-slate-800/80"
-                            >
-                              <span className="truncate text-[11px] font-medium text-slate-400 dark:text-slate-500 group-hover:text-slate-600 dark:group-hover:text-slate-300 transition">
-                                {item.site_name || "Work Site"}
-                              </span>
-                              <span className="truncate text-xs font-semibold text-slate-700 dark:text-slate-200 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition">
-                                {getRecentPreviewText(item.description, item.parsed_data?.title)}
-                              </span>
-                            </button>
-                          ))}
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
               </nav>
             </div>
 
-            <div className="relative pt-4 border-t border-slate-200 dark:border-slate-800">
-              {isProfileMenuOpen && (
-                <div className="absolute bottom-full mb-2 left-0 right-0 z-50 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl backdrop-blur dark:border-slate-800 dark:bg-slate-900">
-                  <div className="flex items-center gap-3 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-sm font-bold text-white shadow-xs">
-                      {(employerProfile?.contact_person_name || user?.name || "E").charAt(0).toUpperCase()}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-bold text-slate-900 dark:text-white">
-                        {employerProfile?.contact_person_name || user?.name}
-                      </p>
-                      <p className="truncate text-xs text-slate-500 dark:text-slate-400">
-                        {formatEmployerType(employerProfile?.employer_type) || user?.email || "Employer Account"}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="my-1.5 border-t border-slate-100 dark:border-slate-800" />
-
-                  <div className="space-y-0.5">
-                    <Link
-                      href="/employer/subscription"
-                      onClick={() => {
-                        setIsMobileMenuOpen(false);
-                        setIsProfileMenuOpen(false);
-                      }}
-                      className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800 transition cursor-pointer"
-                    >
-                      <CreditCard size={17} className="text-slate-500 dark:text-slate-400 shrink-0" />
-                      <span>Subscription</span>
-                    </Link>
-                    <Link
-                      href="/employer/company-profile"
-                      onClick={() => {
-                        setIsMobileMenuOpen(false);
-                        setIsProfileMenuOpen(false);
-                      }}
-                      className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800 transition"
-                    >
-                      <User size={17} className="text-slate-500 dark:text-slate-400 shrink-0" />
-                      <span>Profile</span>
-                    </Link>
-                    <button
-                      type="button"
-                      className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800 transition"
-                    >
-                      <Settings size={17} className="text-slate-500 dark:text-slate-400 shrink-0" />
-                      <span>Settings</span>
-                    </button>
-                    <button
-                      type="button"
-                      className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800 transition"
-                    >
-                      <HelpCircle size={17} className="text-slate-500 dark:text-slate-400 shrink-0" />
-                      <span>Help</span>
-                    </button>
-                  </div>
-
-                  <div className="my-1.5 border-t border-slate-100 dark:border-slate-800" />
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsMobileMenuOpen(false);
-                      setIsProfileMenuOpen(false);
-                      handleLogout();
-                    }}
-                    className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40 transition"
-                  >
-                    <LogOut size={17} className="text-red-600 dark:text-red-400 shrink-0" />
-                    <span>Log out</span>
-                  </button>
-                </div>
-              )}
-
+            <div className="relative border-t border-slate-200 pt-4 dark:border-slate-800">
               <button
                 type="button"
-                onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
-                className="flex items-center gap-3 w-full rounded-xl p-2 transition text-left hover:bg-slate-100 dark:hover:bg-slate-800"
+                onClick={() => setIsProfileMenuOpen((open) => !open)}
+                className="mb-3 flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left transition hover:bg-slate-100 dark:hover:bg-slate-800"
+                title="Open account menu"
               >
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-sm font-bold text-white shadow-xs">
                   {(employerProfile?.contact_person_name || user?.name || "E").charAt(0).toUpperCase()}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold text-slate-900 dark:text-white leading-tight">
-                    {employerProfile?.contact_person_name || user?.name}
-                  </p>
-                  <p className="truncate text-xs text-slate-500 dark:text-slate-400">
-                    {formatEmployerType(employerProfile?.employer_type)}
-                  </p>
+                  <p className="truncate text-sm font-bold text-slate-900 dark:text-white">{employerProfile?.contact_person_name || user?.name}</p>
+                  <p className="truncate text-xs text-slate-500 dark:text-slate-400">{formatEmployerType(employerProfile?.employer_type)}</p>
                 </div>
-                <ChevronUp
-                  size={16}
-                  className={`text-slate-400 transition-transform duration-200 shrink-0 ${
-                    isProfileMenuOpen ? "rotate-180" : ""
-                  }`}
-                />
               </button>
+              {isProfileMenuOpen && (
+                <div className="mb-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl dark:border-slate-800 dark:bg-slate-900">
+                  <EmployerProfileMenuItems employerType={employerProfile?.employer_type} onNavigate={() => { setIsProfileMenuOpen(false); setIsMobileMenuOpen(false); }} onLogout={() => { setIsProfileMenuOpen(false); setIsMobileMenuOpen(false); void handleLogout(); }} />
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -1372,21 +1080,6 @@ export default function EmployerDashboard() {
                   {formatEmployerType(employerProfile?.employer_type)}
                 </p>
               </div>
-              <Link
-                href="/employer/company-profile"
-                className="group relative flex h-20 w-20 sm:h-24 sm:w-24 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-linear-to-br from-blue-500 to-indigo-600 shadow-lg transition hover:shadow-xl hover:scale-105"
-                title="View Company Profile"
-              >
-                {employerProfile?.logo_url ? (
-                  <img src={employerProfile.logo_url} alt="Company Logo" className="h-full w-full object-cover" />
-                ) : (
-                  <div className="flex h-full w-full flex-col items-center justify-center text-white">
-                    <Building2 size={32} className="sm:hidden" />
-                    <Building2 size={40} className="hidden sm:block" />
-                    <span className="text-[10px] font-semibold mt-1 opacity-0 group-hover:opacity-100 transition">Profile</span>
-                  </div>
-                )}
-              </Link>
             </div>
           </div>
 
