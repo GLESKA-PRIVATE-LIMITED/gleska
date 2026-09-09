@@ -1,6 +1,7 @@
 """Security utilities for authentication and authorization."""
 
 from datetime import datetime, timedelta, timezone
+import logging
 from typing import Any
 
 import jwt
@@ -12,6 +13,7 @@ from app.core.supabase import supabase
 from app.schemas.auth import UserResponse
 
 security = HTTPBearer(auto_error=False)
+logger = logging.getLogger(__name__)
 
 
 def create_access_token(subject: str) -> str:
@@ -46,6 +48,25 @@ async def get_current_user(request: Request, credentials: HTTPAuthorizationCrede
 
     if not user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid session")
+
+    session_key = request.headers.get("x-goleska-session-key") or request.headers.get("X-Goleska-Session-Key")
+    if session_key:
+        try:
+            session_response = (
+                supabase.table("user_sessions")
+                .select("id, is_revoked")
+                .eq("user_id", user_id)
+                .eq("session_key", session_key)
+                .maybe_single()
+                .execute()
+            )
+            session_row = session_response.data if session_response else None
+        except Exception as exc:
+            logger.exception("Session metadata lookup failed for user_id=%s", user_id)
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="SESSION_LOOKUP_FAILED") from exc
+
+        if session_row and session_row.get("is_revoked"):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="SESSION_REVOKED")
 
     response = supabase.table("users").select("*").eq("id", user_id).single().execute()
     if not response.data:

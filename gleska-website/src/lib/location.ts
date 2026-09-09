@@ -21,6 +21,14 @@ export type NormalizedLocation = {
   speed: number | null;
 };
 
+export type LocationErrorCategory =
+  | "PERMISSION_DENIED"
+  | "POSITION_UNAVAILABLE"
+  | "TIMEOUT"
+  | "LOCATION_UNAVAILABLE"
+  | "INVALID_COORDINATES"
+  | "INACCURATE_LOCATION";
+
 export class InaccurateLocationError extends Error {
   code = "INACCURATE";
   accuracy: number;
@@ -30,6 +38,28 @@ export class InaccurateLocationError extends Error {
     super(`Location accuracy is too low (${accuracyLabel}). Please enable device location services or try from a device with GPS.`);
     this.accuracy = accuracy;
   }
+}
+
+export class InvalidCoordinatesError extends Error {
+  code = "INVALID_COORDINATES";
+
+  constructor() {
+    super("Unable to determine a valid location.");
+  }
+}
+
+export function getLocationErrorCategory(error: unknown): LocationErrorCategory {
+  if (error instanceof InvalidCoordinatesError) return "INVALID_COORDINATES";
+  if (error instanceof InaccurateLocationError) return "INACCURATE_LOCATION";
+
+  const code = typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+  if (code === "INVALID_COORDINATES") return "INVALID_COORDINATES";
+  if (code === "INACCURATE") return "INACCURATE_LOCATION";
+  if (code === 1) return "PERMISSION_DENIED";
+  if (code === 2) return "POSITION_UNAVAILABLE";
+  if (code === 3) return "TIMEOUT";
+  if (error instanceof Error && error.message === "Location unavailable") return "LOCATION_UNAVAILABLE";
+  return "POSITION_UNAVAILABLE";
 }
 
 export function getLocationErrorMessage(error: unknown): string {
@@ -91,6 +121,9 @@ export async function getBrowserLocation(): Promise<NormalizedLocation> {
   }
 
   const { latitude, longitude, accuracy } = position.coords;
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+    throw new InvalidCoordinatesError();
+  }
   const validated = normalizeCoordinates(latitude, longitude, accuracy);
   if (!validated) {
     // Return raw accuracy for better error message

@@ -98,16 +98,6 @@ class TestDocumentValidation:
                 original_filename="cert.pdf",
                 mime_type="application/pdf",
                 file_size_bytes=10485760,  # 10 MB
-                def test_oversized_file(self):
-                    """File over 5 MB should fail validation."""
-                    from pydantic import ValidationError
-                    with pytest.raises(ValidationError, match="less than or equal"):
-                        DocumentUploadRequest(
-                            document_type="EXPERIENCE_CERTIFICATE",
-                            original_filename="cert.pdf",
-                            mime_type="application/pdf",
-                            file_size_bytes=10485760,  # 10 MB
-                        )
             )
 
     def test_zero_size_file(self):
@@ -118,16 +108,6 @@ class TestDocumentValidation:
                 original_filename="cert.pdf",
                 mime_type="application/pdf",
                 file_size_bytes=0,
-                def test_zero_size_file(self):
-                    """Zero-size file should fail validation."""
-                    from pydantic import ValidationError
-                    with pytest.raises(ValidationError, match="greater than"):
-                        DocumentUploadRequest(
-                            document_type="EXPERIENCE_CERTIFICATE",
-                            original_filename="cert.pdf",
-                            mime_type="application/pdf",
-                            file_size_bytes=0,
-                        )
             )
 
     def test_path_traversal_in_filename(self):
@@ -136,38 +116,6 @@ class TestDocumentValidation:
             DocumentUploadRequest(
                 document_type="EXPERIENCE_CERTIFICATE",
                 original_filename="../../../etc/passwd",
-                    def test_invalid_document_type(self):
-                        """Invalid document type should raise validation error."""
-                        from pydantic import ValidationError
-                        with pytest.raises(ValidationError):
-                            DocumentUploadRequest(
-                                document_type="INVALID_TYPE",
-                                original_filename="cert.pdf",
-                                mime_type="application/pdf",
-                                file_size_bytes=2048576,
-                            )
-
-                    def test_invalid_mime_type(self):
-                        """Invalid MIME type should raise validation error."""
-                        from pydantic import ValidationError
-                        with pytest.raises(ValidationError):
-                            DocumentUploadRequest(
-                                document_type="EXPERIENCE_CERTIFICATE",
-                                original_filename="cert.doc",
-                                mime_type="application/msword",
-                                file_size_bytes=2048576,
-                            )
-
-                    def test_path_traversal_in_filename(self):
-                        """Filename with path traversal should be rejected."""
-                        from pydantic import ValidationError
-                        with pytest.raises(ValidationError):
-                            DocumentUploadRequest(
-                                document_type="EXPERIENCE_CERTIFICATE",
-                                original_filename="../../../etc/passwd",
-                                mime_type="application/pdf",
-                                file_size_bytes=2048576,
-                            )
                 mime_type="application/pdf",
                 file_size_bytes=2048576,
             )

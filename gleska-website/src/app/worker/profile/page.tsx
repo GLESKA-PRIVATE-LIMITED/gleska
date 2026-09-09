@@ -2,24 +2,11 @@
 
 import React, { FormEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import {
   User,
   MapPin,
-  Clock,
   Loader2,
-  PanelLeft,
-  LayoutDashboard,
-  FileText,
   ShieldCheck,
-  Building2,
-  History,
-  CreditCard,
-  Settings,
-  HelpCircle,
-  ChevronUp,
-  X,
-  LogOut,
   CheckCircle2,
   Edit3,
   Plus,
@@ -37,6 +24,7 @@ import { useAuth } from "@/context/AuthContext";
 import LocationPicker, { LocationSelection } from "@/components/LocationPicker";
 import { getBrowserLocation } from "@/lib/location";
 import { useWorkerProfilePhoto } from "@/lib/useWorkerProfilePhoto";
+import AccountManagementShell from "@/components/AccountManagementShell";
 
 type Profile = {
   trade_id?: string | null;
@@ -74,11 +62,7 @@ export default function WorkerProfilePage() {
   const [newSkillInput, setNewSkillInput] = useState("");
   const [showSkillInput, setShowSkillInput] = useState(false);
 
-  // Layout & Editing UI states
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
-  const profileMenuRef = useRef<HTMLDivElement>(null);
+  // Editing UI states
   const profilePhotoInputRef = useRef<HTMLInputElement>(null);
   const { isUploading: isProfilePhotoUploading, uploadPhoto } = useWorkerProfilePhoto();
 
@@ -90,21 +74,6 @@ export default function WorkerProfilePage() {
   const [displayNameInput, setDisplayNameInput] = useState("");
   const [phoneInput, setPhoneInput] = useState("");
   const [emailInput, setEmailInput] = useState("");
-
-  // Close popover when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (profileMenuRef.current && !profileMenuRef.current.contains(event.target as Node)) {
-        setIsProfileMenuOpen(false);
-      }
-    };
-    if (isProfileMenuOpen) {
-      document.addEventListener("mousedown", handleClickOutside);
-    }
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, [isProfileMenuOpen]);
 
   // Fetch worker profile on mount
   useEffect(() => {
@@ -259,6 +228,9 @@ export default function WorkerProfilePage() {
     try {
       const response = await apiClient.put("/api/v1/workers/me", {
         ...profile,
+        name: displayNameInput.trim(),
+        mobile: phoneInput.trim(),
+        email: emailInput.trim() || null,
         marital_status: maritalStatus,
         blood_group: bloodGroup,
         skills,
@@ -341,338 +313,8 @@ export default function WorkerProfilePage() {
   }
 
   return (
+    <AccountManagementShell kind="worker" name={user.name || "Worker"} accountLabel="Worker" profileHref="/worker/profile" onLogout={() => void handleLogout()}>
     <div className="flex flex-col md:flex-row min-h-screen bg-[#eef1fb] font-sans text-slate-900 dark:bg-slate-950 dark:text-slate-100">
-      {/* Desktop Left Sidebar */}
-      <aside
-        className={`hidden md:flex sticky top-0 h-screen flex-col justify-between border-r border-slate-200 bg-white/95 p-4 shadow-xs backdrop-blur transition-all duration-300 dark:border-slate-800 dark:bg-slate-900/95 z-40 shrink-0 ${
-          isSidebarOpen ? "w-64" : "w-20 items-center"
-        }`}
-      >
-        <div className="space-y-6 w-full">
-          {/* Sidebar Top: Branding + Collapse Toggle */}
-          <div className={`flex items-center gap-2 ${isSidebarOpen ? "justify-between px-1" : "justify-center"}`}>
-            {isSidebarOpen ? (
-              <>
-                <Link href="/" className="flex items-center min-w-0">
-                  <span className="font-[var(--font-anton)] text-xl uppercase tracking-wider bg-[linear-gradient(180deg,#E86100_0%,#FFF5EA_48%,#128807_100%)] bg-clip-text text-transparent select-none whitespace-nowrap">
-                    GO LESKA AI
-                  </span>
-                </Link>
-                <button
-                  type="button"
-                  onClick={() => setIsSidebarOpen(false)}
-                  title="Collapse sidebar"
-                  aria-label="Collapse sidebar"
-                  className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white transition cursor-pointer"
-                >
-                  <PanelLeft size={20} />
-                </button>
-              </>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setIsSidebarOpen(true)}
-                title="Expand sidebar"
-                aria-label="Expand sidebar"
-                className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white transition cursor-pointer"
-              >
-                <PanelLeft size={20} />
-              </button>
-            )}
-          </div>
-
-          {/* Sidebar Navigation Items */}
-          <nav className="space-y-1.5 w-full">
-            {/* Dashboard (Inactive) */}
-            <Link
-              href="/worker/dashboard"
-              className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white transition ${
-                isSidebarOpen ? "" : "justify-center"
-              }`}
-              title="Dashboard"
-            >
-              <LayoutDashboard size={20} className="shrink-0" />
-              {isSidebarOpen && <span>Dashboard</span>}
-            </Link>
-
-            {/* Profile (Active) */}
-            <Link
-              href="/worker/documents"
-              className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition ${
-                isSidebarOpen ? "" : "justify-center"
-              } bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400`}
-              title="Profile"
-            >
-              <User size={20} className="shrink-0" />
-              {isSidebarOpen && <span>Profile</span>}
-            </Link>
-
-            {/* Documents */}
-            <Link
-              href="/worker/profile"
-              className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white transition ${
-                isSidebarOpen ? "" : "justify-center"
-              }`}
-              title="Documents"
-            >
-              <FileText size={20} className="shrink-0" />
-              {isSidebarOpen && <span>Documents</span>}
-            </Link>
-
-            {/* Security */}
-            <div
-              className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-400 opacity-60 dark:text-slate-500 cursor-not-allowed ${
-                isSidebarOpen ? "" : "justify-center"
-              }`}
-              title="Security"
-            >
-              <ShieldCheck size={20} className="shrink-0" />
-              {isSidebarOpen && <span>Security</span>}
-            </div>
-
-            {/* Companies Worked */}
-            <div
-              className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-400 opacity-60 dark:text-slate-500 cursor-not-allowed ${
-                isSidebarOpen ? "" : "justify-center"
-              }`}
-              title="Companies Worked"
-            >
-              <Building2 size={20} className="shrink-0" />
-              {isSidebarOpen && <span>Companies Worked</span>}
-            </div>
-
-            {/* Sidebar Recents Section */}
-            <div className="pt-3 border-t border-slate-200/80 dark:border-slate-800/80 w-full">
-              {isSidebarOpen ? (
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between px-3 py-1 text-[11px] font-bold tracking-wider text-slate-400 dark:text-slate-500 uppercase">
-                    <span>Recents</span>
-                    <History size={14} className="text-slate-400 dark:text-slate-500" />
-                  </div>
-                  <p className="px-3 text-xs text-slate-400 dark:text-slate-500 italic">No recent items</p>
-                </div>
-              ) : (
-                <div className="flex justify-center py-2" title="Recents">
-                  <History size={20} className="text-slate-400 dark:text-slate-500" />
-                </div>
-              )}
-            </div>
-          </nav>
-        </div>
-
-        {/* Sidebar Bottom: Clickable Worker Profile & Popover Menu */}
-        <div className="relative pt-4 border-t border-slate-200 dark:border-slate-800 w-full" ref={profileMenuRef}>
-          {/* Profile Popover Menu */}
-          {isProfileMenuOpen && (
-            <div
-              className={`absolute bottom-full mb-2 z-50 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl backdrop-blur dark:border-slate-800 dark:bg-slate-900 ${
-                isSidebarOpen ? "left-0 right-0 w-full min-w-[220px]" : "left-0 w-64"
-              }`}
-            >
-              <div className="flex items-center gap-3 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-sm font-bold text-white shadow-xs">
-                  {(user?.name || "W").charAt(0).toUpperCase()}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-bold text-slate-900 dark:text-white">
-                    {user?.name || "Worker"}
-                  </p>
-                  <p className="truncate text-xs text-slate-500 dark:text-slate-400 uppercase font-semibold">
-                    INDIVIDUAL
-                  </p>
-                </div>
-              </div>
-
-              <div className="my-1.5 border-t border-slate-100 dark:border-slate-800" />
-
-              <div className="space-y-0.5">
-                <div className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-slate-400 dark:text-slate-500 cursor-not-allowed opacity-60">
-                  <CreditCard size={17} className="shrink-0" />
-                  <span>Subscription</span>
-                </div>
-
-                <Link
-                  href="/worker/profile"
-                  onClick={() => setIsProfileMenuOpen(false)}
-                  className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-blue-600 bg-blue-50 dark:bg-blue-950/40 dark:text-blue-400 transition"
-                >
-                  <User size={17} className="shrink-0" />
-                  <span>Profile</span>
-                </Link>
-
-                <div className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-slate-400 dark:text-slate-500 cursor-not-allowed opacity-60">
-                  <Settings size={17} className="shrink-0" />
-                  <span>Settings</span>
-                </div>
-
-                <div className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-slate-400 dark:text-slate-500 cursor-not-allowed opacity-60">
-                  <HelpCircle size={17} className="shrink-0" />
-                  <span>Help</span>
-                </div>
-              </div>
-
-              <div className="my-1.5 border-t border-slate-100 dark:border-slate-800" />
-
-              <button
-                type="button"
-                onClick={() => {
-                  setIsProfileMenuOpen(false);
-                  handleLogout();
-                }}
-                className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40 transition cursor-pointer"
-              >
-                <LogOut size={17} className="text-red-600 dark:text-red-400 shrink-0" />
-                <span>Log out</span>
-              </button>
-            </div>
-          )}
-
-          <button
-            type="button"
-            onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
-            className={`flex items-center gap-3 w-full rounded-xl p-2 transition text-left hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer ${
-              isSidebarOpen ? "" : "justify-center"
-            }`}
-            title={user?.name || "Worker"}
-          >
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-sm font-bold text-white shadow-xs">
-              {(user?.name || "W").charAt(0).toUpperCase()}
-            </div>
-            {isSidebarOpen && (
-              <>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold text-slate-900 dark:text-white leading-tight">
-                    {user?.name || "Worker"}
-                  </p>
-                  <p className="truncate text-xs text-slate-500 dark:text-slate-400 uppercase font-medium">
-                    INDIVIDUAL
-                  </p>
-                </div>
-                <ChevronUp
-                  size={16}
-                  className={`text-slate-400 transition-transform duration-200 shrink-0 ${
-                    isProfileMenuOpen ? "rotate-180" : ""
-                  }`}
-                />
-              </>
-            )}
-          </button>
-        </div>
-      </aside>
-
-      {/* Mobile Top Header Bar */}
-      <div className="md:hidden sticky top-0 z-30 flex items-center justify-between border-b border-slate-200 bg-white/95 px-4 py-3 shadow-xs backdrop-blur dark:border-slate-800 dark:bg-slate-900/95 w-full">
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-            title="Toggle sidebar menu"
-            aria-label="Toggle sidebar menu"
-            className="rounded-lg p-2 text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800 cursor-pointer"
-          >
-            {isMobileMenuOpen ? <X size={20} /> : <PanelLeft size={20} />}
-          </button>
-          <Link href="/" className="flex items-center">
-            <span className="font-[var(--font-anton)] text-lg uppercase tracking-wider bg-[linear-gradient(180deg,#E86100_0%,#FFF5EA_48%,#128807_100%)] bg-clip-text text-transparent select-none">
-              GO LESKA AI
-            </span>
-          </Link>
-        </div>
-        <Link
-          href="/worker/profile"
-          className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-600 text-xs font-bold text-white shadow-xs"
-          title="View Profile"
-        >
-          {(user?.name || "W").charAt(0).toUpperCase()}
-        </Link>
-      </div>
-
-      {/* Mobile Sidebar Overlay Drawer */}
-      {isMobileMenuOpen && (
-        <div className="md:hidden fixed inset-0 z-50 flex">
-          <div
-            className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs transition-opacity"
-            onClick={() => setIsMobileMenuOpen(false)}
-          />
-          <div className="relative flex w-4/5 max-w-xs flex-1 flex-col bg-white p-4 shadow-2xl dark:bg-slate-900">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800">
-              <span className="font-[var(--font-anton)] text-xl uppercase tracking-wider bg-[linear-gradient(180deg,#E86100_0%,#FFF5EA_48%,#128807_100%)] bg-clip-text text-transparent">
-                GO LESKA AI
-              </span>
-              <button
-                type="button"
-                onClick={() => setIsMobileMenuOpen(false)}
-                className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <nav className="mt-4 space-y-1.5 flex-1">
-              <Link
-                href="/worker/dashboard"
-                onClick={() => setIsMobileMenuOpen(false)}
-                className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
-              >
-                <LayoutDashboard size={20} />
-                <span>Dashboard</span>
-              </Link>
-              <Link
-                href="/worker/documents"
-                onClick={() => setIsMobileMenuOpen(false)}
-                className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400"
-              >
-                <User size={20} />
-                <span>Profile</span>
-              </Link>
-              <Link
-                href="/worker/profile"
-                onClick={() => setIsMobileMenuOpen(false)}
-                className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
-              >
-                <FileText size={20} />
-                <span>Documents</span>
-              </Link>
-              <div className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-400 opacity-60 cursor-not-allowed">
-                <ShieldCheck size={20} />
-                <span>Security</span>
-              </div>
-              <div className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-400 opacity-60 cursor-not-allowed">
-                <Building2 size={20} />
-                <span>Companies Worked</span>
-              </div>
-            </nav>
-
-            <div className="pt-4 border-t border-slate-200 dark:border-slate-800">
-              <div className="flex items-center gap-3 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 mb-2">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-sm font-bold text-white">
-                  {(user?.name || "W").charAt(0).toUpperCase()}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-bold text-slate-900 dark:text-white">
-                    {user?.name || "Worker"}
-                  </p>
-                  <p className="truncate text-xs text-slate-500 uppercase font-semibold">
-                    INDIVIDUAL
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsMobileMenuOpen(false);
-                  handleLogout();
-                }}
-                className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50 dark:text-red-400"
-              >
-                <LogOut size={20} />
-                <span>Log out</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0 min-h-screen overflow-y-auto">
         <main className="flex-1 mx-auto w-full max-w-7xl px-4 sm:px-6 py-6 sm:py-8 space-y-6 pb-12">
@@ -686,7 +328,7 @@ export default function WorkerProfilePage() {
               {/* Left Side Header Text + Profile Strength */}
               <div className="space-y-4 max-w-lg">
                 <div>
-                  <h1 className="font-[var(--font-anton)] text-3xl sm:text-4xl uppercase tracking-wide">
+                  <h1 className="font-(--font-anton) text-3xl sm:text-4xl uppercase tracking-wide">
                     Your Profile
                   </h1>
                   <p className="text-blue-100 text-sm sm:text-base mt-1">
@@ -1253,5 +895,6 @@ export default function WorkerProfilePage() {
         </button>
       </div>
     </div>
+    </AccountManagementShell>
   );
 }

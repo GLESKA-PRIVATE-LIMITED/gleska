@@ -10,6 +10,7 @@
  */
 
 import { SupabaseClient } from "@supabase/supabase-js";
+import apiClient from "@/lib/api";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -90,6 +91,15 @@ export function getSessionKey(): string | null {
     return localStorage.getItem(SESSION_KEY_STORAGE_KEY);
   } catch {
     return null;
+  }
+}
+
+export function clearSessionKey(): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.removeItem(SESSION_KEY_STORAGE_KEY);
+  } catch {
+    // Ignore storage failures during logout.
   }
 }
 
@@ -187,54 +197,22 @@ export async function getGeoInfo(): Promise<GeoInfo> {
 
 /**
  * Registers/upserts the current browser session in user_sessions.
- * Called after each successful login. Never throws — failures are silenced
- * to prevent blocking the login flow.
+ * Called after each successful login through the backend auth authority.
  */
-export async function registerSession(
-  supabase: SupabaseClient,
-  userId: string
-): Promise<void> {
-  try {
-    const sessionKey = getOrCreateSessionKey();
-    if (!sessionKey || !userId) return;
+export async function registerSession(): Promise<void> {
+  const sessionKey = getOrCreateSessionKey();
+  if (!sessionKey) throw new Error("Unable to create browser session key");
 
-    const deviceInfo = parseDeviceInfo();
-    const geo = await getGeoInfo();
-    const now = new Date().toISOString();
-
-    await supabase.from("user_sessions").upsert(
-      {
-        user_id: userId,
-        session_key: sessionKey,
-        device_name: deviceInfo.deviceName,
-        browser: deviceInfo.browser,
-        os: deviceInfo.os,
-        ip_address: geo.ip,
-        city: geo.city,
-        country: geo.country,
-        last_active: now,
-        is_revoked: false,
-      },
-      {
-        onConflict: "user_id,session_key",
-        ignoreDuplicates: false,
-      }
-    );
-
-    // Log the login event
-    await logSecurityActivity(supabase, userId, {
-      event_type: "login",
-      description: `New login on ${deviceInfo.deviceName}`,
-      device_name: deviceInfo.deviceName,
-      browser: deviceInfo.browser,
-      os: deviceInfo.os,
-      city: geo.city,
-      country: geo.country,
-    });
-  } catch (err) {
-    // Never block the login flow
-    console.warn("[security] registerSession failed silently:", err);
-  }
+  const deviceInfo = parseDeviceInfo();
+  const geo = await getGeoInfo();
+  await apiClient.post("/api/v1/auth/session", {
+    session_key: sessionKey,
+    device_name: deviceInfo.deviceName,
+    browser: deviceInfo.browser,
+    os: deviceInfo.os,
+    city: geo.city,
+    country: geo.country,
+  }, { withCredentials: true });
 }
 
 /**

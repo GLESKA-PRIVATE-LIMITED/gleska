@@ -1,5 +1,7 @@
 """Authentication endpoints."""
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, HTTPException, Response, status, Depends, Request
 import logging
 
@@ -9,7 +11,7 @@ from app.core.supabase import supabase
 from app.services.auth_service import AuthService
 from app.services.msg91_service import MSG91Service
 from app.services.onboarding_service import OnboardingService
-from app.schemas.auth import UserResponse, ProvisionUserSchema, SignupPreflightSchema, MobileVerifiedSignupSchema, PasswordResetRequestSchema, PasswordResetVerifySchema, PasswordResetCompleteSchema, ResendOTPSchema
+from app.schemas.auth import UserResponse, ProvisionUserSchema, RegisterSessionSchema, SignupPreflightSchema, MobileVerifiedSignupSchema, PasswordResetRequestSchema, PasswordResetVerifySchema, PasswordResetCompleteSchema, ResendOTPSchema
 from app.services.password_reset_service import PasswordResetService
 from app.services.profile_photo_service import get_signed_profile_photo_url
 
@@ -95,6 +97,57 @@ async def provision_authenticated_user(
     except Exception as exc:
         logger.exception("Supabase identity provisioning failed")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="USER_PROVISIONING_FAILED") from exc
+
+
+@router.post("/session")
+async def register_authenticated_session(
+    request: RegisterSessionSchema,
+    user: UserResponse = Depends(get_current_user),
+):
+    """Register the current browser device session for an authenticated user."""
+    try:
+        response = (
+            supabase.table("user_sessions")
+            .upsert(
+                {
+                    "user_id": user.id,
+                    "session_key": request.session_key,
+                    "device_name": request.device_name,
+                    "browser": request.browser,
+                    "os": request.os,
+                    "city": request.city,
+                    "country": request.country,
+                    "last_active": datetime.now(timezone.utc).isoformat(),
+                    "is_revoked": False,
+                    "revoked_at": None,
+                },
+                on_conflict="user_id,session_key",
+            )
+            .execute()
+        )
+        if response is None:
+            raise RuntimeError("Session registration returned no response")
+
+        try:
+            supabase.table("security_activity").insert({
+                "user_id": user.id,
+                "event_type": "login",
+                "description": f"New login on {request.device_name or 'Unknown device'}",
+                "device_name": request.device_name,
+                "browser": request.browser,
+                "os": request.os,
+                "city": request.city,
+                "country": request.country,
+            }).execute()
+        except Exception:
+            logger.exception("Failed to record login activity for user_id=%s", user.id)
+
+        return {"success": True}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Session registration failed for user_id=%s", user.id)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="SESSION_REGISTRATION_FAILED") from exc
 
 
 @router.post("/signup-mobile-verified", response_model=UserResponse)

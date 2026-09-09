@@ -8,22 +8,20 @@ from fastapi import APIRouter, HTTPException, Query, status, Depends
 from app.core.security import get_current_user, require_worker
 from app.core.supabase import supabase
 from app.schemas.auth import UserResponse
+from app.services.auth_service import AuthService
 from app.schemas.worker import (
     WorkerCurrentLocationResponse,
     WorkerJobRouteResponse,
+    WorkerJobDetailsResponse,
     WorkerLocationUpdate,
     WorkerProfileResponse,
     UpdateWorkerProfileSchema,
-)
-from app.schemas.worker import (
-    WorkerCurrentLocationResponse,
-    WorkerJobRouteResponse,
-    WorkerLocationUpdate,
-    WorkerProfileResponse,
-    UpdateWorkerProfileSchema,
+    WorkerPreferencesResponse,
+    WorkerPreferencesUpdate,
     WorkerDocumentResponse,
     WorkerDocumentListResponse,
     DocumentUploadRequest,
+    DocumentUploadCompleteRequest,
     ProfilePhotoUploadRequest,
 )
 from app.services.document_service import WorkerDocumentService
@@ -222,6 +220,44 @@ async def get_worker_job_route_endpoint(
     return await get_worker_job_route(job_id, user)
 
 
+@router.get("/me/jobs/{job_id}", response_model=WorkerJobDetailsResponse)
+async def get_worker_job_details(job_id: str, user: UserResponse = Depends(require_worker)):
+    """Return safe details for a job matched to the authenticated worker."""
+    try:
+        profile = (supabase.table("worker_profiles").select("id").eq("user_id", user.id).single().execute().data or {})
+        response = (
+            supabase.table("job_matches")
+            .select("id,status,expires_at,jobs(id,title,max_daily_salary,headcount_required,min_experience,created_at,job_sites(name,address,city,state,location),employer_profiles(contact_person_name))")
+            .eq("worker_profile_id", profile.get("id"))
+            .eq("job_id", job_id)
+            .limit(1)
+            .execute()
+        )
+        match = (response.data or [None])[0]
+        if not match or not match.get("jobs"):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="JOB_NOT_AVAILABLE_TO_WORKER")
+        job = match["jobs"]
+        site = job.get("job_sites") or {}
+        employer = job.get("employer_profiles") or {}
+        location = site.get("location") or {}
+        coordinates = location.get("coordinates") if isinstance(location, dict) else None
+        return WorkerJobDetailsResponse(
+            job_id=str(job["id"]), match_id=str(match["id"]), title=job["title"],
+            employer_name=employer.get("contact_person_name"), site_name=site.get("name"),
+            address=site.get("address"), city=site.get("city"), state=site.get("state"),
+            salary=float(job.get("max_daily_salary") or 0), headcount=int(job.get("headcount_required") or 0),
+            min_experience=job.get("min_experience"), status=match.get("status") or "PENDING",
+            expires_at=match.get("expires_at"), created_at=job.get("created_at"),
+            target_lat=float(coordinates[1]) if coordinates and len(coordinates) > 1 else None,
+            target_lng=float(coordinates[0]) if coordinates and len(coordinates) > 0 else None,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Worker job details request failed: user_id=%s job_id=%s", user.id, job_id)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="WORKER_JOB_DETAILS_FAILED") from exc
+
+
 @router.get("/me", response_model=WorkerProfileResponse)
 async def get_worker_profile(user: UserResponse = Depends(require_worker)):
     """Get current worker's profile."""
@@ -251,6 +287,57 @@ async def get_worker_profile(user: UserResponse = Depends(require_worker)):
         )
 
 
+@router.get("/me/preferences", response_model=WorkerPreferencesResponse)
+async def get_worker_preferences(user: UserResponse = Depends(require_worker)):
+    """Return the authenticated worker's persisted settings."""
+    response = (
+        supabase.table("worker_preferences")
+        .select("job_matching_notifications, attendance_notifications, security_alerts, language, updated_at")
+        .eq("user_id", user.id)
+        .maybe_single()
+        .execute()
+    )
+    data = response.data if response else {}
+    if not data:
+        return WorkerPreferencesResponse(
+            job_matching_notifications=True,
+            attendance_notifications=True,
+            security_alerts=True,
+            language="EN",
+        )
+
+    return WorkerPreferencesResponse(
+        job_matching_notifications=bool(data.get("job_matching_notifications", True)),
+        attendance_notifications=bool(data.get("attendance_notifications", True)),
+        security_alerts=bool(data.get("security_alerts", True)),
+        language=data.get("language") or "EN",
+        updated_at=data.get("updated_at"),
+    )
+
+
+@router.put("/me/preferences", response_model=WorkerPreferencesResponse)
+async def update_worker_preferences(
+    preferences: WorkerPreferencesUpdate,
+    user: UserResponse = Depends(require_worker),
+):
+    """Upsert the authenticated worker's persisted settings."""
+    update_payload = preferences.model_dump(exclude_none=True)
+    if not update_payload:
+        return await get_worker_preferences(user)
+
+    upsert_payload = {
+        "user_id": user.id,
+        **update_payload,
+    }
+
+    supabase.table("worker_preferences").upsert(
+        upsert_payload,
+        on_conflict="user_id",
+    ).execute()
+
+    return await get_worker_preferences(user)
+
+
 @router.put("/me", response_model=WorkerProfileResponse)
 async def update_worker_profile(
     update_data: UpdateWorkerProfileSchema,
@@ -258,10 +345,19 @@ async def update_worker_profile(
 ):
     """Update worker profile."""
     try:
-        # Build update dict with only non-None values
-        update_dict = {
-            k: v for k, v in update_data.dict().items() if v is not None
-        }
+        values = update_data.model_dump(exclude_none=True)
+        user_update = {key: values.pop(key) for key in ("name", "mobile", "email") if key in values}
+        update_dict = values
+
+        if user_update:
+            if "name" in user_update and not user_update["name"].strip():
+                raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Name must not be blank")
+            if "mobile" in user_update:
+                user_update["mobile"] = AuthService.normalize_mobile(user_update["mobile"])
+            user_response = supabase.table("users").update(user_update).eq("id", user.id).execute()
+            if not user_response.data:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+            user = UserResponse(**user_response.data[0])
 
         if update_data.availability_status and update_data.availability_status not in {"AVAILABLE", "ON_JOB", "OFFLINE"}:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid availability status")
@@ -287,9 +383,9 @@ async def update_worker_profile(
         merged_profile = {**current_profile, **update_dict}
 
         # Check user fields from UserResponse object
-        has_name = user.name is not None and str(user.name).strip() != ""
-        has_mobile = user.mobile is not None and str(user.mobile).strip() != ""
-        has_email = user.email is not None and str(user.email).strip() != ""
+        has_name = not hasattr(user, "name") or (user.name is not None and str(user.name).strip() != "")
+        has_mobile = not hasattr(user, "mobile") or (user.mobile is not None and str(user.mobile).strip() != "")
+        has_email = not hasattr(user, "email") or (user.email is not None and str(user.email).strip() != "")
 
         # Check profile fields with merged updates
         has_trade_id = merged_profile.get("trade_id") is not None and str(merged_profile.get("trade_id")).strip() != ""
@@ -469,7 +565,7 @@ async def get_worker_jobs(user: UserResponse = Depends(require_worker)):
 
         response = (
             supabase.table("job_matches")
-            .select("id, status, arrival_otp, completion_otp, completed_at, expires_at, jobs(id, title, max_daily_salary, job_sites(location), employer_profiles(contact_person_name, users(mobile)))")
+            .select("id, status, completed_at, expires_at, jobs(id, title, max_daily_salary, job_sites(location), employer_profiles(contact_person_name))")
             .eq("worker_profile_id", profile["id"])
             .order("expires_at", desc=True)
             .execute()
@@ -488,20 +584,14 @@ async def get_worker_jobs(user: UserResponse = Depends(require_worker)):
         coordinates = location.get("coordinates") if isinstance(location, dict) else None
         target_lng, target_lat = (coordinates or [None, None])[:2]
         employer = job.get("employer_profiles") or {}
-        employer_user = employer.get("users") or {}
-        if isinstance(employer_user, list):
-            employer_user = employer_user[0] if employer_user else {}
         item = {
             "match_id": str(match["id"]),
             "job_id": str(job.get("id")),
             "title": job.get("title"),
             "employer_name": employer.get("contact_person_name"),
-            "employer_phone": employer_user.get("mobile"),
             "target_lat": float(target_lat) if target_lat is not None else None,
             "target_lng": float(target_lng) if target_lng is not None else None,
             "status": match.get("status"),
-            "arrival_otp": match.get("arrival_otp"),
-            "completion_otp": match.get("completion_otp"),
             "salary": float(job["max_daily_salary"]) if job.get("max_daily_salary") is not None else 0,
             "completed_at": match.get("completed_at"),
         }
@@ -591,7 +681,7 @@ async def start_document_upload(
 
 @router.post("/me/documents/upload-complete", response_model=WorkerDocumentResponse)
 async def complete_document_upload(
-    upload_request: DocumentUploadRequest,
+    upload_request: DocumentUploadCompleteRequest,
     user: UserResponse = Depends(require_worker)
 ):
     """
@@ -631,24 +721,25 @@ async def complete_document_upload(
         # Validate file metadata
         doc_service.validate_file_metadata(upload_request)
         
+        # Accept only the path issued for this worker, document type, and filename.
+        doc_service.validate_document_storage_path(
+            worker_profile_id,
+            upload_request.document_type,
+            upload_request.original_filename,
+            upload_request.storage_path,
+        )
+
         # Delete old document from Storage if it exists (replacement scenario)
         await doc_service.delete_old_document_storage(
             worker_profile_id,
             upload_request.document_type
         )
         
-        # Generate storage path
-        storage_path = doc_service.get_document_storage_path(
-            worker_profile_id,
-            upload_request.document_type,
-            upload_request.original_filename
-        )
-        
         # Create/update metadata in database (UPSERT)
         document = await doc_service.create_document_metadata(
             worker_profile_id,
             upload_request,
-            storage_path
+            upload_request.storage_path
         )
         
         return document

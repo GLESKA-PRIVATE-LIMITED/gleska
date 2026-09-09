@@ -4,7 +4,7 @@ import React, { createContext, useContext, useEffect, useState } from "react";
 import apiClient from "@/lib/api";
 import { supabase } from "@/lib/supabase";
 import { initializeMSG91Widget, retryOTP, sendOTP, verifyOTP } from "@/lib/msg91";
-import { registerSession, logSecurityActivity, parseDeviceInfo } from "@/lib/security";
+import { registerSession, clearSessionKey, logSecurityActivity, parseDeviceInfo } from "@/lib/security";
 
 export interface AuthUser {
   id: string;
@@ -247,6 +247,7 @@ const resendOTP = async (mobile: string, requestId: string | null = null, channe
       name,
       mobile: session.user.phone || undefined,
     });
+    await registerSession();
     let state = await apiClient.get("/api/v1/auth/me");
     if (!state.data?.user) {
       throw new Error("Backend authentication could not be confirmed");
@@ -259,8 +260,6 @@ const resendOTP = async (mobile: string, requestId: string | null = null, channe
     setNextStep(state.data.next_step || null);
     setClientAuthCookie();
     notifyAuthStateChange();
-    // Register device session (non-blocking)
-    registerSession(supabase, session.user.id);
     return { user: state.data.user, nextStep: state.data.next_step || null };
   };
 
@@ -269,6 +268,7 @@ const resendOTP = async (mobile: string, requestId: string | null = null, channe
     setIsLoading(true);
     try {
       await clearBackendSession();
+      clearSessionKey();
       const { error: signInError } = await supabase.auth.signInWithPassword({
         email: email.trim().toLowerCase(),
         password,
@@ -290,6 +290,7 @@ const resendOTP = async (mobile: string, requestId: string | null = null, channe
   };
 
   const signInWithGoogle = async (role: "WORKER" | "EMPLOYER", accountType: "BUSINESS" | "INDIVIDUAL" = "BUSINESS") => {
+    clearSessionKey();
     sessionStorage.setItem("goleska_oauth_role", role);
     sessionStorage.setItem("goleska_oauth_account_type", accountType);
     try {
@@ -333,6 +334,7 @@ const resendOTP = async (mobile: string, requestId: string | null = null, channe
     setError(null);
     setIsLoading(true);
     try {
+      clearSessionKey();
       const msg91Result = await verifyOTP(otp);
       const normalizedMobile = mobile.replace(/\D/g, "");
       const response = await apiClient.post("/api/v1/auth/signup-mobile-verified", {
@@ -351,6 +353,7 @@ const resendOTP = async (mobile: string, requestId: string | null = null, channe
         password,
       });
       if (signInError) throw signInError;
+      await registerSession();
       setUser(response.data);
       setClientAuthCookie();
       let state = await apiClient.get("/api/v1/auth/me");
@@ -360,10 +363,6 @@ const resendOTP = async (mobile: string, requestId: string | null = null, channe
       }
       setNextStep(state.data?.next_step || null);
       notifyAuthStateChange();
-      // Register device session after signup (non-blocking)
-      if (signInData?.session?.user?.id) {
-        registerSession(supabase, signInData.session.user.id);
-      }
     } catch (err: any) {
       const message = err.response?.data?.detail || err.message || "Signup failed";
       setError(message);
@@ -378,6 +377,7 @@ const resendOTP = async (mobile: string, requestId: string | null = null, channe
     try {
       setError(null);
       setIsLoading(true);
+      clearSessionKey();
       const msg91Result = await verifyOTP(otp);
 
       const response = await apiClient.post("/api/v1/auth/complete-msg91", {
@@ -388,6 +388,7 @@ const resendOTP = async (mobile: string, requestId: string | null = null, channe
       }, { withCredentials: true });
 
       if (response.data?.user) {
+        await registerSession();
         setUser(response.data.user);
         setNextStep(response.data.next_step);
         notifyAuthStateChange();
@@ -406,6 +407,7 @@ const resendOTP = async (mobile: string, requestId: string | null = null, channe
     setIsLoading(true);
     try {
       await clearBackendSession();
+      clearSessionKey();
       const msg91Result = await verifyOTP(otp);
       await supabase.auth.signOut();
       const response = await apiClient.post("/api/v1/auth/login-msg91", {
@@ -413,14 +415,13 @@ const resendOTP = async (mobile: string, requestId: string | null = null, channe
         role,
         msg91_access_token: msg91Result.accessToken,
       }, { skipSupabaseAuth: true });
+      if (response.data.user?.id) {
+        await registerSession();
+      }
       setUser(response.data.user);
       setNextStep(response.data.next_step);
       setClientAuthCookie();
       notifyAuthStateChange();
-      // Register device session after mobile login (non-blocking)
-      if (response.data.user?.id) {
-        registerSession(supabase, response.data.user.id);
-      }
     } catch (err: any) {
       const message = err.response?.data?.detail || err.message || "Mobile login failed";
       setError(message);
@@ -450,10 +451,15 @@ const resendOTP = async (mobile: string, requestId: string | null = null, channe
       setUser(null);
       setNextStep(null);
       clearClientAuthCookie();
+      clearSessionKey();
       notifyAuthStateChange();
     } catch (err) {
       console.error("Logout error:", err);
     } finally {
+      setUser(null);
+      setNextStep(null);
+      clearClientAuthCookie();
+      clearSessionKey();
       setIsLoading(false);
     }
   };

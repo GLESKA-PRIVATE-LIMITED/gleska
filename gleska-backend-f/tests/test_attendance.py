@@ -7,6 +7,8 @@ from pydantic import ValidationError
 from app.main import app
 from app.schemas.attendance import AttendanceLocationRequest, EmployerAttendanceUpdateRequest, WorkerCheckInRequest
 from app.services.attendance_service import ATTENDANCE_GEOFENCE_METERS
+from app.routers.attendance import attendance_http_error
+from app.services.attendance_service import AttendanceError, AttendanceService
 
 
 MIGRATION = (
@@ -84,3 +86,29 @@ def test_worker_history_is_scoped_by_authenticated_user_and_checkout_is_single_u
 def test_hours_are_only_available_when_both_authoritative_timestamps_exist():
     assert "check_out_at IS NULL OR check_in_at IS NOT NULL" in MIGRATION
     assert "check_out_at >= check_in_at" in MIGRATION
+
+
+def test_known_rpc_error_preserves_domain_code_over_postgres_code():
+    from postgrest.exceptions import APIError
+
+    error = AttendanceService._rpc_error(APIError({
+        "message": "OUTSIDE_ATTENDANCE_GEOFENCE",
+        "code": "P0001",
+        "details": None,
+        "hint": None,
+    }))
+
+    response = attendance_http_error(error)
+
+    assert error.code == "OUTSIDE_ATTENDANCE_GEOFENCE"
+    assert response.status_code == 422
+    assert response.body == b'{"code":"OUTSIDE_ATTENDANCE_GEOFENCE","message":"You\'re too far from the work site to check in.","retryable":true}'
+
+
+def test_unknown_rpc_error_keeps_generic_fallback():
+    error = AttendanceError("ATTENDANCE_OPERATION_FAILED")
+
+    response = attendance_http_error(error)
+
+    assert response.status_code == 500
+    assert response.body == b'{"code":"ATTENDANCE_OPERATION_FAILED","message":"ATTENDANCE_OPERATION_FAILED","retryable":false}'

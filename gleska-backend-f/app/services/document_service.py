@@ -87,6 +87,24 @@ class WorkerDocumentService:
         
         if ext not in mime_ext_map.get(upload_request.mime_type, set()):
             raise ValueError(f"File extension {ext} does not match MIME type {upload_request.mime_type}")
+
+    def validate_document_storage_path(
+        self,
+        worker_profile_id: str,
+        document_type: str,
+        original_filename: str,
+        storage_path: str,
+    ) -> None:
+        """Ensure completion persists only the path issued for this upload context."""
+        expected_prefix = f"workers/{worker_profile_id}/documents/{document_type}/"
+        parts = storage_path.split("/")
+        if (
+            len(parts) != 5
+            or not storage_path.startswith(expected_prefix)
+            or not parts[4].endswith(f"_{original_filename}")
+            or not parts[4].removesuffix(f"_{original_filename}")
+        ):
+            raise ValueError("Invalid document storage path")
     
     async def create_document_metadata(
         self,

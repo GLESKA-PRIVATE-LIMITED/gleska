@@ -20,8 +20,10 @@ ATTENDANCE_GEOFENCE_METERS = 500
 
 
 class AttendanceError(Exception):
-    def __init__(self, code: str):
+    def __init__(self, code: str, message: str | None = None, retryable: bool = False):
         self.code = code
+        self.message = message or code
+        self.retryable = retryable
         super().__init__(code)
 
 
@@ -34,15 +36,29 @@ class AttendanceService:
 
     @staticmethod
     def _rpc_error(exc: Exception) -> AttendanceError:
-        message = str(exc)
+        response = getattr(exc, "json", None)
+        payload = response() if callable(response) else None
+        payload = payload if isinstance(payload, dict) else {}
+        message = " ".join(
+            str(value)
+            for value in (payload.get("message"), payload.get("details"), payload.get("hint"), str(exc))
+            if value
+        )
         known_codes = (
             "WORKER_PROFILE_NOT_FOUND", "JOB_MATCH_NOT_FOUND", "JOB_MATCH_NOT_ACCEPTED",
+            "JOB_MATCH_EXPIRED", "UNAUTHORIZED_ATTENDANCE",
             "JOB_SITE_LOCATION_UNAVAILABLE", "CURRENT_LOCATION_REQUIRED", "OUTSIDE_ATTENDANCE_GEOFENCE",
             "INVALID_GPS_ACCURACY", "ATTENDANCE_ALREADY_EXISTS", "ATTENDANCE_NOT_FOUND",
             "CHECK_IN_REQUIRED", "ATTENDANCE_ALREADY_CHECKED_OUT", "CORRECTION_REASON_REQUIRED",
             "CHECK_OUT_BEFORE_CHECK_IN",
         )
-        return AttendanceError(next((code for code in known_codes if code in message), "ATTENDANCE_OPERATION_FAILED"))
+        code = next((known_code for known_code in known_codes if known_code in message), None)
+        if code is None and str(payload.get("code") or "") in known_codes:
+            code = str(payload["code"])
+        code = code or "ATTENDANCE_OPERATION_FAILED"
+        return AttendanceError(str(code), retryable=str(code) in {
+            "CURRENT_LOCATION_REQUIRED", "OUTSIDE_ATTENDANCE_GEOFENCE", "INVALID_GPS_ACCURACY",
+        })
 
     @staticmethod
     def _map_record(row: dict[str, Any]) -> AttendanceRecordResponse:

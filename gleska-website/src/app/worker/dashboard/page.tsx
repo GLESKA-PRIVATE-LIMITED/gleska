@@ -1,72 +1,49 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
-import axios from "axios";
-import { useRouter } from "next/navigation";
-import { useAuth } from "@/context/AuthContext";
-import {
-  LogOut,
-  Zap,
-  User,
-  MapPin,
-  AlertCircle,
-  Loader2,
-  PanelLeft,
-  LayoutDashboard,
-  FileText,
-  ShieldCheck,
-  Building2,
-  History,
-  CreditCard,
-  Settings,
-  HelpCircle,
-  ChevronUp,
-  X,
-} from "lucide-react";
-import { toast } from "sonner";
+import React from "react";
 import Link from "next/link";
+import Image from "next/image";
+import { Briefcase, CheckCircle2, Clock3, Loader2, MapPin, User } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import AccountManagementShell from "@/components/AccountManagementShell";
+import { useAuth } from "@/context/AuthContext";
 import apiClient from "@/lib/api";
-import { getBrowserLocation, getLocationErrorMessage, shouldSendLiveLocationUpdate, type LiveLocationSnapshot, normalizeCoordinates } from "@/lib/location";
+import { getLocationErrorMessage, normalizeCoordinates, shouldSendLiveLocationUpdate, type LiveLocationSnapshot } from "@/lib/location";
 
-declare global {
-  interface Window {
-    google?: any;
-  }
-}
+type WorkerProfile = {
+  profile_completed: boolean;
+  availability_status: "AVAILABLE" | "ON_JOB" | "OFFLINE";
+  address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  subscription_valid_until?: string | null;
+};
 
 type AvailableJob = {
   job_id: string;
   title: string;
   salary: number;
-  headcount: number;
-  min_experience: number | null;
   employer_name: string;
   distance_km: number | null;
 };
 
-type RouteResponse = {
-  job_id: string;
-  origin: { latitude: number; longitude: number };
-  destination: { latitude: number; longitude: number; name: string };
-  route: {
-    distance_meters: number;
-    distance_km: number;
-    duration_seconds: number;
-    duration_minutes: number;
-    encoded_polyline: string;
-  };
-};
-
-type WorkerActiveJob = {
+type WorkerJob = {
   match_id: string;
   job_id: string;
   title: string;
+  employer_name?: string | null;
   status: string;
+  completed_at?: string | null;
 };
 
-type WorkerAttendance = {
-  id: string;
-  attendance_date: string;
+type WorkerJobDetails = {
+  site_name?: string | null;
+};
+
+type AttendanceRecord = {
   job_title: string;
   site_name: string;
   status: "PRESENT" | "LATE" | "ABSENT";
@@ -74,205 +51,151 @@ type WorkerAttendance = {
   check_out_at?: string | null;
 };
 
-type WorkerAttendanceHistory = {
-  items: WorkerAttendance[];
-  page: number;
-  limit: number;
-  total: number;
-  has_more: boolean;
-};
-
-function formatAttendanceDuration(checkIn?: string | null, checkOut?: string | null): string {
-  if (!checkIn || !checkOut) return "-";
-  const minutes = Math.max(0, Math.round((new Date(checkOut).getTime() - new Date(checkIn).getTime()) / 60000));
-  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+function formatTime(value?: string | null): string {
+  return value ? new Date(value).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" }) : "-";
 }
 
-function GoogleRouteMap({ route }: { route: RouteResponse }) {
-  const mapRef = useRef<HTMLDivElement | null>(null);
-  const [mapError, setMapError] = useState("");
-  const mapApiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "";
+function formatDate(value?: string | null): string {
+  return value ? new Date(value).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "Date unavailable";
+}
 
-  useEffect(() => {
-    if (!mapRef.current) return;
+function isSubscriptionActive(value?: string | null): boolean {
+  return Boolean(value && new Date(value).getTime() > Date.now());
+}
 
-    const renderMap = () => {
-      const googleMaps = window.google?.maps;
-      if (!mapRef.current || !googleMaps) {
-        setMapError("Map unavailable. Your route distance and ETA are still available. Please try again later.");
-        return;
-      }
-
-      const origin = new googleMaps.LatLng(route.origin.latitude, route.origin.longitude);
-      const destination = new googleMaps.LatLng(route.destination.latitude, route.destination.longitude);
-      const bounds = new googleMaps.LatLngBounds();
-      bounds.extend(origin);
-      bounds.extend(destination);
-
-      const map = new googleMaps.Map(mapRef.current, {
-        center: origin,
-        zoom: 14,
-        mapTypeId: googleMaps.MapTypeId.ROADMAP,
-        disableDefaultUI: false,
-        zoomControl: true,
-        mapTypeControl: true,
-        streetViewControl: true,
-      });
-
-      const routePath = googleMaps.geometry?.encoding?.decodePath(route.route.encoded_polyline || "") || [origin, destination];
-      if (routePath.length > 0) {
-        const polyline = new googleMaps.Polyline({
-          path: routePath,
-          strokeColor: "#2563eb",
-          strokeOpacity: 0.9,
-          strokeWeight: 6,
-          map,
-        });
-        polyline.setMap(map);
-        routePath.forEach((point: { lat: () => number; lng: () => number }) => {
-          bounds.extend(new googleMaps.LatLng(point.lat(), point.lng()));
-        });
-      }
-
-      const workerMarker = new googleMaps.Marker({
-        position: origin,
-        map,
-        title: "Your location",
-        label: { text: "You", color: "#0f172a", fontSize: "12px", fontWeight: "700" },
-        icon: {
-          path: googleMaps.SymbolPath.CIRCLE,
-          scale: 10,
-          fillColor: "#22c55e",
-          fillOpacity: 1,
-          strokeColor: "#ffffff",
-          strokeWeight: 2,
-        },
-      });
-      workerMarker.setMap(map);
-
-      const destinationMarker = new googleMaps.Marker({
-        position: destination,
-        map,
-        title: route.destination.name,
-        label: { text: "Site", color: "#0f172a", fontSize: "12px", fontWeight: "700" },
-        icon: {
-          path: googleMaps.SymbolPath.CIRCLE,
-          scale: 10,
-          fillColor: "#ef4444",
-          fillOpacity: 1,
-          strokeColor: "#ffffff",
-          strokeWeight: 2,
-        },
-      });
-      destinationMarker.setMap(map);
-
-      map.fitBounds(bounds);
-      map.panToBounds(bounds);
-      const zoom = map.getZoom();
-      if (typeof zoom === "number" && zoom > 18) {
-        map.setZoom(18);
-      }
-    };
-
-    if (!mapApiKey) {
-      setMapError("Map unavailable. Your route distance and ETA are still available. Please try again later.");
-      return;
-    }
-
-    if (window.google?.maps) {
-      renderMap();
-      return;
-    }
-
-    const existingScript = document.querySelector("script[data-google-maps]");
-    if (existingScript) {
-      existingScript.addEventListener("load", renderMap, { once: true });
-      return;
-    }
-
-    const script = document.createElement("script");
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${mapApiKey}&libraries=geometry`;
-    script.async = true;
-    script.defer = true;
-    script.dataset.googleMaps = "true";
-    script.onload = renderMap;
-    script.onerror = () => {
-      setMapError("Map unavailable. Your route distance and ETA are still available. Please try again later.");
-    };
-    document.head.appendChild(script);
-  }, [mapApiKey, route]);
-
-  if (mapError) {
-    return (
-      <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/20 dark:text-amber-300">
-        {mapError}
-      </div>
-    );
-  }
-
-  return <div ref={mapRef} className="mt-6 h-72 w-full overflow-hidden rounded-2xl border border-slate-200 bg-slate-100 dark:border-slate-700" />;
+function SectionState({ loading, error, retry, errorAction, children }: { loading: boolean; error: string; retry: () => void; errorAction?: React.ReactNode; children: React.ReactNode }) {
+  if (loading) return <div className="flex items-center gap-2 py-8 text-sm text-slate-500"><Loader2 size={18} className="animate-spin" /> Loading...</div>;
+  if (error) return <div className="rounded-xl bg-rose-50 p-4 text-sm text-rose-700 dark:bg-rose-950/20 dark:text-rose-300"><p>{error}</p>{errorAction}<button type="button" onClick={retry} className="mt-3 block font-bold underline">Try again</button></div>;
+  return <>{children}</>;
 }
 
 export default function WorkerDashboard() {
   const router = useRouter();
   const { user, isLoading, nextStep, logout } = useAuth();
-  const [profile, setProfile] = React.useState<{ profile_completed: boolean; availability_status: string; expected_daily_wage?: number | null; latitude?: number | null; longitude?: number | null; address?: string | null }>({ profile_completed: false, availability_status: "OFFLINE" });
+  const [profile, setProfile] = React.useState<WorkerProfile | null>(null);
   const [availableJobs, setAvailableJobs] = React.useState<AvailableJob[]>([]);
-  const [selectedJob, setSelectedJob] = React.useState<AvailableJob | null>(null);
-  const [routeData, setRouteData] = React.useState<RouteResponse | null>(null);
-  const [jobsLoading, setJobsLoading] = React.useState(false);
-  const [jobsError, setJobsError] = React.useState("");
-  const [routeError, setRouteError] = React.useState("");
-  const [routeLoading, setRouteLoading] = React.useState(false);
-  const [activeJob, setActiveJob] = React.useState<WorkerActiveJob | null>(null);
-  const [todayAttendance, setTodayAttendance] = React.useState<WorkerAttendance | null>(null);
-  const [attendanceLoading, setAttendanceLoading] = React.useState(true);
-  const [attendanceAction, setAttendanceAction] = React.useState<"check-in" | "check-out" | null>(null);
-  const [attendanceError, setAttendanceError] = React.useState("");
-  const [attendanceHistory, setAttendanceHistory] = React.useState<WorkerAttendanceHistory | null>(null);
-  const [attendanceHistoryPage, setAttendanceHistoryPage] = React.useState(1);
-  const [attendanceHistoryLoading, setAttendanceHistoryLoading] = React.useState(true);
-  const [attendanceHistoryError, setAttendanceHistoryError] = React.useState("");
-  const [attendanceHistoryRetry, setAttendanceHistoryRetry] = React.useState(0);
+  const [activeJob, setActiveJob] = React.useState<WorkerJob | null>(null);
+  const [recentJobs, setRecentJobs] = React.useState<WorkerJob[]>([]);
+  const [activeJobDetails, setActiveJobDetails] = React.useState<WorkerJobDetails | null>(null);
+  const [todayAttendance, setTodayAttendance] = React.useState<AttendanceRecord | null>(null);
+  const [currentLocationAddress, setCurrentLocationAddress] = React.useState("");
+  const [loading, setLoading] = React.useState({ profile: true, jobs: true, currentJob: true, attendance: true });
+  const [errors, setErrors] = React.useState({ profile: "", jobs: "", currentJob: "", attendance: "" });
   const watcherIdRef = React.useRef<number | null>(null);
   const lastLiveLocationRef = React.useRef<LiveLocationSnapshot | null>(null);
   const lastLocationWarningAtRef = React.useRef(0);
+  const jobsRefreshedAfterLiveLocationRef = React.useRef(false);
 
-  useEffect(() => {
-    if (!user || user.role !== "WORKER") return;
-    if (typeof navigator === "undefined" || !("geolocation" in navigator)) return;
-    if (watcherIdRef.current !== null) return;
+  React.useEffect(() => {
+    if (!isLoading && !user) router.push("/worker/auth");
+    if (!isLoading && user && nextStep !== "DASHBOARD") router.push(nextStep === "WORKER_PROFILE" ? "/worker/onboarding" : "/worker/auth");
+  }, [isLoading, nextStep, router, user]);
+
+  const loadProfile = React.useCallback(async () => {
+    setLoading((current) => ({ ...current, profile: true }));
+    setErrors((current) => ({ ...current, profile: "" }));
+    try {
+      const response = await apiClient.get<WorkerProfile>("/api/v1/workers/me");
+      setProfile(response.data);
+      setCurrentLocationAddress(response.data.address || [response.data.city, response.data.state].filter(Boolean).join(", "));
+    } catch {
+      setErrors((current) => ({ ...current, profile: "Unable to load your profile summary." }));
+    } finally {
+      setLoading((current) => ({ ...current, profile: false }));
+    }
+  }, []);
+
+  const loadAvailableJobs = React.useCallback(async () => {
+    setLoading((current) => ({ ...current, jobs: true }));
+    setErrors((current) => ({ ...current, jobs: "" }));
+    try {
+      const response = await apiClient.get<{ jobs: AvailableJob[] }>("/api/v1/workers/me/available-jobs");
+      setAvailableJobs((response.data.jobs || []).slice(0, 3));
+    } catch (error: unknown) {
+      const detail = (error as { response?: { data?: { detail?: unknown } } }).response?.data?.detail;
+      setErrors((current) => ({ ...current, jobs: detail === "CURRENT_LOCATION_REQUIRED" ? "Location unavailable. Nearby work could not be updated." : "Nearby work could not be loaded." }));
+    } finally {
+      setLoading((current) => ({ ...current, jobs: false }));
+    }
+  }, []);
+
+  const loadCurrentWork = React.useCallback(async () => {
+    setLoading((current) => ({ ...current, currentJob: true }));
+    setErrors((current) => ({ ...current, currentJob: "" }));
+    try {
+      const response = await apiClient.get<{ active_job?: WorkerJob | null; recent_jobs?: WorkerJob[] }>("/api/v1/workers/me/jobs");
+      const currentJob = response.data.active_job || null;
+      setActiveJob(currentJob);
+      setRecentJobs(response.data.recent_jobs || []);
+      if (currentJob) {
+        try {
+          const detailResponse = await apiClient.get<WorkerJobDetails>(`/api/v1/workers/me/jobs/${currentJob.job_id}`);
+          setActiveJobDetails(detailResponse.data);
+        } catch {
+          setActiveJobDetails(null);
+        }
+      } else {
+        setActiveJobDetails(null);
+      }
+    } catch {
+      setErrors((current) => ({ ...current, currentJob: "Unable to load your work summary." }));
+    } finally {
+      setLoading((current) => ({ ...current, currentJob: false }));
+    }
+  }, []);
+
+  const loadAttendance = React.useCallback(async () => {
+    setLoading((current) => ({ ...current, attendance: true }));
+    setErrors((current) => ({ ...current, attendance: "" }));
+    try {
+      const response = await apiClient.get<{ items: AttendanceRecord[] }>("/api/v1/workers/me/attendance/today");
+      setTodayAttendance(response.data.items?.[0] || null);
+    } catch {
+      setErrors((current) => ({ ...current, attendance: "Unable to load today's attendance." }));
+    } finally {
+      setLoading((current) => ({ ...current, attendance: false }));
+    }
+  }, []);
+
+  React.useEffect(() => {
+    if (!user || user.role !== "WORKER" || isLoading || nextStep !== "DASHBOARD") return;
+    void Promise.resolve().then(() => Promise.all([
+      loadProfile(),
+      loadAvailableJobs(),
+      loadCurrentWork(),
+      loadAttendance(),
+    ]));
+  }, [isLoading, loadAttendance, loadAvailableJobs, loadCurrentWork, loadProfile, nextStep, user]);
+
+  React.useEffect(() => {
+    if (!user || user.role !== "WORKER" || typeof navigator === "undefined" || !navigator.geolocation || watcherIdRef.current !== null) return;
 
     const onPosition = (position: GeolocationPosition) => {
-      const { latitude, longitude, accuracy } = position.coords;
-      const normalized = normalizeCoordinates(latitude, longitude, accuracy);
+      const normalized = normalizeCoordinates(position.coords.latitude, position.coords.longitude, position.coords.accuracy);
       if (!normalized) {
         const now = Date.now();
         if (now - lastLocationWarningAtRef.current >= 30000) {
           lastLocationWarningAtRef.current = now;
-          toast.error(getLocationErrorMessage({ code: "INACCURATE", accuracy }));
+          toast.error(getLocationErrorMessage({ code: "INACCURATE", accuracy: position.coords.accuracy }));
         }
         return;
       }
 
-      const next: LiveLocationSnapshot = {
-        latitude: normalized.latitude,
-        longitude: normalized.longitude,
-        accuracy_m: normalized.accuracy,
-        updated_at: Date.now(),
-      };
-
-      if (!shouldSendLiveLocationUpdate(lastLiveLocationRef.current, next)) {
-        return;
-      }
-
+      const next: LiveLocationSnapshot = { latitude: normalized.latitude, longitude: normalized.longitude, accuracy_m: normalized.accuracy, updated_at: Date.now() };
+      if (!shouldSendLiveLocationUpdate(lastLiveLocationRef.current, next)) return;
       lastLiveLocationRef.current = next;
-      apiClient.put("/api/v1/workers/me/location", {
+      apiClient.put<{ address?: string | null }>("/api/v1/workers/me/location", {
         latitude: next.latitude,
         longitude: next.longitude,
         accuracy_m: next.accuracy_m,
+      }).then((response) => {
+        if (response.data.address) setCurrentLocationAddress(response.data.address);
+        if (!jobsRefreshedAfterLiveLocationRef.current) {
+          jobsRefreshedAfterLiveLocationRef.current = true;
+          void loadAvailableJobs();
+        }
       }).catch(() => {
-        // Preserve the dashboard and retry on the next valid GPS callback.
+        // The backend remains authoritative; the next valid position retries the update.
       });
     };
 
@@ -284,103 +207,20 @@ export default function WorkerDashboard() {
       }
     };
 
-    const watchId = navigator.geolocation.watchPosition(onPosition, onError, {
+    watcherIdRef.current = navigator.geolocation.watchPosition(onPosition, onError, {
       enableHighAccuracy: true,
       maximumAge: 300000,
       timeout: 30000,
     });
-    watcherIdRef.current = watchId;
 
     return () => {
-      if (watcherIdRef.current !== null) {
-        navigator.geolocation.clearWatch(watcherIdRef.current);
-        watcherIdRef.current = null;
-      }
+      if (watcherIdRef.current !== null) navigator.geolocation.clearWatch(watcherIdRef.current);
+      watcherIdRef.current = null;
       lastLiveLocationRef.current = null;
     };
-  }, [user]);
+  }, [loadAvailableJobs, user]);
 
-  useEffect(() => {
-    if (!user || user.role !== "WORKER") return;
-    let active = true;
-    apiClient.get<WorkerAttendanceHistory>(`/api/v1/workers/me/attendance?page=${attendanceHistoryPage}&limit=10`)
-      .then((response) => { if (active) setAttendanceHistory(response.data); })
-      .catch(() => { if (active) setAttendanceHistoryError("Unable to load attendance history."); })
-      .finally(() => { if (active) setAttendanceHistoryLoading(false); });
-    return () => { active = false; };
-  }, [attendanceHistoryPage, attendanceHistoryRetry, user]);
-
-  useEffect(() => {
-    if (!user || user.role !== "WORKER") return;
-    Promise.all([
-      apiClient.get<{ active_job?: WorkerActiveJob | null }>("/api/v1/workers/me/jobs"),
-      apiClient.get<{ items: WorkerAttendance[] }>("/api/v1/workers/me/attendance/today"),
-    ]).then(([jobsResponse, attendanceResponse]) => {
-      setActiveJob(jobsResponse.data.active_job || null);
-      setTodayAttendance(attendanceResponse.data.items?.[0] || null);
-    }).catch(() => setAttendanceError("Unable to load attendance right now."))
-      .finally(() => setAttendanceLoading(false));
-  }, [user]);
-
-  // Layout UI states
-  const [isSidebarOpen, setIsSidebarOpen] = React.useState(true);
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
-  const [isProfileMenuOpen, setIsProfileMenuOpen] = React.useState(false);
-  const profileMenuRef = React.useRef<HTMLDivElement>(null);
-
-  React.useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (profileMenuRef.current && !profileMenuRef.current.contains(event.target as Node)) {
-        setIsProfileMenuOpen(false);
-      }
-    };
-
-    if (isProfileMenuOpen) {
-      document.addEventListener("mousedown", handleClickOutside);
-    }
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, [isProfileMenuOpen]);
-
-  useEffect(() => {
-    if (!user || user.role !== "WORKER") return;
-    apiClient.get("/api/v1/workers/me").then((response) => {
-      setProfile(response.data);
-      if (response.data.latitude == null || response.data.longitude == null) {
-        setJobsError("Add your location to your profile to see nearby jobs.");
-        return;
-      }
-      setJobsLoading(true);
-      return apiClient.get("/api/v1/workers/me/available-jobs").then((jobsResponse) => setAvailableJobs(jobsResponse.data.jobs || [])).catch(() => setJobsError("Unable to load nearby jobs right now. Please try again.")).finally(() => setJobsLoading(false));
-    }).catch(() => setJobsError("Unable to load your profile right now."));
-  }, [user]);
-
-  useEffect(() => {
-    if (!isLoading && !user) {
-      router.push("/worker/auth");
-    }
-
-    // Redirect if next step is not DASHBOARD
-    if (!isLoading && user && nextStep !== "DASHBOARD") {
-      router.push(nextStep === "WORKER_PROFILE" ? "/worker/onboarding" : "/worker/auth");
-    }
-  }, [user, isLoading, nextStep, router]);
-
-  if (isLoading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-[#eef1fb] dark:bg-slate-950">
-        <div className="flex flex-col items-center gap-4">
-          <Loader2 size={40} className="animate-spin text-indigo-600" />
-          <p className="text-slate-600 dark:text-slate-400">Loading your dashboard...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return null;
-  }
+  if (isLoading || !user) return <div className="flex min-h-screen items-center justify-center bg-[#eef1fb] dark:bg-slate-950"><Loader2 size={40} className="animate-spin text-blue-600" /></div>;
 
   const handleLogout = async () => {
     try {
@@ -392,552 +232,44 @@ export default function WorkerDashboard() {
     }
   };
 
-  const handleViewRoute = async (job: AvailableJob) => {
-    if (routeLoading) return;
-    setSelectedJob(job);
-    setRouteError("");
-    setRouteLoading(true);
-    try {
-      const response = await apiClient.get(`/api/v1/workers/me/jobs/${job.job_id}/route`);
-      setRouteData(response.data);
-    } catch (error: unknown) {
-      setRouteData(null);
-      const detail = axios.isAxiosError(error) ? error.response?.data?.detail : undefined;
-      setRouteError(detail || (error instanceof Error ? error.message : undefined) || "Unable to calculate the route right now. Please try again.");
-    } finally {
-      setRouteLoading(false);
-    }
-  };
-
-  const handleAttendanceAction = async (action: "check-in" | "check-out") => {
-    if (attendanceAction || !activeJob && action === "check-in" || !todayAttendance && action === "check-out") return;
-    setAttendanceAction(action);
-    setAttendanceError("");
-    try {
-      const location = await getBrowserLocation();
-      const payload = { latitude: location.latitude, longitude: location.longitude, accuracy: location.accuracy };
-      await (action === "check-in"
-        ? await apiClient.post<WorkerAttendance>("/api/v1/workers/me/attendance/check-in", { ...payload, job_match_id: activeJob?.match_id })
-        : await apiClient.post<WorkerAttendance>("/api/v1/workers/me/attendance/check-out", { ...payload, attendance_id: todayAttendance?.id }));
-      const refreshed = await apiClient.get<{ items: WorkerAttendance[] }>("/api/v1/workers/me/attendance/today");
-      setTodayAttendance(refreshed.data.items?.[0] || null);
-      setAttendanceHistoryRetry((value) => value + 1);
-    } catch (error: unknown) {
-      const detail = typeof error === "object" && error !== null
-        ? (error as { response?: { data?: { detail?: unknown } } }).response?.data?.detail
-        : undefined;
-      setAttendanceError(detail === "OUTSIDE_ATTENDANCE_GEOFENCE" ? "You're too far from the work site to check in." : detail === "CURRENT_LOCATION_REQUIRED" ? "Location is required to check in." : "Unable to update attendance right now.");
-    } finally {
-      setAttendanceAction(null);
-    }
-  };
-
-  const openGoogleMapsRoute = () => {
-    if (!routeData) return;
-    const url = `https://www.google.com/maps/dir/?api=1&origin=${routeData.origin.latitude},${routeData.origin.longitude}&destination=${routeData.destination.latitude},${routeData.destination.longitude}&travelmode=driving`;
-    window.open(url, "_blank", "noopener,noreferrer");
-  };
+  const location = currentLocationAddress || profile?.address || [profile?.city, profile?.state].filter(Boolean).join(", ");
+  const subscriptionActive = isSubscriptionActive(profile?.subscription_valid_until);
+  const completedJobCount = recentJobs.length;
+  const companiesWorkedCount = new Set(recentJobs.map((job) => job.employer_name).filter(Boolean)).size;
 
   return (
-    <div className="flex flex-col md:flex-row min-h-screen bg-[#eef1fb] font-sans text-slate-900 dark:bg-slate-950 dark:text-slate-100">
-      {/* Desktop Left Sidebar (hidden on mobile, flex on md+) */}
-      <aside
-        className={`hidden md:flex sticky top-0 h-screen flex-col justify-between border-r border-slate-200 bg-white/95 p-4 shadow-xs backdrop-blur transition-all duration-300 dark:border-slate-800 dark:bg-slate-900/95 z-40 shrink-0 ${
-          isSidebarOpen ? "w-64" : "w-20 items-center"
-        }`}
-      >
-        <div className="space-y-6 w-full">
-          {/* Sidebar Top: Branding + Collapse Toggle */}
-          <div className={`flex items-center gap-2 ${isSidebarOpen ? "justify-between px-1" : "justify-center"}`}>
-            {isSidebarOpen ? (
-              <>
-                <Link href="/" className="flex items-center min-w-0">
-                  <span className="font-[var(--font-anton)] text-xl uppercase tracking-wider bg-[linear-gradient(180deg,#E86100_0%,#FFF5EA_48%,#128807_100%)] bg-clip-text text-transparent select-none whitespace-nowrap">
-                    GO LESKA AI
-                  </span>
-                </Link>
-                <button
-                  type="button"
-                  onClick={() => setIsSidebarOpen(false)}
-                  title="Collapse sidebar"
-                  aria-label="Collapse sidebar"
-                  className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white transition cursor-pointer"
-                >
-                  <PanelLeft size={20} />
-                </button>
-              </>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setIsSidebarOpen(true)}
-                title="Expand sidebar"
-                aria-label="Expand sidebar"
-                className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white transition cursor-pointer"
-              >
-                <PanelLeft size={20} />
-              </button>
-            )}
-          </div>
-
-          {/* Sidebar Navigation Items */}
-          <nav className="space-y-1.5 w-full">
-            {/* Dashboard (Active) */}
-            <Link
-              href="/worker/dashboard"
-              className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition ${
-                isSidebarOpen ? "" : "justify-center"
-              } bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400`}
-              title="Dashboard"
-            >
-              <LayoutDashboard size={20} className="shrink-0" />
-              {isSidebarOpen && <span>Dashboard</span>}
+    <AccountManagementShell kind="worker" name={user.name || "Worker"} accountLabel="Worker" profileHref="/worker/profile" onLogout={() => void handleLogout()}>
+      <main className="mx-auto w-full max-w-7xl space-y-6 px-4 py-6 sm:px-6 sm:py-8">
+        <section className="rounded-3xl bg-linear-to-br from-amber-50 to-yellow-50 p-5 sm:p-8 dark:from-amber-950/20 dark:to-yellow-950/20">
+          <div className="flex flex-col-reverse items-start justify-between gap-5 sm:flex-row sm:items-center">
+            <div><p className="text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300">Welcome back</p><h1 className="mt-1 font-(--font-anton) text-3xl uppercase text-slate-900 dark:text-white">{user.name}</h1><p className="mt-2 text-sm text-amber-700 dark:text-amber-300">Here is your work overview.</p></div>
+            <Link href="/worker/profile" className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl bg-amber-400 text-white shadow-lg" title="View profile">
+              {user.profile_photo_url ? <Image src={user.profile_photo_url} alt="Profile" width={64} height={64} className="h-full w-full object-cover" unoptimized /> : <User size={32} />}
             </Link>
-
-            {/* Profile (Functional -> /worker/profile) */}
-            <Link
-              href="/worker/profile"
-              className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white transition ${
-                isSidebarOpen ? "" : "justify-center"
-              }`}
-              title="Profile"
-            >
-              <User size={20} className="shrink-0" />
-              {isSidebarOpen && <span>Profile</span>}
-            </Link>
-
-            {/* Documents (Functional -> /worker/documents) */}
-            <Link
-              href="/worker/documents"
-              className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white transition ${
-                isSidebarOpen ? "" : "justify-center"
-              }`}
-              title="Documents"
-            >
-              <FileText size={20} className="shrink-0" />
-              {isSidebarOpen && <span>Documents</span>}
-            </Link>
-
-            {/* Security (Disabled placeholder) */}
-            <div
-              className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-400 opacity-60 dark:text-slate-500 cursor-not-allowed ${
-                isSidebarOpen ? "" : "justify-center"
-              }`}
-              title="Security"
-            >
-              <ShieldCheck size={20} className="shrink-0" />
-              {isSidebarOpen && <span>Security</span>}
-            </div>
-
-            {/* Companies Worked (Disabled placeholder) */}
-            <div
-              className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-400 opacity-60 dark:text-slate-500 cursor-not-allowed ${
-                isSidebarOpen ? "" : "justify-center"
-              }`}
-              title="Companies Worked"
-            >
-              <Building2 size={20} className="shrink-0" />
-              {isSidebarOpen && <span>Companies Worked</span>}
-            </div>
-
-            {/* Sidebar Recents Section */}
-            <div className="pt-3 border-t border-slate-200/80 dark:border-slate-800/80 w-full">
-              {isSidebarOpen ? (
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between px-3 py-1 text-[11px] font-bold tracking-wider text-slate-400 dark:text-slate-500 uppercase">
-                    <span>Recents</span>
-                    <History size={14} className="text-slate-400 dark:text-slate-500" />
-                  </div>
-                  <p className="px-3 text-xs text-slate-400 dark:text-slate-500 italic">No recent items</p>
-                </div>
-              ) : (
-                <div className="flex justify-center py-2" title="Recents">
-                  <History size={20} className="text-slate-400 dark:text-slate-500" />
-                </div>
-              )}
-            </div>
-          </nav>
-        </div>
-
-        {/* Sidebar Bottom: Clickable Worker Profile & Popover Menu */}
-        <div className="relative pt-4 border-t border-slate-200 dark:border-slate-800 w-full" ref={profileMenuRef}>
-          {/* Profile Popover Menu */}
-          {isProfileMenuOpen && (
-            <div
-              className={`absolute bottom-full mb-2 z-50 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl backdrop-blur dark:border-slate-800 dark:bg-slate-900 ${
-                isSidebarOpen ? "left-0 right-0 w-full min-w-[220px]" : "left-0 w-64"
-              }`}
-            >
-              {/* Identity Card */}
-              <div className="flex items-center gap-3 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-sm font-bold text-white shadow-xs">
-                  {(user?.name || "W").charAt(0).toUpperCase()}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-bold text-slate-900 dark:text-white">
-                    {user?.name || "Worker"}
-                  </p>
-                  <p className="truncate text-xs text-slate-500 dark:text-slate-400 uppercase font-semibold">
-                    INDIVIDUAL
-                  </p>
-                </div>
-              </div>
-
-              <div className="my-1.5 border-t border-slate-100 dark:border-slate-800" />
-
-              {/* Popover Items */}
-              <div className="space-y-0.5">
-                <Link href="/worker/subscription" onClick={() => setIsProfileMenuOpen(false)} className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800 transition">
-                  <CreditCard size={17} className="shrink-0" />
-                  <span>Subscription</span>
-                </Link>
-                
-                {/* Profile Entry Point #2 */}
-                <Link
-                  href="/worker/profile"
-                  onClick={() => setIsProfileMenuOpen(false)}
-                  className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800 transition"
-                >
-                  <User size={17} className="text-slate-500 dark:text-slate-400 shrink-0" />
-                  <span>Profile</span>
-                </Link>
-
-                <div className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-slate-400 dark:text-slate-500 cursor-not-allowed opacity-60">
-                  <Settings size={17} className="shrink-0" />
-                  <span>Settings</span>
-                </div>
-
-                <div className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-slate-400 dark:text-slate-500 cursor-not-allowed opacity-60">
-                  <HelpCircle size={17} className="shrink-0" />
-                  <span>Help</span>
-                </div>
-              </div>
-
-              <div className="my-1.5 border-t border-slate-100 dark:border-slate-800" />
-
-              {/* Log out Item */}
-              <button
-                type="button"
-                onClick={() => {
-                  setIsProfileMenuOpen(false);
-                  handleLogout();
-                }}
-                className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40 transition cursor-pointer"
-              >
-                <LogOut size={17} className="text-red-600 dark:text-red-400 shrink-0" />
-                <span>Log out</span>
-              </button>
-            </div>
-          )}
-
-          {/* Trigger Area */}
-          <button
-            type="button"
-            onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
-            className={`flex items-center gap-3 w-full rounded-xl p-2 transition text-left hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer ${
-              isSidebarOpen ? "" : "justify-center"
-            }`}
-            title={user?.name || "Worker"}
-          >
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-sm font-bold text-white shadow-xs">
-              {(user?.name || "W").charAt(0).toUpperCase()}
-            </div>
-            {isSidebarOpen && (
-              <>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold text-slate-900 dark:text-white leading-tight">
-                    {user?.name || "Worker"}
-                  </p>
-                  <p className="truncate text-xs text-slate-500 dark:text-slate-400 uppercase font-medium">
-                    INDIVIDUAL
-                  </p>
-                </div>
-                <ChevronUp
-                  size={16}
-                  className={`text-slate-400 transition-transform duration-200 shrink-0 ${
-                    isProfileMenuOpen ? "rotate-180" : ""
-                  }`}
-                />
-              </>
-            )}
-          </button>
-        </div>
-      </aside>
-
-      {/* Mobile Top Header Bar (visible on < md) */}
-      <div className="md:hidden sticky top-0 z-30 flex items-center justify-between border-b border-slate-200 bg-white/95 px-4 py-3 shadow-xs backdrop-blur dark:border-slate-800 dark:bg-slate-900/95 w-full">
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-            title="Toggle sidebar menu"
-            aria-label="Toggle sidebar menu"
-            className="rounded-lg p-2 text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800 cursor-pointer"
-          >
-            {isMobileMenuOpen ? <X size={20} /> : <PanelLeft size={20} />}
-          </button>
-          <Link href="/" className="flex items-center">
-            <span className="font-[var(--font-anton)] text-lg uppercase tracking-wider bg-[linear-gradient(180deg,#E86100_0%,#FFF5EA_48%,#128807_100%)] bg-clip-text text-transparent select-none">
-              GO LESKA AI
-            </span>
-          </Link>
-        </div>
-        {/* Mobile Top-Right Profile entry point */}
-        <Link
-          href="/worker/profile"
-          className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-600 text-xs font-bold text-white shadow-xs"
-          title="View Profile"
-        >
-          {(user?.name || "W").charAt(0).toUpperCase()}
-        </Link>
-      </div>
-
-      {/* Mobile Sidebar Overlay Drawer */}
-      {isMobileMenuOpen && (
-        <div className="md:hidden fixed inset-0 z-50 flex">
-          <div
-            className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs transition-opacity"
-            onClick={() => setIsMobileMenuOpen(false)}
-          />
-          <div className="relative flex w-4/5 max-w-xs flex-1 flex-col bg-white p-4 shadow-2xl dark:bg-slate-900">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800">
-              <span className="font-[var(--font-anton)] text-xl uppercase tracking-wider bg-[linear-gradient(180deg,#E86100_0%,#FFF5EA_48%,#128807_100%)] bg-clip-text text-transparent">
-                GO LESKA AI
-              </span>
-              <button
-                type="button"
-                onClick={() => setIsMobileMenuOpen(false)}
-                className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <nav className="mt-4 space-y-1.5 flex-1">
-              <Link
-                href="/worker/dashboard"
-                onClick={() => setIsMobileMenuOpen(false)}
-                className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400"
-              >
-                <LayoutDashboard size={20} />
-                <span>Dashboard</span>
-              </Link>
-              <Link
-                href="/worker/profile"
-                onClick={() => setIsMobileMenuOpen(false)}
-                className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
-              >
-                <User size={20} />
-                <span>Profile</span>
-              </Link>
-              <Link
-                href="/worker/documents"
-                onClick={() => setIsMobileMenuOpen(false)}
-                className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
-              >
-                <FileText size={20} />
-                <span>Documents</span>
-              </Link>
-              <div className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-400 opacity-60 cursor-not-allowed">
-                <ShieldCheck size={20} />
-                <span>Security</span>
-              </div>
-              <div className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-400 opacity-60 cursor-not-allowed">
-                <Building2 size={20} />
-                <span>Companies Worked</span>
-              </div>
-            </nav>
-
-            {/* Mobile Account Bottom */}
-            <div className="pt-4 border-t border-slate-200 dark:border-slate-800">
-              <div className="flex items-center gap-3 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 mb-2">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-sm font-bold text-white">
-                  {(user?.name || "W").charAt(0).toUpperCase()}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-bold text-slate-900 dark:text-white">
-                    {user?.name || "Worker"}
-                  </p>
-                  <p className="truncate text-xs text-slate-500 uppercase font-semibold">
-                    INDIVIDUAL
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsMobileMenuOpen(false);
-                  handleLogout();
-                }}
-                className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50 dark:text-red-400"
-              >
-                <LogOut size={20} />
-                <span>Log out</span>
-              </button>
-            </div>
           </div>
+        </section>
+
+        <div className="grid gap-6 lg:grid-cols-3">
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"><div className="flex items-center justify-between"><h2 className="font-bold">Profile completion</h2><User size={20} className="text-blue-600" /></div><SectionState loading={loading.profile} error={errors.profile} retry={loadProfile}><p className="mt-5 text-2xl font-bold">{profile?.profile_completed ? "Complete" : "Incomplete"}</p></SectionState></section>
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"><div className="flex items-center justify-between"><h2 className="font-bold">Availability</h2><CheckCircle2 size={20} className="text-emerald-600" /></div><SectionState loading={loading.profile} error={errors.profile} retry={loadProfile}><p className="mt-5 text-2xl font-bold">{profile?.availability_status || "-"}</p></SectionState></section>
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"><div className="flex items-center justify-between"><h2 className="font-bold">Subscription</h2><CheckCircle2 size={20} className={subscriptionActive ? "text-emerald-600" : "text-amber-600"} /></div><SectionState loading={loading.profile} error={errors.profile} retry={loadProfile}><p className="mt-5 text-2xl font-bold">{subscriptionActive ? "Active" : "No active subscription"}</p>{subscriptionActive && <p className="mt-1 text-sm text-slate-500">Expires {formatDate(profile?.subscription_valid_until)}</p>}</SectionState></section>
         </div>
-      )}
 
-      {/* Main Dashboard Content */}
-      <div className="flex-1 min-w-0 overflow-y-auto">
-        <main className="mx-auto max-w-7xl px-4 sm:px-6 py-8 sm:py-12">
-          {/* Welcome Card */}
-          <div className="mb-8 rounded-3xl bg-linear-to-br from-amber-50 to-yellow-50 p-5 sm:p-8 dark:from-amber-950/20 dark:to-yellow-950/20 border border-amber-200 dark:border-amber-800">
-            <div className="flex flex-col-reverse sm:flex-row items-start sm:items-center justify-between gap-4 sm:gap-6">
-              <div>
-                <p className="text-xs sm:text-sm font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300">
-                  Welcome back
-                </p>
-                <h1 className="font-(--font-anton) text-2xl sm:text-4xl uppercase text-slate-900 dark:text-white">
-                  {user.name}
-                </h1>
-                <p className="mt-1 sm:mt-2 text-base sm:text-lg text-amber-700 dark:text-amber-300">
-                  Ready to find your next job?
-                </p>
-              </div>
-              {/* Profile Entry Point #3: Top-Right Avatar in Welcome Card */}
-              <Link
-                href="/worker/profile"
-                className="flex h-16 w-16 sm:h-24 sm:w-24 items-center justify-center rounded-2xl bg-linear-to-br from-amber-400 to-yellow-500 shadow-lg hover:scale-105 transition-transform cursor-pointer shrink-0"
-                title="View Profile"
-              >
-                <User size={32} className="sm:hidden text-white" />
-                <User size={40} className="hidden sm:block text-white" />
-              </Link>
-            </div>
-          </div>
+        <div className="grid gap-6 lg:grid-cols-2">
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"><div className="flex items-center justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-wide text-blue-700">Matching</p><h2 className="mt-1 text-xl font-bold">Nearby work</h2></div><span className="text-sm text-slate-500">{availableJobs.length ? "Showing up to 3" : ""}</span></div><SectionState loading={loading.jobs} error={errors.jobs} retry={loadAvailableJobs} errorAction={errors.jobs === "Location unavailable. Nearby work could not be updated." && <Link href="/worker/profile" className="mt-4 inline-block font-bold text-blue-700">Add location in Profile</Link>}>{availableJobs.length ? <div className="mt-5 space-y-3">{availableJobs.map((job) => <article key={job.job_id} className="rounded-xl bg-slate-50 p-4 dark:bg-slate-800/60"><div className="flex items-start justify-between gap-3"><div><h3 className="font-bold">{job.title}</h3><p className="mt-1 text-sm text-slate-500">{job.employer_name}</p></div><MapPin size={18} className="text-blue-600" /></div><div className="mt-3 flex flex-wrap gap-4 text-sm"><span>₹{job.salary}/day</span><span>{job.distance_km == null ? "Distance unavailable" : `${job.distance_km} km`}</span></div></article>)}</div> : <div className="mt-5 rounded-xl border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">No matching jobs nearby.</div>}</SectionState></section>
 
-          <section className="mb-8 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-wide text-blue-700 dark:text-blue-300">Attendance</p>
-                <h2 className="mt-1 text-xl font-bold text-slate-900 dark:text-white">Today&apos;s work record</h2>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Check in and out at your accepted job site.</p>
-              </div>
-              {todayAttendance && <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">{todayAttendance.status}</span>}
-            </div>
-            {attendanceLoading ? <div className="mt-5 flex items-center gap-2 text-sm text-slate-500"><Loader2 size={16} className="animate-spin" /> Loading attendance...</div> : activeJob || todayAttendance ? <div className="mt-5 flex flex-col gap-4 rounded-xl bg-slate-50 p-4 dark:bg-slate-800/60 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-semibold text-slate-900 dark:text-white">{todayAttendance?.job_title || activeJob?.title || "Accepted job"}</p><p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{todayAttendance?.check_in_at ? `Checked in at ${new Date(todayAttendance.check_in_at).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })}` : "No check-in recorded today"}{todayAttendance?.check_out_at ? ` · Checked out at ${new Date(todayAttendance.check_out_at).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })}` : ""}</p></div><div className="flex flex-wrap gap-2">{!todayAttendance && activeJob && <button type="button" onClick={() => void handleAttendanceAction("check-in")} disabled={Boolean(attendanceAction)} className="min-h-11 rounded-xl bg-blue-600 px-4 text-sm font-bold text-white disabled:opacity-60">{attendanceAction === "check-in" ? "Checking you in..." : "Check in"}</button>}{todayAttendance && !todayAttendance.check_out_at && <button type="button" onClick={() => void handleAttendanceAction("check-out")} disabled={Boolean(attendanceAction)} className="min-h-11 rounded-xl bg-blue-600 px-4 text-sm font-bold text-white disabled:opacity-60">{attendanceAction === "check-out" ? "Checking you out..." : "Check out"}</button>}</div></div> : <p className="mt-5 rounded-xl bg-slate-50 p-4 text-sm text-slate-500 dark:bg-slate-800/60 dark:text-slate-400">Attendance becomes available after a job match is accepted.</p>}
-            {attendanceError && <p className="mt-3 text-sm text-rose-600 dark:text-rose-400">{attendanceError}</p>}
-            {todayAttendance?.check_out_at && <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/20 dark:text-emerald-300"><p className="font-bold">Checked out</p><p className="mt-1">Check-in: {new Date(todayAttendance.check_in_at || "").toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })}</p><p>Check-out: {new Date(todayAttendance.check_out_at).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })}</p><p className="mt-1 font-bold">Hours worked: {formatAttendanceDuration(todayAttendance.check_in_at, todayAttendance.check_out_at)}</p></div>}
-          </section>
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"><div className="flex items-center justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-wide text-blue-700">Current work</p><h2 className="mt-1 text-xl font-bold">Accepted job</h2></div><Briefcase size={20} className="text-blue-600" /></div><SectionState loading={loading.currentJob} error={errors.currentJob} retry={loadCurrentWork}>{activeJob ? <div className="mt-5 rounded-xl bg-slate-50 p-4 dark:bg-slate-800/60"><h3 className="font-bold">{activeJob.title}</h3><p className="mt-1 text-sm text-slate-500">{activeJob.employer_name || "Employer unavailable"}</p><p className="mt-2 text-sm">Status: <strong>{activeJob.status}</strong></p>{activeJobDetails?.site_name && <p className="mt-1 text-sm text-slate-500">Site: {activeJobDetails.site_name}</p>}</div> : <div className="mt-5 rounded-xl border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">No active work right now.</div>}</SectionState></section>
+        </div>
 
-          <section className="mb-8 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6">
-            <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Attendance history</p><h2 className="mt-1 text-xl font-bold text-slate-900 dark:text-white">Your records</h2></div>{attendanceHistory && <p className="text-sm text-slate-500 dark:text-slate-400">{attendanceHistory.total} record{attendanceHistory.total === 1 ? "" : "s"}</p>}</div>
-            {attendanceHistoryLoading ? <div className="mt-5 flex items-center gap-2 text-sm text-slate-500"><Loader2 size={16} className="animate-spin" /> Loading attendance history...</div> : attendanceHistoryError ? <div className="mt-5 rounded-xl bg-rose-50 p-4 text-sm text-rose-700 dark:bg-rose-950/20 dark:text-rose-300"><p>{attendanceHistoryError}</p><button type="button" onClick={() => { setAttendanceHistoryLoading(true); setAttendanceHistoryError(""); setAttendanceHistoryRetry((value) => value + 1); }} className="mt-3 font-bold underline">Try again</button></div> : attendanceHistory?.items.length ? <div className="mt-5 space-y-3">{attendanceHistory.items.map((item) => <article key={item.id} className="rounded-xl border border-slate-200 p-4 dark:border-slate-700"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-semibold text-slate-900 dark:text-white">{item.job_title}</p><p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{item.site_name} · {new Date(`${item.attendance_date}T00:00:00`).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</p></div><span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold dark:bg-slate-800">{item.status}</span></div><div className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-3"><p><span className="block text-xs text-slate-400">Check-in</span><strong>{item.check_in_at ? new Date(item.check_in_at).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" }) : "-"}</strong></p><p><span className="block text-xs text-slate-400">Check-out</span><strong>{item.check_out_at ? new Date(item.check_out_at).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" }) : "-"}</strong></p><p><span className="block text-xs text-slate-400">Hours</span><strong>{formatAttendanceDuration(item.check_in_at, item.check_out_at)}</strong></p></div></article>)}</div> : <p className="mt-5 rounded-xl bg-slate-50 p-4 text-sm text-slate-500 dark:bg-slate-800/60 dark:text-slate-400">No attendance records yet.</p>}
-            {attendanceHistory && attendanceHistory.total > attendanceHistory.limit && <div className="mt-5 flex justify-end gap-2"><button type="button" disabled={attendanceHistoryPage === 1} onClick={() => { setAttendanceHistoryLoading(true); setAttendanceHistoryPage((page) => page - 1); }} className="min-h-10 rounded-xl border px-3 text-sm font-bold disabled:opacity-40">Previous</button><button type="button" disabled={!attendanceHistory.has_more} onClick={() => { setAttendanceHistoryLoading(true); setAttendanceHistoryPage((page) => page + 1); }} className="min-h-10 rounded-xl border px-3 text-sm font-bold disabled:opacity-40">Next</button></div>}
-          </section>
+        <div className="grid gap-6 lg:grid-cols-3">
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"><div className="flex items-center justify-between"><h2 className="font-bold">Today&apos;s work</h2><Clock3 size={20} className="text-blue-600" /></div><SectionState loading={loading.attendance} error={errors.attendance} retry={loadAttendance}>{todayAttendance ? <div className="mt-5"><p className="text-lg font-bold">{todayAttendance.status}</p><p className="mt-1 text-sm text-slate-500">{todayAttendance.job_title} · {todayAttendance.site_name}</p><p className="mt-3 text-sm">Check-in: {formatTime(todayAttendance.check_in_at)}</p>{todayAttendance.check_out_at && <p className="text-sm">Check-out: {formatTime(todayAttendance.check_out_at)}</p>}</div> : <p className="mt-5 text-sm text-slate-500">No attendance recorded today.</p>}</SectionState></section>
 
-          {/* Jobs Section */}
-          <div className="mt-12">
-            <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-              <h2 className="font-(--font-anton) text-2xl uppercase text-slate-900 dark:text-white">Jobs Near You</h2>
-              {!profile.latitude || !profile.longitude ? <Link href="/worker/profile" className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white">Add Location</Link> : profile.address ? <p className="text-sm text-slate-600 dark:text-slate-400">Using {profile.address}</p> : null}
-            </div>
-            {jobsLoading ? (
-              <div className="flex items-center justify-center rounded-2xl border border-slate-200 bg-white p-12 dark:border-slate-800 dark:bg-slate-900"><Loader2 className="animate-spin text-blue-600" /></div>
-            ) : jobsError ? (
-              <div className="rounded-2xl border border-rose-200 bg-rose-50 p-8 text-center text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/20 dark:text-rose-300">{jobsError}</div>
-            ) : availableJobs.length === 0 ? (
-              <div className="rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 p-12 text-center dark:border-slate-700 dark:bg-slate-800"><AlertCircle size={40} className="mx-auto mb-4 text-slate-400" /><p className="text-lg font-semibold text-slate-600 dark:text-slate-400">No nearby jobs available</p><p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Eligible SEARCHING jobs within 30 km will appear here.</p></div>
-            ) : (
-              <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-                <div className="grid gap-4 md:grid-cols-2">{availableJobs.map((job) => (
-                  <article key={job.job_id} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                    <div className="flex items-start justify-between gap-4">
-                      <div>
-                        <h3 className="font-bold text-slate-900 dark:text-white">{job.title}</h3>
-                        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{job.employer_name}</p>
-                      </div>
-                      <MapPin size={18} className="shrink-0 text-blue-600" />
-                    </div>
-                    <div className="mt-5 grid grid-cols-3 gap-3 text-sm">
-                      <div>
-                        <p className="text-xs text-slate-500">Pay</p>
-                        <p className="font-bold">₹{job.salary}/day</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-slate-500">Workers</p>
-                        <p className="font-bold">{job.headcount}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-slate-500">Distance</p>
-                        <p className="font-bold">{job.distance_km ?? "-"} km</p>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => handleViewRoute(job)}
-                      disabled={routeLoading}
-                      className="mt-5 inline-flex items-center justify-center rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-blue-500 disabled:opacity-60"
-                    >
-                      {routeLoading && selectedJob?.job_id === job.job_id ? "Calculating best route..." : "View Route"}
-                    </button>
-                  </article>
-                ))}</div>
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"><div className="flex items-center justify-between"><h2 className="font-bold">Work history</h2><CheckCircle2 size={20} className="text-emerald-600" /></div><SectionState loading={loading.currentJob} error={errors.currentJob} retry={loadCurrentWork}>{recentJobs.length ? <div className="mt-5 grid grid-cols-2 gap-4"><div><p className="text-xs uppercase tracking-wide text-slate-400">Completed jobs</p><p className="mt-1 text-2xl font-bold">{completedJobCount}</p></div><div><p className="text-xs uppercase tracking-wide text-slate-400">Companies worked with</p><p className="mt-1 text-2xl font-bold">{companiesWorkedCount}</p></div></div> : <p className="mt-5 text-sm text-slate-500">No completed work records yet.</p>}</SectionState></section>
 
-                <aside className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                  {selectedJob ? (
-                    <>
-                      <p className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Selected Job</p>
-                      <h3 className="mt-2 font-(--font-anton) text-2xl uppercase text-slate-900 dark:text-white">{selectedJob.title}</h3>
-                      <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{selectedJob.employer_name}</p>
-                      <p className="mt-4 text-sm text-slate-500 dark:text-slate-400">₹{selectedJob.salary}/day</p>
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"><div className="flex items-center justify-between"><h2 className="font-bold">Current location</h2><MapPin size={20} className="text-blue-600" /></div><SectionState loading={loading.profile} error={errors.profile} retry={loadProfile}>{profile?.latitude != null && profile.longitude != null ? <><p className="mt-5 text-sm font-semibold">{location || "Current location available"}</p><p className="mt-1 text-xs text-slate-500">Used for matching and attendance checks.</p></> : <><p className="mt-5 text-sm text-slate-500">Location unavailable</p><Link href="/worker/profile" className="mt-3 inline-block text-sm font-bold text-blue-700">Add location in Profile</Link></>}</SectionState></section>
+        </div>
 
-                      {routeLoading ? (
-                        <div className="mt-6 flex items-center gap-3 rounded-xl bg-blue-50 p-3 text-sm font-semibold text-blue-700 dark:bg-blue-950/30 dark:text-blue-300">
-                          <Loader2 size={16} className="animate-spin" />
-                          Calculating best route...
-                        </div>
-                      ) : routeError ? (
-                        <div className="mt-6 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/20 dark:text-rose-300">{routeError}</div>
-                      ) : routeData ? (
-                        <div className="mt-6 space-y-4">
-                          <div>
-                            <p className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Route</p>
-                            <h4 className="mt-2 text-lg font-bold text-slate-900 dark:text-white">{routeData.destination.name}</h4>
-                          </div>
-                          <div className="grid gap-3 sm:grid-cols-2">
-                            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800">
-                              <p className="text-xs text-slate-500 dark:text-slate-400">Road distance</p>
-                              <p className="mt-1 text-lg font-bold text-slate-900 dark:text-white">{routeData.route.distance_km} km</p>
-                            </div>
-                            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800">
-                              <p className="text-xs text-slate-500 dark:text-slate-400">ETA</p>
-                              <p className="mt-1 text-lg font-bold text-slate-900 dark:text-white">~{routeData.route.duration_minutes} min</p>
-                            </div>
-                          </div>
-                          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm dark:border-slate-700 dark:bg-slate-800">
-                            <p className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">From</p>
-                            <p className="mt-1 font-medium text-slate-700 dark:text-slate-200">Your current location</p>
-                            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">To</p>
-                            <p className="font-medium text-slate-700 dark:text-slate-200">{routeData.destination.name}</p>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={openGoogleMapsRoute}
-                            className="inline-flex w-full items-center justify-center rounded-xl border border-blue-200 bg-white px-4 py-2 text-sm font-bold text-blue-700 transition hover:bg-blue-50 dark:border-blue-900 dark:bg-slate-900 dark:text-blue-300 dark:hover:bg-blue-950/30"
-                          >
-                            Open in Google Maps
-                          </button>
-                          <GoogleRouteMap route={routeData} />
-                        </div>
-                      ) : (
-                        <div className="mt-6 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                          Pick a job and click View Route to see the best road route.
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <div className="flex h-full min-h-48 items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 text-center text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                      Select a job to preview the route.
-                    </div>
-                  )}
-                </aside>
-              </div>
-            )}
-          </div>
-        </main>
-      </div>
-    </div>
+      </main>
+    </AccountManagementShell>
   );
 }

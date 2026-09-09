@@ -75,6 +75,16 @@ class ProvisionUserSchema(BaseModel):
     msg91_access_token: Optional[str] = None
 
 
+class RegisterSessionSchema(BaseModel):
+    """Safe device metadata for the authenticated user's current browser session."""
+    session_key: str = Field(..., min_length=1, max_length=255)
+    device_name: Optional[str] = Field(default=None, max_length=255)
+    browser: Optional[str] = Field(default=None, max_length=255)
+    os: Optional[str] = Field(default=None, max_length=255)
+    city: Optional[str] = Field(default=None, max_length=255)
+    country: Optional[str] = Field(default=None, max_length=255)
+
+
 class SignupPreflightSchema(BaseModel):
     email: EmailStr
     mobile: str = Field(..., min_length=10, max_length=32)

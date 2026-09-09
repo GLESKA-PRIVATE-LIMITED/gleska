@@ -2,7 +2,19 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 // Define protected route prefixes
-const WORKER_PROTECTED_PREFIXES = ["/worker/dashboard", "/worker/profile", "/worker/documents", "/worker/onboarding", "/worker/subscription"];
+const WORKER_PROTECTED_PREFIXES = [
+  "/worker/dashboard",
+  "/worker/jobs",
+  "/worker/attendance",
+  "/worker/companies-worked",
+  "/worker/profile",
+  "/worker/documents",
+  "/worker/onboarding",
+  "/worker/subscription",
+  "/worker/security",
+  "/worker/settings",
+  "/worker/help",
+];
 const EMPLOYER_PROTECTED_PREFIXES = ["/employer/dashboard", "/employer/onboarding", "/employer/company-profile", "/employer/director-profile", "/employer/security", "/employer/workers", "/employer/attendance", "/employer/subscription"];
 
 export function middleware(request: NextRequest) {
@@ -47,10 +59,16 @@ export const config = {
   matcher: [
     "/",
     "/worker/dashboard/:path*",
+    "/worker/jobs/:path*",
+    "/worker/attendance/:path*",
+    "/worker/companies-worked/:path*",
     "/worker/profile/:path*",
     "/worker/documents/:path*",
     "/worker/onboarding/:path*",
     "/worker/subscription/:path*",
+    "/worker/security/:path*",
+    "/worker/settings/:path*",
+    "/worker/help/:path*",
     "/employer/dashboard/:path*",
     "/employer/onboarding/:path*",
     "/employer/company-profile/:path*",

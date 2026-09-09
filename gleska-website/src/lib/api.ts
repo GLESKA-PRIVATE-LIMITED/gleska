@@ -24,14 +24,20 @@ const apiClient = axios.create({
 
 // Add auth token to requests
 apiClient.interceptors.request.use(async (config) => {
-  if (typeof window !== "undefined" && !config.skipSupabaseAuth) {
-    const { supabase } = await import("@/lib/supabase");
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
+  if (typeof window !== "undefined") {
+    const sessionKey = localStorage.getItem("goleska_sec_session_key");
+    if (sessionKey) {
+      config.headers["X-Goleska-Session-Key"] = sessionKey;
+    }
+    if (!config.skipSupabaseAuth) {
+      const { supabase } = await import("@/lib/supabase");
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
 
-    if (session?.access_token) {
-      config.headers.Authorization = `Bearer ${session.access_token}`;
+      if (session?.access_token) {
+        config.headers.Authorization = `Bearer ${session.access_token}`;
+      }
     }
   }
   return config;

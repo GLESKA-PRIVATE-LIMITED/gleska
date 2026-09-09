@@ -1,7 +1,7 @@
 """Pydantic schemas for worker profiles and related data."""
 
-from pydantic import BaseModel, Field, field_validator, model_validator
-from typing import Optional
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
+from typing import Literal, Optional
 from datetime import datetime
 
 
@@ -38,8 +38,28 @@ class WorkerProfileResponse(BaseModel):
         from_attributes = True
 
 
+class WorkerPreferencesResponse(BaseModel):
+    """Persisted Worker settings values."""
+    job_matching_notifications: bool = True
+    attendance_notifications: bool = True
+    security_alerts: bool = True
+    language: Literal["EN", "HI", "MR", "TA"] = "EN"
+    updated_at: Optional[datetime] = None
+
+
+class WorkerPreferencesUpdate(BaseModel):
+    """Worker settings update payload."""
+    job_matching_notifications: Optional[bool] = None
+    attendance_notifications: Optional[bool] = None
+    security_alerts: Optional[bool] = None
+    language: Optional[Literal["EN", "HI", "MR", "TA"]] = None
+
+
 class UpdateWorkerProfileSchema(BaseModel):
     """Schema for updating worker profile."""
+    name: Optional[str] = Field(default=None, min_length=2, max_length=120)
+    mobile: Optional[str] = Field(default=None, min_length=10, max_length=32)
+    email: Optional[EmailStr] = None
     trade_id: Optional[str] = Field(default=None, min_length=1, max_length=120)
     experience_years: Optional[int] = Field(default=None, ge=0)
     expected_daily_wage: Optional[float] = Field(default=None, ge=0, le=MAX_EXPECTED_DAILY_WAGE)
@@ -145,6 +165,25 @@ class WorkerJobRouteResponse(BaseModel):
     route: WorkerRouteSummary
 
 
+class WorkerJobDetailsResponse(BaseModel):
+    job_id: str
+    match_id: str
+    title: str
+    employer_name: str | None = None
+    site_name: str | None = None
+    address: str | None = None
+    city: str | None = None
+    state: str | None = None
+    salary: float
+    headcount: int
+    min_experience: int | None = None
+    status: str
+    expires_at: datetime | None = None
+    created_at: datetime | None = None
+    target_lat: float | None = None
+    target_lng: float | None = None
+
+
 class WorkerDocumentResponse(BaseModel):
     """Metadata for a worker document stored in Supabase Storage."""
     
@@ -218,3 +257,9 @@ class DocumentUploadRequest(BaseModel):
         if "/" in value or "\\" in value or ".." in value:
             raise ValueError("Filename cannot contain path separators or parent directory references")
         return value.strip()
+
+
+class DocumentUploadCompleteRequest(DocumentUploadRequest):
+    """Document metadata and the path returned by upload-start."""
+
+    storage_path: str = Field(..., min_length=1, max_length=1024)

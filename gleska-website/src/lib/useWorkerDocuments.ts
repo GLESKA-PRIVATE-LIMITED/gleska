@@ -187,6 +187,7 @@ export function useWorkerDocuments() {
             original_filename: file.name,
             mime_type: file.type,
             file_size_bytes: file.size,
+            storage_path,
           }
         );
 
