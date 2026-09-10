@@ -91,6 +91,37 @@ export function EmployerProfileMenuItems({
   );
 }
 
+function WorkerProfileMenuItems({
+  profileHref,
+  onNavigate,
+  onLogout,
+}: {
+  profileHref: string;
+  onNavigate: () => void;
+  onLogout: () => void;
+}) {
+  return (
+    <div className="space-y-0.5">
+      <Link
+        href={profileHref}
+        onClick={onNavigate}
+        className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
+      >
+        <User size={17} className="shrink-0 text-slate-500 dark:text-slate-400" />
+        <span>Worker Profile</span>
+      </Link>
+      <button
+        type="button"
+        onClick={onLogout}
+        className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
+      >
+        <LogOut size={17} className="shrink-0" />
+        <span>Log out</span>
+      </button>
+    </div>
+  );
+}
+
 export default function AccountManagementShell({
   kind,
   name,
@@ -202,12 +233,13 @@ export default function AccountManagementShell({
         </div>
       );
     }
-    // Worker: direct profile link + logout button
+    // Worker account menu
     return (
-      <div className="border-t border-slate-200 pt-4 dark:border-slate-800">
-        <Link
-          href={profileHref}
-          className={`mb-3 flex items-center gap-3 rounded-xl px-2 py-2 text-left transition hover:bg-slate-100 dark:hover:bg-slate-800 ${!isSidebarOpen ? "justify-center" : ""}`}
+      <div className="relative border-t border-slate-200 pt-4 dark:border-slate-800">
+        <button
+          type="button"
+          onClick={() => setIsProfileMenuOpen((open) => !open)}
+          className={`mb-1 flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left transition hover:bg-slate-100 dark:hover:bg-slate-800 ${!isSidebarOpen ? "justify-center" : ""}`}
           title="Open profile"
         >
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-sm font-bold text-white">
@@ -219,16 +251,19 @@ export default function AccountManagementShell({
               <p className="truncate text-xs text-slate-500">{accountLabel}</p>
             </div>
           )}
-        </Link>
-        <button
-          type="button"
-          onClick={onLogout}
-          className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40 ${!isSidebarOpen ? "justify-center" : ""}`}
-          title="Log out"
-        >
-          <LogOut size={19} />
-          {isSidebarOpen && <span>Log out</span>}
         </button>
+        {isProfileMenuOpen && (
+          <div className="absolute bottom-full left-0 right-0 z-50 mb-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl dark:border-slate-800 dark:bg-slate-900">
+            <WorkerProfileMenuItems
+              profileHref={profileHref}
+              onNavigate={() => setIsProfileMenuOpen(false)}
+              onLogout={() => {
+                setIsProfileMenuOpen(false);
+                onLogout();
+              }}
+            />
+          </div>
+        )}
       </div>
     );
   };
@@ -271,25 +306,39 @@ export default function AccountManagementShell({
         </div>
       );
     }
-    // Worker
+    // Worker account menu
     return (
-      <div className="space-y-3 border-t border-slate-200 pt-4 dark:border-slate-800">
-        <Link
-          href={profileHref}
-          onClick={closeMobile}
-          className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
-        >
-          <User size={19} className="shrink-0" />
-          View profile
-        </Link>
+      <div className="relative border-t border-slate-200 pt-4 dark:border-slate-800">
         <button
           type="button"
-          onClick={onLogout}
-          className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-rose-600"
+          onClick={() => setIsProfileMenuOpen((open) => !open)}
+          className="mb-1 flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left transition hover:bg-slate-100 dark:hover:bg-slate-800"
+          title="Open account menu"
         >
-          <LogOut size={19} />
-          Log out
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-sm font-bold text-white shadow-xs">
+            {name.charAt(0).toUpperCase()}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-bold text-slate-900 dark:text-white">{name}</p>
+            <p className="truncate text-xs text-slate-500 dark:text-slate-400">{accountLabel}</p>
+          </div>
         </button>
+        {isProfileMenuOpen && (
+          <div className="mb-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl dark:border-slate-800 dark:bg-slate-900">
+            <WorkerProfileMenuItems
+              profileHref={profileHref}
+              onNavigate={() => {
+                setIsProfileMenuOpen(false);
+                closeMobile();
+              }}
+              onLogout={() => {
+                setIsProfileMenuOpen(false);
+                closeMobile();
+                onLogout();
+              }}
+            />
+          </div>
+        )}
       </div>
     );
   };

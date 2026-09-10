@@ -177,6 +177,7 @@ export default function SubscriptionPage() {
       kind="employer"
       name={profile.contact_person_name || user.name}
       accountLabel={formatEmployerType(employerType)}
+      employerType={employerType}
       profileHref="/employer/company-profile"
       onLogout={() => void logout()}
     >

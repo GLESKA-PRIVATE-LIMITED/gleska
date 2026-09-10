@@ -79,6 +79,18 @@ async def get_current_user(request: Request, credentials: HTTPAuthorizationCrede
     return UserResponse(**user)
 
 
+async def get_optional_current_user(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+) -> UserResponse | None:
+    try:
+        return await get_current_user(request, credentials)
+    except HTTPException as exc:
+        if exc.status_code == status.HTTP_401_UNAUTHORIZED:
+            return None
+        raise
+
+
 async def require_worker(user: UserResponse = Depends(get_current_user)) -> UserResponse:
     if user.role != "WORKER":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Worker role required")

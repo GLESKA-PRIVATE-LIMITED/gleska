@@ -1,17 +1,13 @@
 "use client";
 
 import React from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import apiClient from "@/lib/api";
 import { supabase } from "@/lib/supabase";
 import {
   Building2,
-  User,
   FileText,
-  ShieldCheck,
-  LogOut,
   Camera,
   Save,
   Phone,
@@ -23,12 +19,10 @@ import {
   Calendar,
   Briefcase,
   CheckCircle2,
-  PanelLeft,
-  X,
-  LayoutDashboard,
   Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
+import AccountManagementShell, { formatEmployerType } from "@/components/AccountManagementShell";
 
 interface EmployerProfile {
   id: string;
@@ -63,9 +57,6 @@ export default function CompanyProfilePage() {
   const router = useRouter();
   const { user, isLoading, logout } = useAuth();
   const [employerProfile, setEmployerProfile] = React.useState<EmployerProfile | null>(null);
-  const [activeTab, setActiveTab] = React.useState("company-profile");
-  const [isSidebarOpen, setIsSidebarOpen] = React.useState(true);
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
   const [isSaving, setIsSaving] = React.useState(false);
   const [isDataLoading, setIsDataLoading] = React.useState(true);
 
@@ -177,16 +168,6 @@ export default function CompanyProfilePage() {
       fetchCompanyData();
     }
   }, [user, isLoading, router]);
-
-  const handleLogout = async () => {
-    try {
-      await logout();
-      router.push("/");
-      toast.success("Logged out successfully");
-    } catch (err) {
-      toast.error("Logout failed");
-    }
-  };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -305,179 +286,14 @@ export default function CompanyProfilePage() {
       : "Manage your business identity and verification details.";
 
   return (
-    <div className="flex flex-col md:flex-row min-h-screen bg-[#f4f6fc] font-sans text-slate-900 dark:bg-slate-950 dark:text-slate-100">
-      {/* Desktop Left Sidebar */}
-      <aside
-        className={`hidden md:flex flex-col justify-between border-r border-slate-200/80 bg-white p-4 transition-all duration-300 dark:border-slate-800 dark:bg-slate-900 ${
-          isSidebarOpen ? "w-64" : "w-20"
-        }`}
-      >
-        <div className="space-y-6">
-          {/* Top Brand Header */}
-          <div className="flex items-center justify-between px-2 py-1">
-            {isSidebarOpen ? (
-              <Link href="/employer/dashboard" className="flex items-center gap-2">
-                <span className="font-[var(--font-anton)] text-xl uppercase tracking-wider bg-[linear-gradient(180deg,#E86100_0%,#FFF5EA_48%,#128807_100%)] bg-clip-text text-transparent select-none whitespace-nowrap">
-                  GO LESKA AI
-                </span>
-              </Link>
-            ) : (
-              <Link href="/employer/dashboard" className="mx-auto text-blue-600 font-bold text-xl">
-                G
-              </Link>
-            )}
-            {!isIndividual && <button
-              type="button"
-              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-              className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300 transition"
-              title="Toggle sidebar"
-            >
-              <PanelLeft size={18} />
-            </button>}
-          </div>
-
-          {/* Sidebar Menu Items */}
-          <nav className="space-y-1.5 w-full">
-            <Link
-              href="/employer/dashboard"
-              className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 transition ${
-                isSidebarOpen ? "" : "justify-center"
-              }`}
-              title="Dashboard"
-            >
-              <LayoutDashboard size={19} className="shrink-0" />
-              {isSidebarOpen && <span>Dashboard</span>}
-            </Link>
-
-            {(isRegistered || isUnregistered) && <Link
-              href="/employer/director-profile"
-              className={`flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-sm font-semibold transition text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 ${
-                isSidebarOpen ? "" : "justify-center"
-              }`}
-              title={isUnregistered ? "Proprietor profile" : "Director profile"}
-            >
-              <User size={19} className="shrink-0" />
-              {isSidebarOpen && <span>{isUnregistered ? "Proprietor profile" : "Director profile"}</span>}
-            </Link>}
-
-            <button
-              type="button"
-              onClick={() => setActiveTab("company-profile")}
-              className={`flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-sm font-semibold transition ${
-                activeTab === "company-profile"
-                  ? "bg-blue-600 text-white shadow-xs"
-                  : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800"
-              } ${isSidebarOpen ? "text-left" : "justify-center"}`}
-              title={isIndividual ? "Individual Profile" : isUnregistered ? "Business Profile" : "Company profile"}
-            >
-              <Building2 size={19} className="shrink-0" />
-              {isSidebarOpen && <span>{isIndividual ? "Individual Profile" : isUnregistered ? "Business Profile" : "Company profile"}</span>}
-            </button>
-
-            <Link
-              href="/employer/security"
-              className={`flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-sm font-semibold transition text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 ${
-                isSidebarOpen ? "" : "justify-center"
-              }`}
-              title="Security"
-            >
-              <ShieldCheck size={19} className="shrink-0" />
-              {isSidebarOpen && <span>Security</span>}
-            </Link>
-          </nav>
-        </div>
-
-        {/* Log Out Anchored at Absolute Bottom */}
-        <div className="pt-4 border-t border-slate-200/80 dark:border-slate-800 w-full mt-auto">
-          <button
-            type="button"
-            onClick={handleLogout}
-            className={`flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-sm font-semibold text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40 transition ${
-              isSidebarOpen ? "text-left" : "justify-center"
-            }`}
-            title="Log out"
-          >
-            <LogOut size={19} className="shrink-0" />
-            {isSidebarOpen && <span>Log out</span>}
-          </button>
-        </div>
-      </aside>
-
-      {/* Mobile Top Header Bar */}
-      <div className="md:hidden sticky top-0 z-30 flex items-center justify-between border-b border-slate-200 bg-white/95 px-4 py-3 shadow-xs backdrop-blur dark:border-slate-800 dark:bg-slate-900/95 w-full">
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-            className="rounded-lg p-2 text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
-          >
-            {isMobileMenuOpen ? <X size={20} /> : <PanelLeft size={20} />}
-          </button>
-          <Link href="/employer/dashboard" className="flex items-center">
-            <span className="font-[var(--font-anton)] text-xl uppercase tracking-wider bg-[linear-gradient(180deg,#E86100_0%,#FFF5EA_48%,#128807_100%)] bg-clip-text text-transparent select-none whitespace-nowrap">
-              GO LESKA AI
-            </span>
-          </Link>
-        </div>
-      </div>
-
-      {/* Mobile Drawer Overlay */}
-      {isMobileMenuOpen && (
-        <div className="md:hidden fixed inset-0 z-50 flex">
-          <div
-            className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs"
-            onClick={() => setIsMobileMenuOpen(false)}
-          />
-          <div className="relative flex w-72 max-w-[80vw] flex-col justify-between border-r border-slate-200 bg-white p-4 shadow-xl dark:border-slate-800 dark:bg-slate-900 z-10">
-            <div className="space-y-6">
-              <div className="flex items-center justify-between px-1">
-                <Link href="/employer/dashboard" onClick={() => setIsMobileMenuOpen(false)}>
-                  <span className="font-[var(--font-anton)] text-xl uppercase tracking-wider bg-[linear-gradient(180deg,#E86100_0%,#FFF5EA_48%,#128807_100%)] bg-clip-text text-transparent select-none whitespace-nowrap">
-                    GO LESKA AI
-                  </span>
-                </Link>
-                <button
-                  type="button"
-                  onClick={() => setIsMobileMenuOpen(false)}
-                  className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
-                >
-                  <X size={20} />
-                </button>
-              </div>
-              <nav className="space-y-1.5">
-                <Link
-                  href="/employer/dashboard"
-                  onClick={() => setIsMobileMenuOpen(false)}
-                  className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100"
-                >
-                  <LayoutDashboard size={20} />
-                  <span>Dashboard</span>
-                </Link>
-                <button
-                  onClick={() => {
-                    setActiveTab("company-profile");
-                    setIsMobileMenuOpen(false);
-                  }}
-                  className="flex w-full items-center gap-3 rounded-xl bg-blue-600 px-3 py-2.5 text-sm font-semibold text-white"
-                >
-                  <Building2 size={20} />
-                  <span>{isIndividual ? "Individual Profile" : isUnregistered ? "Business Profile" : "Company profile"}</span>
-                </button>
-                <button
-                  onClick={handleLogout}
-                  className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-rose-600 hover:bg-rose-50"
-                >
-                  <LogOut size={20} />
-                  <span>Log out</span>
-                </button>
-              </nav>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Main Content Area */}
-      <div className="flex-1 min-w-0">
+    <AccountManagementShell
+      kind="employer"
+      name={employerProfile?.contact_person_name || user?.name || "Employer"}
+      accountLabel={formatEmployerType(employerType)}
+      employerType={employerType}
+      profileHref="/employer/company-profile"
+      onLogout={() => void logout()}
+    >
         <main className="mx-auto max-w-7xl px-4 py-8 sm:px-8 sm:py-10">
           {/* Header */}
           <div className="mb-8">
@@ -814,7 +630,6 @@ export default function CompanyProfilePage() {
             </div>
           </div>
         </main>
-      </div>
-    </div>
+    </AccountManagementShell>
   );
 }

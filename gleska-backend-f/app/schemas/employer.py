@@ -1,7 +1,7 @@
 """Pydantic schemas for employer profiles and onboarding."""
 
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Literal, Optional
 from datetime import datetime
 
 
@@ -20,6 +20,23 @@ class EmployerProfileResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class EmployerPreferencesResponse(BaseModel):
+    """Persisted employer settings values."""
+    job_matching_notifications: bool = True
+    attendance_notifications: bool = True
+    security_alerts: bool = True
+    language: Literal["EN", "HI", "MR", "TA"] = "EN"
+    updated_at: Optional[datetime] = None
+
+
+class EmployerPreferencesUpdate(BaseModel):
+    """Employer settings update payload."""
+    job_matching_notifications: Optional[bool] = None
+    attendance_notifications: Optional[bool] = None
+    security_alerts: Optional[bool] = None
+    language: Optional[Literal["EN", "HI", "MR", "TA"]] = None
 
 
 class SelectEmployerTypeSchema(BaseModel):

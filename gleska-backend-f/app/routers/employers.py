@@ -17,6 +17,8 @@ from app.schemas.employer import (
     LegalIdentityOnboardingSchema,
     CompanyProfileUpdateSchema,
     DirectorProfileUpdateSchema,
+    EmployerPreferencesResponse,
+    EmployerPreferencesUpdate,
 )
 from app.services.onboarding_service import OnboardingService
 from app.services.verification_service import VerificationService
@@ -29,6 +31,43 @@ from app.schemas.verification import (
 
 router = APIRouter(prefix="/employers", tags=["employers"])
 logger = logging.getLogger(__name__)
+
+
+@router.get("/me/preferences", response_model=EmployerPreferencesResponse)
+async def get_employer_preferences(user: UserResponse = Depends(require_employer)):
+    response = (
+        supabase.table("employer_preferences")
+        .select("job_matching_notifications, attendance_notifications, security_alerts, language, updated_at")
+        .eq("user_id", user.id)
+        .maybe_single()
+        .execute()
+    )
+    data = response.data if response else {}
+    if not data:
+        return EmployerPreferencesResponse()
+
+    return EmployerPreferencesResponse(
+        job_matching_notifications=bool(data.get("job_matching_notifications", True)),
+        attendance_notifications=bool(data.get("attendance_notifications", True)),
+        security_alerts=bool(data.get("security_alerts", True)),
+        language=data.get("language") or "EN",
+        updated_at=data.get("updated_at"),
+    )
+
+
+@router.put("/me/preferences", response_model=EmployerPreferencesResponse)
+async def update_employer_preferences(
+    preferences: EmployerPreferencesUpdate,
+    user: UserResponse = Depends(require_employer),
+):
+    update_payload = preferences.model_dump(exclude_none=True)
+    if update_payload:
+        supabase.table("employer_preferences").upsert(
+            {"user_id": user.id, **update_payload},
+            on_conflict="user_id",
+        ).execute()
+
+    return await get_employer_preferences(user)
 
 
 @router.get("/me", response_model=EmployerProfileResponse)

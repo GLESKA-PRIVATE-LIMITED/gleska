@@ -22,6 +22,28 @@ interface Worker {
   state?: string | null;
   profile_completed: boolean;
   is_verified: boolean;
+  job_id: string;
+  job_title: string;
+  job_status: string;
+  match_status: string;
+  match_created_at: string;
+  match_expires_at: string;
+  completed_at?: string | null;
+  job_site_id: string;
+  site_name: string;
+  site_address?: string | null;
+  site_city?: string | null;
+  site_state?: string | null;
+  site_pincode?: string | null;
+  attendance: AttendanceRecord[];
+}
+
+interface AttendanceRecord {
+  attendance_date: string;
+  status: string;
+  check_in_at?: string | null;
+  check_out_at?: string | null;
+  duration_minutes?: number | null;
 }
 
 interface WorkerListResponse {
@@ -163,6 +185,7 @@ export default function EmployerWorkersPage() {
       kind="employer"
       name={user.name}
       accountLabel={formatEmployerType(user.employer_type)}
+      employerType={user.employer_type}
       profileHref="/employer/company-profile"
       onLogout={() => void logout()}
     >
@@ -171,8 +194,8 @@ export default function EmployerWorkersPage() {
           <header className="mb-8 flex flex-col gap-4 border-b border-slate-200 pb-6 dark:border-slate-800 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <p className="text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300">Employer workspace</p>
-              <h1 className="mt-2 text-3xl font-bold text-slate-900 dark:text-white sm:text-4xl">Worker directory</h1>
-              <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">Browse completed worker profiles and find the right skills for your next job.</p>
+              <h1 className="mt-2 text-3xl font-bold text-slate-900 dark:text-white sm:text-4xl">Work history</h1>
+              <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">Workers engaged through your jobs and their recorded work details.</p>
             </div>
             <Link href="/employer/dashboard" className="inline-flex items-center gap-2 self-start text-sm font-bold text-blue-700 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200 sm:self-auto"><ArrowLeft size={16} /> Back to dashboard</Link>
           </header>
@@ -199,14 +222,16 @@ export default function EmployerWorkersPage() {
             {(Object.entries(submittedFilters).some(([key, value]) => key !== "sort" && Boolean(value))) && <button type="button" onClick={clearFilters} className="mt-4 inline-flex min-h-10 items-center gap-1 text-sm font-semibold text-slate-500 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-slate-400 dark:hover:text-white"><X size={15} /> Clear filters</button>}
           </form>
 
-          {isLoading && <div className="flex min-h-56 items-center justify-center rounded-2xl border border-slate-200 bg-white text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400"><Loader2 size={18} className="mr-2 animate-spin" /> Finding workers near you...</div>}
+          {isLoading && <div className="flex min-h-56 items-center justify-center rounded-2xl border border-slate-200 bg-white text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400"><Loader2 size={18} className="mr-2 animate-spin" /> Loading your work history...</div>}
           {!isLoading && error && <div className="rounded-2xl border border-rose-200 bg-rose-50 p-8 text-center dark:border-rose-900/60 dark:bg-rose-950/30"><p className="text-sm font-semibold text-rose-700 dark:text-rose-300">Unable to load workers</p><p className="mt-2 text-sm text-rose-700/80 dark:text-rose-300/80">Something went wrong while loading the worker directory.</p><button type="button" onClick={() => setReloadToken((token) => token + 1)} className="mt-5 min-h-11 rounded-xl bg-rose-600 px-5 py-2 text-sm font-bold text-white hover:bg-rose-700 focus:outline-none focus:ring-2 focus:ring-rose-500 focus:ring-offset-2">Try again</button></div>}
-          {!isLoading && !error && workers?.items.length === 0 && <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center dark:border-slate-800 dark:bg-slate-900"><Users size={34} className="mx-auto text-slate-400" /><h2 className="mt-4 text-lg font-bold">No workers found</h2><p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Try changing your search or filters.</p>{Object.entries(submittedFilters).some(([key, value]) => key !== "sort" && Boolean(value)) && <button type="button" onClick={clearFilters} className="mt-5 min-h-11 rounded-xl border border-blue-200 px-5 py-2 text-sm font-bold text-blue-700 hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:border-blue-900 dark:text-blue-300 dark:hover:bg-blue-950/40">Clear filters</button>}</div>}
+          {!isLoading && !error && workers?.items.length === 0 && <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center dark:border-slate-800 dark:bg-slate-900"><Users size={34} className="mx-auto text-slate-400" /><h2 className="mt-4 text-lg font-bold">No workers have worked with you yet.</h2><p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Workers will appear here after they are connected to one of your jobs.</p>{Object.entries(submittedFilters).some(([key, value]) => key !== "sort" && Boolean(value)) && <button type="button" onClick={clearFilters} className="mt-5 min-h-11 rounded-xl border border-blue-200 px-5 py-2 text-sm font-bold text-blue-700 hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:border-blue-900 dark:text-blue-300 dark:hover:bg-blue-950/40">Clear filters</button>}</div>}
           {!isLoading && !error && workers && workers.items.length > 0 && <>
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-2 text-sm text-slate-500 dark:text-slate-400"><span className="font-semibold text-slate-700 dark:text-slate-200">{workers.total} worker{workers.total === 1 ? "" : "s"} found</span><span>Page {workers.page} of {Math.max(1, Math.ceil(workers.total / workers.limit))}</span></div>
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{workers.items.map((worker) => <article key={worker.worker_profile_id} className="flex flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-xs transition hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800 dark:bg-slate-900">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2 text-sm text-slate-500 dark:text-slate-400"><span className="font-semibold text-slate-700 dark:text-slate-200">{workers.total} work history record{workers.total === 1 ? "" : "s"}</span><span>Page {workers.page} of {Math.max(1, Math.ceil(workers.total / workers.limit))}</span></div>
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{workers.items.map((worker) => <article key={`${worker.worker_profile_id}-${worker.job_id}`} className="flex flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-xs transition hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800 dark:bg-slate-900">
               <div className="flex items-start gap-3"><div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-blue-100 text-lg font-bold text-blue-700 dark:bg-blue-950/60 dark:text-blue-300">{worker.profile_photo_url ? <Image src={worker.profile_photo_url} alt="" width={48} height={48} unoptimized className="h-full w-full object-cover" /> : worker.name.charAt(0).toUpperCase()}</div><div className="min-w-0 flex-1"><div className="flex items-center gap-1"><h2 className="truncate font-bold text-slate-900 dark:text-white">{worker.name}</h2>{worker.is_verified && <BadgeCheck size={16} className="shrink-0 text-emerald-600" aria-label="Verified worker" />}</div><p className="mt-1 truncate text-sm text-slate-500 dark:text-slate-400">{worker.trade_id || "Trade not specified"}</p></div></div>
-              <div className="mt-5 grid grid-cols-2 gap-3 text-sm"><div><p className="text-xs uppercase text-slate-400">Experience</p><p className="mt-1 font-semibold">{formatExperience(worker.experience_years)}</p></div><div><p className="text-xs uppercase text-slate-400">Daily wage</p><p className="mt-1 font-semibold">{formatWage(worker.expected_daily_wage)}</p></div><div><p className="text-xs uppercase text-slate-400">Status</p><p className="mt-1 font-semibold text-emerald-600 dark:text-emerald-400">{availabilityLabel(worker.availability_status)}</p></div><div><p className="text-xs uppercase text-slate-400">Location</p><p className="mt-1 truncate font-semibold">{titleCase(worker.city)}</p></div></div>
+              <div className="mt-5 rounded-xl bg-slate-50 p-3 text-sm dark:bg-slate-950"><p className="text-xs uppercase text-slate-400">Job</p><p className="mt-1 font-semibold">{worker.job_title}</p><p className="mt-1 text-xs text-slate-500">{worker.site_name}</p><p className="mt-1 text-xs text-slate-500">{[worker.site_address, worker.site_city, worker.site_state, worker.site_pincode].filter(Boolean).join(", ") || "Site details not available"}</p></div>
+              <div className="mt-4 grid grid-cols-2 gap-3 text-sm"><div><p className="text-xs uppercase text-slate-400">Match status</p><p className="mt-1 font-semibold">{availabilityLabel(worker.match_status)}</p></div><div><p className="text-xs uppercase text-slate-400">Work date</p><p className="mt-1 font-semibold">{formatDate(worker.attendance[0]?.attendance_date)}</p></div><div><p className="text-xs uppercase text-slate-400">Expected daily wage</p><p className="mt-1 font-semibold">{formatWage(worker.expected_daily_wage)}</p></div><div><p className="text-xs uppercase text-slate-400">Duration</p><p className="mt-1 font-semibold">{formatDuration(worker.attendance[0]?.duration_minutes)}</p></div></div>
+              {worker.attendance.length > 0 && <div className="mt-4 rounded-xl border border-slate-200 p-3 text-xs dark:border-slate-800"><p className="font-bold uppercase text-slate-400">Attendance</p>{worker.attendance.map((record) => <div key={record.attendance_date} className="mt-2 grid grid-cols-3 gap-2 text-slate-600 dark:text-slate-300"><span>{formatDate(record.attendance_date)}</span><span>{formatTime(record.check_in_at)} - {formatTime(record.check_out_at)}</span><span>{formatDuration(record.duration_minutes)}</span></div>)}</div>}
               {worker.skills.length > 0 && <p className="mt-4 line-clamp-2 text-xs text-slate-500 dark:text-slate-400">{worker.skills.map(titleCase).join(" · ")}</p>}
               <button type="button" onClick={() => setSelectedWorker(worker)} className="mt-5 inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-blue-200 px-4 py-2.5 text-sm font-bold text-blue-700 hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:border-blue-900 dark:text-blue-300 dark:hover:bg-blue-950/40">View worker</button>
             </article>)}</div>
@@ -217,4 +242,19 @@ export default function EmployerWorkersPage() {
       {selectedWorker && <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto p-4"><button type="button" className="absolute inset-0 bg-slate-900/60" onClick={() => setSelectedWorker(null)} aria-label="Close worker details" /><section role="dialog" aria-modal="true" aria-labelledby="worker-details-title" className="relative my-auto w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900"><button type="button" onClick={() => setSelectedWorker(null)} className="absolute right-4 top-4 rounded-lg p-2 text-slate-500 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:hover:bg-slate-800" aria-label="Close worker details"><X size={19} /></button><div className="flex items-center gap-4"><div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl bg-blue-100 text-2xl font-bold text-blue-700 dark:bg-blue-950/60 dark:text-blue-300">{selectedWorker.profile_photo_url ? <Image src={selectedWorker.profile_photo_url} alt="" width={64} height={64} unoptimized className="h-full w-full object-cover" /> : selectedWorker.name.charAt(0).toUpperCase()}</div><div><h2 id="worker-details-title" className="text-xl font-bold">{selectedWorker.name}</h2><p className="mt-1 text-sm text-slate-500">{titleCase(selectedWorker.trade_id)}</p></div></div><div className="mt-7 grid gap-5 text-sm sm:grid-cols-2"><div><p className="text-xs uppercase text-slate-400">Experience</p><p className="mt-1 font-semibold">{formatExperience(selectedWorker.experience_years)}</p></div><div><p className="text-xs uppercase text-slate-400">Expected daily wage</p><p className="mt-1 font-semibold">{formatWage(selectedWorker.expected_daily_wage)}</p></div><div><p className="text-xs uppercase text-slate-400">Availability</p><p className="mt-1 font-semibold">{availabilityLabel(selectedWorker.availability_status)}</p></div><div><p className="text-xs uppercase text-slate-400">Location</p><p className="mt-1 font-semibold">{[selectedWorker.city, selectedWorker.state].filter(Boolean).map(titleCase).join(", ") || "Not specified"}</p></div></div>{selectedWorker.skills.length > 0 && <div className="mt-6"><p className="text-xs uppercase text-slate-400">Skills</p><p className="mt-2 text-sm font-semibold">{selectedWorker.skills.map(titleCase).join(" · ")}</p></div>}<p className="mt-7 border-t border-slate-100 pt-4 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">Hiring actions remain available through job-specific worker matching.</p></section></div>}
     </AccountManagementShell>
   );
+}
+
+function formatDate(value?: string | null): string {
+  if (!value) return "Not available";
+  return new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(value));
+}
+
+function formatTime(value?: string | null): string {
+  if (!value) return "Not available";
+  return new Intl.DateTimeFormat("en-IN", { hour: "numeric", minute: "2-digit" }).format(new Date(value));
+}
+
+function formatDuration(minutes?: number | null): string {
+  if (minutes == null) return "Not available";
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }

@@ -37,8 +37,25 @@ import {
   AlertTriangle,
   MapPin,
   RefreshCw,
+  Bell,
+  Languages,
 } from "lucide-react";
 import { toast } from "sonner";
+import apiClient from "@/lib/api";
+
+type EmployerPreferenceState = {
+  job_matching_notifications: boolean;
+  attendance_notifications: boolean;
+  security_alerts: boolean;
+  language: "EN" | "HI" | "MR" | "TA";
+};
+
+const DEFAULT_EMPLOYER_PREFERENCES: EmployerPreferenceState = {
+  job_matching_notifications: true,
+  attendance_notifications: true,
+  security_alerts: true,
+  language: "EN",
+};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -97,6 +114,9 @@ export default function EmployerSecurityPage() {
   const [loadingData, setLoadingData] = React.useState(true);
   const [revokingId, setRevokingId] = React.useState<string | null>(null);
   const currentSessionKey = React.useRef<string | null>(null);
+  const [preferences, setPreferences] = React.useState<EmployerPreferenceState>(DEFAULT_EMPLOYER_PREFERENCES);
+  const [loadingPreferences, setLoadingPreferences] = React.useState(true);
+  const [savingPreference, setSavingPreference] = React.useState(false);
 
   // --- Auth guard ---
   React.useEffect(() => {
@@ -152,6 +172,41 @@ export default function EmployerSecurityPage() {
       loadSecurityData();
     }
   }, [isLoading, user, loadSecurityData]);
+
+  const loadEmployerPreferences = React.useCallback(async () => {
+    if (!user || user.role !== "EMPLOYER") return;
+    setLoadingPreferences(true);
+    try {
+      const response = await apiClient.get<EmployerPreferenceState>("/api/v1/employers/me/preferences", { withCredentials: true });
+      setPreferences({ ...DEFAULT_EMPLOYER_PREFERENCES, ...response.data });
+    } catch {
+      toast.error("Unable to load employer settings.");
+    } finally {
+      setLoadingPreferences(false);
+    }
+  }, [user]);
+
+  React.useEffect(() => {
+    if (!isLoading && user?.role === "EMPLOYER") {
+      void loadEmployerPreferences();
+    }
+  }, [isLoading, loadEmployerPreferences, user]);
+
+  const updateEmployerPreference = async (key: keyof EmployerPreferenceState, value: boolean | string) => {
+    const next = { ...preferences, [key]: value } as EmployerPreferenceState;
+    setPreferences(next);
+    setSavingPreference(true);
+    try {
+      const response = await apiClient.put<EmployerPreferenceState>("/api/v1/employers/me/preferences", next, { withCredentials: true });
+      setPreferences({ ...DEFAULT_EMPLOYER_PREFERENCES, ...response.data });
+      toast.success("Employer settings saved.");
+    } catch {
+      setPreferences(preferences);
+      toast.error("Unable to save employer settings.");
+    } finally {
+      setSavingPreference(false);
+    }
+  };
 
   // --- Derived data ---
   const currentSession = sessions.find(
@@ -270,6 +325,79 @@ export default function EmployerSecurityPage() {
           </div>
 
           <div className="space-y-8">
+            <section className="rounded-3xl border border-slate-200/90 bg-white p-6 shadow-xl dark:border-slate-800 dark:bg-slate-900 sm:p-8">
+              <div className="flex flex-col gap-4 border-b border-slate-100 pb-5 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-blue-50 text-blue-600 dark:bg-blue-950 dark:text-blue-400">
+                      <Languages size={20} />
+                    </div>
+                    <div>
+                      <h2 className="text-lg font-bold text-slate-900 dark:text-white">Settings</h2>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">Manage your employer preferences.</p>
+                    </div>
+                  </div>
+                </div>
+                {savingPreference && <span className="text-xs font-semibold text-blue-600 dark:text-blue-400">Saving...</span>}
+              </div>
+
+              {loadingPreferences ? (
+                <div className="flex items-center gap-2 py-6 text-xs text-slate-400">
+                  <Loader2 size={14} className="animate-spin" />
+                  <span>Loading settings...</span>
+                </div>
+              ) : (
+                <div className="mt-5 grid gap-6 lg:grid-cols-2">
+                  <div>
+                    <div className="mb-3 flex items-center gap-2">
+                      <Languages size={16} className="text-blue-600 dark:text-blue-400" />
+                      <h3 className="text-sm font-bold text-slate-900 dark:text-white">Language</h3>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-2 xl:grid-cols-4">
+                      {(["EN", "HI", "MR", "TA"] as const).map((option) => (
+                        <button
+                          key={option}
+                          type="button"
+                          onClick={() => void updateEmployerPreference("language", option)}
+                          disabled={savingPreference}
+                          className={`rounded-xl border px-3 py-2.5 text-xs font-semibold transition disabled:opacity-60 ${preferences.language === option ? "border-blue-600 bg-blue-600 text-white" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"}`}
+                        >
+                          {option === "EN" ? "English" : option === "HI" ? "Hindi" : option === "MR" ? "Marathi" : "Tamil"}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="mb-3 flex items-center gap-2">
+                      <Bell size={16} className="text-blue-600 dark:text-blue-400" />
+                      <h3 className="text-sm font-bold text-slate-900 dark:text-white">Notifications</h3>
+                    </div>
+                    <div className="space-y-2">
+                      {[
+                        { key: "job_matching_notifications" as const, label: "Job / matching notifications" },
+                        { key: "attendance_notifications" as const, label: "Attendance notifications" },
+                        { key: "security_alerts" as const, label: "Security alerts" },
+                      ].map(({ key, label }) => (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => void updateEmployerPreference(key, !preferences[key])}
+                          disabled={savingPreference}
+                          className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-white p-3 text-left transition hover:bg-slate-50 disabled:opacity-60 dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800"
+                        >
+                          <span className="text-xs font-semibold text-slate-900 dark:text-white">{label}</span>
+                          <span className={`inline-flex h-6 w-11 items-center rounded-full p-1 transition ${preferences[key] ? "bg-blue-600" : "bg-slate-300 dark:bg-slate-700"}`}>
+                            <span className={`h-4 w-4 rounded-full bg-white transition ${preferences[key] ? "translate-x-5" : "translate-x-0"}`} />
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </section>
+
             {/* 1. Security Overview Banner Card */}
             <div className="rounded-3xl border border-blue-200/80 bg-gradient-to-br from-blue-50/80 via-indigo-50/40 to-blue-100/50 p-6 sm:p-8 dark:border-slate-800 dark:from-slate-900 dark:via-blue-950/20 dark:to-slate-900 shadow-md">
               <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">

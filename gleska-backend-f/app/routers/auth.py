@@ -2,11 +2,11 @@
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException, Response, status, Depends, Request
+from fastapi import APIRouter, Header, HTTPException, Response, status, Depends, Request
 import logging
 
 from app.core.config import settings
-from app.core.security import create_access_token, get_current_user, security
+from app.core.security import create_access_token, get_current_user, get_optional_current_user, security
 from app.core.supabase import supabase
 from app.services.auth_service import AuthService
 from app.services.msg91_service import MSG91Service
@@ -394,6 +394,19 @@ async def resend_otp(request: ResendOTPSchema):
 
 
 @router.post("/logout")
-async def logout(response: Response):
+async def logout(
+    response: Response,
+    user: UserResponse | None = Depends(get_optional_current_user),
+    session_key: str | None = Header(default=None, alias="X-Goleska-Session-Key"),
+):
+    if user and session_key:
+        try:
+            supabase.table("user_sessions").update({
+                "is_revoked": True,
+                "revoked_at": datetime.now(timezone.utc).isoformat(),
+            }).eq("user_id", user.id).eq("session_key", session_key).eq("is_revoked", False).execute()
+        except Exception as exc:
+            logger.exception("Application session logout failed for user_id=%s", user.id)
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="SESSION_LOGOUT_FAILED") from exc
     response.delete_cookie(key="goleska_session", path="/")
     return {"success": True, "message": "Logged out successfully"}
