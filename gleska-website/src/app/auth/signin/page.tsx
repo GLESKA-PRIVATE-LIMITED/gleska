@@ -46,13 +46,13 @@ export default function SignInSelectionPage() {
         <div className="w-full max-w-2xl space-y-8 sm:space-y-10 text-center">
           <div className="space-y-3">
             <div className="inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-4 py-1 text-xs font-semibold uppercase tracking-wider text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-300">
-              Sign In
+              {t('auth.signinPageTitle')}
             </div>
             <h1 className="font-[var(--font-anton)] text-4xl sm:text-5xl uppercase leading-tight tracking-wide text-slate-900 dark:text-white">
-              Select Your Role
+              {t('signin.selectRole')}
             </h1>
             <p className="mx-auto max-w-md text-base font-medium text-slate-600 dark:text-slate-300">
-              Choose an option below to access your account or start registration.
+              {t('signin.roleDescription')}
             </p>
           </div>
 
@@ -78,7 +78,7 @@ export default function SignInSelectionPage() {
                 </div>
               </div>
               <div className="mt-8 flex items-center gap-2 text-sm font-bold text-blue-600 transition-colors group-hover:text-blue-700 dark:text-blue-400 dark:group-hover:text-blue-300">
-                <span>Continue</span>
+                <span>{t('signin.continue')}</span>
                 <ArrowRight size={18} className="transition-transform group-hover:translate-x-1" />
               </div>
             </Link>
@@ -104,7 +104,7 @@ export default function SignInSelectionPage() {
                 </div>
               </div>
               <div className="mt-8 flex items-center gap-2 text-sm font-bold text-amber-600 transition-colors group-hover:text-amber-700 dark:text-amber-400 dark:group-hover:text-amber-300">
-                <span>Continue</span>
+                <span>{t('signin.continue')}</span>
                 <ArrowRight size={18} className="transition-transform group-hover:translate-x-1" />
               </div>
             </Link>

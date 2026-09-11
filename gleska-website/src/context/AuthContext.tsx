@@ -92,6 +92,12 @@ const clearClientAuthCookie = () => {
   }
 };
 
+const clearLanguageCache = () => {
+  if (typeof window !== "undefined") {
+    window.localStorage.removeItem("goleska_lang");
+  }
+};
+
 const AUTH_SYNC_KEY = "goleska_auth_sync";
 
 const notifyAuthStateChange = () => {
@@ -148,6 +154,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(null);
         setNextStep(null);
         clearClientAuthCookie();
+        clearLanguageCache();
         notifyAuthStateChange();
       }
     });
@@ -451,6 +458,7 @@ const resendOTP = async (mobile: string, requestId: string | null = null, channe
       setUser(null);
       setNextStep(null);
       clearClientAuthCookie();
+      clearLanguageCache();
       clearSessionKey();
       notifyAuthStateChange();
     } catch (err) {
@@ -459,6 +467,7 @@ const resendOTP = async (mobile: string, requestId: string | null = null, channe
       setUser(null);
       setNextStep(null);
       clearClientAuthCookie();
+      clearLanguageCache();
       clearSessionKey();
       setIsLoading(false);
     }

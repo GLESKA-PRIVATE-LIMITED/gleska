@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Mail, Loader2, X, Shield, FileText, CheckCircle2, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
+import { useLanguage } from "@/context/LanguageContext";
 import { getRouteForNextStep } from "@/lib/auth-routing";
 import { normalizeIndianMobile } from "@/lib/msg91";
 
@@ -14,6 +15,7 @@ type OTPTransaction = { name: string; email: string; password: string; mobile: s
 
 export default function AuthMethodPanel({ role, accountType = "BUSINESS" }: { role: Role; accountType?: "BUSINESS" | "INDIVIDUAL" }) {
   const router = useRouter();
+  const { t } = useLanguage();
   const { signInWithEmail, signInWithGoogle, signupPreflight, requestOTP, resendOTP, completeEmailSignup, loginWithMobile, refreshUser, isLoading: authLoading } = useAuth();
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [loginMethod, setLoginMethod] = useState<"email" | "mobile">("email");
@@ -71,7 +73,7 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS" }: { ro
     if (mode === "login" && loginMethod === "mobile") {
       const canonicalMobile = normalizeIndianMobile(mobile);
       if (canonicalMobile.length !== 12 || !canonicalMobile.startsWith("91")) {
-        toast.error("Enter a valid 10-digit mobile number");
+        toast.error(t('auth.validMobile'));
         return;
       }
       setSubmitting(true);
@@ -83,7 +85,7 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS" }: { ro
         setCountdown(30);
         setOtpOpen(true);
       } catch (error: unknown) {
-        toast.error(error instanceof Error ? error.message : "Unable to send OTP");
+        toast.error(error instanceof Error ? error.message : t('auth.resetOtpFailure'));
       } finally {
         setSubmitting(false);
       }
@@ -92,42 +94,42 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS" }: { ro
 
     if (mode === "signup") {
       if (!name.trim()) {
-        toast.error("Please enter your full name");
+        toast.error(t('auth.fillName'));
         return;
       }
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!email.trim() || !emailRegex.test(email.trim())) {
-        toast.error("Please enter a valid email address");
+        toast.error(t('auth.validEmail'));
         return;
       }
       if (!password) {
-        toast.error("Please enter a password");
+        toast.error(t('auth.enterPassword'));
         return;
       }
       if (password.length < 8) {
-        toast.error("Password must be at least 8 characters");
+        toast.error(t('auth.passwordMin'));
         return;
       }
       if (!confirmPassword) {
-        toast.error("Please confirm your password");
+        toast.error(t('auth.confirmPasswordRequired'));
         return;
       }
       if (password !== confirmPassword) {
-        toast.error("Passwords do not match");
+        toast.error(t('auth.passwordMismatch'));
         return;
       }
       const rawMobileDigits = mobile.replace(/\D/g, "");
       if (!rawMobileDigits || rawMobileDigits.length !== 10) {
-        toast.error("Please enter a valid 10-digit mobile number");
+        toast.error(t('auth.validMobile'));
         return;
       }
       if (!termsAccepted) {
-        toast.error("Please accept the Terms & Conditions to continue.");
+        toast.error(t('auth.acceptTerms'));
         return;
       }
     } else {
       if (!email.trim() || password.length < 8) {
-        toast.error("Enter a valid email and password");
+        toast.error(t('auth.loginValid'));
         return;
       }
     }
@@ -143,15 +145,15 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS" }: { ro
         setOtp("");
         setCountdown(30);
         setOtpOpen(true);
-        toast.success("OTP sent. Verify your phone to create the account.");
+        toast.success(t('auth.otpSent'));
       } else {
         await signInWithEmail(email, password, role);
         const nextStep = await refreshUser();
-        toast.success("Welcome back");
+        toast.success(t('auth.welcomeBack'));
         router.push(getRouteForNextStep(role, nextStep));
       }
     } catch (error: unknown) {
-      toast.error(error instanceof Error ? error.message : "Authentication failed");
+      toast.error(error instanceof Error ? error.message : t('auth.googleError'));
     } finally {
       setSubmitting(false);
     }
@@ -169,7 +171,7 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS" }: { ro
   const verifySignupOTP = async (event: FormEvent) => {
     event.preventDefault();
     if (!otpTransaction || otp.length !== 6) {
-      toast.error("Enter the 6-digit verification code");
+      toast.error(t('auth.otpRequired'));
       return;
     }
     setSubmitting(true);
@@ -190,10 +192,10 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS" }: { ro
       }
       const nextStep = await refreshUser();
       clearOtpTransaction();
-      toast.success(otpPurpose === "signup" ? "Account created successfully" : "Welcome back");
+      toast.success(otpPurpose === "signup" ? t('auth.accountCreated') : t('auth.welcomeBack'));
       router.push(getRouteForNextStep(role, nextStep));
     } catch (error: unknown) {
-      toast.error(error instanceof Error ? error.message : "Invalid or expired OTP");
+      toast.error(error instanceof Error ? error.message : t('auth.invalidOtp'));
     } finally {
       setSubmitting(false);
     }
@@ -201,29 +203,29 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS" }: { ro
 
   const resendSignupOTP = async () => {
     if (!otpTransaction) {
-      toast.error("OTP session lost. Please try signing up again.");
+      toast.error(t('auth.otpLost'));
       return;
     }
     setSubmitting(true);
     try {
       await resendOTP(otpTransaction.mobile, otpTransaction.requestId, otpTransaction.channel);
       setCountdown(30);
-      toast.success("A new verification code was sent");
+      toast.success(t('auth.resetSentAgain'));
     } catch (error: unknown) {
-      toast.error(error instanceof Error ? error.message : "Unable to resend OTP");
+      toast.error(error instanceof Error ? error.message : t('auth.resendFailure'));
     } finally {
       setSubmitting(false);
     }
   };
 
   const termsSummaryPoints = [
-    "GO LESKA is an intermediary technology platform connecting businesses and verified workers.",
-    "Users must provide true, accurate, current, and complete registration and profile information.",
-    "Users must not impersonate any person or entity, or provide false or misleading information.",
-    "Users must not submit fraudulent, forged, or altered documents.",
-    "Workers are responsible for accurately representing their identity, qualifications, experience, availability, and documents.",
-    "GO LESKA connects Businesses and Workers as independent parties but does not become the employer of the Worker.",
-    "GO LESKA does not guarantee employment, engagement, wages, or any specific hiring outcome.",
+    t('auth.termsPoint1'),
+    t('auth.termsPoint2'),
+    t('auth.termsPoint3'),
+    t('auth.termsPoint4'),
+    t('auth.termsPoint5'),
+    t('auth.termsPoint6'),
+    t('auth.termsPoint7'),
   ];
 
   const isManualSignupComplete = Boolean(
@@ -248,7 +250,7 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS" }: { ro
               : "bg-slate-100/90 text-slate-600 hover:bg-slate-200 dark:bg-slate-800/80 dark:text-slate-400 dark:hover:bg-slate-800"
           }`}
         >
-          Login
+          {t('nav.login')}
         </button>
         <button
           type="button"
@@ -259,7 +261,7 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS" }: { ro
               : "bg-slate-100/90 text-slate-600 hover:bg-slate-200 dark:bg-slate-800/80 dark:text-slate-400 dark:hover:bg-slate-800"
           }`}
         >
-          Sign up
+          {t('nav.signup')}
         </button>
       </div>
       {mode === "login" && (
@@ -273,7 +275,7 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS" }: { ro
                 : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white"
             }`}
           >
-            Email &amp; password
+            {t('auth.emailPassword')}
           </button>
           <button
             type="button"
@@ -284,7 +286,7 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS" }: { ro
                 : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white"
             }`}
           >
-            Mobile OTP
+            {t('auth.mobileOtp')}
           </button>
         </div>
       )}
@@ -293,7 +295,7 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS" }: { ro
           <input
             value={name}
             onChange={(event) => setName(event.target.value)}
-            placeholder="Full name"
+            placeholder={t('auth.fullNameLabel')}
             className="w-full rounded-xl border border-slate-200 bg-white/90 px-4 py-3 text-sm font-medium text-slate-900 placeholder:text-slate-400 outline-none transition focus:border-indigo-400 focus:bg-white focus:ring-2 focus:ring-indigo-100 dark:border-slate-700/80 dark:bg-slate-800/90 dark:text-white dark:placeholder:text-slate-500 dark:focus:border-indigo-500 dark:focus:ring-indigo-900/40"
           />
         )}
@@ -303,7 +305,7 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS" }: { ro
             <input
               value={mobile}
               onChange={(event) => setMobile(event.target.value.replace(/\D/g, "").slice(0, 10))}
-              placeholder="Phone number"
+              placeholder={t('auth.mobileLabel')}
               className="min-w-0 flex-1 bg-transparent py-3 text-sm font-medium text-slate-900 placeholder:text-slate-400 outline-none dark:text-white dark:placeholder:text-slate-500"
             />
           </div>
@@ -315,7 +317,7 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS" }: { ro
               type="email"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
-              placeholder="Email address"
+              placeholder={t('auth.emailLabel')}
               className="min-w-0 flex-1 bg-transparent py-3 text-sm font-medium text-slate-900 placeholder:text-slate-400 outline-none dark:text-white dark:placeholder:text-slate-500"
             />
           </div>
@@ -325,7 +327,7 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS" }: { ro
             type="password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            placeholder="Password (8+ characters)"
+            placeholder={t('auth.passwordLabel')}
             className="w-full rounded-xl border border-slate-200 bg-white/90 px-4 py-3 text-sm font-medium text-slate-900 placeholder:text-slate-400 outline-none transition focus:border-indigo-400 focus:bg-white focus:ring-2 focus:ring-indigo-100 dark:border-slate-700/80 dark:bg-slate-800/90 dark:text-white dark:placeholder:text-slate-500 dark:focus:border-indigo-500 dark:focus:ring-indigo-900/40"
           />
         )}
@@ -334,7 +336,7 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS" }: { ro
             type="password"
             value={confirmPassword}
             onChange={(event) => setConfirmPassword(event.target.value)}
-            placeholder="Confirm password"
+            placeholder={t('auth.confirmPasswordLabel')}
             className="w-full rounded-xl border border-slate-200 bg-white/90 px-4 py-3 text-sm font-medium text-slate-900 placeholder:text-slate-400 outline-none transition focus:border-indigo-400 focus:bg-white focus:ring-2 focus:ring-indigo-100 dark:border-slate-700/80 dark:bg-slate-800/90 dark:text-white dark:placeholder:text-slate-500 dark:focus:border-indigo-500 dark:focus:ring-indigo-900/40"
           />
         )}
@@ -344,7 +346,7 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS" }: { ro
             <input
               value={mobile}
               onChange={(event) => setMobile(event.target.value.replace(/\D/g, "").slice(0, 10))}
-              placeholder="Phone number"
+              placeholder={t('auth.mobileLabel')}
               className="min-w-0 flex-1 bg-transparent py-3 text-sm font-medium text-slate-900 placeholder:text-slate-400 outline-none dark:text-white dark:placeholder:text-slate-500"
             />
           </div>
@@ -360,7 +362,7 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS" }: { ro
               className="mt-1 h-4 w-4 shrink-0 rounded border-slate-300 bg-white text-indigo-600 accent-indigo-600 focus:ring-2 focus:ring-indigo-500 focus:ring-offset-0 focus:outline-none cursor-pointer dark:border-slate-600 dark:bg-slate-800"
             />
             <label htmlFor="terms-acceptance" className="text-xs leading-relaxed text-slate-600 dark:text-slate-300 select-none cursor-pointer">
-              I have read and agree to the{" "}
+              {t('shared.termsAccepted')} {" "}
               <button
                 type="button"
                 onClick={(e) => {
@@ -370,7 +372,7 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS" }: { ro
                 }}
                 className="font-semibold text-indigo-600 underline transition hover:text-indigo-500 dark:text-indigo-400 dark:hover:text-indigo-300 focus:outline-none"
               >
-                Terms &amp; Conditions
+                {t('shared.termsLink')}
               </button>
             </label>
           </div>
@@ -382,22 +384,22 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS" }: { ro
           className="flex w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-blue-600 via-indigo-600 to-emerald-600 py-3.5 text-sm font-bold text-white shadow-lg shadow-indigo-500/25 transition hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {submitting && <Loader2 size={16} className="animate-spin" />}
-          {mode === "signup" ? "Verify phone & create account" : loginMethod === "mobile" ? "Send mobile OTP" : "Login with email"}
+          {mode === "signup" ? t('auth.signupButton') : loginMethod === "mobile" ? t('auth.sendMobileOtpButton') : t('auth.loginButton')}
         </button>
       </form>
 
       {mode === "signup" && (
-        <p className="text-center text-xs text-slate-500 dark:text-slate-400">Phone verification is required before onboarding</p>
+        <p className="text-center text-xs text-slate-500 dark:text-slate-400">{t('shared.verifiedPhone')}</p>
       )}
 
       {mode === "login" && (
         <>
           <a href="/auth/forgot-password" className="block text-center text-xs font-semibold text-indigo-600 transition hover:text-indigo-500 dark:text-indigo-400 dark:hover:text-indigo-300">
-            Forgot password?
+            {t('auth.forgotPassword')}
           </a>
           <div className="relative flex items-center justify-center pt-2">
             <div className="border-t border-slate-200 w-full dark:border-slate-800" />
-            <span className="bg-white/80 px-3 text-xs uppercase text-slate-400 font-semibold dark:bg-slate-900">Or</span>
+            <span className="bg-white/80 px-3 text-xs uppercase text-slate-400 font-semibold dark:bg-slate-900">{t('nav.or')}</span>
             <div className="border-t border-slate-200 w-full dark:border-slate-800" />
           </div>
           <button
@@ -412,9 +414,9 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS" }: { ro
               <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
               <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
             </svg>
-            Sign in with Google
+            {t('auth.googleButton')}
           </button>
-          <p className="text-center text-xs text-slate-500 dark:text-slate-400">Secure sign-in with your email or Google</p>
+          <p className="text-center text-xs text-slate-500 dark:text-slate-400">{t('auth.securityText')}</p>
         </>
       )}
 
@@ -439,10 +441,10 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS" }: { ro
                 </div>
                 <div>
                   <h2 id="terms-modal-title" className="text-lg font-bold text-slate-900 dark:text-white">
-                    Terms &amp; Conditions Summary
+                    {t('auth.termsModalTitle')}
                   </h2>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Important rules and relationship summary
+                    {t('auth.termsModalSubtitle')}
                   </p>
                 </div>
               </div>
@@ -468,7 +470,7 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS" }: { ro
               </div>
 
               <div className="mt-4 rounded-2xl border border-indigo-100 bg-indigo-50/60 p-4 text-xs font-medium text-indigo-900 dark:border-indigo-900/50 dark:bg-indigo-950/40 dark:text-indigo-200">
-                By creating an account, you confirm that you have read and agree to the Terms &amp; Conditions.
+                {t('shared.termsConfirm')}
               </div>
             </div>
 
@@ -481,7 +483,7 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS" }: { ro
                 className="inline-flex items-center gap-1.5 text-xs font-bold text-indigo-600 hover:text-indigo-500 underline transition dark:text-indigo-400 dark:hover:text-indigo-300"
               >
                 <FileText size={14} />
-                View Full Terms
+                {t('shared.fullTerms')}
                 <ExternalLink size={12} />
               </Link>
               <button
@@ -489,7 +491,7 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS" }: { ro
                 onClick={() => setTermsModalOpen(false)}
                 className="rounded-xl bg-slate-100 border border-slate-200 px-5 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-200 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-700 dark:hover:text-white"
               >
-                Close
+                {t('nav.close')}
               </button>
             </div>
           </div>
@@ -502,14 +504,14 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS" }: { ro
           <div className="relative w-full max-w-sm rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900">
             <button type="button" onClick={clearOtpTransaction} className="absolute right-4 top-4 rounded-xl p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-white" aria-label="Close verification dialog"><X size={18} /></button>
             <div className="mb-6 pr-8">
-              <p className="text-xs font-bold uppercase tracking-widest text-indigo-600 dark:text-indigo-400">{otpPurpose === "signup" ? "Secure signup" : "Secure login"}</p>
-              <h2 id="otp-title" className="mt-2 text-2xl font-bold text-slate-900 dark:text-white">{otpPurpose === "signup" ? "Verify your phone" : "Sign in with mobile"}</h2>
-              <p className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">Enter the 6-digit code sent to <span className="font-semibold text-slate-900 dark:text-slate-200">+91 {otpTransaction.mobile.replace(/^91/, "")}</span>.</p>
+              <p className="text-xs font-bold uppercase tracking-widest text-indigo-600 dark:text-indigo-400">{otpPurpose === "signup" ? t('shared.secureSignup') : t('shared.secureLogin')}</p>
+              <h2 id="otp-title" className="mt-2 text-2xl font-bold text-slate-900 dark:text-white">{otpPurpose === "signup" ? t('shared.verifyPhone') : t('shared.signInMobile')}</h2>
+              <p className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">{t('shared.enterCode', { phone: `+91 ${otpTransaction.mobile.replace(/^91/, "")}` })}</p>
             </div>
             <form onSubmit={verifySignupOTP} className="space-y-5">
               <input autoFocus inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={otp} onChange={(event) => setOtp(event.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="000000" aria-label="6-digit verification code" className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 text-center text-2xl font-bold tracking-[0.45em] text-slate-900 outline-none transition focus:border-indigo-400 focus:bg-white focus:ring-2 focus:ring-indigo-100 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:focus:border-indigo-500" />
-              <button type="submit" disabled={submitting || otp.length !== 6} className="flex w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-blue-600 via-indigo-600 to-emerald-600 py-3.5 font-bold text-white shadow-lg shadow-indigo-500/25 transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-50">{submitting && <Loader2 size={17} className="animate-spin" />} {submitting ? "Verifying..." : otpPurpose === "signup" ? "Verify & create account" : "Verify & sign in"}</button>
-              <div className="flex items-center justify-between text-xs"><button type="button" onClick={clearOtpTransaction} className="font-semibold text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white">Cancel</button><button type="button" disabled={countdown > 0 || submitting} onClick={resendSignupOTP} className="font-semibold text-indigo-600 hover:text-indigo-500 dark:text-indigo-400 dark:hover:text-indigo-300 disabled:cursor-not-allowed disabled:opacity-50">{countdown > 0 ? `Resend in ${countdown}s` : "Resend OTP"}</button></div>
+              <button type="submit" disabled={submitting || otp.length !== 6} className="flex w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-blue-600 via-indigo-600 to-emerald-600 py-3.5 font-bold text-white shadow-lg shadow-indigo-500/25 transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-50">{submitting && <Loader2 size={17} className="animate-spin" />} {submitting ? t('shared.verifying') : otpPurpose === "signup" ? t('shared.verifyCreate') : t('shared.verifySignIn')}</button>
+              <div className="flex items-center justify-between text-xs"><button type="button" onClick={clearOtpTransaction} className="font-semibold text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white">{t('nav.cancel')}</button><button type="button" disabled={countdown > 0 || submitting} onClick={resendSignupOTP} className="font-semibold text-indigo-600 hover:text-indigo-500 dark:text-indigo-400 dark:hover:text-indigo-300 disabled:cursor-not-allowed disabled:opacity-50">{countdown > 0 ? t('shared.resendIn', { seconds: countdown }) : t('shared.resendOtp')}</button></div>
             </form>
           </div>
         </div>

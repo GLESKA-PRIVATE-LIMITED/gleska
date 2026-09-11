@@ -6,6 +6,7 @@ import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { AxiosError } from "axios";
 import { useAuth } from "@/context/AuthContext";
+import { useLanguage } from "@/context/LanguageContext";
 import { getRouteForNextStep } from "@/lib/auth-routing";
 import { supabase } from "@/lib/supabase";
 import apiClient from "@/lib/api";
@@ -43,6 +44,7 @@ function clearStoredRole() {
 
 export default function AuthCallbackPage() {
   const router = useRouter();
+  const { t } = useLanguage();
   const { provisionSession, setAuthState } = useAuth();
   const [error, setError] = useState("");
   const exchangeHandled = useRef(false);
@@ -192,7 +194,7 @@ export default function AuthCallbackPage() {
       } catch (signOutError) {
         console.warn("[OAuth] Error signing out stale session:", signOutError);
       }
-      const message = callbackError.message || "Google authentication failed";
+      const message = callbackError.message || t('auth.googleError');
       console.error("[OAuth] Authentication error:", message);
       toast.error(message);
       setError(message);
@@ -215,13 +217,13 @@ export default function AuthCallbackPage() {
               onClick={handleReturnToSignIn}
               className="rounded-xl bg-blue-600 px-5 py-3 font-bold hover:bg-blue-500 transition"
             >
-              Return to Sign In
+              {t('shared.returnToSignIn')}
             </button>
           </>
         ) : (
           <div className="flex flex-col items-center gap-4">
             <Loader2 className="h-8 w-8 animate-spin text-blue-400" />
-            <p className="text-sm font-medium text-slate-400">Completing authentication...</p>
+            <p className="text-sm font-medium text-slate-400">{t('shared.completingAuthentication')}</p>
           </div>
         )}
       </div>

@@ -11,10 +11,8 @@ export default function GetHiredSection() {
   return (
     <section id="get-hired" className="relative px-6 py-16 sm:py-24">
       <div className="mx-auto max-w-7xl">
-        {/* SINGLE PARENT CONTAINER WITH SERVICES CARD STYLING */}
         <div className="rounded-3xl border border-slate-200/80 bg-white/70 p-6 sm:p-10 md:p-12 shadow-2xl shadow-slate-900/5 backdrop-blur-xl dark:border-slate-800/80 dark:bg-slate-900/70">
           <div className="flex flex-col items-center gap-10 md:flex-row md:gap-12">
-            {/* HERO IMAGE / INTERACTIVE COMPONENT */}
             <div className="relative h-[360px] w-full flex-1 overflow-hidden rounded-2xl shadow-xl shadow-slate-300/50 sm:h-[440px] md:h-[500px]">
               <img
                 src="/hero.jpg"
@@ -24,7 +22,6 @@ export default function GetHiredSection() {
               <div className="absolute inset-0 z-10 bg-gradient-to-t from-slate-900/70 to-transparent"></div>
             </div>
 
-            {/* TEXT & BUTTONS CONTENT */}
             <div className="relative z-10 w-full flex-1 space-y-7">
               <h1 className="font-[var(--font-anton)] text-5xl uppercase leading-[0.95] tracking-wide text-slate-900 sm:text-6xl md:text-8xl dark:text-white">
                 {t('hero.titleLine1')}<br />

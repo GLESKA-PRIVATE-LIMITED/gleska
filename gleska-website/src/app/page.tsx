@@ -122,7 +122,7 @@ export default function LandingPage() {
               {/* Social Icons */}
               <div className="pt-2">
                 <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-white/60">
-                  Follow Us
+                  {t('nav.followUs')}
                 </p>
                 <div className="flex items-center gap-3">
                   <a
@@ -221,7 +221,7 @@ export default function LandingPage() {
                       <Phone size={18} />
                     </div>
                     <div className="min-w-0">
-                      <p className="text-[10px] font-semibold uppercase tracking-wider text-white/60">Phone</p>
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-white/60">{t('shared.phone')}</p>
                       <p className="text-sm font-bold tracking-wide text-white">+91 7372888875</p>
                     </div>
                   </a>
@@ -234,7 +234,7 @@ export default function LandingPage() {
                       <Mail size={18} />
                     </div>
                     <div className="min-w-0">
-                      <p className="text-[10px] font-semibold uppercase tracking-wider text-white/60">Email</p>
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-white/60">{t('shared.email')}</p>
                       <p className="break-all text-sm font-bold text-white">office@goleska.in</p>
                     </div>
                   </a>

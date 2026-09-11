@@ -17,6 +17,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import apiClient from "@/lib/api";
+import { useLanguage } from "@/context/LanguageContext";
 
 /* ------------------------------------------------------------------ */
 /*  Shared Tailwind class-strings                                     */
@@ -30,26 +31,11 @@ const inputCls =
 /*  FAQ data                                                          */
 /* ------------------------------------------------------------------ */
 export const FAQ_ITEMS = [
-  {
-    q: "How quickly can I hire workers through GO LESKA?",
-    a: "Our AI dispatch engine matches your requirements with verified workers within 60 seconds. Once accepted, workers can be on-site within hours depending on proximity.",
-  },
-  {
-    q: "What kind of workers are available on the platform?",
-    a: "We cover 50+ blue-collar trade categories — welders, fitters, CNC operators, electricians, plumbers, security guards, housekeeping staff, and many more.",
-  },
-  {
-    q: "Is there a minimum hiring commitment?",
-    a: "No minimum commitment. You can hire for a single day or long-term contracts. Pay-as-you-go with transparent daily rates and zero hidden fees.",
-  },
-  {
-    q: "How are workers verified?",
-    a: "Every worker on GO LESKA undergoes Aadhaar-based identity verification, skill assessment, and background checks before they appear on the platform.",
-  },
-  {
-    q: "Which cities are you currently operational in?",
-    a: "We're live across major industrial hubs in Maharashtra, Tamil Nadu, Karnataka, and Gujarat. Expanding rapidly — contact us if your city isn't listed yet!",
-  },
+  { qKey: "contact.q1", aKey: "contact.a1" },
+  { qKey: "contact.q2", aKey: "contact.a2" },
+  { qKey: "contact.q3", aKey: "contact.a3" },
+  { qKey: "contact.q4", aKey: "contact.a4" },
+  { qKey: "contact.q5", aKey: "contact.a5" },
 ];
 
 /* ------------------------------------------------------------------ */
@@ -87,6 +73,11 @@ export function FaqItem({ q, a, open, toggle }: { q: string; a: string; open: bo
 /*  Contact Us Section Component                                      */
 /* ------------------------------------------------------------------ */
 export default function ContactUsSection({ showHeader = true }: { showHeader?: boolean }) {
+  const { t } = useLanguage();
+  const faqItems = FAQ_ITEMS.map((item) => ({
+    q: t(item.qKey),
+    a: t(item.aKey),
+  }));
   const [name, setName] = useState("");
   const [company, setCompany] = useState("");
   const [email, setEmail] = useState("");
@@ -113,10 +104,10 @@ export default function ContactUsSection({ showHeader = true }: { showHeader?: b
       if (response.data && response.data.success) {
         setSubmitted(true);
       } else {
-        setError("Failed to submit inquiry. Please try again.");
+        setError(t('contact.failed'));
       }
     } catch (err: any) {
-      const errorMessage = err?.response?.data?.detail || err?.message || "Unable to send your message. Please try again.";
+      const errorMessage = err?.response?.data?.detail || err?.message || t('contact.error');
       setError(errorMessage);
     } finally {
       setSubmitting(false);
@@ -126,35 +117,35 @@ export default function ContactUsSection({ showHeader = true }: { showHeader?: b
   const contactCards = [
     {
       icon: Phone,
-      label: "Call Us",
+      label: t('shared.callUs'),
       value: "+91 7372888875",
       href: "tel:+917372888875",
-      description: "Mon – Sat, 9 AM – 7 PM IST",
+      description: t('shared.monSat'),
       color: "from-emerald-500 to-teal-600",
     },
     {
       icon: Mail,
-      label: "Email Us",
+      label: t('shared.emailUs'),
       value: "office@goleska.in",
       href: "mailto:office@goleska.in",
-      description: "We reply within 24 hours",
+      description: t('shared.weReply'),
       color: "from-blue-600 to-indigo-600",
     },
     {
       icon: MapPin,
-      label: "Visit Us",
+      label: t('shared.visitUs'),
       value: "MALVIYA NAGAR, SOUTH DELHI",
       href: "https://www.google.com/maps/dir/?api=1&destination=28.5376510%2C77.2132260&utm_source=chatgpt.com",
-      description: "NEW MARKET, BUILDING NO. 16",
+      description: t('contact.locationDetail'),
       color: "from-amber-500 to-orange-600",
     },
   ];
 
   const detailsList = [
-    { label: "EMAIL", value: "office@goleska.in", isLink: true, href: "mailto:office@goleska.in" },
-    { label: "COMPANY", value: "Gleska Private Limited" },
-    { label: "LOCATION", value: "Delhi, India" },
-    { label: "COVERAGE", value: "Delhi NCR industrial belt, expanding nationally" },
+    { label: t('shared.email').toUpperCase(), value: "office@goleska.in", isLink: true, href: "mailto:office@goleska.in" },
+    { label: t('shared.company').toUpperCase(), value: "Gleska Private Limited" },
+    { label: t('shared.location').toUpperCase(), value: t('contact.locationValue') },
+    { label: t('shared.coverage').toUpperCase(), value: t('contact.coverageValue') },
   ];
 
   return (
@@ -171,13 +162,13 @@ export default function ContactUsSection({ showHeader = true }: { showHeader?: b
             <div className="mb-12 text-center">
               <div className="mx-auto mb-4 inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-300">
                 <MessageCircle size={14} />
-                GET IN TOUCH
+                {t('contact.badge')}
               </div>
               <h2 className="font-[var(--font-anton)] text-4xl uppercase tracking-wide text-slate-900 sm:text-5xl md:text-6xl dark:text-white">
-                CONTACT US
+                {t('contact.title')}
               </h2>
               <p className="mx-auto mt-4 max-w-2xl text-lg font-medium text-slate-600 dark:text-slate-400">
-                Whether you&apos;re an employer looking to hire or a worker seeking opportunity — our team is ready to help you 24×7.
+                {t('contact.subtitle')}
               </p>
             </div>
           )}
@@ -221,11 +212,11 @@ export default function ContactUsSection({ showHeader = true }: { showHeader?: b
                 <div className="space-y-4">
                   <div className="inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-300">
                     <MessageCircle size={14} />
-                    CONTACT
+                    {t('contact.contactTitle')}
                   </div>
 
                   <h3 className="font-[var(--font-anton)] text-3xl uppercase tracking-wide text-slate-900 sm:text-4xl md:text-5xl dark:text-white leading-[0.95]">
-                    Bring your business online.
+                    {t('contact.bringOnline')}
                   </h3>
                 </div>
 
@@ -260,7 +251,7 @@ export default function ContactUsSection({ showHeader = true }: { showHeader?: b
               {/* RIGHT COLUMN */}
               <div className="lg:col-span-7 space-y-6">
                 <p className="text-base font-medium leading-relaxed text-slate-600 sm:text-lg dark:text-slate-300">
-                  Tell us what your business runs on — we&apos;ll tell you which deputy fits.
+                  {t('contact.infoPrompt')}
                 </p>
 
                 {submitted ? (
@@ -268,9 +259,9 @@ export default function ContactUsSection({ showHeader = true }: { showHeader?: b
                     <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 shadow-lg shadow-emerald-500/30">
                       <CheckCircle2 size={32} className="text-white" />
                     </div>
-                    <h3 className="text-xl font-extrabold text-slate-900 dark:text-white">Message Sent!</h3>
+                    <h3 className="text-xl font-extrabold text-slate-900 dark:text-white">{t('contact.successTitle')}</h3>
                     <p className="mt-2 max-w-sm text-sm font-medium text-slate-500 dark:text-slate-400">
-                      Thank you for reaching out. Our team will respond to your inquiry within 24 hours.
+                      {t('contact.successBody')}
                     </p>
                     <button
                       onClick={() => {
@@ -283,7 +274,7 @@ export default function ContactUsSection({ showHeader = true }: { showHeader?: b
                       }}
                       className="mt-6 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-5 py-2.5 text-sm font-bold text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
                     >
-                      Send another message
+                      {t('contact.sendAnother')}
                     </button>
                   </div>
                 ) : (
@@ -293,7 +284,7 @@ export default function ContactUsSection({ showHeader = true }: { showHeader?: b
                       <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50/90 p-4 dark:border-red-900/60 dark:bg-red-950/20">
                         <AlertCircle size={18} className="mt-0.5 shrink-0 text-red-600 dark:text-red-400" />
                         <div>
-                          <p className="text-sm font-semibold text-red-700 dark:text-red-300">Error</p>
+                          <p className="text-sm font-semibold text-red-700 dark:text-red-300">{t('contact.errorTitle')}</p>
                           <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
                         </div>
                       </div>
@@ -302,7 +293,7 @@ export default function ContactUsSection({ showHeader = true }: { showHeader?: b
                     <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
                       <div>
                         <label htmlFor="contact-name" className={labelCls}>
-                          NAME
+                          {t('contact.nameLabel')}
                         </label>
                         <input
                           id="contact-name"
@@ -310,13 +301,13 @@ export default function ContactUsSection({ showHeader = true }: { showHeader?: b
                           value={name}
                           onChange={(e) => setName(e.target.value)}
                           className={inputCls}
-                          placeholder="Your name"
+                          placeholder={t('contact.inputName')}
                           required
                         />
                       </div>
                       <div>
                         <label htmlFor="contact-company" className={labelCls}>
-                          COMPANY
+                          {t('contact.companyLabel')}
                         </label>
                         <input
                           id="contact-company"
@@ -324,14 +315,14 @@ export default function ContactUsSection({ showHeader = true }: { showHeader?: b
                           value={company}
                           onChange={(e) => setCompany(e.target.value)}
                           className={inputCls}
-                          placeholder="Business name"
+                          placeholder={t('contact.inputCompany')}
                         />
                       </div>
                     </div>
 
                     <div>
                       <label htmlFor="contact-email" className={labelCls}>
-                        EMAIL
+                        {t('contact.emailLabel')}
                       </label>
                       <input
                         id="contact-email"
@@ -339,14 +330,14 @@ export default function ContactUsSection({ showHeader = true }: { showHeader?: b
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         className={inputCls}
-                        placeholder="you@company.com"
+                        placeholder={t('contact.inputEmail')}
                         required
                       />
                     </div>
 
                     <div>
                       <label htmlFor="contact-message" className={labelCls}>
-                        WHAT DOES YOUR BUSINESS NEED?
+                        {t('contact.messageLabel')}
                       </label>
                       <textarea
                         id="contact-message"
@@ -354,7 +345,7 @@ export default function ContactUsSection({ showHeader = true }: { showHeader?: b
                         value={message}
                         onChange={(e) => setMessage(e.target.value)}
                         className={inputCls + " resize-none"}
-                        placeholder="e.g. we need help filling government tenders"
+                        placeholder={t('contact.inputMessage')}
                         required
                       />
                     </div>
@@ -370,7 +361,7 @@ export default function ContactUsSection({ showHeader = true }: { showHeader?: b
                           <Loader2 className="animate-spin" size={18} />
                         ) : (
                           <>
-                            Send Message <ArrowRight size={18} />
+                            {t('contact.formSubmit')} <ArrowRight size={18} />
                           </>
                         )}
                       </button>
@@ -391,10 +382,10 @@ export default function ContactUsSection({ showHeader = true }: { showHeader?: b
         onClick={() => setFaqDrawerOpen(true)}
         className="fixed bottom-6 right-6 z-40 flex items-center gap-2.5 rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 px-5 py-3.5 text-sm font-bold text-white shadow-xl shadow-indigo-500/30 transition-all hover:scale-105 hover:from-blue-700 hover:to-indigo-700 active:scale-95"
         id="open-faq-drawer-btn"
-        aria-label="Open FAQs"
+        aria-label={t('contact.openFaqs')}
       >
         <HelpCircle size={20} />
-        <span>FAQs</span>
+        <span>{t('contact.openFaqs')}</span>
       </button>
 
       {/* FAQ Drawer Backdrop */}
@@ -420,17 +411,17 @@ export default function ContactUsSection({ showHeader = true }: { showHeader?: b
               </div>
               <div>
                 <h3 className="font-[var(--font-anton)] text-xl uppercase tracking-wide text-slate-900 dark:text-white">
-                  FAQs
+                  {t('contact.openFaqs')}
                 </h3>
                 <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                  Quick answers to common questions
+                  {t('contact.faqDrawerSubtitle')}
                 </p>
               </div>
             </div>
             <button
               onClick={() => setFaqDrawerOpen(false)}
               className="rounded-full p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
-              aria-label="Close FAQs"
+              aria-label={t('nav.close')}
             >
               <X size={20} />
             </button>
@@ -438,7 +429,7 @@ export default function ContactUsSection({ showHeader = true }: { showHeader?: b
 
           {/* Accordion List */}
           <div className="mt-6 space-y-3" id="faq-section">
-            {FAQ_ITEMS.map((item, i) => (
+            {faqItems.map((item, i) => (
               <FaqItem
                 key={i}
                 q={item.q}
@@ -457,9 +448,9 @@ export default function ContactUsSection({ showHeader = true }: { showHeader?: b
               <Zap size={16} className="text-white" fill="currentColor" />
             </div>
             <div>
-              <h4 className="text-sm font-bold text-slate-900 dark:text-white">Have more questions?</h4>
+              <h4 className="text-sm font-bold text-slate-900 dark:text-white">{t('contact.haveMoreQuestions')}</h4>
               <p className="mt-0.5 text-xs font-medium text-slate-500 dark:text-slate-400">
-                Our team is available 24/7 to assist you. Fill out the form to get in touch.
+                {t('contact.haveMoreQuestionsBody')}
               </p>
             </div>
           </div>

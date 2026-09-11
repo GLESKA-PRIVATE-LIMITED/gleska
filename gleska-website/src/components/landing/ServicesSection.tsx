@@ -4,6 +4,7 @@ import React from "react";
 import Link from "next/link";
 import { ArrowRight, LayoutDashboard, Zap } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { useLanguage } from "@/context/LanguageContext";
 
 interface AgentCard {
   id: string;
@@ -19,6 +20,7 @@ interface AgentCard {
 
 function AgentCardsGrid({ agentCards }: { agentCards: AgentCard[] }) {
   const { user } = useAuth();
+  const { t } = useLanguage();
 
   return (
     <div className="grid grid-cols-1 gap-6 md:grid-cols-3 sm:gap-8">
@@ -49,17 +51,17 @@ function AgentCardsGrid({ agentCards }: { agentCards: AgentCard[] }) {
 
           {/* Footer / CTA */}
           <div className="mt-8 flex items-center justify-between border-t border-slate-100 pt-5 text-sm font-semibold text-slate-500 dark:border-slate-800 dark:text-slate-400">
-            <span className="font-mono text-xs uppercase tracking-wider">Custom pricing</span>
-            {agent.title === "Hiring Agent" ? (
+            <span className="font-mono text-xs uppercase tracking-wider">{t('services.customPricing')}</span>
+            {agent.id === "01" ? (
               <Link
                 href={user ? "/employer/dashboard" : "/employer/auth"}
                 className={`inline-flex items-center gap-1.5 font-bold transition-colors ${agent.dashboardCtaColor}`}
               >
-                {user ? "Dashboard" : "Subscribe"} {user ? <LayoutDashboard size={16} /> : <ArrowRight size={16} />}
+                {user ? t('services.dashboard') : t('services.subscribe')} {user ? <LayoutDashboard size={16} /> : <ArrowRight size={16} />}
               </Link>
             ) : (
               <span className={`inline-flex items-center gap-1.5 font-bold ${agent.ctaColor}`}>
-                Coming Soon
+                {t('services.comingSoonText')}
               </span>
             )}
           </div>
@@ -70,13 +72,14 @@ function AgentCardsGrid({ agentCards }: { agentCards: AgentCard[] }) {
 }
 
 export default function ServicesSection() {
+  const { t } = useLanguage();
+
   const agentCards: AgentCard[] = [
     {
       id: "01",
-      title: "Hiring Agent",
-      status: "ACTIVE",
-      description:
-        "Real-time blue-collar hiring — sources, screens, and fills open roles on the ground, not just on a job board.",
+      title: t('services.agentHiring'),
+      status: t('services.active'),
+      description: t('services.hiringDesc'),
       badgeColor: "bg-blue-50 text-blue-600 border border-blue-100",
       statusColor: "bg-blue-50 text-blue-600 border border-blue-200/60",
       topBorder: "border-t-4 border-t-blue-600",
@@ -85,10 +88,9 @@ export default function ServicesSection() {
     },
     {
       id: "02",
-      title: "Logistics Agent",
-      status: "COMING SOON",
-      description:
-        "Runs dispatch for fleet, bus, and vehicle operations — coordinating routes, drivers, and schedules in real time.",
+      title: t('services.agentLogistics'),
+      status: t('services.comingSoon'),
+      description: t('services.logisticsDesc'),
       badgeColor: "bg-emerald-50 text-emerald-600 border border-emerald-100",
       statusColor: "bg-emerald-50 text-emerald-600 border border-emerald-200/60",
       topBorder: "border-t-4 border-t-emerald-500",
@@ -97,10 +99,9 @@ export default function ServicesSection() {
     },
     {
       id: "03",
-      title: "Tender Filing Agent",
-      status: "COMING SOON",
-      description:
-        "Finds and fills government tender bids on your behalf — from document prep to submission.",
+      title: t('services.agentTender'),
+      status: t('services.comingSoon'),
+      description: t('services.tenderDesc'),
       badgeColor: "bg-amber-50 text-amber-600 border border-amber-100",
       statusColor: "bg-amber-50 text-amber-600 border border-amber-200/60",
       topBorder: "border-t-4 border-t-amber-500",
@@ -111,20 +112,20 @@ export default function ServicesSection() {
 
   const deploymentAgents = [
     {
-      name: "Hiring Agent",
-      status: "SUBSCRIBED",
+      name: t('services.agentHiring'),
+      status: t('services.statusSubscribed'),
       dotColor: "bg-blue-600 shadow-blue-500/50",
       statusStyle: "bg-blue-50 text-blue-600 border-blue-200/60 dark:bg-blue-950/60 dark:text-blue-400 dark:border-blue-800",
     },
     {
-      name: "Logistics Agent",
-      status: "UNSUBSCRIBED",
+      name: t('services.agentLogistics'),
+      status: t('services.statusUnsubscribed'),
       dotColor: "bg-emerald-500 shadow-emerald-500/50",
       statusStyle: "bg-slate-100 text-slate-500 border-slate-200/60 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700",
     },
     {
-      name: "Tender Filing Agent",
-      status: "UNSUBSCRIBED",
+      name: t('services.agentTender'),
+      status: t('services.statusUnsubscribed'),
       dotColor: "bg-amber-500 shadow-amber-500/50",
       statusStyle: "bg-slate-100 text-slate-500 border-slate-200/60 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700",
     },
@@ -143,14 +144,14 @@ export default function ServicesSection() {
           <div className="mb-12 text-center">
             {/* HEADING: BUSINESS & INDUSTRIAL AI AGENTS */}
             <h1 className="mb-2 block font-[var(--font-anton)] text-2xl sm:text-4xl md:text-5xl lg:text-6xl xl:text-7xl uppercase tracking-wide text-slate-900 md:whitespace-nowrap dark:text-white">
-              BUSINESS &amp; INDUSTRIAL AI AGENTS
+              {t('services.title')}
             </h1>
 
             <h2 className="inline-block pr-3 font-[var(--font-anton)] text-3xl sm:text-4xl md:text-5xl lg:text-5xl uppercase tracking-wide bg-gradient-to-r from-blue-600 via-indigo-600 to-emerald-600 bg-clip-text text-transparent sm:whitespace-nowrap">
-              READY TO EXPERIENCE THE FUTURE
+              {t('services.subtitle')}
             </h2>
             <p className="mt-4 text-lg font-medium leading-relaxed text-slate-600 sm:text-xl dark:text-slate-300">
-              Join businesses already building with Gleska&apos;s intelligent infrastructure.
+              {t('services.description')}
             </p>
           </div>
 
@@ -169,15 +170,15 @@ export default function ServicesSection() {
             <div className="lg:col-span-7 space-y-6">
               <div className="inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-300">
                 <Zap size={14} />
-                LIVE DEPLOYED AGENTS
+                {t('services.liveAgentsBadge')}
               </div>
 
               <h2 className="inline-block pr-3 font-[var(--font-anton)] text-3xl sm:text-4xl lg:text-[2.6rem] xl:text-5xl uppercase tracking-wide bg-gradient-to-r from-blue-600 via-indigo-600 to-emerald-600 bg-clip-text text-transparent sm:whitespace-nowrap">
-                COMPANY&apos;S DEPLOYMENT
+                {t('services.liveTitle')}
               </h2>
 
               <p className="text-base font-medium leading-relaxed text-slate-600 sm:text-lg dark:text-slate-300">
-                Every agent plugs into the same intelligent core — subscribe to only the ones your business runs on.
+                {t('services.liveDescription')}
               </p>
 
               {/* Three Specialist Agent Entries */}
@@ -226,13 +227,13 @@ export default function ServicesSection() {
                 {/* Stationary Center Core Card */}
                 <div className="relative z-10 flex h-48 w-48 sm:h-64 sm:w-64 flex-col items-center justify-center rounded-full border border-slate-200/90 bg-white/95 p-4 text-center shadow-xl backdrop-blur-md dark:border-slate-800 dark:bg-slate-900/95">
                   <span className="font-[var(--font-anton)] text-xl sm:text-2xl uppercase tracking-wider text-slate-900 dark:text-white leading-tight">
-                    COMPANY&apos;S
+                    {t('services.companys')}
                   </span>
                   <span className="font-[var(--font-anton)] text-xl sm:text-2xl uppercase tracking-wider text-indigo-600 dark:text-indigo-400 leading-tight">
-                    DIGITAL BRAIN
+                    {t('services.digitalBrain')}
                   </span>
                   <span className="mt-2 text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500">
-                    CORE ORCHESTRATOR
+                    {t('services.coreOrchestrator')}
                   </span>
                 </div>
 

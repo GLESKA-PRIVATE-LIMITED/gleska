@@ -7,10 +7,12 @@ import { User, LayoutDashboard } from "lucide-react";
 import LanguageSelector from "@/components/landing/LanguageSelector";
 import { useAuth } from "@/context/AuthContext";
 import { getRouteForNextStep } from "@/lib/auth-routing";
+import { useLanguage } from "@/context/LanguageContext";
 
 export default function Navbar() {
   const pathname = usePathname();
   const { user, nextStep } = useAuth();
+  const { t } = useLanguage();
 
   const dashboardHref = user ? getRouteForNextStep(user.role, nextStep) : "/auth/signin";
   const isDashboardActive =
@@ -32,7 +34,7 @@ export default function Navbar() {
             href="/#services"
             className="transition-all hover:text-indigo-600 dark:hover:text-indigo-400"
           >
-            Services
+            {t('nav.services')}
           </Link>
           <Link
             href="/get-hired"
@@ -40,7 +42,7 @@ export default function Navbar() {
               pathname === "/get-hired" ? "text-indigo-600 dark:text-indigo-400" : ""
             }`}
           >
-            Get Hired
+            {t('nav.getHired')}
           </Link>
           <Link
             href="/contact"
@@ -48,7 +50,7 @@ export default function Navbar() {
               pathname === "/contact" ? "text-indigo-600 dark:text-indigo-400" : ""
             }`}
           >
-            Contact
+            {t('nav.contact')}
           </Link>
           <Link
             href="/about"
@@ -56,7 +58,7 @@ export default function Navbar() {
               pathname === "/about" ? "text-indigo-600 dark:text-indigo-400" : ""
             }`}
           >
-            About
+            {t('nav.about')}
           </Link>
           <Link
             href="/terms"
@@ -64,7 +66,7 @@ export default function Navbar() {
               pathname === "/terms" ? "text-indigo-600 dark:text-indigo-400" : ""
             }`}
           >
-            Terms
+            {t('nav.terms')}
           </Link>
         </div>
         <div className="flex items-center gap-2 sm:gap-4">
@@ -77,7 +79,7 @@ export default function Navbar() {
               }`}
             >
               <LayoutDashboard size={16} />
-              <span className="hidden sm:inline whitespace-nowrap">Dashboard</span>
+              <span className="hidden sm:inline whitespace-nowrap">{t('nav.dashboard')}</span>
             </Link>
           ) : (
             <Link
@@ -87,7 +89,7 @@ export default function Navbar() {
               }`}
             >
               <User size={16} />
-              <span className="hidden sm:inline whitespace-nowrap">Sign In</span>
+              <span className="hidden sm:inline whitespace-nowrap">{t('nav.signIn')}</span>
             </Link>
           )}
         </div>
