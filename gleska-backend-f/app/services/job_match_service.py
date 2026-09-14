@@ -62,7 +62,47 @@ class JobMatchService:
 
     @classmethod
     def accept_for_user(cls, user: UserResponse, job_id: str, worker_profile_id: str) -> JobMatchAcceptResponse:
+        from datetime import datetime, timezone
         job = JobService.get_for_user(user, job_id)
+        employer = JobService._employer_profile(user)
+        employer_type = employer.get("employer_type")
+
+        # 1. Business Employers must have an active subscription
+        if employer_type in {"REGISTERED_INDUSTRY", "REGISTERED_BUSINESS", "UNREGISTERED_BUSINESS"}:
+            subscription_until = employer.get("subscription_valid_until")
+            if isinstance(subscription_until, str):
+                subscription_until = datetime.fromisoformat(subscription_until.replace("Z", "+00:00"))
+            if subscription_until and subscription_until.tzinfo is None:
+                subscription_until = subscription_until.replace(tzinfo=timezone.utc)
+            if not subscription_until or subscription_until <= datetime.now(timezone.utc):
+                raise ValueError("SUBSCRIPTION_REQUIRED")
+
+        # 2. Individual Employers: 1st dispatch is free; subsequent dispatches require ₹30 commission
+        consumed_free_dispatch = False
+        if employer_type == "INDIVIDUAL":
+            has_availed_free_dispatch = employer.get("has_availed_free_dispatch", False)
+            if not has_availed_free_dispatch:
+                # Qualifies for free dispatch
+                consumed_free_dispatch = True
+            else:
+                # Requires a successful ₹30 commission payment for this specific worker + job
+                paid_commission_resp = (
+                    supabase.table("payment_transactions")
+                    .select("id, job_id, raw_webhook_payload")
+                    .eq("employer_id", employer["id"])
+                    .eq("worker_profile_id", worker_profile_id)
+                    .eq("status", "SUCCESS")
+                    .execute()
+                )
+                has_paid = False
+                for p in (paid_commission_resp.data or []):
+                    p_job_id = p.get("job_id") or (p.get("raw_webhook_payload") or {}).get("job_id")
+                    if str(p_job_id) == str(job_id):
+                        has_paid = True
+                        break
+                if not has_paid:
+                    raise ValueError("COMMISSION_REQUIRED")
+
         try:
             response = supabase.rpc("accept_job_match", {
                 "p_employer_id": job.employer_id,
@@ -74,6 +114,11 @@ class JobMatchService:
         accepted = response.data[0] if isinstance(response.data, list) and response.data else response.data
         if not accepted:
             raise ValueError("MATCH_ACCEPT_FAILED")
+
+        # Atomically record consumption of the free dispatch if this was the qualifying first dispatch
+        if consumed_free_dispatch:
+            supabase.table("employer_profiles").update({"has_availed_free_dispatch": True}).eq("id", employer["id"]).execute()
+
         return JobMatchAcceptResponse(
             match_id=str(accepted["match_id"]),
             worker_profile_id=str(accepted["worker_profile_id"]),

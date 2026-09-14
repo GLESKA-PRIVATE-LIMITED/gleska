@@ -28,7 +28,7 @@ class JobService:
     def _employer_id(user: UserResponse) -> str:
         response = (
             supabase.table("employer_profiles")
-            .select("id, onboarding_status, subscription_valid_until, has_availed_free_dispatch")
+            .select("id, onboarding_status")
             .eq("user_id", user.id)
             .single()
             .execute()
@@ -38,32 +38,13 @@ class JobService:
             raise JobNotFound("EMPLOYER_NOT_FOUND")
         if employer.get("onboarding_status") != "COMPLETED":
             raise PermissionError("EMPLOYER_ONBOARDING_INCOMPLETE")
-        subscription_until = employer.get("subscription_valid_until")
-        if isinstance(subscription_until, str):
-            subscription_until = datetime.fromisoformat(subscription_until.replace("Z", "+00:00"))
-        if subscription_until and subscription_until.tzinfo is None:
-            subscription_until = subscription_until.replace(tzinfo=timezone.utc)
-        if subscription_until and subscription_until > datetime.now(timezone.utc):
-            return str(employer["id"])
-
-        if employer.get("has_availed_free_dispatch", False):
-            raise JobPaymentRequired("SUBSCRIPTION_REQUIRED")
-        free_dispatch = (
-            supabase.table("employer_profiles")
-            .update({"has_availed_free_dispatch": True})
-            .eq("id", employer["id"])
-            .eq("has_availed_free_dispatch", False)
-            .execute()
-        )
-        if not free_dispatch.data:
-            raise JobPaymentRequired("SUBSCRIPTION_REQUIRED")
         return str(employer["id"])
 
     @staticmethod
     def _employer_profile(user: UserResponse) -> dict[str, Any]:
         response = (
             supabase.table("employer_profiles")
-            .select("id, onboarding_status")
+            .select("id, onboarding_status, employer_type, subscription_valid_until, has_availed_free_dispatch")
             .eq("user_id", user.id)
             .single()
             .execute()
@@ -109,6 +90,18 @@ class JobService:
     def create(cls, user: UserResponse, request: JobCreate) -> JobResponse:
         employer = cls._employer_profile(user)
         cls._owned_site(str(employer["id"]), str(request.job_site_id))
+        is_individual = employer.get("employer_type") == "INDIVIDUAL"
+
+        # Business employers require an active subscription to create jobs
+        if not is_individual:
+            subscription_until = employer.get("subscription_valid_until")
+            if isinstance(subscription_until, str):
+                subscription_until = datetime.fromisoformat(subscription_until.replace("Z", "+00:00"))
+            if subscription_until and subscription_until.tzinfo is None:
+                subscription_until = subscription_until.replace(tzinfo=timezone.utc)
+            if not subscription_until or subscription_until <= datetime.now(timezone.utc):
+                raise JobPaymentRequired("SUBSCRIPTION_REQUIRED")
+
         try:
             response = supabase.rpc("create_job_for_employer", {
                 "p_employer_id": employer["id"],
@@ -124,6 +117,29 @@ class JobService:
             message = str(exc)
             logger.error("Job creation RPC failed: error_type=%s message=%s", type(exc).__name__, message)
             if "SUBSCRIPTION_REQUIRED" in message:
+                if is_individual:
+                    # Individual employers are entitled to post jobs without monthly subscriptions.
+                    # If the database RPC is still rejecting due to legacy free-dispatch check, insert directly.
+                    insert_data = {
+                        "employer_id": employer["id"],
+                        "job_site_id": str(request.job_site_id),
+                        "title": request.title,
+                        "headcount_required": request.headcount_required,
+                        "max_daily_salary": float(request.max_daily_salary) if request.max_daily_salary is not None else None,
+                        "min_experience": request.min_experience,
+                        "trade_id": request.trade_id,
+                        "required_skills": request.required_skills or [],
+                        "status": "SEARCHING",
+                    }
+                    direct_res = supabase.table("jobs").insert(insert_data).execute()
+                    job_data = direct_res.data[0] if isinstance(direct_res.data, list) and direct_res.data else direct_res.data
+                    if not job_data:
+                        raise RuntimeError("JOB_CREATE_FAILED")
+                    try:
+                        MatchingService.create_matches(str(job_data["id"]))
+                    except MatchingError:
+                        logger.exception("Matching failed after job creation: job_id=%s", job_data["id"])
+                    return cls._to_response(job_data)
                 raise JobPaymentRequired("SUBSCRIPTION_REQUIRED") from exc
             if "JOB_SITE_NOT_FOUND" in message:
                 raise JobNotFound("JOB_SITE_NOT_FOUND") from exc

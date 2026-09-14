@@ -13,6 +13,7 @@ from app.schemas.auth import UserResponse
 from app.services import job_service
 from app.services.cashfree_payment_service import CashfreePaymentError
 from app.services.job_service import JobService
+from app.routers.admin import _build_payment_item, _compute_validity_status
 
 
 def test_payment_routes_are_registered():
@@ -24,6 +25,7 @@ def test_payment_routes_are_registered():
     assert ("/api/v1/payments/create-subscription-order", ("POST",)) in paths
     assert ("/api/v1/payments/verify/{order_id}", ("POST",)) in paths
     assert ("/api/v1/payments/webhook", ("POST",)) in paths
+    assert ("/api/v1/payments/history", ("GET",)) in paths
 
 
 @pytest.mark.asyncio
@@ -79,6 +81,60 @@ async def test_create_subscription_order_generates_transaction_id(monkeypatch):
     assert inserted["created_at"]
     assert inserted["order_id"] == result.order_id
     assert inserted["status"] == "PENDING"
+    assert inserted["payment_category"] == "BUSINESS_SUBSCRIPTION"
+
+
+def test_admin_payment_validity_uses_payment_level_data_only():
+    assert _compute_validity_status("WORKER_SUBSCRIPTION", None) == "UNKNOWN"
+    assert _compute_validity_status("INDIVIDUAL_COMMISSION", None) == "N/A"
+    assert _compute_validity_status("LEGACY_PAYMENT", None) == "N/A"
+    assert _compute_validity_status("UNKNOWN", None) == "UNKNOWN"
+    assert _compute_validity_status("WORKER_SUBSCRIPTION", "2999-01-01T00:00:00+00:00") == "ACTIVE"
+    assert _compute_validity_status("BUSINESS_SUBSCRIPTION", "2000-01-01T00:00:00+00:00") == "EXPIRED"
+
+
+def test_admin_payment_category_does_not_infer_from_current_profile():
+    item = _build_payment_item(
+        {
+            "id": "payment-id",
+            "order_id": "order-id",
+            "employer_id": "employer-id",
+            "amount": 2000,
+            "currency": "INR",
+            "status": "SUCCESS",
+            "created_at": "2026-01-01T00:00:00Z",
+            "payment_category": None,
+        },
+        {},
+        {"employer-id": {"employer_type": "REGISTERED_BUSINESS"}},
+    )
+    assert item.payment_category == "UNKNOWN"
+    assert item.validity_status == "UNKNOWN"
+
+
+def test_payment_migration_defines_future_categories_and_success_timestamp():
+    from pathlib import Path
+
+    migration = (
+        Path(__file__).resolve().parents[2]
+        / "gleska-website"
+        / "supabase"
+        / "migrations"
+        / "054_payment_category_and_success_timestamp.sql"
+    ).read_text(encoding="utf-8")
+    for value in (
+        "WORKER_SUBSCRIPTION",
+        "BUSINESS_SUBSCRIPTION",
+        "INDIVIDUAL_COMMISSION",
+        "LEGACY_PAYMENT",
+        "UNKNOWN",
+        "payment_success_at",
+        "subscription_valid_from",
+        "subscription_valid_until",
+        "ALREADY_SUCCESS",
+        "INVALID_PAYMENT_CONFIGURATION",
+    ):
+        assert value in migration
 
 
 @pytest.mark.asyncio

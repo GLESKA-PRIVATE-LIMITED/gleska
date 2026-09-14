@@ -1,10 +1,11 @@
-from datetime import date
+from datetime import date, datetime, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import JSONResponse
 
 from app.core.security import require_employer, require_worker
+from app.core.supabase import supabase
 from app.schemas.attendance import (
     AttendanceAuditResponse,
     AttendanceListResponse,
@@ -58,6 +59,15 @@ def attendance_http_error(exc: AttendanceError) -> JSONResponse:
 
 @worker_router.post("/check-in", response_model=AttendanceRecordResponse)
 async def worker_check_in(request: WorkerCheckInRequest, user: UserResponse = Depends(require_worker)):
+    profile_resp = supabase.table("worker_profiles").select("subscription_valid_until").eq("user_id", user.id).single().execute()
+    svu = (profile_resp.data or {}).get("subscription_valid_until")
+    if isinstance(svu, str):
+        svu = datetime.fromisoformat(svu.replace("Z", "+00:00"))
+    if svu and svu.tzinfo is None:
+        svu = svu.replace(tzinfo=timezone.utc)
+    if not svu or svu <= datetime.now(timezone.utc):
+        raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail="SUBSCRIPTION_REQUIRED")
+
     try:
         return AttendanceService.check_in(user.id, request)
     except AttendanceError as exc:

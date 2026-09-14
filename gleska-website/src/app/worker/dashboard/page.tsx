@@ -10,6 +10,7 @@ import AccountManagementShell from "@/components/AccountManagementShell";
 import { useAuth } from "@/context/AuthContext";
 import apiClient from "@/lib/api";
 import { getLocationErrorMessage, normalizeCoordinates, shouldSendLiveLocationUpdate, type LiveLocationSnapshot } from "@/lib/location";
+import { formatSubscriptionExpiry, isSubscriptionActive } from "@/lib/subscription";
 
 type WorkerProfile = {
   profile_completed: boolean;
@@ -53,14 +54,6 @@ type AttendanceRecord = {
 
 function formatTime(value?: string | null): string {
   return value ? new Date(value).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" }) : "-";
-}
-
-function formatDate(value?: string | null): string {
-  return value ? new Date(value).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "Date unavailable";
-}
-
-function isSubscriptionActive(value?: string | null): boolean {
-  return Boolean(value && new Date(value).getTime() > Date.now());
 }
 
 function SectionState({ loading, error, retry, errorAction, children }: { loading: boolean; error: string; retry: () => void; errorAction?: React.ReactNode; children: React.ReactNode }) {
@@ -112,8 +105,18 @@ export default function WorkerDashboard() {
       const response = await apiClient.get<{ jobs: AvailableJob[] }>("/api/v1/workers/me/available-jobs");
       setAvailableJobs((response.data.jobs || []).slice(0, 3));
     } catch (error: unknown) {
+      const status = (error as { response?: { status?: number } }).response?.status;
       const detail = (error as { response?: { data?: { detail?: unknown } } }).response?.data?.detail;
-      setErrors((current) => ({ ...current, jobs: detail === "CURRENT_LOCATION_REQUIRED" ? "Location unavailable. Nearby work could not be updated." : "Nearby work could not be loaded." }));
+      if (status === 402 || detail === "SUBSCRIPTION_REQUIRED") {
+        setErrors((current) => ({
+          ...current,
+          jobs: "Your worker subscription is inactive. Subscribe for ₹200/month to access nearby jobs.",
+        }));
+      } else if (detail === "CURRENT_LOCATION_REQUIRED") {
+        setErrors((current) => ({ ...current, jobs: "Location unavailable. Nearby work could not be updated." }));
+      } else {
+        setErrors((current) => ({ ...current, jobs: "Nearby work could not be loaded." }));
+      }
     } finally {
       setLoading((current) => ({ ...current, jobs: false }));
     }
@@ -166,6 +169,20 @@ export default function WorkerDashboard() {
       loadAttendance(),
     ]));
   }, [isLoading, loadAttendance, loadAvailableJobs, loadCurrentWork, loadProfile, nextStep, user]);
+
+  React.useEffect(() => {
+    if (!user || user.role !== "WORKER" || isLoading || nextStep !== "DASHBOARD") return;
+    const refresh = () => {
+      void loadProfile();
+      void loadAvailableJobs();
+    };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [isLoading, loadAvailableJobs, loadProfile, nextStep, user]);
 
   React.useEffect(() => {
     if (!user || user.role !== "WORKER" || typeof navigator === "undefined" || !navigator.geolocation || watcherIdRef.current !== null) return;
@@ -234,6 +251,7 @@ export default function WorkerDashboard() {
 
   const location = currentLocationAddress || profile?.address || [profile?.city, profile?.state].filter(Boolean).join(", ");
   const subscriptionActive = isSubscriptionActive(profile?.subscription_valid_until);
+  const subscriptionExpiry = formatSubscriptionExpiry(profile?.subscription_valid_until);
   const completedJobCount = recentJobs.length;
   const companiesWorkedCount = new Set(recentJobs.map((job) => job.employer_name).filter(Boolean)).size;
 
@@ -252,11 +270,11 @@ export default function WorkerDashboard() {
         <div className="grid gap-6 lg:grid-cols-3">
           <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"><div className="flex items-center justify-between"><h2 className="font-bold">Profile completion</h2><User size={20} className="text-blue-600" /></div><SectionState loading={loading.profile} error={errors.profile} retry={loadProfile}><p className="mt-5 text-2xl font-bold">{profile?.profile_completed ? "Complete" : "Incomplete"}</p></SectionState></section>
           <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"><div className="flex items-center justify-between"><h2 className="font-bold">Availability</h2><CheckCircle2 size={20} className="text-emerald-600" /></div><SectionState loading={loading.profile} error={errors.profile} retry={loadProfile}><p className="mt-5 text-2xl font-bold">{profile?.availability_status || "-"}</p></SectionState></section>
-          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"><div className="flex items-center justify-between"><h2 className="font-bold">Subscription</h2><CheckCircle2 size={20} className={subscriptionActive ? "text-emerald-600" : "text-amber-600"} /></div><SectionState loading={loading.profile} error={errors.profile} retry={loadProfile}><p className="mt-5 text-2xl font-bold">{subscriptionActive ? "Active" : "No active subscription"}</p>{subscriptionActive && <p className="mt-1 text-sm text-slate-500">Expires {formatDate(profile?.subscription_valid_until)}</p>}</SectionState></section>
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"><div className="flex items-center justify-between"><h2 className="font-bold">Subscription</h2><CheckCircle2 size={20} className={subscriptionActive ? "text-emerald-600" : "text-amber-600"} /></div><SectionState loading={loading.profile} error={errors.profile} retry={loadProfile}><p className="mt-5 text-2xl font-bold">{subscriptionActive ? "Active" : profile?.subscription_valid_until ? "Expired" : "Not Active"}</p>{subscriptionExpiry && <p className="mt-1 text-sm text-slate-500">Expires {subscriptionExpiry}</p>}<p className="mt-1 text-sm text-slate-500">Worker / Employee · ₹200 / month</p>{!subscriptionActive && <Link href="/worker/subscription" className="mt-3 inline-block text-sm font-bold text-blue-700">Renew Subscription</Link>}</SectionState></section>
         </div>
 
         <div className="grid gap-6 lg:grid-cols-2">
-          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"><div className="flex items-center justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-wide text-blue-700">Matching</p><h2 className="mt-1 text-xl font-bold">Nearby work</h2></div><span className="text-sm text-slate-500">{availableJobs.length ? "Showing up to 3" : ""}</span></div><SectionState loading={loading.jobs} error={errors.jobs} retry={loadAvailableJobs} errorAction={errors.jobs === "Location unavailable. Nearby work could not be updated." && <Link href="/worker/profile" className="mt-4 inline-block font-bold text-blue-700">Add location in Profile</Link>}>{availableJobs.length ? <div className="mt-5 space-y-3">{availableJobs.map((job) => <article key={job.job_id} className="rounded-xl bg-slate-50 p-4 dark:bg-slate-800/60"><div className="flex items-start justify-between gap-3"><div><h3 className="font-bold">{job.title}</h3><p className="mt-1 text-sm text-slate-500">{job.employer_name}</p></div><MapPin size={18} className="text-blue-600" /></div><div className="mt-3 flex flex-wrap gap-4 text-sm"><span>₹{job.salary}/day</span><span>{job.distance_km == null ? "Distance unavailable" : `${job.distance_km} km`}</span></div></article>)}</div> : <div className="mt-5 rounded-xl border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">No matching jobs nearby.</div>}</SectionState></section>
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"><div className="flex items-center justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-wide text-blue-700">Matching</p><h2 className="mt-1 text-xl font-bold">Nearby work</h2></div><span className="text-sm text-slate-500">{availableJobs.length ? "Showing up to 3" : ""}</span></div><SectionState loading={loading.jobs} error={errors.jobs} retry={loadAvailableJobs} errorAction={errors.jobs.includes("subscription") ? <Link href="/worker/subscription" className="mt-4 inline-flex items-center gap-1 rounded-xl bg-amber-500 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-amber-600 transition">Subscribe / Renew (₹200/mo)</Link> : errors.jobs === "Location unavailable. Nearby work could not be updated." && <Link href="/worker/profile" className="mt-4 inline-block font-bold text-blue-700">Add location in Profile</Link>}>{availableJobs.length ? <div className="mt-5 space-y-3">{availableJobs.map((job) => <article key={job.job_id} className="rounded-xl bg-slate-50 p-4 dark:bg-slate-800/60"><div className="flex items-start justify-between gap-3"><div><h3 className="font-bold">{job.title}</h3><p className="mt-1 text-sm text-slate-500">{job.employer_name}</p></div><MapPin size={18} className="text-blue-600" /></div><div className="mt-3 flex flex-wrap gap-4 text-sm"><span>₹{job.salary}/day</span><span>{job.distance_km == null ? "Distance unavailable" : `${job.distance_km} km`}</span></div></article>)}</div> : <div className="mt-5 rounded-xl border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">No matching jobs nearby.</div>}</SectionState></section>
 
           <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"><div className="flex items-center justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-wide text-blue-700">Current work</p><h2 className="mt-1 text-xl font-bold">Accepted job</h2></div><Briefcase size={20} className="text-blue-600" /></div><SectionState loading={loading.currentJob} error={errors.currentJob} retry={loadCurrentWork}>{activeJob ? <div className="mt-5 rounded-xl bg-slate-50 p-4 dark:bg-slate-800/60"><h3 className="font-bold">{activeJob.title}</h3><p className="mt-1 text-sm text-slate-500">{activeJob.employer_name || "Employer unavailable"}</p><p className="mt-2 text-sm">Status: <strong>{activeJob.status}</strong></p>{activeJobDetails?.site_name && <p className="mt-1 text-sm text-slate-500">Site: {activeJobDetails.site_name}</p>}</div> : <div className="mt-5 rounded-xl border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">No active work right now.</div>}</SectionState></section>
         </div>

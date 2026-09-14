@@ -91,7 +91,11 @@ async def provision_authenticated_user(
         )
         return UserResponse(**user)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        error_msg = str(exc)
+        # Map specific error codes to appropriate HTTP status codes
+        if error_msg == "ADMIN_ROLE_UNAUTHORIZED":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=error_msg) from exc
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=error_msg) from exc
     except HTTPException:
         raise
     except Exception as exc:

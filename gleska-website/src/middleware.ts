@@ -16,6 +16,7 @@ const WORKER_PROTECTED_PREFIXES = [
   "/worker/help",
 ];
 const EMPLOYER_PROTECTED_PREFIXES = ["/employer/dashboard", "/employer/onboarding", "/employer/company-profile", "/employer/director-profile", "/employer/security", "/employer/workers", "/employer/attendance", "/employer/subscription"];
+const ADMIN_PROTECTED_PREFIXES = ["/admin"];
 
 export function middleware(request: NextRequest) {
   const { pathname, searchParams } = request.nextUrl;
@@ -27,11 +28,20 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(callbackUrl);
   }
 
-  // Check if current path is a protected worker or employer route
+  // Check if current path is a protected worker, employer, or admin route
   const isWorkerProtected = WORKER_PROTECTED_PREFIXES.some((prefix) => pathname.startsWith(prefix));
   const isEmployerProtected = EMPLOYER_PROTECTED_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+  const isAdminProtected = ADMIN_PROTECTED_PREFIXES.some((prefix) => pathname.startsWith(prefix));
 
-  if (!isWorkerProtected && !isEmployerProtected) {
+  // Exclude /admin/login from protection (it's a public login page for unauthenticated users)
+  const isAdminLoginPage = pathname === "/admin/login";
+
+  if (!isWorkerProtected && !isEmployerProtected && !isAdminProtected) {
+    return NextResponse.next();
+  }
+
+  // Allow /admin/login to be accessed by unauthenticated users
+  if (isAdminLoginPage) {
     return NextResponse.next();
   }
 
@@ -46,8 +56,7 @@ export function middleware(request: NextRequest) {
   const isAuthenticated = hasGoleskaSession || hasGoleskaClientAuth || hasSupabaseAuthToken;
 
   if (!isAuthenticated) {
-    // Redirect unauthenticated request to corresponding auth page
-    const targetAuth = isWorkerProtected ? "/worker/auth" : "/employer/auth";
+    const targetAuth = isAdminProtected ? "/admin/login" : isWorkerProtected ? "/worker/auth" : "/employer/auth";
     const redirectUrl = new URL(targetAuth, request.url);
     return NextResponse.redirect(redirectUrl);
   }
@@ -77,6 +86,7 @@ export const config = {
     "/employer/workers/:path*",
     "/employer/attendance/:path*",
     "/employer/subscription/:path*",
+    "/admin/:path*",
   ],
 };
 

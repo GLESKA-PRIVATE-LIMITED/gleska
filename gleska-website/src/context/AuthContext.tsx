@@ -39,16 +39,16 @@ interface AuthContextType {
   isLoading: boolean;
   nextStep: NextStep | null;
   error: string | null;
-  login: (mobile: string, otp: string, name: string, role: "WORKER" | "EMPLOYER") => Promise<void>;
-  loginWithMobile: (mobile: string, otp: string, role: "WORKER" | "EMPLOYER") => Promise<void>;
+  login: (mobile: string, otp: string, name: string, role: "WORKER" | "EMPLOYER" | "ADMIN") => Promise<void>;
+  loginWithMobile: (mobile: string, otp: string, role: "WORKER" | "EMPLOYER" | "ADMIN") => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<NextStep | null>;
   requestOTP: (mobile: string) => Promise<{ requestId: string | null }>;
   resendOTP: (mobile: string, requestId?: string | null, channel?: "SMS" | "EMAIL") => Promise<void>;
-  signInWithEmail: (email: string, password: string, role: "WORKER" | "EMPLOYER") => Promise<void>;
-  signInWithGoogle: (role: "WORKER" | "EMPLOYER", accountType?: "BUSINESS" | "INDIVIDUAL") => Promise<void>;
-  provisionSession: (role: "WORKER" | "EMPLOYER", name?: string, accountType?: "BUSINESS" | "INDIVIDUAL") => Promise<{ user: AuthUser; nextStep: NextStep | null }>;
-  completeEmailSignup: (email: string, password: string, name: string, mobile: string, otp: string, role: "WORKER" | "EMPLOYER", termsAccepted?: boolean, accountType?: "BUSINESS" | "INDIVIDUAL") => Promise<void>;
+  signInWithEmail: (email: string, password: string, role: "WORKER" | "EMPLOYER" | "ADMIN") => Promise<void>;
+  signInWithGoogle: (role: "WORKER" | "EMPLOYER" | "ADMIN", accountType?: "BUSINESS" | "INDIVIDUAL") => Promise<void>;
+  provisionSession: (role: "WORKER" | "EMPLOYER" | "ADMIN", name?: string, accountType?: "BUSINESS" | "INDIVIDUAL") => Promise<{ user: AuthUser; nextStep: NextStep | null }>;
+  completeEmailSignup: (email: string, password: string, name: string, mobile: string, otp: string, role: "WORKER" | "EMPLOYER" | "ADMIN", termsAccepted?: boolean, accountType?: "BUSINESS" | "INDIVIDUAL") => Promise<void>;
   requestPasswordReset: (phone: string) => Promise<void>;
   verifyPasswordResetOTP: (phone: string, msg91AccessToken: string) => Promise<string>;
   completePasswordReset: (resetAuthorization: string, password: string, confirmPassword: string) => Promise<void>;
@@ -246,7 +246,7 @@ const resendOTP = async (mobile: string, requestId: string | null = null, channe
     }
   };
 
-  const provisionSession = async (role: "WORKER" | "EMPLOYER", name = "", accountType: "BUSINESS" | "INDIVIDUAL" = "BUSINESS") => {
+  const provisionSession = async (role: "WORKER" | "EMPLOYER" | "ADMIN", name = "", accountType: "BUSINESS" | "INDIVIDUAL" = "BUSINESS") => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) throw new Error("Authentication session was not created");
     await apiClient.post("/api/v1/auth/provision", {
@@ -270,7 +270,7 @@ const resendOTP = async (mobile: string, requestId: string | null = null, channe
     return { user: state.data.user, nextStep: state.data.next_step || null };
   };
 
-  const signInWithEmail = async (email: string, password: string, role: "WORKER" | "EMPLOYER") => {
+  const signInWithEmail = async (email: string, password: string, role: "WORKER" | "EMPLOYER" | "ADMIN") => {
     setError(null);
     setIsLoading(true);
     try {
@@ -284,7 +284,15 @@ const resendOTP = async (mobile: string, requestId: string | null = null, channe
       // provisionSession already calls registerSession internally
       await provisionSession(role);
     } catch (err: any) {
-      const message = err.response?.data?.detail || err.message || "Email login failed";
+      let message = err.message || "Email login failed";
+      
+      // Handle specific ADMIN authorization error
+      if (role === "ADMIN" && err.response?.data?.detail === "ADMIN_ROLE_UNAUTHORIZED") {
+        message = "This account is not authorized for admin access.";
+      } else if (err.response?.data?.detail) {
+        message = err.response.data.detail;
+      }
+      
       setError(message);
       await supabase.auth.signOut();
       setUser(null);
@@ -296,7 +304,7 @@ const resendOTP = async (mobile: string, requestId: string | null = null, channe
     }
   };
 
-  const signInWithGoogle = async (role: "WORKER" | "EMPLOYER", accountType: "BUSINESS" | "INDIVIDUAL" = "BUSINESS") => {
+  const signInWithGoogle = async (role: "WORKER" | "EMPLOYER" | "ADMIN", accountType: "BUSINESS" | "INDIVIDUAL" = "BUSINESS") => {
     clearSessionKey();
     sessionStorage.setItem("goleska_oauth_role", role);
     sessionStorage.setItem("goleska_oauth_account_type", accountType);
@@ -337,7 +345,7 @@ const resendOTP = async (mobile: string, requestId: string | null = null, channe
     }, { skipSupabaseAuth: true });
   };
 
-  const completeEmailSignup = async (email: string, password: string, name: string, mobile: string, otp: string, role: "WORKER" | "EMPLOYER", termsAccepted = true, accountType: "BUSINESS" | "INDIVIDUAL" = "BUSINESS") => {
+  const completeEmailSignup = async (email: string, password: string, name: string, mobile: string, otp: string, role: "WORKER" | "EMPLOYER" | "ADMIN", termsAccepted = true, accountType: "BUSINESS" | "INDIVIDUAL" = "BUSINESS") => {
     setError(null);
     setIsLoading(true);
     try {
@@ -380,7 +388,7 @@ const resendOTP = async (mobile: string, requestId: string | null = null, channe
     }
   };
 
-  const login = async (mobile: string, otp: string, name: string, role: "WORKER" | "EMPLOYER") => {
+  const login = async (mobile: string, otp: string, name: string, role: "WORKER" | "EMPLOYER" | "ADMIN") => {
     try {
       setError(null);
       setIsLoading(true);
@@ -409,7 +417,7 @@ const resendOTP = async (mobile: string, requestId: string | null = null, channe
     }
   };
 
-  const loginWithMobile = async (mobile: string, otp: string, role: "WORKER" | "EMPLOYER") => {
+  const loginWithMobile = async (mobile: string, otp: string, role: "WORKER" | "EMPLOYER" | "ADMIN") => {
     setError(null);
     setIsLoading(true);
     try {

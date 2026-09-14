@@ -98,6 +98,22 @@ async def accept_job_match(
             error_status = status.HTTP_404_NOT_FOUND
         elif error_code in {"JOB_NOT_OPEN_FOR_HIRING", "MATCH_NOT_PENDING", "MATCH_EXPIRED", "HEADCOUNT_FILLED"}:
             error_status = status.HTTP_409_CONFLICT
+        elif "SUBSCRIPTION_REQUIRED" in error_code:
+            raise HTTPException(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                detail="SUBSCRIPTION_REQUIRED",
+            ) from exc
+        elif "COMMISSION_REQUIRED" in error_code:
+            raise HTTPException(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                detail={
+                    "code": "COMMISSION_REQUIRED",
+                    "amount": 30.0,
+                    "currency": "INR",
+                    "job_id": job_id,
+                    "worker_profile_id": str(request.worker_profile_id),
+                },
+            ) from exc
         else:
             error_status = status.HTTP_422_UNPROCESSABLE_ENTITY
         raise HTTPException(status_code=error_status, detail=error_code) from exc

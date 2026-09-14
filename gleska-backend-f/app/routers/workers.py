@@ -111,7 +111,7 @@ async def get_worker_job_route(job_id: str, user: UserResponse):
     """Return the best road route from the worker's current location to the selected job site."""
     profile_response = (
         supabase.table("worker_profiles")
-        .select("id, latitude, longitude")
+        .select("id, latitude, longitude, subscription_valid_until")
         .eq("user_id", user.id)
         .single()
         .execute()
@@ -123,6 +123,14 @@ async def get_worker_job_route(job_id: str, user: UserResponse):
         profile = profile_data
     if not profile:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Worker profile not found")
+
+    subscription_until = profile.get("subscription_valid_until")
+    if isinstance(subscription_until, str):
+        subscription_until = datetime.fromisoformat(subscription_until.replace("Z", "+00:00"))
+    if subscription_until and subscription_until.tzinfo is None:
+        subscription_until = subscription_until.replace(tzinfo=timezone.utc)
+    if not subscription_until or subscription_until <= datetime.now(timezone.utc):
+        raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail="SUBSCRIPTION_REQUIRED")
 
     location_response = (
         supabase.table("worker_current_locations")
@@ -506,7 +514,7 @@ async def get_available_jobs(
     try:
         worker_response = (
             supabase.table("worker_profiles")
-            .select("id, profile_completed, availability_status, latitude, longitude")
+            .select("id, profile_completed, availability_status, latitude, longitude, subscription_valid_until")
             .eq("user_id", user.id)
             .single()
             .execute()
@@ -516,6 +524,14 @@ async def get_available_jobs(
             worker = worker[0] if worker else {}
         if not worker:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Worker profile not found")
+
+        subscription_until = worker.get("subscription_valid_until")
+        if isinstance(subscription_until, str):
+            subscription_until = datetime.fromisoformat(subscription_until.replace("Z", "+00:00"))
+        if subscription_until and subscription_until.tzinfo is None:
+            subscription_until = subscription_until.replace(tzinfo=timezone.utc)
+        if not subscription_until or subscription_until <= datetime.now(timezone.utc):
+            raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail="SUBSCRIPTION_REQUIRED")
         current_location = (
             supabase.table("worker_current_locations")
             .select("id, latitude, longitude, accuracy_m, updated_at")

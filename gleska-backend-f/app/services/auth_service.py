@@ -33,7 +33,7 @@ class AuthService:
         current_role = existing_user.get("role")
         if current_role == requested_role:
             return
-        if current_role in {"WORKER", "EMPLOYER"} and requested_role in {"WORKER", "EMPLOYER"}:
+        if current_role in {"WORKER", "EMPLOYER", "ADMIN"}:
             raise ValueError("ROLE_CONFLICT")
 
     @staticmethod
@@ -212,6 +212,11 @@ class AuthService:
         existing = AuthService.get_user_by_id(user_id)
         email_user = AuthService.get_user_by_email(normalized_email) if normalized_email else None
         mobile_user = AuthService.get_user_by_mobile(normalized_mobile) if normalized_mobile else None
+
+        # SECURITY: Prevent ADMIN role elevation
+        # Only allow ADMIN provisioning if the user is already ADMIN in the database
+        if role == "ADMIN" and not (existing and existing.get("role") == "ADMIN"):
+            raise ValueError("ADMIN_ROLE_UNAUTHORIZED")
 
         for candidate in (email_user, mobile_user):
             if candidate and candidate["id"] != user_id:

@@ -11,5 +11,9 @@ export function getRouteForNextStep(role: Role, nextStep: NextStep | string | nu
     return nextStep === "DASHBOARD" ? "/employer/dashboard" : "/employer/onboarding";
   }
 
+  if (role === "ADMIN") {
+    return "/admin";
+  }
+
   return "/";
 }

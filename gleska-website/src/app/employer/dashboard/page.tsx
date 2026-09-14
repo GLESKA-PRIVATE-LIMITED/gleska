@@ -30,6 +30,7 @@ import {
 import { toast } from "sonner";
 import Link from "next/link";
 import apiClient from "@/lib/api";
+import { formatSubscriptionExpiry, isSubscriptionActive } from "@/lib/subscription";
 import { getBrowserLocation, getLocationErrorMessage, InaccurateLocationError } from "@/lib/location";
 
 import LocationPicker, { LocationSelection } from "@/components/LocationPicker";
@@ -68,7 +69,24 @@ declare global {
   interface Window {
     SpeechRecognition?: new () => SpeechRecognitionLike;
     webkitSpeechRecognition?: new () => SpeechRecognitionLike;
+    Cashfree?: (options: { mode: "sandbox" | "production" }) => {
+      checkout: (options: { paymentSessionId: string; redirectTarget: "_self" }) => Promise<void> | void;
+    };
   }
+}
+
+async function loadCashfree() {
+  if (window.Cashfree) return window.Cashfree;
+  await new Promise<void>((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "https://sdk.cashfree.com/js/v3/cashfree.js";
+    script.async = true;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error("Unable to load Cashfree checkout"));
+    document.head.appendChild(script);
+  });
+  if (!window.Cashfree) throw new Error("Cashfree checkout is unavailable");
+  return window.Cashfree;
 }
 
 interface EmployerProfile {
@@ -255,6 +273,12 @@ export default function EmployerDashboard() {
   const [jobMatchSummaryState, setJobMatchSummaryState] = React.useState<MatchSummaryState>("LOADING");
   const [jobViewMode, setJobViewMode] = React.useState<JobViewMode>(null);
   const selectedJobRequestRef = React.useRef(0);
+  const [commissionRecovery, setCommissionRecovery] = React.useState<{
+    orderId: string;
+    jobId: string;
+    workerProfileId: string;
+    status: "PENDING" | "FAILED";
+  } | null>(null);
 
   const scrollToJobForm = () => {
     setIsWorkSiteModalOpen(false);
@@ -271,6 +295,16 @@ export default function EmployerDashboard() {
   const handleOpenWorkSiteModal = () => openWorkSiteModal("create");
   const handleOpenJobLocationPicker = () => openWorkSiteModal("location");
   const handleOpenJobSiteSelector = () => openWorkSiteModal("site");
+
+  const loadEmployerProfile = React.useCallback(async () => {
+    if (!user || user.role !== "EMPLOYER") return;
+    try {
+      const response = await apiClient.get<EmployerProfile>("/api/v1/employers/me", { withCredentials: true });
+      setEmployerProfile(response.data);
+    } catch {
+      // Existing dashboard loaders remain authoritative for their own errors.
+    }
+  }, [user]);
 
   useEffect(() => {
     if (!isLoading && !user) {
@@ -290,18 +324,7 @@ export default function EmployerDashboard() {
   useEffect(() => {
     if (isLoading || !user || user.role !== "EMPLOYER") return;
 
-    const loadEmployerProfile = async () => {
-      try {
-        const response = await apiClient.get("/api/v1/employers/me", {
-          withCredentials: true,
-        });
-        setEmployerProfile(response.data);
-      } catch {
-        // Ignored or logged if needed
-      }
-    };
-
-    loadEmployerProfile();
+    void Promise.resolve().then(loadEmployerProfile);
 
     const loadAvailableWorkerCount = async () => {
       try {
@@ -352,6 +375,95 @@ export default function EmployerDashboard() {
     };
 
     loadJobs();
+  }, [isLoading, loadEmployerProfile, user]);
+
+  useEffect(() => {
+    if (isLoading || !user || user.role !== "EMPLOYER") return;
+    window.addEventListener("focus", loadEmployerProfile);
+    document.addEventListener("visibilitychange", loadEmployerProfile);
+    return () => {
+      window.removeEventListener("focus", loadEmployerProfile);
+      document.removeEventListener("visibilitychange", loadEmployerProfile);
+    };
+  }, [isLoading, loadEmployerProfile, user]);
+
+  // Handle return from Cashfree checkout for Individual Commission
+  React.useEffect(() => {
+    if (isLoading || !user || user.role !== "EMPLOYER") return;
+    const urlParams = new URLSearchParams(window.location.search);
+    const orderId = urlParams.get("order_id");
+    const storedPending = sessionStorage.getItem("gleska_pending_commission");
+    if (!storedPending) return;
+
+    let pendingData: { jobId: string; workerProfileId: string; orderId?: string } | null = null;
+    try {
+      pendingData = JSON.parse(storedPending);
+    } catch {
+      return;
+    }
+
+    if (!pendingData || !pendingData.jobId || !pendingData.workerProfileId || !pendingData.orderId) {
+      return;
+    }
+
+    if (!orderId) {
+      window.setTimeout(() => {
+        setCommissionRecovery({
+          orderId: pendingData.orderId!,
+          jobId: pendingData.jobId!,
+          workerProfileId: pendingData.workerProfileId!,
+          status: "PENDING",
+        });
+        setJobViewMode("workers");
+        setSelectedJobId(pendingData.jobId!);
+      }, 0);
+      return;
+    }
+
+    if (pendingData.orderId !== orderId) {
+      toast.error("Payment return did not match the pending worker selection.", { id: "commission-verify" });
+      window.setTimeout(() => {
+        setJobMatchesError("Payment return did not match the pending worker selection. The worker was not dispatched.");
+      }, 0);
+      return;
+    }
+
+    const { jobId, workerProfileId } = pendingData;
+
+    const resumeDispatch = async () => {
+      // Keep the recovery record until verification and dispatch reach a terminal success.
+      const newUrl = window.location.pathname;
+      window.history.replaceState({}, document.title, newUrl);
+
+      toast.loading("Verifying commission payment...", { id: "commission-verify" });
+      try {
+        const verifyRes = await apiClient.post<{ status: string }>(
+          `/api/v1/payments/verify/${encodeURIComponent(orderId)}`,
+          {},
+          { withCredentials: true }
+        );
+
+        if (verifyRes.data.status === "SUCCESS") {
+          toast.loading("Payment verified! Dispatching worker...", { id: "commission-verify" });
+          await dispatchPaidCommission(jobId, workerProfileId);
+          sessionStorage.removeItem("gleska_pending_commission");
+          setCommissionRecovery(null);
+          toast.success("Payment verified and worker dispatched.", { id: "commission-verify" });
+        } else if (verifyRes.data.status === "PENDING") {
+          setCommissionRecovery({ orderId, jobId, workerProfileId, status: "PENDING" });
+          toast.info("Payment is pending confirmation. Return here to retry verification once it completes.", { id: "commission-verify" });
+        } else {
+          setCommissionRecovery({ orderId, jobId, workerProfileId, status: "FAILED" });
+          toast.error(`Payment ${verifyRes.data.status.toLowerCase()}. Worker was not dispatched.`, { id: "commission-verify" });
+        }
+      } catch (err: any) {
+        const detail = err?.response?.data?.detail;
+        setCommissionRecovery({ orderId, jobId, workerProfileId, status: "FAILED" });
+        toast.error(typeof detail === "string" ? `${detail}. Retry from this dashboard.` : "Payment verification or dispatch failed. Retry from this dashboard.", { id: "commission-verify" });
+      }
+    };
+
+    void resumeDispatch();
   }, [isLoading, user]);
 
   const handleVoiceInput = React.useCallback(() => {
@@ -706,6 +818,42 @@ export default function EmployerDashboard() {
     }
   };
 
+  async function dispatchPaidCommission(jobId: string, workerProfileId: string) {
+    const response = await apiClient.post<{ match_id: string; worker_profile_id: string; match_status: string; job_status: string; accepted_count: number }>(
+      `/api/v1/jobs/${jobId}/matches/accept`,
+      { worker_profile_id: workerProfileId },
+      { withCredentials: true },
+    );
+
+    const requestId = selectedJobRequestRef.current + 1;
+    selectedJobRequestRef.current = requestId;
+    setJobViewMode("workers");
+    setSelectedJobId(jobId);
+    setJobMatchesError("");
+    setSelectedJob((current) => current && current.id === jobId
+      ? { ...current, status: response.data.job_status }
+      : current);
+    setJobs((current) => current.map((job) => job.id === jobId
+      ? { ...job, status: response.data.job_status }
+      : job));
+
+    const [jobResult, matchesResult, summaryResult, jobsResult] = await Promise.allSettled([
+      apiClient.get<JobDetails>(`/api/v1/jobs/${jobId}`, { withCredentials: true }),
+      apiClient.get<JobMatches>(`/api/v1/jobs/${jobId}/matches`, { withCredentials: true }),
+      apiClient.get<JobMatchSummary[]>("/api/v1/jobs/match-summary", { withCredentials: true }),
+      apiClient.get<Job[]>("/api/v1/jobs", { withCredentials: true }),
+    ]);
+
+    if (selectedJobRequestRef.current !== requestId) return;
+    if (jobResult.status === "fulfilled") setSelectedJob(jobResult.value.data);
+    if (matchesResult.status === "fulfilled") setJobMatches(matchesResult.value.data);
+    if (summaryResult.status === "fulfilled") {
+      setJobMatchSummaries(Object.fromEntries(summaryResult.value.data.map((summary) => [summary.job_id, summary])));
+      setJobMatchSummaryState("FOUND");
+    }
+    if (jobsResult.status === "fulfilled") setJobs(jobsResult.value.data);
+  }
+
   const handleSelectWorker = async (jobId: string, workerProfileId: string) => {
     const requestId = selectedJobRequestRef.current;
     setAcceptingWorkerId(workerProfileId);
@@ -742,11 +890,87 @@ export default function EmployerDashboard() {
       toast.success("Worker selected");
     } catch (err: any) {
       if (selectedJobRequestRef.current !== requestId || selectedJobId !== jobId) return;
-      setJobMatchesError(err.response?.data?.detail || "Unable to select worker right now.");
+      const status = err?.response?.status;
+      const detail = err?.response?.data?.detail;
+
+      // Individual employer commission required — launch Cashfree checkout
+      if (status === 402 && typeof detail === "object" && detail?.code === "COMMISSION_REQUIRED") {
+        const { job_id: commissionJobId, worker_profile_id: commissionWorkerId } = detail;
+        try {
+          const orderRes = await apiClient.post<{ payment_session_id: string; order_id: string }>(
+            "/api/v1/payments/employer/create-commission-order",
+            { job_id: commissionJobId ?? jobId, worker_profile_id: commissionWorkerId ?? workerProfileId },
+            { withCredentials: true },
+          );
+          const cashfree = await loadCashfree();
+          const mode = process.env.NEXT_PUBLIC_CASHFREE_ENV === "production" ? "production" : "sandbox";
+          // Store pending dispatch info so we can retry after Cashfree redirect
+          sessionStorage.setItem(
+            "gleska_pending_commission",
+            JSON.stringify({
+              jobId: commissionJobId ?? jobId,
+              workerProfileId: commissionWorkerId ?? workerProfileId,
+              orderId: orderRes.data.order_id,
+            }),
+          );
+          await cashfree({ mode }).checkout({
+            paymentSessionId: orderRes.data.payment_session_id,
+            redirectTarget: "_self",
+          });
+        } catch (commErr: any) {
+          const commMsg = commErr?.response?.data?.detail;
+          setJobMatchesError(typeof commMsg === "string" ? commMsg : "Unable to start commission payment.");
+          toast.error(typeof commMsg === "string" ? commMsg : "Unable to start commission payment.");
+        }
+        return;
+      }
+
+      // Business employer subscription required
+      if (status === 402 && (typeof detail === "string" && detail.includes("SUBSCRIPTION_REQUIRED"))) {
+        toast.error("Active subscription required. Please renew your subscription.");
+        setJobMatchesError("Active subscription required. Please renew your subscription.");
+        return;
+      }
+
+      setJobMatchesError(typeof detail === "string" ? detail : "Unable to select worker right now.");
     } finally {
       setAcceptingWorkerId(null);
     }
   };
+
+  const retryCommissionRecovery = async () => {
+    if (!commissionRecovery) return;
+    const { orderId, jobId, workerProfileId } = commissionRecovery;
+    toast.loading("Checking commission payment...", { id: "commission-verify" });
+    try {
+      const verifyRes = await apiClient.post<{ status: string }>(
+        `/api/v1/payments/verify/${encodeURIComponent(orderId)}`,
+        {},
+        { withCredentials: true },
+      );
+      if (verifyRes.data.status !== "SUCCESS") {
+        setCommissionRecovery({
+          orderId,
+          jobId,
+          workerProfileId,
+          status: verifyRes.data.status === "PENDING" ? "PENDING" : "FAILED",
+        });
+        toast.info(`Payment is ${verifyRes.data.status.toLowerCase()}.`, { id: "commission-verify" });
+        return;
+      }
+
+      toast.loading("Payment verified! Dispatching worker...", { id: "commission-verify" });
+      await dispatchPaidCommission(jobId, workerProfileId);
+      sessionStorage.removeItem("gleska_pending_commission");
+      setCommissionRecovery(null);
+      toast.success("Payment verified and worker dispatched.", { id: "commission-verify" });
+    } catch (err: any) {
+      const detail = err?.response?.data?.detail;
+      setCommissionRecovery({ orderId, jobId, workerProfileId, status: "FAILED" });
+      toast.error(typeof detail === "string" ? detail : "Payment verification or dispatch failed. Retry again.", { id: "commission-verify" });
+    }
+  };
+
 
   const handleExtractWithAI = async () => {
     if (!aiPrompt.trim()) {
@@ -1081,6 +1305,24 @@ export default function EmployerDashboard() {
                 </p>
               </div>
             </div>
+          </div>
+
+          <div className="mb-8 rounded-2xl border border-slate-200 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900">
+            <p className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Subscription</p>
+            {employerProfile?.employer_type === "INDIVIDUAL" ? (
+              <>
+                <p className="mt-2 text-xl font-bold text-slate-900 dark:text-white">Commission-Based</p>
+                <p className="mt-1 text-sm text-slate-500">₹30 per worker dispatched</p>
+              </>
+            ) : (
+              <>
+                <p className="mt-2 text-xl font-bold text-slate-900 dark:text-white">
+                  {isSubscriptionActive(employerProfile?.subscription_valid_until) ? "Active" : employerProfile?.subscription_valid_until ? "Expired" : "Not Active"}
+                </p>
+                {formatSubscriptionExpiry(employerProfile?.subscription_valid_until) && <p className="mt-1 text-sm text-slate-500">Expires {formatSubscriptionExpiry(employerProfile?.subscription_valid_until)}</p>}
+                <p className="mt-1 text-sm text-slate-500">Business subscription · ₹2,000 / month</p>
+              </>
+            )}
           </div>
 
           {/* Grid */}
@@ -1503,6 +1745,14 @@ export default function EmployerDashboard() {
             </div>}
             {jobViewMode === "workers" && <div>
               <h3 className="text-sm font-bold uppercase text-slate-600 dark:text-slate-300">Matching Workers</h3>
+              {commissionRecovery && (
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                  <span>{commissionRecovery.status === "PENDING" ? "Commission payment is still pending." : "Commission payment needs verification or dispatch retry."}</span>
+                  <button type="button" onClick={() => void retryCommissionRecovery()} className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-700">
+                    Retry payment check
+                  </button>
+                </div>
+              )}
               {isJobMatchesLoading && <div className="mt-3 flex items-center gap-2 text-sm text-slate-500"><Loader2 size={16} className="animate-spin" /> Matching workers...</div>}
               {!isJobMatchesLoading && jobMatchesError && <p className="mt-3 text-sm text-rose-600 dark:text-rose-400">{jobMatchesError}</p>}
               {!isJobMatchesLoading && !jobMatchesError && jobMatches?.matches.length === 0 && <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">No suitable workers found yet.</p>}

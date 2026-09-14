@@ -3,7 +3,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
-from app.routers import health, auth, workers, employers, employer_workers, attendance, jobs, job_sites, locations, payments, contact, security
+from app.routers import health, auth, workers, employers, employer_workers, attendance, jobs, job_sites, locations, payments, contact, security, admin
 
 # Create FastAPI app
 app = FastAPI(
@@ -58,6 +58,7 @@ app.include_router(locations.router, prefix=settings.API_V1_PREFIX, tags=["locat
 app.include_router(payments.router, prefix=settings.API_V1_PREFIX, tags=["payments"])
 app.include_router(contact.router, prefix=settings.API_V1_PREFIX + "/contact", tags=["contact"])
 app.include_router(security.router, prefix=settings.API_V1_PREFIX)
+app.include_router(admin.router, prefix=settings.API_V1_PREFIX, tags=["admin"])
 
 
 @app.get("/")
