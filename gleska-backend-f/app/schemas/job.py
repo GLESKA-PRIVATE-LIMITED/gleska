@@ -23,6 +23,8 @@ class JobCreate(BaseModel):
     min_experience: int | None = Field(default=None, ge=0, le=MAX_EXPERIENCE_YEARS)
     trade_id: str | None = Field(default=None, min_length=1, max_length=120)
     required_skills: list[str] | None = None
+    work_duration_days: int | None = Field(default=None, ge=1, le=365)
+    work_timing: str | None = Field(default=None, max_length=120)
 
     @field_validator("title")
     @classmethod
@@ -30,6 +32,16 @@ class JobCreate(BaseModel):
         normalized = " ".join(value.split())
         if not normalized:
             raise ValueError("title must not be blank")
+        return normalized
+
+    @field_validator("work_timing")
+    @classmethod
+    def normalize_work_timing(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = " ".join(value.split())
+        if not normalized:
+            return None
         return normalized
 
     @field_validator("trade_id")
@@ -71,6 +83,8 @@ class JobResponse(BaseModel):
     min_experience: int | None = None
     trade_id: str | None = None
     required_skills: list[str] = Field(default_factory=list)
+    work_duration_days: int | None = None
+    work_timing: str | None = None
     status: str
     created_at: datetime
     updated_at: datetime | None = None

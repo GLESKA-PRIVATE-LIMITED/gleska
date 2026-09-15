@@ -7,6 +7,8 @@ from app.core.security import require_employer
 from app.schemas.auth import UserResponse
 from app.schemas.job import JobCreate, JobDetailsResponse, JobMatchAcceptRequest, JobMatchAcceptResponse, JobMatchSummary, JobMatchesResponse, JobResponse
 from app.schemas.job_extraction import JobExtractionRequest, JobExtractionResponse
+from app.schemas.job_assistant import JobAssistantMessageRequest, JobAssistantResponse
+from app.services.job_assistant_service import JobAssistantService
 from app.services.job_service import JobNotFound, JobPaymentRequired, JobService
 from app.services.job_match_service import JobMatchService
 from app.services.matching_service import MatchingError
@@ -144,3 +146,18 @@ async def extract_job_requirements(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
 
     return JobExtractionResponse(parsed_data=extraction)
+
+
+@router.post("/assistant/message", response_model=JobAssistantResponse)
+async def process_assistant_message(
+    request: JobAssistantMessageRequest,
+    user: UserResponse = Depends(require_employer),
+):
+    """Conversational endpoint to extract, validate, and refine job creation requirements."""
+    try:
+        return await JobAssistantService.process_message(user, request)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Assistant message processing failed: user_id=%s", user.id)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="ASSISTANT_PROCESSING_FAILED") from exc

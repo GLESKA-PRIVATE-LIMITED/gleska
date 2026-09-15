@@ -61,7 +61,7 @@ class FakeSupabase:
     def __init__(self, site_rows=None):
         self.tables = {
             "employers": Query("employers", [{"id": "employer-id", "supabase_auth_id": "user-id", "is_active": True, "is_deleted": False}]),
-            "employer_profiles": Query("employer_profiles", [{"id": "profile-id", "onboarding_status": "COMPLETED", "has_availed_free_dispatch": False, "subscription_valid_until": None}]),
+            "employer_profiles": Query("employer_profiles", [{"id": "profile-id", "employer_type": "INDIVIDUAL", "onboarding_status": "COMPLETED", "has_availed_free_dispatch": False, "subscription_valid_until": None}]),
             "job_sites": Query("job_sites", site_rows if site_rows is not None else [{"id": SITE_ID}]),
             "jobs": Query("jobs", []),
         }
@@ -81,6 +81,8 @@ class FakeSupabase:
             "min_experience": params["p_min_experience"],
             "trade_id": params["p_trade_id"],
             "required_skills": params["p_required_skills"],
+            "work_duration_days": params.get("p_work_duration_days"),
+            "work_timing": params.get("p_work_timing"),
             "status": "SEARCHING",
         }
         return query

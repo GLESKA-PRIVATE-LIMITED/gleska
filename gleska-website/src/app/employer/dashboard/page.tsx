@@ -26,6 +26,8 @@ import {
   ArrowRight,
   ChevronRight,
   Eye,
+  Sparkles,
+  CheckCircle2,
 } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
@@ -41,16 +43,41 @@ import { formatEmployerType } from "@/components/AccountManagementShell";
  * Supported languages for job description input.
  * Mapped to browser Web Speech Recognition language codes.
  */
-const SUPPORTED_LANGUAGES = {
-  MARATHI: { label: "Marathi", code: "mr-IN" as const },
-  HINDI: { label: "Hindi", code: "hi-IN" as const },
-  TAMIL: { label: "Tamil", code: "ta-IN" as const },
-  ENGLISH: { label: "English", code: "en-IN" as const },
-  HINGLISH: { label: "Hinglish", code: "en-IN" as const },
+type AssistantLanguage = "EN" | "HI" | "MR" | "TA" | "HINGLISH";
+
+const SUPPORTED_LANGUAGES: Record<AssistantLanguage, { label: string; speechCode: string }> = {
+  MR: { label: "Marathi", speechCode: "mr-IN" },
+  HI: { label: "Hindi", speechCode: "hi-IN" },
+  TA: { label: "Tamil", speechCode: "ta-IN" },
+  EN: { label: "English", speechCode: "en-IN" },
+  HINGLISH: { label: "Hinglish", speechCode: "en-IN" },
 };
 
-const LANGUAGE_OPTIONS = Object.values(SUPPORTED_LANGUAGES);
-const DEFAULT_LANGUAGE: string = "en-IN";
+const LANGUAGE_OPTIONS = Object.entries(SUPPORTED_LANGUAGES) as [AssistantLanguage, { label: string; speechCode: string }][];
+const DEFAULT_LANGUAGE: AssistantLanguage = "EN";
+
+const ASSISTANT_COPY: Record<AssistantLanguage, Record<string, string>> = {
+  EN: {
+    welcome: "Hello! Tell me about the job you want to create. For example: 5 cooks for 20 days, ₹700 per day, 8 AM to 5 PM.",
+    heading: "AI Job Creation Assistant", subtitle: "Speak or type requirements naturally", listening: "Listening...", speak: "Speak requirement",
+    thinking: "Understanding requirements & validating...", placeholder: "e.g. 5 cooks for 20 days, ₹700/day, 8 AM to 5 PM", preview: "Structured Job Preview",
+    ready: "Ready to create", incomplete: "Incomplete", role: "Role / Title", workers: "Workers Needed", site: "Work Site", wage: "Daily Wage", duration: "Work Duration", timing: "Daily Timing", experience: "Min Experience", missing: "Missing", required: "Required", selectSite: "Select site", years: "years", year: "year", days: "days", create: "Confirm & Create Job", creating: "Creating job...", complete: "Complete all requirements to create job", languageChanged: "Language changed. Please continue with your requirements in English.", error: "Sorry, I encountered an issue. Please try again.", voiceUnsupported: "Speech recognition is not supported in this browser. Please type your description instead.", noSpeech: "No speech was captured. Please try again.", micDenied: "Microphone permission was denied. Please allow microphone access and try again.", noDetected: "No speech was detected. Please try again.", voiceFailed: "Could not capture voice input. Please try again.",
+  },
+  HI: {
+    welcome: "नमस्ते! आप जो नौकरी बनाना चाहते हैं, उसके बारे में बताएं। उदाहरण: 20 दिनों के लिए 5 कुक, ₹700 रोज़, सुबह 8 बजे से शाम 5 बजे तक।",
+    heading: "एआई नौकरी निर्माण सहायक", subtitle: "अपनी ज़रूरतें स्वाभाविक रूप से बोलें या लिखें", listening: "सुन रहा है...", speak: "ज़रूरत बताएं",
+    thinking: "जानकारी समझी और जांची जा रही है...", placeholder: "उदाहरण: 20 दिनों के लिए 5 कुक, ₹700 रोज़, सुबह 8 से शाम 5 बजे तक", preview: "नौकरी का विवरण", ready: "बनाने के लिए तैयार", incomplete: "अपूर्ण", role: "भूमिका / पद", workers: "आवश्यक कामगार", site: "कार्य स्थल", wage: "दैनिक वेतन", duration: "काम की अवधि", timing: "दैनिक समय", experience: "न्यूनतम अनुभव", missing: "आवश्यक", required: "आवश्यक", selectSite: "स्थान चुनें", years: "वर्ष", year: "वर्ष", days: "दिन", create: "पुष्टि करें और नौकरी बनाएं", creating: "नौकरी बनाई जा रही है...", complete: "नौकरी बनाने के लिए सभी जानकारी पूरी करें", languageChanged: "भाषा बदल दी गई है। कृपया अपनी ज़रूरतें हिंदी में बताना जारी रखें।", error: "माफ़ कीजिए, एक समस्या आई। कृपया फिर से कोशिश करें।", voiceUnsupported: "इस ब्राउज़र में आवाज़ पहचान उपलब्ध नहीं है। कृपया अपनी जानकारी लिखें।", noSpeech: "आवाज़ नहीं मिली। कृपया फिर से कोशिश करें।", micDenied: "माइक्रोफ़ोन की अनुमति नहीं मिली। कृपया अनुमति देकर फिर से कोशिश करें।", noDetected: "आवाज़ पहचानी नहीं गई। कृपया फिर से कोशिश करें।", voiceFailed: "आवाज़ दर्ज नहीं हो सकी। कृपया फिर से कोशिश करें।",
+  },
+  MR: {
+    welcome: "नमस्कार! तुम्हाला तयार करायच्या नोकरीबद्दल सांगा. उदाहरण: 20 दिवसांसाठी 5 स्वयंपाकी, ₹700 रोज, सकाळी 8 ते संध्याकाळी 5.", heading: "एआय नोकरी निर्मिती सहाय्यक", subtitle: "तुमच्या गरजा सहज बोला किंवा टाइप करा", listening: "ऐकत आहे...", speak: "गरज सांगा", thinking: "गरजा समजून तपासल्या जात आहेत...", placeholder: "उदाहरण: 20 दिवसांसाठी 5 स्वयंपाकी, ₹700 रोज", preview: "नोकरीचा तपशील", ready: "तयार आहे", incomplete: "अपूर्ण", role: "भूमिका / पद", workers: "आवश्यक कामगार", site: "कामाचे ठिकाण", wage: "दैनिक वेतन", duration: "कामाचा कालावधी", timing: "दररोजची वेळ", experience: "किमान अनुभव", missing: "आवश्यक", required: "आवश्यक", selectSite: "ठिकाण निवडा", years: "वर्षे", year: "वर्ष", days: "दिवस", create: "पुष्टी करा आणि नोकरी तयार करा", creating: "नोकरी तयार होत आहे...", complete: "नोकरी तयार करण्यासाठी सर्व माहिती पूर्ण करा", languageChanged: "भाषा बदलली आहे. कृपया मराठीत तुमच्या गरजा सांगा.", error: "माफ करा, एक समस्या आली. कृपया पुन्हा प्रयत्न करा.", voiceUnsupported: "या ब्राउझरमध्ये आवाज ओळख उपलब्ध नाही. कृपया टाइप करा.", noSpeech: "आवाज मिळाला नाही. कृपया पुन्हा प्रयत्न करा.", micDenied: "मायक्रोफोनची परवानगी नाकारली. कृपया परवानगी द्या.", noDetected: "आवाज ओळखला गेला नाही. कृपया पुन्हा प्रयत्न करा.", voiceFailed: "आवाज नोंदवता आला नाही. कृपया पुन्हा प्रयत्न करा.",
+  },
+  TA: {
+    welcome: "வணக்கம்! நீங்கள் உருவாக்க விரும்பும் வேலை பற்றி சொல்லுங்கள். உதாரணம்: 20 நாட்களுக்கு 5 சமையல்காரர்கள், தினசரி ₹700, காலை 8 முதல் மாலை 5 வரை.", heading: "AI வேலை உருவாக்க உதவியாளர்", subtitle: "உங்கள் தேவைகளை இயல்பாகப் பேசவும் அல்லது தட்டச்சு செய்யவும்", listening: "கேட்கிறது...", speak: "தேவையைச் சொல்லுங்கள்", thinking: "தேவைகள் புரிந்துகொள்ளப்பட்டு சரிபார்க்கப்படுகின்றன...", placeholder: "உதாரணம்: 20 நாட்களுக்கு 5 சமையல்காரர்கள், தினசரி ₹700", preview: "வேலை விவரம்", ready: "உருவாக்கத் தயார்", incomplete: "முழுமையில்லை", role: "பங்கு / பதவி", workers: "தேவையான தொழிலாளர்கள்", site: "வேலை இடம்", wage: "தினசரி ஊதியம்", duration: "வேலை காலம்", timing: "தினசரி நேரம்", experience: "குறைந்தபட்ச அனுபவம்", missing: "தேவை", required: "தேவை", selectSite: "இடத்தைத் தேர்ந்தெடுக்கவும்", years: "ஆண்டுகள்", year: "ஆண்டு", days: "நாட்கள்", create: "உறுதிசெய்து வேலையை உருவாக்கவும்", creating: "வேலை உருவாக்கப்படுகிறது...", complete: "வேலையை உருவாக்க அனைத்து தகவல்களையும் நிரப்பவும்", languageChanged: "மொழி மாற்றப்பட்டது. தமிழில் உங்கள் தேவைகளைத் தொடரவும்.", error: "மன்னிக்கவும், ஒரு சிக்கல் ஏற்பட்டது. மீண்டும் முயற்சிக்கவும்.", voiceUnsupported: "இந்த உலாவியில் குரல் அறிதல் இல்லை. தயவுசெய்து தட்டச்சு செய்யவும்.", noSpeech: "குரல் பதிவு செய்யப்படவில்லை. மீண்டும் முயற்சிக்கவும்.", micDenied: "மைக்ரோஃபோன் அனுமதி மறுக்கப்பட்டது. அனுமதி அளித்து மீண்டும் முயற்சிக்கவும்.", noDetected: "குரல் கண்டறியப்படவில்லை. மீண்டும் முயற்சிக்கவும்.", voiceFailed: "குரலைப் பதிவு செய்ய முடியவில்லை. மீண்டும் முயற்சிக்கவும்.",
+  },
+  HINGLISH: {
+    welcome: "Namaste! Aap jo job banana chahte hain uske baare mein batayein. Example: 20 din ke liye 5 cooks, ₹700 per day, subah 8 se shaam 5.", heading: "AI Job Creation Assistant", subtitle: "Requirements naturally bolen ya type karein", listening: "Sun raha hoon...", speak: "Requirement bolen", thinking: "Requirements samajhkar validate kar raha hoon...", placeholder: "Example: 20 din ke liye 5 cooks, ₹700/day, subah 8 se shaam 5", preview: "Job Preview", ready: "Banane ke liye ready", incomplete: "Incomplete", role: "Role / Title", workers: "Required Workers", site: "Work Site", wage: "Daily Wage", duration: "Work Duration", timing: "Daily Timing", experience: "Minimum Experience", missing: "Required", required: "Required", selectSite: "Site select karein", years: "years", year: "year", days: "days", create: "Confirm karke Job Banayein", creating: "Job ban rahi hai...", complete: "Job banane ke liye saari requirements complete karein", languageChanged: "Language change ho gayi hai. Ab Hinglish mein requirements batayein.", error: "Sorry, ek problem aayi. Please dobara try karein.", voiceUnsupported: "Is browser mein speech recognition supported nahi hai. Please type karein.", noSpeech: "Speech capture nahi hui. Please dobara try karein.", micDenied: "Microphone permission deny hui. Please permission allow karein.", noDetected: "Speech detect nahi hui. Please dobara try karein.", voiceFailed: "Voice input capture nahi ho saka. Please dobara try karein.",
+  },
+};
 
 interface SpeechRecognitionLike {
   lang: string;
@@ -117,9 +144,30 @@ interface Job {
   min_experience?: number | null;
   trade_id?: string | null;
   required_skills?: string[];
+  work_duration_days?: number | null;
+  work_timing?: string | null;
   status: string;
   created_at: string;
   updated_at?: string | null;
+}
+
+interface AssistantMessage {
+  id: string;
+  sender: "user" | "assistant";
+  text: string;
+  timestamp: string;
+}
+
+interface AssistantJobState {
+  title?: string | null;
+  headcount_required?: number | null;
+  max_daily_salary?: number | null;
+  min_experience?: number | null;
+  work_duration_days?: number | null;
+  work_timing?: string | null;
+  required_skills: string[];
+  job_site_id?: string | null;
+  job_site_name?: string | null;
 }
 
 interface JobDetails extends Job {
@@ -170,16 +218,6 @@ interface JobMatchSummary {
   job_id: string;
   current_match_count: number;
   matching_status: "FOUND" | "NO_MATCHES";
-}
-
-interface JobExtractionResponse {
-  parsed_data: {
-    title: string;
-    headcount_required: number;
-    max_daily_salary: number | null;
-    min_experience: number;
-    skills?: string[];
-  };
 }
 
 function EmployerProfileMenuItems({
@@ -239,14 +277,22 @@ export default function EmployerDashboard() {
   const [isSiteSaving, setIsSiteSaving] = React.useState(false);
   const [jobs, setJobs] = React.useState<Job[]>([]);
   const [availableWorkerCount, setAvailableWorkerCount] = React.useState(0);
-  const [jobForm, setJobForm] = React.useState({ job_site_id: "", title: "", headcount_required: "1", max_daily_salary: "", min_experience: "", trade_id: "", required_skills: [] as string[] });
-  const [skillInput, setSkillInput] = React.useState("");
-  const [jobError, setJobError] = React.useState("");
+  const [assistantMessages, setAssistantMessages] = React.useState<AssistantMessage[]>([
+    {
+      id: "welcome",
+      sender: "assistant",
+      text: ASSISTANT_COPY.EN.welcome,
+      timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+    },
+  ]);
+  const [conversationId, setConversationId] = React.useState<string | null>(null);
+  const [assistantState, setAssistantState] = React.useState<AssistantJobState>({ required_skills: [] });
+  const [missingFields, setMissingFields] = React.useState<string[]>([]);
+  const [readyToCreate, setReadyToCreate] = React.useState(false);
+  const [isAssistantSending, setIsAssistantSending] = React.useState(false);
+  const [assistantInput, setAssistantInput] = React.useState("");
   const [isJobSaving, setIsJobSaving] = React.useState(false);
-  const [aiPrompt, setAiPrompt] = React.useState("");
-  const [aiError, setAiError] = React.useState("");
-  const [isExtracting, setIsExtracting] = React.useState(false);
-  const [selectedLanguageCode, setSelectedLanguageCode] = React.useState(DEFAULT_LANGUAGE);
+  const [selectedAssistantLanguage, setSelectedAssistantLanguage] = React.useState<AssistantLanguage>(DEFAULT_LANGUAGE);
   const [isListening, setIsListening] = React.useState(false);
   const [voiceError, setVoiceError] = React.useState("");
   const speechRecognitionRef = React.useRef<SpeechRecognitionLike | null>(null);
@@ -280,10 +326,25 @@ export default function EmployerDashboard() {
     status: "PENDING" | "FAILED";
   } | null>(null);
 
-  const scrollToJobForm = () => {
+  const assistantCopy = ASSISTANT_COPY[selectedAssistantLanguage];
+
+  const handleAssistantLanguageChange = (language: AssistantLanguage) => {
+    setSelectedAssistantLanguage(language);
+    setAssistantMessages((current) => [
+      ...current,
+      {
+        id: `language-${Date.now()}`,
+        sender: "assistant",
+        text: ASSISTANT_COPY[language].languageChanged,
+        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      },
+    ]);
+  };
+
+  const scrollToAssistant = () => {
     setIsWorkSiteModalOpen(false);
     setWorkSiteModalMode(null);
-    document.getElementById("create-job")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    document.getElementById("job-assistant")?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
   const openWorkSiteModal = (mode: Exclude<WorkSiteModalMode, null>) => {
@@ -292,7 +353,6 @@ export default function EmployerDashboard() {
     setIsWorkSiteModalOpen(true);
   };
 
-  const handleOpenWorkSiteModal = () => openWorkSiteModal("create");
   const handleOpenJobLocationPicker = () => openWorkSiteModal("location");
   const handleOpenJobSiteSelector = () => openWorkSiteModal("site");
 
@@ -360,7 +420,6 @@ export default function EmployerDashboard() {
           withCredentials: true,
         });
         setJobs(response.data);
-        setJobError("");
         try {
           const summaryResponse = await apiClient.get<JobMatchSummary[]>('/api/v1/jobs/match-summary', { withCredentials: true });
           setJobMatchSummaries(Object.fromEntries(summaryResponse.data.map((summary) => [summary.job_id, summary])));
@@ -370,7 +429,6 @@ export default function EmployerDashboard() {
           setJobMatchSummaryState("ERROR");
         }
       } catch (err: any) {
-        setJobError(err.response?.data?.detail || "Unable to load jobs");
       }
     };
 
@@ -469,7 +527,7 @@ export default function EmployerDashboard() {
   const handleVoiceInput = React.useCallback(() => {
     const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognitionCtor) {
-      setVoiceError("Speech recognition is not supported in this browser. Please type your description instead.");
+      setVoiceError(assistantCopy.voiceUnsupported);
       return;
     }
 
@@ -481,7 +539,7 @@ export default function EmployerDashboard() {
     }
 
     const recognition = new SpeechRecognitionCtor() as SpeechRecognitionLike;
-    recognition.lang = selectedLanguageCode;
+    recognition.lang = SUPPORTED_LANGUAGES[selectedAssistantLanguage].speechCode;
     recognition.interimResults = false;
     recognition.maxAlternatives = 1;
 
@@ -497,26 +555,27 @@ export default function EmployerDashboard() {
         .trim();
 
       if (!transcript) {
-        setVoiceError("No speech was captured. Please try again.");
+        setVoiceError(assistantCopy.noSpeech);
         setIsListening(false);
         return;
       }
 
-      setAiPrompt((current) => (current ? `${current} ${transcript}` : transcript));
+      setAssistantInput(transcript);
       setVoiceError("");
       setIsListening(false);
+      void handleSendAssistantMessage(transcript);
     };
 
     recognition.onerror = (event: any) => {
       const code = event?.error ?? "unknown";
       const friendlyMessage =
         code === "not-allowed"
-          ? "Microphone permission was denied. Please allow microphone access and try again."
+          ? assistantCopy.micDenied
           : code === "no-speech"
-            ? "No speech was detected. Please try again."
+            ? assistantCopy.noDetected
             : code === "not-supported"
-              ? "Speech recognition is not supported in this browser. Please type your description instead."
-              : "Could not capture voice input. Please try again.";
+              ? assistantCopy.voiceUnsupported
+              : assistantCopy.voiceFailed;
       setVoiceError(friendlyMessage);
       setIsListening(false);
     };
@@ -528,7 +587,7 @@ export default function EmployerDashboard() {
 
     speechRecognitionRef.current = recognition;
     recognition.start();
-  }, [selectedLanguageCode]);
+  }, [assistantCopy, selectedAssistantLanguage]);
 
   React.useEffect(() => {
     return () => {
@@ -602,7 +661,7 @@ export default function EmployerDashboard() {
       setJobSites((current) => [response.data, ...current]);
       setSelectedJobSiteId(response.data.id);
       setSelectedJobSite(response.data);
-      setJobForm((current) => ({ ...current, job_site_id: response.data.id }));
+      setAssistantState((current) => ({ ...current, job_site_id: response.data.id, job_site_name: response.data.name }));
       setSiteForm({ name: "", address: "", city: "", state: "", pincode: "", latitude: "", longitude: "" });
       setSelectedSiteLocation(null);
       setIsSiteLocationConfirmed(false);
@@ -647,7 +706,11 @@ export default function EmployerDashboard() {
   const selectJobSite = (site: JobSite) => {
     setSelectedJobSiteId(site.id);
     setSelectedJobSite(site);
-    setJobForm((current) => ({ ...current, job_site_id: site.id }));
+    setAssistantState((current) => ({
+      ...current,
+      job_site_id: site.id,
+      job_site_name: site.name,
+    }));
     setIsWorkSiteModalOpen(false);
     setWorkSiteModalMode(null);
   };
@@ -692,17 +755,6 @@ export default function EmployerDashboard() {
     setSiteForm((current) => ({ ...current, address: query }));
   };
 
-  const addRequiredSkill = () => {
-    const skill = skillInput.trim();
-    if (!skill || jobForm.required_skills.includes(skill)) return;
-    setJobForm((current) => ({ ...current, required_skills: [...current.required_skills, skill] }));
-    setSkillInput("");
-  };
-
-  const removeRequiredSkill = (skill: string) => {
-    setJobForm((current) => ({ ...current, required_skills: current.required_skills.filter((item) => item !== skill) }));
-  };
-
   const handleSiteDelete = async (siteId: string) => {
     try {
       await apiClient.delete(`/api/v1/job-sites/${siteId}`, { withCredentials: true });
@@ -710,7 +762,7 @@ export default function EmployerDashboard() {
       if (selectedJobSiteId === siteId) {
         setSelectedJobSiteId("");
         setSelectedJobSite(null);
-        setJobForm((current) => ({ ...current, job_site_id: "" }));
+        setAssistantState((current) => ({ ...current, job_site_id: null, job_site_name: null }));
       }
       toast.success("Work site removed");
     } catch (err: any) {
@@ -720,26 +772,88 @@ export default function EmployerDashboard() {
     }
   };
 
-  const handleJobSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!jobForm.job_site_id) {
-      const message = "Select an existing Job Site or create a new Work Site before creating the job.";
-      setJobError(message);
-      toast.error(message);
-      return;
-    }
-    setIsJobSaving(true);
-    setJobError("");
+  const handleSendAssistantMessage = async (messageText?: string) => {
+    const text = (messageText !== undefined ? messageText : assistantInput).trim();
+    if (!text || isAssistantSending) return;
+
+    setAssistantInput("");
+    const userMsgId = Date.now().toString();
+    const timeNow = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    setAssistantMessages((prev) => [
+      ...prev,
+      { id: userMsgId, sender: "user", text, timestamp: timeNow },
+    ]);
+    setIsAssistantSending(true);
+
     try {
-      const response = await apiClient.post<Job>("/api/v1/jobs", {
-        job_site_id: jobForm.job_site_id,
-        title: jobForm.title,
-        headcount_required: Number(jobForm.headcount_required),
-        max_daily_salary: jobForm.max_daily_salary ? Number(jobForm.max_daily_salary) : null,
-        min_experience: jobForm.min_experience ? Number(jobForm.min_experience) : null,
-        ...(jobForm.trade_id.trim() ? { trade_id: jobForm.trade_id.trim() } : {}),
-        required_skills: jobForm.required_skills,
+      const res = await apiClient.post<{
+        conversation_id: string;
+        assistant_message: string;
+        structured_state: AssistantJobState;
+        missing_fields: string[];
+        validation_errors: string[];
+        ready_to_create: boolean;
+      }>("/api/v1/jobs/assistant/message", {
+        message: text,
+        language: selectedAssistantLanguage,
+        conversation_id: conversationId,
+        current_state: assistantState,
+        selected_job_site_id: selectedJobSiteId || undefined,
       }, { withCredentials: true });
+
+      setConversationId(res.data.conversation_id);
+      setAssistantState(res.data.structured_state);
+      setMissingFields(res.data.missing_fields || []);
+      setReadyToCreate(res.data.ready_to_create);
+
+      if (res.data.structured_state.job_site_id) {
+        setSelectedJobSiteId(res.data.structured_state.job_site_id);
+        const site = jobSites.find((s) => s.id === res.data.structured_state.job_site_id) || null;
+        setSelectedJobSite(site);
+      }
+
+      setAssistantMessages((prev) => [
+        ...prev,
+        {
+          id: (Date.now() + 1).toString(),
+          sender: "assistant",
+          text: res.data.assistant_message,
+          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        },
+      ]);
+    } catch (err: any) {
+      const errorMsg = err.response?.data?.detail || assistantCopy.error;
+      setAssistantMessages((prev) => [
+        ...prev,
+        {
+          id: (Date.now() + 1).toString(),
+          sender: "assistant",
+          text: typeof errorMsg === "string" ? errorMsg : assistantCopy.error,
+          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        },
+      ]);
+    } finally {
+      setIsAssistantSending(false);
+    }
+  };
+
+  const handleCreateJobFromAssistant = async () => {
+    if (!readyToCreate || !assistantState.job_site_id || isJobSaving) return;
+
+    setIsJobSaving(true);
+    try {
+      const payload = {
+        job_site_id: assistantState.job_site_id,
+        title: assistantState.title,
+        headcount_required: Number(assistantState.headcount_required),
+        max_daily_salary: assistantState.max_daily_salary != null ? Number(assistantState.max_daily_salary) : null,
+        min_experience: assistantState.min_experience != null ? Number(assistantState.min_experience) : 0,
+        work_duration_days: assistantState.work_duration_days != null ? Number(assistantState.work_duration_days) : null,
+        work_timing: assistantState.work_timing || null,
+        required_skills: assistantState.required_skills || [],
+      };
+
+      const response = await apiClient.post<Job>("/api/v1/jobs", payload, { withCredentials: true });
       setJobs((current) => [response.data, ...current]);
       try {
         const summaryResponse = await apiClient.get<JobMatchSummary[]>('/api/v1/jobs/match-summary', { withCredentials: true });
@@ -748,12 +862,20 @@ export default function EmployerDashboard() {
       } catch {
         setJobMatchSummaryState("ERROR");
       }
-      setJobForm({ job_site_id: jobForm.job_site_id, title: "", headcount_required: "1", max_daily_salary: "", min_experience: "", trade_id: "", required_skills: [] });
-      setSkillInput("");
-      toast.success("Job created");
+
+      toast.success("Job created successfully!");
+      setAssistantMessages((prev) => [
+        ...prev,
+        {
+          id: (Date.now() + 2).toString(),
+          sender: "assistant",
+          text: `🎉 Job for ${payload.headcount_required} ${payload.title}(s) has been successfully created and published!`,
+          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        },
+      ]);
+      setReadyToCreate(false);
     } catch (err: any) {
       const message = err.response?.data?.detail || "Unable to create job";
-      setJobError(message);
       toast.error(message);
     } finally {
       setIsJobSaving(false);
@@ -971,39 +1093,6 @@ export default function EmployerDashboard() {
     }
   };
 
-
-  const handleExtractWithAI = async () => {
-    if (!aiPrompt.trim()) {
-      setAiError("Enter a natural-language job requirement first.");
-      return;
-    }
-
-    setIsExtracting(true);
-    setAiError("");
-    try {
-      const response = await apiClient.post<JobExtractionResponse>("/api/v1/jobs/nlp", {
-        ...(jobForm.job_site_id ? { job_site_id: jobForm.job_site_id } : {}),
-        prompt: aiPrompt.trim(),
-      }, { withCredentials: true });
-      const extracted = response.data.parsed_data;
-      setJobForm((current) => ({
-        ...current,
-        title: extracted.title,
-        headcount_required: String(extracted.headcount_required),
-        max_daily_salary: extracted.max_daily_salary == null ? "" : String(extracted.max_daily_salary),
-        min_experience: String(extracted.min_experience),
-        required_skills: extracted.skills || [],
-      }));
-
-      toast.success("Job requirements extracted");
-    } catch (err: any) {
-      const message = err.response?.data?.detail;
-      setAiError(typeof message === "string" ? message : "Unable to extract job requirements");
-    } finally {
-      setIsExtracting(false);
-    }
-  };
-
   return (
     <div className="flex flex-col md:flex-row min-h-screen bg-[#eef1fb] font-sans text-slate-900 dark:bg-slate-950 dark:text-slate-100">
       {/* Desktop Left Sidebar (hidden on mobile, flex on md+) */}
@@ -1060,7 +1149,7 @@ export default function EmployerDashboard() {
 
             <button
               type="button"
-              onClick={scrollToJobForm}
+              onClick={scrollToAssistant}
               className={`flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white transition ${
                 isSidebarOpen ? "text-left" : "justify-center"
               }`}
@@ -1211,7 +1300,7 @@ export default function EmployerDashboard() {
                   type="button"
                   onClick={() => {
                     setIsMobileMenuOpen(false);
-                    scrollToJobForm();
+                    scrollToAssistant();
                   }}
                   className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
                 >
@@ -1365,9 +1454,9 @@ export default function EmployerDashboard() {
           </div>
 
 
-          {/* COMPACT JOB SEARCH SECTION (CENTERED & PROPORTIONED TO REFERENCE DESIGN) */}
-          <div className="mx-auto max-w-2xl my-8 sm:my-10 space-y-5 flex flex-col items-center w-full">
-            {/* Top Row: Pill Buttons for Select Location & Job Site */}
+          {/* CONVERSATIONAL AI JOB ASSISTANT & LIVE STRUCTURED PREVIEW */}
+          <div id="job-assistant" className="mx-auto max-w-5xl my-8 sm:my-10 w-full space-y-6">
+            {/* Top Pill Buttons: Location & Job Site */}
             <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-6 w-full">
               {/* Select Location Pill Button */}
               <button
@@ -1410,211 +1499,206 @@ export default function EmployerDashboard() {
               </button>
             </div>
 
-            {/* Main Pill Search Bar */}
-            <div className="w-full max-w-xl relative flex items-center rounded-full border border-blue-500/80 bg-white p-1.5 shadow-xl dark:border-blue-500 dark:bg-slate-900 focus-within:ring-4 focus-within:ring-blue-500/20 transition-all">
-              {/* Microphone Icon Button (Left) */}
-              <button
-                type="button"
-                onClick={handleVoiceInput}
-                title={isListening ? "Listening..." : "Speak requirement"}
-                aria-label={isListening ? "Listening..." : "Speak requirement"}
-                className={`relative flex h-10 w-10 sm:h-11 sm:w-11 shrink-0 items-center justify-center rounded-full transition-all duration-300 cursor-pointer ml-1 ${
-                  isListening
-                    ? "text-purple-700 dark:text-purple-200 bg-purple-50/60 dark:bg-purple-950/40"
-                    : "text-slate-500 hover:bg-slate-100 hover:text-blue-600 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-blue-400"
-                }`}
-              >
-                {/* Shimmer & Glow aura elements (active during recording) */}
-                <span
-                  className={`absolute -inset-1 rounded-full bg-gradient-to-r from-violet-500 via-pink-500 to-indigo-500 blur-md transition-opacity duration-500 ${
-                    isListening ? "opacity-75 animate-mic-voice-active" : "opacity-0 pointer-events-none"
-                  }`}
-                />
-                <span
-                  className={`absolute inset-0 rounded-full bg-gradient-to-r from-violet-500/25 via-rose-500/30 to-indigo-500/25 transition-opacity duration-500 animate-mic-shimmer-bg ${
-                    isListening ? "opacity-100" : "opacity-0 pointer-events-none"
-                  }`}
-                />
-                <VoiceMicIcon className="relative z-10 w-5 h-5 sm:w-5 sm:h-5 transition-transform duration-300" />
-              </button>
-
-              {/* Input Field (Center) */}
-              <input
-                type="text"
-                value={aiPrompt}
-                onChange={(event) => setAiPrompt(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    void handleExtractWithAI();
-                  }
-                }}
-                placeholder="Description"
-                className="w-full min-w-0 bg-transparent px-2 sm:px-4 py-2 text-sm sm:text-base font-medium text-slate-900 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-slate-500"
-              />
-
-              {/* Arrow Submit Button (Right) */}
-              <button
-                type="button"
-                onClick={() => void handleExtractWithAI()}
-                disabled={isExtracting || !aiPrompt.trim()}
-                title="Extract with AI"
-                aria-label="Extract with AI"
-                className="flex h-10 w-10 sm:h-11 sm:w-11 items-center justify-center rounded-full bg-linear-to-r from-blue-500 to-indigo-600 text-white shadow-md hover:from-blue-600 hover:to-indigo-700 active:scale-95 transition disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shrink-0 mr-1"
-              >
-                {isExtracting ? <Loader2 size={18} className="animate-spin sm:w-5 sm:h-5" /> : <ArrowRight size={18} className="sm:w-5 sm:h-5" />}
-              </button>
-            </div>
-          </div>
-
-          <section id="create-job" className="mt-12 scroll-mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900">
-            <div className="mb-6 flex items-center gap-3">
-              <Briefcase size={22} className="text-blue-600 dark:text-blue-400" />
-              <div>
-                <h2 className="font-(--font-anton) text-2xl uppercase text-slate-900 dark:text-white">Create a job</h2>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Choose a saved work site and specify your job requirements.</p>
-              </div>
-            </div>
-
-            <form onSubmit={handleJobSubmit} className="space-y-6">
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-                {/* Select Work Site */}
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                    Work Site <span className="text-rose-500">*</span>
-                  </label>
-                  <select
-                    required
-                    value={jobForm.job_site_id}
-                    onChange={(event) => {
-                      const site = jobSites.find((item) => item.id === event.target.value) || null;
-                      setSelectedJobSiteId(event.target.value);
-                      setSelectedJobSite(site);
-                      setJobForm({ ...jobForm, job_site_id: event.target.value });
-                    }}
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-800/50 dark:text-white dark:focus:bg-slate-800"
-                  >
-                    <option value="">Select work site</option>
-                    {jobSites.map((site) => (
-                      <option key={site.id} value={site.id}>
-                        {site.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Job Title */}
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                    Job Title <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    required
-                    maxLength={120}
-                    value={jobForm.title}
-                    onChange={(event) => setJobForm({ ...jobForm, title: event.target.value })}
-                    placeholder="Job title"
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-800/50 dark:text-white dark:placeholder:text-slate-500 dark:focus:bg-slate-800"
-                  />
-                </div>
-
-                {/* Required Trade */}
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Required Trade</label>
-                  <input
-                    value={jobForm.trade_id}
-                    onChange={(event) => setJobForm({ ...jobForm, trade_id: event.target.value })}
-                    placeholder="e.g. Cook"
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-800/50 dark:text-white dark:placeholder:text-slate-500 dark:focus:bg-slate-800"
-                  />
-                </div>
-
-                {/* Workers Needed */}
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                    Workers Needed <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    required
-                    type="number"
-                    min={1}
-                    max={1000}
-                    value={jobForm.headcount_required}
-                    onChange={(event) => setJobForm({ ...jobForm, headcount_required: event.target.value })}
-                    placeholder="Workers needed"
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-800/50 dark:text-white dark:placeholder:text-slate-500 dark:focus:bg-slate-800"
-                  />
-                </div>
-
-                {/* Required Skills */}
-                <div className="flex flex-col gap-1.5 sm:col-span-2">
-                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Required Skills</label>
-                  <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2 dark:border-slate-700 dark:bg-slate-800/50">
-                    {jobForm.required_skills.map((skill) => (
-                      <span key={skill} className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300">
-                        {skill}
-                        <button type="button" onClick={() => removeRequiredSkill(skill)} aria-label={`Remove ${skill}`} className="font-bold text-blue-500 hover:text-rose-600">×</button>
-                      </span>
-                    ))}
-                    <input
-                      value={skillInput}
-                      onChange={(event) => setSkillInput(event.target.value)}
-                      onKeyDown={(event) => { if (event.key === "Enter" || event.key === ",") { event.preventDefault(); addRequiredSkill(); } }}
-                      placeholder="Add a skill"
-                      className="min-w-32 flex-1 bg-transparent px-1 py-1 text-sm text-slate-900 outline-none placeholder:text-slate-400 dark:text-white"
-                    />
-                    <button type="button" onClick={addRequiredSkill} className="text-xs font-bold text-blue-600 hover:text-blue-700 dark:text-blue-400">Add</button>
+            {/* Conversational Assistant & Live Structured Preview Layout */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+              {/* Left Column: Conversational Assistant */}
+              <div className="lg:col-span-7 flex flex-col rounded-3xl border border-slate-200 bg-white p-5 shadow-lg dark:border-slate-800 dark:bg-slate-900 min-h-[440px]">
+                {/* Header */}
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3 dark:border-slate-800">
+                  <div className="flex items-center gap-2.5">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400">
+                      <Sparkles size={20} />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-slate-900 dark:text-white text-base">{assistantCopy.heading}</h3>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">{assistantCopy.subtitle}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={selectedAssistantLanguage}
+                      onChange={(e) => handleAssistantLanguageChange(e.target.value as AssistantLanguage)}
+                      className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                    >
+                      {LANGUAGE_OPTIONS.map(([code, opt]) => (
+                        <option key={code} value={code}>{opt.label}</option>
+                      ))}
+                    </select>
                   </div>
                 </div>
 
-                {/* Max Daily Salary */}
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                    Max Daily Salary (₹)
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={1000000}
-                    step="0.01"
-                    value={jobForm.max_daily_salary}
-                    onChange={(event) => setJobForm({ ...jobForm, max_daily_salary: event.target.value })}
-                    placeholder="Max daily salary"
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-800/50 dark:text-white dark:placeholder:text-slate-500 dark:focus:bg-slate-800"
-                  />
+                {/* Messages Thread */}
+                <div className="my-4 flex-1 max-h-72 overflow-y-auto space-y-3 pr-2 flex flex-col">
+                  {assistantMessages.map((msg) => (
+                    <div
+                      key={msg.id}
+                      className={`flex flex-col ${msg.sender === "user" ? "items-end" : "items-start"}`}
+                    >
+                      <div
+                        className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
+                          msg.sender === "user"
+                            ? "bg-blue-600 text-white rounded-br-xs shadow-xs"
+                            : "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 rounded-bl-xs border border-slate-200/50 dark:border-slate-700/50"
+                        }`}
+                      >
+                        {msg.text}
+                      </div>
+                      <span className="text-[10px] text-slate-400 mt-1 px-1">{msg.timestamp}</span>
+                    </div>
+                  ))}
+                  {isAssistantSending && (
+                    <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/40 p-2.5 rounded-xl w-fit">
+                      <Loader2 size={14} className="animate-spin text-blue-500" />
+                      <span>{assistantCopy.thinking}</span>
+                    </div>
+                  )}
                 </div>
 
-                {/* Min Experience */}
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                    Min Experience (years)
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={100}
-                    value={jobForm.min_experience}
-                    onChange={(event) => setJobForm({ ...jobForm, min_experience: event.target.value })}
-                    placeholder="Min experience"
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-800/50 dark:text-white dark:placeholder:text-slate-500 dark:focus:bg-slate-800"
-                  />
+                {/* Input Bar */}
+                <div className="mt-auto pt-2">
+                  {voiceError && <p className="mb-2 text-xs text-rose-500">{voiceError}</p>}
+                  <div className="relative flex items-center rounded-full border border-blue-500/80 bg-slate-50/50 p-1.5 shadow-sm dark:border-blue-500 dark:bg-slate-800/50 focus-within:ring-3 focus-within:ring-blue-500/20 transition-all">
+                    {/* Voice Mic Button */}
+                    <button
+                      type="button"
+                      onClick={handleVoiceInput}
+                      title={isListening ? assistantCopy.listening : assistantCopy.speak}
+                      className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-all cursor-pointer ml-0.5 ${
+                        isListening
+                          ? "text-purple-700 dark:text-purple-200 bg-purple-100 dark:bg-purple-950/50"
+                          : "text-slate-500 hover:bg-slate-200/70 dark:text-slate-400 dark:hover:bg-slate-700"
+                      }`}
+                    >
+                      <VoiceMicIcon className="w-5 h-5" />
+                    </button>
+
+                    {/* Text Input */}
+                    <input
+                      type="text"
+                      value={assistantInput}
+                      onChange={(e) => setAssistantInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          void handleSendAssistantMessage();
+                        }
+                      }}
+                      placeholder={assistantCopy.placeholder}
+                      className="w-full min-w-0 bg-transparent px-3 py-1.5 text-sm font-medium text-slate-900 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-slate-500"
+                    />
+
+                    {/* Send Arrow Button */}
+                    <button
+                      type="button"
+                      onClick={() => void handleSendAssistantMessage()}
+                      disabled={isAssistantSending || !assistantInput.trim()}
+                      className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-600 text-white shadow-sm hover:bg-blue-700 active:scale-95 transition disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shrink-0 mr-0.5"
+                    >
+                      {isAssistantSending ? <Loader2 size={16} className="animate-spin" /> : <ArrowRight size={16} />}
+                    </button>
+                  </div>
                 </div>
               </div>
 
-              {/* Centered Horizontal Create Job Button */}
-              <div className="flex justify-center pt-2">
-                <button
-                  type="submit"
-                  disabled={isJobSaving || isExtracting || jobSites.length === 0}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-8 py-2.5 text-sm font-bold text-white shadow-md hover:bg-blue-700 active:scale-95 transition disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer"
-                >
-                  {isJobSaving ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
-                  Create Job
-                </button>
+              {/* Right Column: Live Structured Preview */}
+              <div className="lg:col-span-5 flex flex-col rounded-3xl border border-slate-200 bg-white p-5 shadow-lg dark:border-slate-800 dark:bg-slate-900 min-h-[440px]">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3 dark:border-slate-800">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 size={18} className={readyToCreate ? "text-emerald-500" : "text-slate-400"} />
+                    <h3 className="font-bold text-slate-900 dark:text-white text-base">{assistantCopy.preview}</h3>
+                  </div>
+                  <span className={`text-[11px] font-semibold px-2.5 py-0.5 rounded-full ${
+                    readyToCreate
+                      ? "bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300"
+                      : "bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300"
+                  }`}>
+                    {readyToCreate ? assistantCopy.ready : assistantCopy.incomplete}
+                  </span>
+                </div>
+
+                {/* Parameters list */}
+                <div className="my-4 flex-1 space-y-2.5 divide-y divide-slate-100 dark:divide-slate-800/60 text-sm">
+                  <div className="pt-2 flex justify-between items-center">
+                    <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase">{assistantCopy.role}</span>
+                    <span className="font-semibold text-slate-900 dark:text-white">{assistantState.title || <span className="text-slate-400 font-normal italic">{assistantCopy.missing}</span>}</span>
+                  </div>
+                  <div className="pt-2 flex justify-between items-center">
+                    <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase">{assistantCopy.workers}</span>
+                    <span className="font-semibold text-slate-900 dark:text-white">{assistantState.headcount_required ? `${assistantState.headcount_required} ${assistantCopy.workers.toLowerCase()}` : <span className="text-slate-400 font-normal italic">{assistantCopy.missing}</span>}</span>
+                  </div>
+                  <div className="pt-2 flex justify-between items-center">
+                    <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase">{assistantCopy.site}</span>
+                    <span className="font-semibold text-slate-900 dark:text-white truncate max-w-[180px]">
+                      {assistantState.job_site_id && (assistantState.job_site_name || selectedJobSite?.name) ? (
+                        assistantState.job_site_name || selectedJobSite?.name
+                      ) : (
+                        <button type="button" onClick={handleOpenJobSiteSelector} className="text-blue-600 underline font-normal text-xs cursor-pointer">{assistantCopy.selectSite}</button>
+                      )}
+                    </span>
+                  </div>
+                  <div className="pt-2 flex justify-between items-center">
+                    <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase">{assistantCopy.wage}</span>
+                    <span className="font-semibold text-slate-900 dark:text-white">{assistantState.max_daily_salary ? `₹${assistantState.max_daily_salary}/${assistantCopy.days === "दिन" ? "दिन" : "day"}` : <span className="text-slate-400 font-normal italic">{assistantCopy.missing}</span>}</span>
+                  </div>
+                  <div className="pt-2 flex justify-between items-center">
+                    <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase">{assistantCopy.duration}</span>
+                    <span className="font-semibold text-slate-900 dark:text-white">{assistantState.work_duration_days ? `${assistantState.work_duration_days} ${assistantCopy.days}` : <span className="text-slate-400 font-normal italic">{assistantCopy.missing}</span>}</span>
+                  </div>
+                  <div className="pt-2 flex justify-between items-center">
+                    <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase">{assistantCopy.timing}</span>
+                    <span className="font-semibold text-slate-900 dark:text-white">{assistantState.work_timing || <span className="text-slate-400 font-normal italic">{assistantCopy.missing}</span>}</span>
+                  </div>
+                  <div className="pt-2 flex justify-between items-center">
+                    <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase">{assistantCopy.experience}</span>
+                    <span className="font-semibold text-slate-900 dark:text-white">
+                      {assistantState.min_experience != null
+                        ? `${assistantState.min_experience} ${assistantState.min_experience === 1 ? assistantCopy.year : assistantCopy.years}`
+                        : assistantCopy.missing}
+                    </span>
+                  </div>
+                  {assistantState.required_skills && assistantState.required_skills.length > 0 && (
+                    <div className="pt-2 flex flex-col gap-1">
+                      <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase">Skills</span>
+                      <div className="flex flex-wrap gap-1">
+                        {assistantState.required_skills.map((sk) => (
+                          <span key={sk} className="text-[11px] bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 px-2 py-0.5 rounded-md font-medium">{sk}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Explicit Create Job Confirmation Button */}
+                <div className="mt-auto pt-3 border-t border-slate-100 dark:border-slate-800">
+                  <button
+                    type="button"
+                    onClick={handleCreateJobFromAssistant}
+                    disabled={!readyToCreate || isJobSaving}
+                    className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-bold text-white shadow-md hover:bg-blue-700 active:scale-95 transition disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+                  >
+                    {isJobSaving ? (
+                      <>
+                        <Loader2 size={16} className="animate-spin" />
+                        <span>{assistantCopy.creating}</span>
+                      </>
+                    ) : (
+                      <>
+                        <Plus size={16} />
+                        <span>{assistantCopy.create}</span>
+                      </>
+                    )}
+                  </button>
+                  {!readyToCreate && (
+                    <p className="mt-2 text-center text-[11px] text-slate-400">
+                      {missingFields.length > 0 ? `${assistantCopy.required}: ${missingFields.join(", ")}` : assistantCopy.complete}
+                    </p>
+                  )}
+                </div>
               </div>
-            </form>
-            {jobSites.length === 0 && <p className="mt-3 text-center text-sm text-amber-600 dark:text-amber-400">Add a work site before creating a job.</p>}
-            {jobError && <p className="mt-3 text-center text-sm text-rose-600 dark:text-rose-400">{jobError}</p>}
+            </div>
+          </div>
+
+          <section className="mt-12 scroll-mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900">
             {jobs.length > 0 && <div className="mt-6 divide-y divide-slate-100 dark:divide-slate-800">
               {jobs.map((job) => {
                 const summary = jobMatchSummaries[job.id];
@@ -1741,6 +1825,8 @@ export default function EmployerDashboard() {
               <div><p className="text-xs font-semibold uppercase text-slate-400">Required Skills</p><p className="mt-1">{selectedJob.required_skills?.length ? selectedJob.required_skills.join(", ") : "No skills specified"}</p></div>
               <div><p className="text-xs font-semibold uppercase text-slate-400">Max Daily Salary</p><p className="mt-1">{selectedJob.max_daily_salary != null ? `₹${selectedJob.max_daily_salary}` : "Not specified"}</p></div>
               <div><p className="text-xs font-semibold uppercase text-slate-400">Min Experience</p><p className="mt-1">{selectedJob.min_experience != null ? `${selectedJob.min_experience} years` : "Not specified"}</p></div>
+              <div><p className="text-xs font-semibold uppercase text-slate-400">Work Duration</p><p className="mt-1 font-semibold">{selectedJob.work_duration_days != null ? `${selectedJob.work_duration_days} days` : "Not specified"}</p></div>
+              <div><p className="text-xs font-semibold uppercase text-slate-400">Daily Timing</p><p className="mt-1 font-semibold">{selectedJob.work_timing || "Not specified"}</p></div>
               <div><p className="text-xs font-semibold uppercase text-slate-400">Created</p><p className="mt-1">{new Date(selectedJob.created_at).toLocaleString()}</p></div>
             </div>}
             {jobViewMode === "workers" && <div>

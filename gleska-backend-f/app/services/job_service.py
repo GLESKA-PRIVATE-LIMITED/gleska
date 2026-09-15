@@ -81,6 +81,8 @@ class JobService:
             min_experience=row.get("min_experience"),
             trade_id=row.get("trade_id"),
             required_skills=row.get("required_skills") or [],
+            work_duration_days=row.get("work_duration_days"),
+            work_timing=row.get("work_timing"),
             status=row["status"],
             created_at=row["created_at"],
             updated_at=row.get("updated_at"),
@@ -102,17 +104,45 @@ class JobService:
             if not subscription_until or subscription_until <= datetime.now(timezone.utc):
                 raise JobPaymentRequired("SUBSCRIPTION_REQUIRED")
 
+        rpc_params = {
+            "p_employer_id": employer["id"],
+            "p_job_site_id": str(request.job_site_id),
+            "p_title": request.title,
+            "p_headcount_required": request.headcount_required,
+            "p_max_daily_salary": float(request.max_daily_salary) if request.max_daily_salary is not None else None,
+            "p_min_experience": request.min_experience,
+            "p_trade_id": request.trade_id,
+            "p_required_skills": request.required_skills or [],
+        }
+        if request.work_duration_days is not None:
+            rpc_params["p_work_duration_days"] = request.work_duration_days
+        if request.work_timing is not None:
+            rpc_params["p_work_timing"] = request.work_timing
+
         try:
-            response = supabase.rpc("create_job_for_employer", {
-                "p_employer_id": employer["id"],
-                "p_job_site_id": str(request.job_site_id),
-                "p_title": request.title,
-                "p_headcount_required": request.headcount_required,
-                "p_max_daily_salary": float(request.max_daily_salary) if request.max_daily_salary is not None else None,
-                "p_min_experience": request.min_experience,
-                "p_trade_id": request.trade_id,
-                "p_required_skills": request.required_skills or [],
-            }).execute()
+            try:
+                response = supabase.rpc("create_job_for_employer", rpc_params).execute()
+            except Exception as rpc_err:
+                # If remote RPC signature hasn't been migrated yet, retry with legacy params
+                if "p_work_duration_days" in str(rpc_err) or "function" in str(rpc_err).lower():
+                    legacy_params = {k: v for k, v in rpc_params.items() if k not in {"p_work_duration_days", "p_work_timing"}}
+                    response = supabase.rpc("create_job_for_employer", legacy_params).execute()
+                    # Update the new columns directly if provided
+                    if response.data and (request.work_duration_days is not None or request.work_timing is not None):
+                        created_id = response.data[0]["id"] if isinstance(response.data, list) else response.data["id"]
+                        upd = {}
+                        if request.work_duration_days is not None:
+                            upd["work_duration_days"] = request.work_duration_days
+                        if request.work_timing is not None:
+                            upd["work_timing"] = request.work_timing
+                        try:
+                            upd_res = supabase.table("jobs").update(upd).eq("id", created_id).execute()
+                            if upd_res.data:
+                                response = upd_res
+                        except Exception:
+                            pass
+                else:
+                    raise rpc_err
         except Exception as exc:
             message = str(exc)
             logger.error("Job creation RPC failed: error_type=%s message=%s", type(exc).__name__, message)
@@ -129,6 +159,8 @@ class JobService:
                         "min_experience": request.min_experience,
                         "trade_id": request.trade_id,
                         "required_skills": request.required_skills or [],
+                        "work_duration_days": request.work_duration_days,
+                        "work_timing": request.work_timing,
                         "status": "SEARCHING",
                     }
                     direct_res = supabase.table("jobs").insert(insert_data).execute()
