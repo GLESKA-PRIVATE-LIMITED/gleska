@@ -326,7 +326,7 @@ async def create_employer_commission_order(
     existing_success = (
         supabase.table("payment_transactions")
         .select(
-            "id, job_id, raw_webhook_payload"
+            "id, job_id, amount, raw_webhook_payload"
         )
         .eq("employer_id", employer["id"])
         .eq(
@@ -349,10 +349,16 @@ async def create_employer_commission_order(
             "worker_profile_id"
         )
 
+        try:
+            payment_amount = Decimal(str(row.get("amount")))
+        except (InvalidOperation, TypeError):
+            payment_amount = Decimal("0")
+
         if (
             str(payment_job_id) == str(request.job_id)
             and str(payment_worker_id)
             == str(request.worker_profile_id)
+            and payment_amount == Decimal("30")
         ):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -374,7 +380,7 @@ async def create_employer_commission_order(
     # ---------------------------------------------------------
     pending = (
         supabase.table("payment_transactions")
-        .select("id, raw_webhook_payload")
+        .select("id, order_id, cf_order_id, payment_session_id, raw_webhook_payload")
         .eq("employer_id", employer["id"])
         .eq("job_id", request.job_id)
         .eq(
@@ -396,11 +402,10 @@ async def create_employer_commission_order(
             str(pending_worker_id)
             == str(request.worker_profile_id)
         ):
-            (
-                supabase.table("payment_transactions")
-                .update({"status": "EXPIRED"})
-                .eq("id", stale["id"])
-                .execute()
+            return SubscriptionOrderResponse(
+                order_id=stale["order_id"],
+                cf_order_id=stale.get("cf_order_id"),
+                payment_session_id=stale["payment_session_id"],
             )
 
     # ---------------------------------------------------------
@@ -1241,7 +1246,8 @@ async def cashfree_webhook(
         .select(
             "order_id, employer_id, "
             "worker_profile_id, status, "
-            "amount, currency, payment_category"
+            "amount, currency, payment_category, "
+            "raw_webhook_payload"
         )
         .eq("order_id", order_id)
         .maybe_single()
@@ -1266,11 +1272,15 @@ async def cashfree_webhook(
         )
 
         if transaction.get("status") == "SUCCESS":
+            merged_payload = {
+                **(transaction.get("raw_webhook_payload") or {}),
+                **payload,
+            }
             (
                 supabase.table("payment_transactions")
                 .update(
                     {
-                        "raw_webhook_payload": payload
+                        "raw_webhook_payload": merged_payload
                     }
                 )
                 .eq(
@@ -1332,11 +1342,15 @@ async def cashfree_webhook(
                 detail="PAYMENT_STATE_INVALID",
             )
 
+        merged_payload = {
+            **(transaction.get("raw_webhook_payload") or {}),
+            **payload,
+        }
         (
             supabase.table("payment_transactions")
             .update(
                 {
-                    "raw_webhook_payload": payload
+                    "raw_webhook_payload": merged_payload
                 }
             )
             .eq(

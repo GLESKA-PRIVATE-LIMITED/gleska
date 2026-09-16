@@ -1,5 +1,6 @@
 """Employer-owned retrieval of safe worker match projections."""
 
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from app.core.supabase import supabase
@@ -106,16 +107,26 @@ class JobMatchService:
                 # Requires a successful ₹30 commission payment for this specific worker + job
                 paid_commission_resp = (
                     supabase.table("payment_transactions")
-                    .select("id, job_id, raw_webhook_payload")
+                    .select("id, job_id, amount, payment_category, raw_webhook_payload")
                     .eq("employer_id", employer["id"])
-                    .eq("worker_profile_id", worker_profile_id)
+                    .eq("payment_category", "INDIVIDUAL_COMMISSION")
                     .eq("status", "SUCCESS")
                     .execute()
                 )
                 has_paid = False
                 for p in (paid_commission_resp.data or []):
-                    p_job_id = p.get("job_id") or (p.get("raw_webhook_payload") or {}).get("job_id")
-                    if str(p_job_id) == str(job_id):
+                    payload = p.get("raw_webhook_payload") or {}
+                    p_job_id = p.get("job_id") or payload.get("job_id")
+                    p_worker_id = payload.get("worker_profile_id")
+                    try:
+                        p_amount = Decimal(str(p.get("amount")))
+                    except (InvalidOperation, TypeError):
+                        p_amount = Decimal("0")
+                    if (
+                        str(p_job_id) == str(job_id)
+                        and str(p_worker_id) == str(worker_profile_id)
+                        and p_amount == Decimal("30")
+                    ):
                         has_paid = True
                         break
                 if not has_paid:

@@ -333,11 +333,12 @@ export default function EmployerDashboard() {
   const [lifecycleUpdatingJobId, setLifecycleUpdatingJobId] = React.useState<string | null>(null);
   const [jobViewMode, setJobViewMode] = React.useState<JobViewMode>(null);
   const selectedJobRequestRef = React.useRef(0);
+  const commissionOrderInFlightRef = React.useRef(false);
   const [commissionRecovery, setCommissionRecovery] = React.useState<{
     orderId: string;
     jobId: string;
     workerProfileId: string;
-    status: "PENDING" | "FAILED";
+    status: "PENDING" | "FAILED" | "CANCELLED" | "EXPIRED";
   } | null>(null);
 
   const assistantCopy = ASSISTANT_COPY[selectedAssistantLanguage];
@@ -525,7 +526,7 @@ export default function EmployerDashboard() {
           setCommissionRecovery({ orderId, jobId, workerProfileId, status: "PENDING" });
           toast.info("Payment is pending confirmation. Return here to retry verification once it completes.", { id: "commission-verify" });
         } else {
-          setCommissionRecovery({ orderId, jobId, workerProfileId, status: "FAILED" });
+          setCommissionRecovery({ orderId, jobId, workerProfileId, status: verifyRes.data.status as "FAILED" | "CANCELLED" | "EXPIRED" });
           toast.error(`Payment ${verifyRes.data.status.toLowerCase()}. Worker was not dispatched.`, { id: "commission-verify" });
         }
       } catch (err: any) {
@@ -1011,6 +1012,24 @@ export default function EmployerDashboard() {
     if (jobsResult.status === "fulfilled") setJobs(jobsResult.value.data);
   }
 
+  async function startCommissionPayment(jobId: string, workerProfileId: string) {
+    if (commissionOrderInFlightRef.current) return;
+    commissionOrderInFlightRef.current = true;
+    try {
+      const orderRes = await apiClient.post<{ payment_session_id: string; order_id: string }>(
+        "/api/v1/payments/employer/create-commission-order",
+        { job_id: jobId, worker_profile_id: workerProfileId },
+        { withCredentials: true },
+      );
+      const cashfree = await loadCashfree();
+      const mode = process.env.NEXT_PUBLIC_CASHFREE_ENV === "production" ? "production" : "sandbox";
+      sessionStorage.setItem("gleska_pending_commission", JSON.stringify({ jobId, workerProfileId, orderId: orderRes.data.order_id }));
+      await cashfree({ mode }).checkout({ paymentSessionId: orderRes.data.payment_session_id, redirectTarget: "_self" });
+    } finally {
+      commissionOrderInFlightRef.current = false;
+    }
+  }
+
   const handleSelectWorker = async (jobId: string, workerProfileId: string) => {
     const requestId = selectedJobRequestRef.current;
     setAcceptingWorkerId(workerProfileId);
@@ -1054,26 +1073,7 @@ export default function EmployerDashboard() {
       if (status === 402 && typeof detail === "object" && detail?.code === "COMMISSION_REQUIRED") {
         const { job_id: commissionJobId, worker_profile_id: commissionWorkerId } = detail;
         try {
-          const orderRes = await apiClient.post<{ payment_session_id: string; order_id: string }>(
-            "/api/v1/payments/employer/create-commission-order",
-            { job_id: commissionJobId ?? jobId, worker_profile_id: commissionWorkerId ?? workerProfileId },
-            { withCredentials: true },
-          );
-          const cashfree = await loadCashfree();
-          const mode = process.env.NEXT_PUBLIC_CASHFREE_ENV === "production" ? "production" : "sandbox";
-          // Store pending dispatch info so we can retry after Cashfree redirect
-          sessionStorage.setItem(
-            "gleska_pending_commission",
-            JSON.stringify({
-              jobId: commissionJobId ?? jobId,
-              workerProfileId: commissionWorkerId ?? workerProfileId,
-              orderId: orderRes.data.order_id,
-            }),
-          );
-          await cashfree({ mode }).checkout({
-            paymentSessionId: orderRes.data.payment_session_id,
-            redirectTarget: "_self",
-          });
+          await startCommissionPayment(commissionJobId ?? jobId, commissionWorkerId ?? workerProfileId);
         } catch (commErr: any) {
           const commMsg = commErr?.response?.data?.detail;
           setJobMatchesError(typeof commMsg === "string" ? commMsg : "Unable to start commission payment.");
@@ -1098,6 +1098,16 @@ export default function EmployerDashboard() {
   const retryCommissionRecovery = async () => {
     if (!commissionRecovery) return;
     const { orderId, jobId, workerProfileId } = commissionRecovery;
+    if (commissionRecovery.status !== "PENDING") {
+      try {
+        await startCommissionPayment(jobId, workerProfileId);
+        setCommissionRecovery(null);
+      } catch (err: any) {
+        const detail = err?.response?.data?.detail;
+        toast.error(typeof detail === "string" ? detail : "Unable to start commission payment.", { id: "commission-verify" });
+      }
+      return;
+    }
     toast.loading("Checking commission payment...", { id: "commission-verify" });
     try {
       const verifyRes = await apiClient.post<{ status: string }>(
@@ -1110,7 +1120,7 @@ export default function EmployerDashboard() {
           orderId,
           jobId,
           workerProfileId,
-          status: verifyRes.data.status === "PENDING" ? "PENDING" : "FAILED",
+          status: verifyRes.data.status === "PENDING" ? "PENDING" : verifyRes.data.status as "FAILED" | "CANCELLED" | "EXPIRED",
         });
         toast.info(`Payment is ${verifyRes.data.status.toLowerCase()}.`, { id: "commission-verify" });
         return;
@@ -1886,9 +1896,9 @@ export default function EmployerDashboard() {
               <h3 className="text-sm font-bold uppercase text-slate-600 dark:text-slate-300">Matching Workers</h3>
               {commissionRecovery && (
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                  <span>{commissionRecovery.status === "PENDING" ? "Commission payment is still pending." : "Commission payment needs verification or dispatch retry."}</span>
+                  <span>{commissionRecovery.status === "PENDING" ? "Commission payment is still pending." : "The commission payment was not completed."}</span>
                   <button type="button" onClick={() => void retryCommissionRecovery()} className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-700">
-                    Retry payment check
+                    {commissionRecovery.status === "PENDING" ? "Check payment" : "Pay ₹30 again"}
                   </button>
                 </div>
               )}
