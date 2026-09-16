@@ -1,6 +1,7 @@
 """Schemas for untrusted natural-language job requirement extraction."""
 
 from uuid import UUID
+from decimal import Decimal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -33,7 +34,7 @@ class JobExtraction(BaseModel):
 
     title: str = Field(..., min_length=1, max_length=MAX_TITLE_LENGTH)
     headcount_required: int = Field(default=1, ge=1, le=MAX_HEADCOUNT)
-    min_experience: int = Field(default=0, ge=0, le=MAX_EXPERIENCE_YEARS)
+    min_experience: Decimal = Field(default=Decimal("0"), ge=0, le=MAX_EXPERIENCE_YEARS)
     max_daily_salary: float | None = Field(default=None, ge=0, le=MAX_DAILY_SALARY)
     description: str | None = Field(default=None, max_length=MAX_DESCRIPTION_LENGTH)
     location: str | None = Field(default=None, max_length=200)

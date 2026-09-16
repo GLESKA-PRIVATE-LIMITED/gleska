@@ -7,9 +7,9 @@ from app.core.security import require_employer
 from app.schemas.auth import UserResponse
 from app.schemas.job import JobCreate, JobDetailsResponse, JobMatchAcceptRequest, JobMatchAcceptResponse, JobMatchSummary, JobMatchesResponse, JobResponse
 from app.schemas.job_extraction import JobExtractionRequest, JobExtractionResponse
-from app.schemas.job_assistant import JobAssistantMessageRequest, JobAssistantResponse
+from app.schemas.job_assistant import JobAssistantCreateRequest, JobAssistantMessageRequest, JobAssistantResponse
 from app.services.job_assistant_service import JobAssistantService
-from app.services.job_service import JobNotFound, JobPaymentRequired, JobService
+from app.services.job_service import JobLifecycleError, JobNotFound, JobPaymentRequired, JobService
 from app.services.job_match_service import JobMatchService
 from app.services.matching_service import MatchingError
 from app.services.gemini_service import (
@@ -74,6 +74,28 @@ async def get_job(job_id: str, user: UserResponse = Depends(require_employer)):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     except JobNotFound as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@router.post("/{job_id}/cancel", response_model=JobResponse)
+async def cancel_job(job_id: str, user: UserResponse = Depends(require_employer)):
+    try:
+        return JobService.cancel_for_user(user, job_id)
+    except JobNotFound as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except JobLifecycleError as exc:
+        error_status = status.HTTP_404_NOT_FOUND if str(exc) == "JOB_NOT_FOUND" else status.HTTP_409_CONFLICT
+        raise HTTPException(status_code=error_status, detail=str(exc)) from exc
+
+
+@router.post("/{job_id}/complete", response_model=JobResponse)
+async def complete_job(job_id: str, user: UserResponse = Depends(require_employer)):
+    try:
+        return JobService.complete_for_user(user, job_id)
+    except JobNotFound as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except JobLifecycleError as exc:
+        error_status = status.HTTP_404_NOT_FOUND if str(exc) == "JOB_NOT_FOUND" else status.HTTP_409_CONFLICT
+        raise HTTPException(status_code=error_status, detail=str(exc)) from exc
 
 
 @router.get("/{job_id}/matches", response_model=JobMatchesResponse)
@@ -160,4 +182,25 @@ async def process_assistant_message(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except Exception as exc:
         logger.exception("Assistant message processing failed: user_id=%s", user.id)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="ASSISTANT_PROCESSING_FAILED") from exc
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="ASSISTANT_PROCESSING_FAILED") from exc
+
+
+@router.post("/assistant/create", response_model=JobResponse, status_code=status.HTTP_201_CREATED)
+async def create_confirmed_assistant_job(
+    request: JobAssistantCreateRequest,
+    user: UserResponse = Depends(require_employer),
+):
+    """Create only the exact state the backend issued after the employer reviewed it."""
+    try:
+        return JobAssistantService.create_confirmed_job(user, request)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except JobNotFound as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except JobPaymentRequired as exc:
+        raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Confirmed assistant job creation failed: user_id=%s", user.id)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="JOB_CREATE_FAILED") from exc

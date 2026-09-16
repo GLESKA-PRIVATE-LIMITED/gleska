@@ -54,7 +54,7 @@ class GeminiService:
             "properties": {
                 "title": {"type": "STRING"},
                 "headcount_required": {"type": "INTEGER"},
-                "min_experience": {"type": "INTEGER"},
+                "min_experience": {"type": "NUMBER"},
                 "max_daily_salary": {"type": "NUMBER", "nullable": True},
                 "description": {"type": "STRING"},
                 "location": {"type": "STRING", "nullable": True},

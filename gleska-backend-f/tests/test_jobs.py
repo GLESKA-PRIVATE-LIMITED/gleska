@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from decimal import Decimal
+import json
 from types import SimpleNamespace
 from uuid import UUID
 
@@ -59,6 +60,7 @@ class Query:
 
 class FakeSupabase:
     def __init__(self, site_rows=None):
+        self.rpc_params = None
         self.tables = {
             "employers": Query("employers", [{"id": "employer-id", "supabase_auth_id": "user-id", "is_active": True, "is_deleted": False}]),
             "employer_profiles": Query("employer_profiles", [{"id": "profile-id", "employer_type": "INDIVIDUAL", "onboarding_status": "COMPLETED", "has_availed_free_dispatch": False, "subscription_valid_until": None}]),
@@ -70,6 +72,7 @@ class FakeSupabase:
 
     def rpc(self, name, params):
         assert name == "create_job_for_employer"
+        self.rpc_params = params
         query = self.tables["jobs"]
         query.payload = {
             "id": "22222222-2222-2222-2222-222222222222",
@@ -140,6 +143,29 @@ def test_create_job_uses_authenticated_employer_and_searching_status(monkeypatch
     assert fake.tables["jobs"].payload["required_skills"] == ["Pipe fitting"]
     assert result.created_at
     assert ("user_id", "user-id") in fake.tables["employer_profiles"].filters
+
+
+@pytest.mark.parametrize(
+    ("salary", "expected"),
+    [(Decimal("700"), 700.0), (Decimal("700.50"), 700.5)],
+)
+def test_rpc_payload_serializes_decimal_job_values(monkeypatch, salary, expected):
+    fake = FakeSupabase()
+    monkeypatch.setattr(job_service, "supabase", fake)
+    monkeypatch.setattr(job_service.MatchingService, "create_matches", lambda job_id: [])
+    request = JobCreate(
+        job_site_id=SITE_ID,
+        title="Cook",
+        headcount_required=2,
+        max_daily_salary=salary,
+        min_experience=Decimal("2.5"),
+    )
+
+    JobService.create(USER, request)
+
+    assert fake.rpc_params["p_max_daily_salary"] == expected
+    assert fake.rpc_params["p_min_experience"] == 2.5
+    json.dumps(fake.rpc_params)
 
 
 def test_create_job_rejects_non_owned_site(monkeypatch):

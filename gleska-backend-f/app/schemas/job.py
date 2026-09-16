@@ -19,8 +19,8 @@ class JobCreate(BaseModel):
     job_site_id: UUID
     title: str = Field(..., min_length=1, max_length=MAX_JOB_TITLE_LENGTH)
     headcount_required: int = Field(..., ge=1, le=MAX_HEADCOUNT)
-    max_daily_salary: Decimal | None = Field(default=None, ge=0, le=MAX_DAILY_SALARY)
-    min_experience: int | None = Field(default=None, ge=0, le=MAX_EXPERIENCE_YEARS)
+    max_daily_salary: Decimal | None = Field(default=None, gt=0, le=MAX_DAILY_SALARY)
+    min_experience: Decimal | None = Field(default=None, ge=0, le=MAX_EXPERIENCE_YEARS)
     trade_id: str | None = Field(default=None, min_length=1, max_length=120)
     required_skills: list[str] | None = None
     work_duration_days: int | None = Field(default=None, ge=1, le=365)
@@ -80,7 +80,7 @@ class JobResponse(BaseModel):
     title: str
     headcount_required: int
     max_daily_salary: Decimal | None = None
-    min_experience: int | None = None
+    min_experience: Decimal | None = None
     trade_id: str | None = None
     required_skills: list[str] = Field(default_factory=list)
     work_duration_days: int | None = None
@@ -124,6 +124,7 @@ class JobMatchesResponse(BaseModel):
 class JobMatchSummary(BaseModel):
     job_id: str
     current_match_count: int
+    accepted_count: int = 0
     matching_status: str
 
 

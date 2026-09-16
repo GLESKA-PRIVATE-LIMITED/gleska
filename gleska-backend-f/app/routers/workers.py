@@ -235,7 +235,7 @@ async def get_worker_job_details(job_id: str, user: UserResponse = Depends(requi
         profile = (supabase.table("worker_profiles").select("id").eq("user_id", user.id).single().execute().data or {})
         response = (
             supabase.table("job_matches")
-            .select("id,status,expires_at,jobs(id,title,max_daily_salary,headcount_required,min_experience,created_at,job_sites(name,address,city,state,location),employer_profiles(contact_person_name))")
+            .select("id,status,expires_at,jobs(id,title,max_daily_salary,headcount_required,min_experience,required_skills,work_duration_days,work_timing,created_at,job_sites(name,address,city,state,location),employer_profiles(contact_person_name))")
             .eq("worker_profile_id", profile.get("id"))
             .eq("job_id", job_id)
             .limit(1)
@@ -254,7 +254,9 @@ async def get_worker_job_details(job_id: str, user: UserResponse = Depends(requi
             employer_name=employer.get("contact_person_name"), site_name=site.get("name"),
             address=site.get("address"), city=site.get("city"), state=site.get("state"),
             salary=float(job.get("max_daily_salary") or 0), headcount=int(job.get("headcount_required") or 0),
-            min_experience=job.get("min_experience"), status=match.get("status") or "PENDING",
+            min_experience=job.get("min_experience"), required_skills=job.get("required_skills") or [],
+            work_duration_days=job.get("work_duration_days"), work_timing=job.get("work_timing"),
+            status=match.get("status") or "PENDING",
             expires_at=match.get("expires_at"), created_at=job.get("created_at"),
             target_lat=float(coordinates[1]) if coordinates and len(coordinates) > 1 else None,
             target_lng=float(coordinates[0]) if coordinates and len(coordinates) > 0 else None,
@@ -389,6 +391,13 @@ async def update_worker_profile(
         current_response = supabase.table("worker_profiles").select("*").eq("user_id", user.id).single().execute()
         current_profile = current_response.data or {}
         merged_profile = {**current_profile, **update_dict}
+        previous_matching_values = {
+            field: current_profile.get(field)
+            for field in (
+                "profile_completed", "availability_status", "trade_id", "skills",
+                "experience_years", "expected_daily_wage", "latitude", "longitude",
+            )
+        }
 
         # Check user fields from UserResponse object
         has_name = not hasattr(user, "name") or (user.name is not None and str(user.name).strip() != "")
@@ -448,7 +457,18 @@ async def update_worker_profile(
                 detail="Worker profile not found",
             )
 
-        return WorkerProfileResponse(**response.data[0])
+        updated_profile = response.data[0]
+        matching_fields_changed = any(
+            previous_matching_values.get(field) != updated_profile.get(field)
+            for field in previous_matching_values
+        )
+        if matching_fields_changed:
+            try:
+                MatchingService.reconcile_worker(str(updated_profile["id"]), "WORKER_PROFILE_UPDATED")
+            except MatchingError:
+                logger.exception("Worker candidate reconciliation failed: worker_profile_id=%s", updated_profile.get("id"))
+
+        return WorkerProfileResponse(**updated_profile)
 
     except HTTPException:
         raise
@@ -478,6 +498,15 @@ async def update_worker_location(
             profile = profile[0] if profile else {}
         if not profile.get("id"):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Worker profile not found")
+        previous_location = (
+            supabase.table("worker_current_locations")
+            .select("latitude, longitude")
+            .eq("worker_profile_id", profile["id"])
+            .maybe_single()
+            .execute()
+            .data
+            or {}
+        )
         try:
             address = await GeocodingService.reverse_geocode(location.latitude, location.longitude)
         except GeocodingError:
@@ -495,6 +524,14 @@ async def update_worker_location(
         )
         if not response.data:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Worker profile not found")
+        if (
+            previous_location.get("latitude") != location.latitude
+            or previous_location.get("longitude") != location.longitude
+        ):
+            try:
+                MatchingService.reconcile_worker(str(profile["id"]), "WORKER_LOCATION_UPDATED")
+            except MatchingError:
+                logger.exception("Worker location reconciliation failed: worker_profile_id=%s", profile.get("id"))
         return WorkerCurrentLocationResponse(**response.data[0])
     except GeocodingError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc

@@ -13,6 +13,7 @@ from app.core.security import require_admin
 from app.core.supabase import supabase
 from app.schemas.auth import UserResponse
 from app.services.auth_service import AuthService
+from app.services.matching_service import MatchingError, MatchingService
 from app.services.document_service import WORKER_DOCUMENTS_BUCKET, WorkerDocumentService
 from app.services.profile_photo_service import get_signed_profile_photo_url, now_iso
 
@@ -961,6 +962,15 @@ async def update_admin_worker_profile(
 
     supabase.table("worker_profiles").update(profile_updates).eq("id", profile_id).execute()
 
+    if any(field in profile_updates for field in (
+        "profile_completed", "availability_status", "trade_id", "skills",
+        "experience_years", "expected_daily_wage", "latitude", "longitude",
+    )):
+        try:
+            MatchingService.reconcile_worker(profile_id, "ADMIN_WORKER_PROFILE_UPDATED")
+        except MatchingError:
+            logger.exception("Admin worker candidate reconciliation failed: worker_profile_id=%s", profile_id)
+
     # Audit logging
     log_admin_mutation(
         admin,
@@ -1393,7 +1403,7 @@ class AdminJobItem(BaseModel):
     status: str
     headcount_required: Optional[int] = None
     max_daily_salary: Optional[float] = None
-    min_experience: Optional[int] = None
+    min_experience: Optional[float] = None
     trade_id: Optional[str] = None
     required_skills: Optional[list[str]] = None
     created_at: datetime
@@ -1447,7 +1457,7 @@ class AdminJobDetailResponse(BaseModel):
     status: str
     headcount_required: Optional[int] = None
     max_daily_salary: Optional[float] = None
-    min_experience: Optional[int] = None
+    min_experience: Optional[float] = None
     trade_id: Optional[str] = None
     required_skills: Optional[list[str]] = None
     created_at: datetime
@@ -1775,8 +1785,12 @@ async def update_admin_job_status(
             detail=f"Cannot cancel a job with status '{current_status}'. Only SEARCHING jobs can be cancelled.",
         )
 
-    updated_time = now_iso()
-    supabase.table("jobs").update({"status": "CANCELLED", "updated_at": updated_time}).eq("id", job_id).execute()
+    cancellation = supabase.rpc("cancel_job_for_employer", {
+        "p_employer_id": row.get("employer_id"),
+        "p_job_id": job_id,
+    }).execute()
+    updated_row = cancellation.data[0] if isinstance(cancellation.data, list) and cancellation.data else cancellation.data
+    updated_time = (updated_row or {}).get("updated_at") or now_iso()
 
     # Audit — target is the employer's user_id (may be None for orphaned jobs)
     ep = row.get("employer_profiles") or {}

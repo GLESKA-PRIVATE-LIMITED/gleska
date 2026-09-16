@@ -164,6 +164,7 @@ interface AssistantJobState {
   max_daily_salary?: number | null;
   min_experience?: number | null;
   work_duration_days?: number | null;
+  work_duration_months?: number | null;
   work_timing?: string | null;
   required_skills: string[];
   job_site_id?: string | null;
@@ -209,6 +210,15 @@ function formatWage(value?: number | string | null): string {
   return `₹${Number(value).toLocaleString("en-IN", { maximumFractionDigits: 0 })}/day`;
 }
 
+function jobStatusLabel(status: string): string {
+  return {
+    SEARCHING: "Searching for workers",
+    FILLED: "Workers filled",
+    COMPLETED: "Completed",
+    CANCELLED: "Cancelled",
+  }[status] || status;
+}
+
 type MatchSummaryState = "LOADING" | "FOUND" | "NO_MATCHES" | "ERROR";
 type JobViewMode = "details" | "workers" | null;
 type WorkSiteModalMode = "location" | "site" | "create" | null;
@@ -217,6 +227,7 @@ type EmployerMenuIcon = React.ComponentType<{ size?: number; className?: string 
 interface JobMatchSummary {
   job_id: string;
   current_match_count: number;
+  accepted_count: number;
   matching_status: "FOUND" | "NO_MATCHES";
 }
 
@@ -288,7 +299,9 @@ export default function EmployerDashboard() {
   const [conversationId, setConversationId] = React.useState<string | null>(null);
   const [assistantState, setAssistantState] = React.useState<AssistantJobState>({ required_skills: [] });
   const [missingFields, setMissingFields] = React.useState<string[]>([]);
+  const [assistantValidationErrors, setAssistantValidationErrors] = React.useState<string[]>([]);
   const [readyToCreate, setReadyToCreate] = React.useState(false);
+  const [assistantConfirmationToken, setAssistantConfirmationToken] = React.useState<string | null>(null);
   const [isAssistantSending, setIsAssistantSending] = React.useState(false);
   const [assistantInput, setAssistantInput] = React.useState("");
   const [isJobSaving, setIsJobSaving] = React.useState(false);
@@ -317,6 +330,7 @@ export default function EmployerDashboard() {
   const [acceptingWorkerId, setAcceptingWorkerId] = React.useState<string | null>(null);
   const [jobMatchSummaries, setJobMatchSummaries] = React.useState<Record<string, JobMatchSummary>>({});
   const [jobMatchSummaryState, setJobMatchSummaryState] = React.useState<MatchSummaryState>("LOADING");
+  const [lifecycleUpdatingJobId, setLifecycleUpdatingJobId] = React.useState<string | null>(null);
   const [jobViewMode, setJobViewMode] = React.useState<JobViewMode>(null);
   const selectedJobRequestRef = React.useRef(0);
   const [commissionRecovery, setCommissionRecovery] = React.useState<{
@@ -662,6 +676,8 @@ export default function EmployerDashboard() {
       setSelectedJobSiteId(response.data.id);
       setSelectedJobSite(response.data);
       setAssistantState((current) => ({ ...current, job_site_id: response.data.id, job_site_name: response.data.name }));
+      setReadyToCreate(false);
+      setAssistantConfirmationToken(null);
       setSiteForm({ name: "", address: "", city: "", state: "", pincode: "", latitude: "", longitude: "" });
       setSelectedSiteLocation(null);
       setIsSiteLocationConfirmed(false);
@@ -711,6 +727,8 @@ export default function EmployerDashboard() {
       job_site_id: site.id,
       job_site_name: site.name,
     }));
+    setReadyToCreate(false);
+    setAssistantConfirmationToken(null);
     setIsWorkSiteModalOpen(false);
     setWorkSiteModalMode(null);
   };
@@ -793,18 +811,20 @@ export default function EmployerDashboard() {
         missing_fields: string[];
         validation_errors: string[];
         ready_to_create: boolean;
+        confirmation_token?: string | null;
       }>("/api/v1/jobs/assistant/message", {
         message: text,
         language: selectedAssistantLanguage,
         conversation_id: conversationId,
-        current_state: assistantState,
         selected_job_site_id: selectedJobSiteId || undefined,
       }, { withCredentials: true });
 
       setConversationId(res.data.conversation_id);
       setAssistantState(res.data.structured_state);
       setMissingFields(res.data.missing_fields || []);
+      setAssistantValidationErrors(res.data.validation_errors || []);
       setReadyToCreate(res.data.ready_to_create);
+      setAssistantConfirmationToken(res.data.confirmation_token || null);
 
       if (res.data.structured_state.job_site_id) {
         setSelectedJobSiteId(res.data.structured_state.job_site_id);
@@ -838,23 +858,15 @@ export default function EmployerDashboard() {
   };
 
   const handleCreateJobFromAssistant = async () => {
-    if (!readyToCreate || !assistantState.job_site_id || isJobSaving) return;
+    if (!readyToCreate || !conversationId || !assistantConfirmationToken || isJobSaving) return;
 
     setIsJobSaving(true);
     try {
-      const payload = {
-        job_site_id: assistantState.job_site_id,
-        title: assistantState.title,
-        headcount_required: Number(assistantState.headcount_required),
-        max_daily_salary: assistantState.max_daily_salary != null ? Number(assistantState.max_daily_salary) : null,
-        min_experience: assistantState.min_experience != null ? Number(assistantState.min_experience) : 0,
-        work_duration_days: assistantState.work_duration_days != null ? Number(assistantState.work_duration_days) : null,
-        work_timing: assistantState.work_timing || null,
-        required_skills: assistantState.required_skills || [],
-      };
-
-      const response = await apiClient.post<Job>("/api/v1/jobs", payload, { withCredentials: true });
-      setJobs((current) => [response.data, ...current]);
+      const response = await apiClient.post<Job>("/api/v1/jobs/assistant/create", {
+        conversation_id: conversationId,
+        confirmation_token: assistantConfirmationToken,
+      }, { withCredentials: true });
+      setJobs((current) => [response.data, ...current.filter((job) => job.id !== response.data.id)]);
       try {
         const summaryResponse = await apiClient.get<JobMatchSummary[]>('/api/v1/jobs/match-summary', { withCredentials: true });
         setJobMatchSummaries(Object.fromEntries(summaryResponse.data.map((summary) => [summary.job_id, summary])));
@@ -869,11 +881,12 @@ export default function EmployerDashboard() {
         {
           id: (Date.now() + 2).toString(),
           sender: "assistant",
-          text: `🎉 Job for ${payload.headcount_required} ${payload.title}(s) has been successfully created and published!`,
+          text: `Job ${response.data.title} has been successfully created and published!`,
           timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
         },
       ]);
       setReadyToCreate(false);
+      setAssistantConfirmationToken(null);
     } catch (err: any) {
       const message = err.response?.data?.detail || "Unable to create job";
       toast.error(message);
@@ -937,6 +950,28 @@ export default function EmployerDashboard() {
       setJobMatchesError("Unable to load matching workers right now.");
     } finally {
       if (selectedJobRequestRef.current === requestId) setIsJobMatchesLoading(false);
+    }
+  };
+
+  const handleCancelJob = async (jobId: string) => {
+    if (!window.confirm("Stop searching for workers and cancel this job? Existing matches will no longer be active.")) return;
+    setLifecycleUpdatingJobId(jobId);
+    try {
+      const response = await apiClient.post<Job>(`/api/v1/jobs/${jobId}/cancel`, {}, { withCredentials: true });
+      setJobs((current) => current.map((job) => job.id === jobId ? response.data : job));
+      if (selectedJob?.id === jobId) setSelectedJob((current) => current ? { ...current, ...response.data } : current);
+      const [summaryResponse, jobsResponse] = await Promise.all([
+        apiClient.get<JobMatchSummary[]>("/api/v1/jobs/match-summary", { withCredentials: true }),
+        apiClient.get<Job[]>("/api/v1/jobs", { withCredentials: true }),
+      ]);
+      setJobMatchSummaries(Object.fromEntries(summaryResponse.data.map((summary) => [summary.job_id, summary])));
+      setJobs(jobsResponse.data);
+      toast.success("Job cancelled");
+    } catch (err: any) {
+      const detail = err?.response?.data?.detail;
+      toast.error(typeof detail === "string" ? detail : "Unable to cancel this job.");
+    } finally {
+      setLifecycleUpdatingJobId(null);
     }
   };
 
@@ -1618,6 +1653,11 @@ export default function EmployerDashboard() {
 
                 {/* Parameters list */}
                 <div className="my-4 flex-1 space-y-2.5 divide-y divide-slate-100 dark:divide-slate-800/60 text-sm">
+                  {assistantValidationErrors.length > 0 && (
+                    <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-300">
+                      {assistantValidationErrors.map((error) => <p key={error}>{error}</p>)}
+                    </div>
+                  )}
                   <div className="pt-2 flex justify-between items-center">
                     <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase">{assistantCopy.role}</span>
                     <span className="font-semibold text-slate-900 dark:text-white">{assistantState.title || <span className="text-slate-400 font-normal italic">{assistantCopy.missing}</span>}</span>
@@ -1690,7 +1730,11 @@ export default function EmployerDashboard() {
                   </button>
                   {!readyToCreate && (
                     <p className="mt-2 text-center text-[11px] text-slate-400">
-                      {missingFields.length > 0 ? `${assistantCopy.required}: ${missingFields.join(", ")}` : assistantCopy.complete}
+                      {assistantValidationErrors.length > 0
+                        ? assistantValidationErrors[0]
+                        : missingFields.length > 0
+                          ? `${assistantCopy.required}: ${missingFields.join(", ")}`
+                          : assistantCopy.complete}
                     </p>
                   )}
                 </div>
@@ -1699,29 +1743,38 @@ export default function EmployerDashboard() {
           </div>
 
           <section className="mt-12 scroll-mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4 dark:border-slate-800">
+              <h2 className="text-lg font-bold text-slate-900 dark:text-white">Created Jobs</h2>
+              <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">{jobs.length}</span>
+            </div>
             {jobs.length > 0 && <div className="mt-6 divide-y divide-slate-100 dark:divide-slate-800">
               {jobs.map((job) => {
                 const summary = jobMatchSummaries[job.id];
                 const matchCount = summary?.current_match_count || 0;
-                const selectableMatchCount = job.status === "FILLED" ? 0 : matchCount;
-                const summaryText = job.status === "FILLED"
-                  ? "Worker selected"
+                const acceptedCount = summary?.accepted_count || 0;
+                const summaryText = job.status === "COMPLETED" || job.status === "CANCELLED"
+                  ? jobStatusLabel(job.status)
+                  : job.status === "FILLED"
+                  ? `${jobStatusLabel(job.status)} · ${acceptedCount} / ${job.headcount_required} selected`
                   : jobMatchSummaryState === "LOADING"
                   ? "Checking suitable workers..."
                   : jobMatchSummaryState === "ERROR"
                     ? "Unable to load match results"
-                    : selectableMatchCount === 0
+                    : matchCount === 0
                       ? "No suitable workers found"
-                      : `${selectableMatchCount} suitable worker${selectableMatchCount === 1 ? "" : "s"} found`;
+                      : `${jobStatusLabel(job.status)} · ${acceptedCount} / ${job.headcount_required} selected · ${matchCount} suitable worker${matchCount === 1 ? "" : "s"} found`;
                 return <div key={job.id} className="flex items-center justify-between gap-4 py-4">
                 <div>
                   <p className="font-semibold text-slate-900 dark:text-white">{job.title}</p>
-                  <p className="text-sm text-slate-500 dark:text-slate-400">{job.headcount_required} worker{job.headcount_required === 1 ? "" : "s"} · {job.status}</p>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">{job.headcount_required} worker{job.headcount_required === 1 ? "" : "s"} needed · {jobStatusLabel(job.status)}</p>
                   <p className={`mt-1 text-sm font-semibold ${jobMatchSummaryState === "ERROR" ? "text-rose-600 dark:text-rose-400" : "text-slate-700 dark:text-slate-300"}`}>{summaryText}</p>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
-                  {jobMatchSummaryState === "FOUND" && selectableMatchCount > 0 && <button type="button" onClick={() => void handleViewJobWorkers(job.id)} className="inline-flex items-center gap-2 rounded-lg border border-blue-200 px-3 py-2 text-sm font-semibold text-blue-600 hover:border-blue-300 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-400 dark:hover:bg-slate-800">
+                  {job.status === "SEARCHING" && jobMatchSummaryState === "FOUND" && matchCount > 0 && <button type="button" onClick={() => void handleViewJobWorkers(job.id)} className="inline-flex items-center gap-2 rounded-lg border border-blue-200 px-3 py-2 text-sm font-semibold text-blue-600 hover:border-blue-300 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-400 dark:hover:bg-slate-800">
                     <Users size={16} /> View Workers
+                  </button>}
+                  {job.status === "SEARCHING" && <button type="button" onClick={() => void handleCancelJob(job.id)} disabled={lifecycleUpdatingJobId === job.id} className="inline-flex items-center gap-2 rounded-lg border border-rose-200 px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-800 dark:text-rose-300 dark:hover:bg-rose-950/30">
+                    {lifecycleUpdatingJobId === job.id ? <Loader2 size={16} className="animate-spin" /> : <X size={16} />} Stop Searching
                   </button>}
                   <button type="button" onClick={() => void handleViewJobDetails(job.id)} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-blue-600 hover:border-blue-300 hover:bg-blue-50 dark:border-slate-700 dark:text-blue-400 dark:hover:bg-slate-800">
                     <Eye size={16} /> View Details

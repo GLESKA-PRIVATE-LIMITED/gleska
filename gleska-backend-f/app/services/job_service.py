@@ -21,6 +21,10 @@ class JobPaymentRequired(Exception):
     """The employer has no active subscription or free dispatch available."""
 
 
+class JobLifecycleError(Exception):
+    """The requested job lifecycle transition is not valid."""
+
+
 class JobService:
     """Owns job validation context and persistence boundary."""
 
@@ -110,7 +114,7 @@ class JobService:
             "p_title": request.title,
             "p_headcount_required": request.headcount_required,
             "p_max_daily_salary": float(request.max_daily_salary) if request.max_daily_salary is not None else None,
-            "p_min_experience": request.min_experience,
+            "p_min_experience": float(request.min_experience) if request.min_experience is not None else None,
             "p_trade_id": request.trade_id,
             "p_required_skills": request.required_skills or [],
         }
@@ -121,6 +125,13 @@ class JobService:
 
         try:
             try:
+                for parameter_name, parameter_value in rpc_params.items():
+                    logger.info(
+                        "Job creation RPC parameter: name=%s value=%r python_type=%s",
+                        parameter_name,
+                        parameter_value,
+                        type(parameter_value).__name__,
+                    )
                 response = supabase.rpc("create_job_for_employer", rpc_params).execute()
             except Exception as rpc_err:
                 # If remote RPC signature hasn't been migrated yet, retry with legacy params
@@ -156,7 +167,7 @@ class JobService:
                         "title": request.title,
                         "headcount_required": request.headcount_required,
                         "max_daily_salary": float(request.max_daily_salary) if request.max_daily_salary is not None else None,
-                        "min_experience": request.min_experience,
+                        "min_experience": float(request.min_experience) if request.min_experience is not None else None,
                         "trade_id": request.trade_id,
                         "required_skills": request.required_skills or [],
                         "work_duration_days": request.work_duration_days,
@@ -198,6 +209,44 @@ class JobService:
             .execute()
         )
         return [cls._to_response(row) for row in (response.data or [])]
+
+    @classmethod
+    def cancel_for_user(cls, user: UserResponse, job_id: str) -> JobResponse:
+        employer_id = cls._employer_profile(user)["id"]
+        try:
+            response = supabase.rpc("cancel_job_for_employer", {
+                "p_employer_id": employer_id,
+                "p_job_id": job_id,
+            }).execute()
+        except Exception as exc:
+            message = str(exc)
+            for code in ("JOB_NOT_FOUND", "JOB_ALREADY_COMPLETED", "JOB_ALREADY_CANCELLED", "JOB_NOT_CANCELLABLE"):
+                if code in message:
+                    raise JobLifecycleError(code) from exc
+            raise JobLifecycleError("JOB_CANCEL_FAILED") from exc
+        row = response.data[0] if isinstance(response.data, list) and response.data else response.data
+        if not row:
+            raise JobLifecycleError("JOB_CANCEL_FAILED")
+        return cls._to_response(row)
+
+    @classmethod
+    def complete_for_user(cls, user: UserResponse, job_id: str) -> JobResponse:
+        employer_id = cls._employer_profile(user)["id"]
+        try:
+            response = supabase.rpc("complete_job_for_employer", {
+                "p_employer_id": employer_id,
+                "p_job_id": job_id,
+            }).execute()
+        except Exception as exc:
+            message = str(exc)
+            for code in ("JOB_NOT_FOUND", "JOB_ALREADY_COMPLETED", "JOB_CANCELLED", "JOB_NOT_READY_FOR_COMPLETION"):
+                if code in message:
+                    raise JobLifecycleError(code) from exc
+            raise JobLifecycleError("JOB_COMPLETE_FAILED") from exc
+        row = response.data[0] if isinstance(response.data, list) and response.data else response.data
+        if not row:
+            raise JobLifecycleError("JOB_COMPLETE_FAILED")
+        return cls._to_response(row)
 
     @classmethod
     def get_for_user(cls, user: UserResponse, job_id: str) -> JobDetailsResponse:

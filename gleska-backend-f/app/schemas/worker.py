@@ -177,6 +177,9 @@ class WorkerJobDetailsResponse(BaseModel):
     salary: float
     headcount: int
     min_experience: int | None = None
+    required_skills: list[str] = []
+    work_duration_days: int | None = None
+    work_timing: str | None = None
     status: str
     expires_at: datetime | None = None
     created_at: datetime | None = None

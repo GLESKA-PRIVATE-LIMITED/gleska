@@ -51,10 +51,28 @@ class JobMatchService:
         for row in rows:
             job_id = str(row["job_id"])
             counts[job_id] = counts.get(job_id, 0) + 1
+        accepted_counts: dict[str, int] = {}
+        if jobs:
+            try:
+                accepted_rows = (
+                    supabase.table("job_matches")
+                    .select("job_id, status, jobs!inner(employer_id)")
+                    .eq("jobs.employer_id", employer_id)
+                    .eq("status", "ACCEPTED")
+                    .execute()
+                    .data
+                    or []
+                )
+                for row in accepted_rows:
+                    job_id = str(row["job_id"])
+                    accepted_counts[job_id] = accepted_counts.get(job_id, 0) + 1
+            except Exception:
+                accepted_counts = {}
         return [
             JobMatchSummary(
                 job_id=job.id,
                 current_match_count=counts.get(job.id, 0),
+                accepted_count=accepted_counts.get(job.id, 0),
                 matching_status="FOUND" if counts.get(job.id, 0) else "NO_MATCHES",
             )
             for job in jobs
