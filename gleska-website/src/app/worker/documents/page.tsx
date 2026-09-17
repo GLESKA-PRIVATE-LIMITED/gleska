@@ -14,14 +14,13 @@ export default function WorkerDocumentsPage() {
   const { user, isLoading, logout } = useAuth();
   useEffect(() => {
     if (!isLoading && (!user || user.role !== "WORKER")) {
-      router.push("/worker/auth");
+      router.replace("/worker/auth");
     }
   }, [isLoading, user, router]);
 
   const handleLogout = async () => {
     try {
       await logout();
-      router.push("/");
       toast.success("Logged out successfully");
     } catch {
       toast.error("Logout failed");

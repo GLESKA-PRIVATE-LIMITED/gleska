@@ -168,6 +168,32 @@ def test_rpc_payload_serializes_decimal_job_values(monkeypatch, salary, expected
     json.dumps(fake.rpc_params)
 
 
+def test_rpc_payload_preserves_integer_fields_and_numeric_experience(monkeypatch):
+    fake = FakeSupabase()
+    monkeypatch.setattr(job_service, "supabase", fake)
+    monkeypatch.setattr(job_service.MatchingService, "create_matches", lambda job_id: [])
+    request = JobCreate(
+        job_site_id=SITE_ID,
+        title="Cook",
+        headcount_required="2.0",
+        max_daily_salary="800",
+        min_experience="2.5",
+        work_duration_days="20.0",
+        work_timing="9:00 AM - 5:00 PM",
+        required_skills=["Maharashtrian", "South Indian"],
+    )
+
+    JobService.create(USER, request)
+
+    assert fake.rpc_params["p_headcount_required"] == 2
+    assert type(fake.rpc_params["p_headcount_required"]) is int
+    assert fake.rpc_params["p_work_duration_days"] == 20
+    assert type(fake.rpc_params["p_work_duration_days"]) is int
+    assert fake.rpc_params["p_min_experience"] == 2.5
+    assert type(fake.rpc_params["p_min_experience"]) is float
+    assert fake.rpc_params["p_required_skills"] == ["Maharashtrian", "South Indian"]
+
+
 def test_create_job_rejects_non_owned_site(monkeypatch):
     fake = FakeSupabase(site_rows=[])
     monkeypatch.setattr(job_service, "supabase", fake)

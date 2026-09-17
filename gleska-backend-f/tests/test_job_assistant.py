@@ -14,6 +14,7 @@ from app.schemas.job_assistant import (
     JobAssistantMessageRequest,
     JobAssistantResponse,
     JobAssistantState,
+    JobAssistantStateUpdateRequest,
 )
 from app.services.job_assistant_service import JobAssistantService
 from app.services.job_service import JobService
@@ -142,10 +143,39 @@ async def test_complete_in_one_message():
     assert state.min_experience == 1
     assert any("south indian" in skill.lower() for skill in state.required_skills)
     assert response.ready_to_create is True
-    assert len(response.missing_fields) == 0
     assert len(response.validation_errors) == 0
+    assert len(response.missing_fields) == 0
 
 
+@pytest.mark.asyncio
+async def test_manual_state_update_is_canonical_and_revisioned(mock_db):
+    conversation_id = seed_conversation(mock_db, JobAssistantState(title="Loading Work", max_daily_salary=800))
+    state, missing_fields, invalid_fields, validation_errors, ready, token, revision = JobAssistantService.update_manual_state(
+        EMPLOYER_USER,
+        JobAssistantStateUpdateRequest(
+            conversation_id=conversation_id,
+            state=JobAssistantState(title="Loading Work", max_daily_salary=1000),
+            state_revision=0,
+        ),
+    )
+
+    assert state.max_daily_salary == 1000
+    assert "headcount_required" in missing_fields
+    assert "required_skills" not in missing_fields
+    assert ready is False
+    assert token is None
+    assert revision == 1
+    assert mock_db.assistant_conversations[0]["structured_state"]["max_daily_salary"] == 1000
+
+    with pytest.raises(ValueError, match="STALE_ASSISTANT_STATE"):
+        JobAssistantService.update_manual_state(
+            EMPLOYER_USER,
+            JobAssistantStateUpdateRequest(
+                conversation_id=conversation_id,
+                state=JobAssistantState(title="Loading Work", max_daily_salary=700),
+                state_revision=0,
+            ),
+        )
 @pytest.mark.asyncio
 async def test_multi_turn_conversation():
     """Employer provides info turn by turn. State must persist across turns."""
@@ -1007,3 +1037,98 @@ def test_confirmation_token_cannot_be_reused_for_another_user_or_conversation():
                 confirmation_token=token,
             ),
         )
+
+
+@pytest.mark.asyncio
+async def test_zero_experience_and_optional_skills_are_valid(mock_db):
+    """Zero experience (fresher/no experience required) and empty skills are completely valid and ready to create."""
+    state = JobAssistantState(
+        title="General Helper",
+        headcount_required=5,
+        job_site_id=OWNED_SITE_ID,
+        max_daily_salary=600.0,
+        work_duration_days=15,
+        work_timing="9:00 AM to 6:00 PM",
+        min_experience=0,
+        required_skills=[],
+    )
+    conversation_id = seed_conversation(mock_db, state)
+    res_state, missing_fields, invalid_fields, validation_errors, ready, token, revision = JobAssistantService.update_manual_state(
+        EMPLOYER_USER,
+        JobAssistantStateUpdateRequest(
+            conversation_id=conversation_id,
+            state=state,
+            state_revision=0,
+        ),
+    )
+    assert not missing_fields
+    assert not invalid_fields
+    assert not validation_errors
+    assert ready is True
+    assert token is not None
+    assert res_state.min_experience == 0
+
+
+@pytest.mark.asyncio
+async def test_ai_fresher_phrase_sets_zero_experience_and_is_valid(mock_db):
+    """AI natural expression 'no experience required' sets min_experience=0."""
+    state = JobAssistantState(
+        title="Helper",
+        headcount_required=3,
+        job_site_id=OWNED_SITE_ID,
+        max_daily_salary=600.0,
+        work_duration_days=10,
+        work_timing="9:00 AM to 6:00 PM",
+    )
+    conversation_id = seed_conversation(mock_db, state)
+    response = await JobAssistantService.process_message(
+        EMPLOYER_USER,
+        JobAssistantMessageRequest(message="No experience required", conversation_id=conversation_id),
+    )
+    assert response.structured_state.min_experience == 0
+    assert not response.validation_errors
+    assert "min_experience" not in response.missing_fields
+    assert response.ready_to_create is True
+
+
+@pytest.mark.asyncio
+async def test_ambiguous_duration_without_unit_clarification(mock_db):
+    """Saying 'for 10' or '10' without duration unit prompts for clarification."""
+    state = JobAssistantState(title="Painter", headcount_required=2)
+    conversation_id = seed_conversation(mock_db, state)
+    response = await JobAssistantService.process_message(
+        EMPLOYER_USER,
+        JobAssistantMessageRequest(message="for 10", conversation_id=conversation_id),
+    )
+    assert response.ready_to_create is False
+    assert response.structured_state.work_duration_days is None
+    assert any("How long is the job — 10 days, 10 months, or another duration?" in err for err in response.validation_errors)
+
+
+@pytest.mark.asyncio
+async def test_manual_state_update_reports_invalid_fields(mock_db):
+    """Manual update with invalid timing, fractional experience < 1, and unauthorized site reports invalid_fields."""
+    conversation_id = seed_conversation(mock_db, JobAssistantState())
+    state, missing_fields, invalid_fields, validation_errors, ready, token, revision = JobAssistantService.update_manual_state(
+        EMPLOYER_USER,
+        JobAssistantStateUpdateRequest(
+            conversation_id=conversation_id,
+            state=JobAssistantState(
+                title="Cook",
+                headcount_required=5,
+                max_daily_salary=800.0,
+                work_timing="invalid hours",
+                min_experience=0.5,
+                work_duration_days=10,
+                job_site_id=OTHER_SITE_ID,
+            ),
+            state_revision=0,
+        ),
+    )
+    assert ready is False
+    assert token is None
+    assert "work_timing" in invalid_fields
+    assert "min_experience" in invalid_fields
+    assert "job_site_id" in invalid_fields
+    assert len(validation_errors) >= 3
+

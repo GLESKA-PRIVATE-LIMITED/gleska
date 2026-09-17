@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { AxiosError } from "axios";
 import { useAuth } from "@/context/AuthContext";
 import { useLanguage } from "@/context/LanguageContext";
-import { getRouteForNextStep } from "@/lib/auth-routing";
+import { getRouteForAuthenticatedUser } from "@/lib/auth-routing";
 import { supabase } from "@/lib/supabase";
 import apiClient from "@/lib/api";
 
@@ -36,10 +36,18 @@ function clearStoredRole() {
   if (typeof window === "undefined") return;
   sessionStorage.removeItem("goleska_oauth_role");
   sessionStorage.removeItem("goleska_oauth_account_type");
+  sessionStorage.removeItem("goleska_oauth_next");
   localStorage.removeItem("goleska_oauth_role");
   localStorage.removeItem("goleska_oauth_account_type");
+  localStorage.removeItem("goleska_oauth_next");
   document.cookie = "goleska_oauth_role=; path=/; max-age=0; SameSite=Lax";
   document.cookie = "goleska_oauth_account_type=; path=/; max-age=0; SameSite=Lax";
+  document.cookie = "goleska_oauth_next=; path=/; max-age=0; SameSite=Lax";
+}
+
+function getStoredNext(): string | null {
+  if (typeof window === "undefined") return null;
+  return sessionStorage.getItem("goleska_oauth_next") || localStorage.getItem("goleska_oauth_next");
 }
 
 export default function AuthCallbackPage() {
@@ -122,9 +130,10 @@ export default function AuthCallbackPage() {
           console.log("[OAuth] User already provisioned. Role:", meRes.data.user.role);
           const existingRole = meRes.data.user.role as "WORKER" | "EMPLOYER";
           const nextStep = meRes.data.next_step;
+          const requestedNext = getStoredNext();
           clearStoredRole();
           setAuthState(meRes.data.user, meRes.data.next_step || null);
-          const targetRoute = getRouteForNextStep(existingRole, nextStep);
+          const targetRoute = getRouteForAuthenticatedUser(existingRole, nextStep, requestedNext);
           console.log("[OAuth] Redirecting existing user to:", targetRoute);
           router.replace(targetRoute);
           return;
@@ -160,6 +169,7 @@ export default function AuthCallbackPage() {
 
         const authenticatedRole = provisionedData.user.role as "WORKER" | "EMPLOYER";
         const nextStep = provisionedData.nextStep;
+        const requestedNext = getStoredNext();
 
         if (!authenticatedRole) {
           throw new Error(
@@ -174,7 +184,7 @@ export default function AuthCallbackPage() {
         clearStoredRole();
 
         // Redirect to appropriate route
-        const finalRoute = getRouteForNextStep(authenticatedRole, nextStep);
+        const finalRoute = getRouteForAuthenticatedUser(authenticatedRole, nextStep, requestedNext);
         console.log("[OAuth] Redirecting new user to:", finalRoute);
         router.replace(finalRoute);
       } catch (provisionError) {

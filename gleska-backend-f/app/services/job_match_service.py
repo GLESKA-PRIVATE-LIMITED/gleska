@@ -18,30 +18,58 @@ class JobMatchService:
         if job_id is not None:
             params["p_job_id"] = job_id
         response = supabase.rpc("get_current_job_match_workers", params).execute()
+        return [row for row in (response.data or []) if row.get("status") == "PENDING"]
+
+    @staticmethod
+    def _accepted_rows(employer_id: str, job_id: str) -> list[dict[str, Any]]:
+        response = (
+            supabase.table("job_matches")
+            .select(
+                "worker_profile_id,status,created_at,composite_score,"
+                "worker_profiles!inner(id,trade_id,skills,experience_years,expected_daily_wage,"
+                "availability_status,users!inner(name)),jobs!inner(employer_id)"
+            )
+            .eq("job_id", job_id)
+            .eq("jobs.employer_id", employer_id)
+            .eq("status", "ACCEPTED")
+            .execute()
+        )
         return response.data or []
+
+    @staticmethod
+    def _worker_response(match: dict[str, Any]) -> JobMatchWorkerResponse:
+        profile = match.get("worker_profiles") or {}
+        user = profile.get("users") or {}
+        return JobMatchWorkerResponse(
+            worker_profile_id=str(match.get("worker_profile_id") or profile.get("id")),
+            name=match.get("name") or user.get("name"),
+            trade_id=match.get("trade_id") or profile.get("trade_id"),
+            skills=match.get("skills") or profile.get("skills") or [],
+            experience_years=match.get("experience_years") if match.get("experience_years") is not None else profile.get("experience_years"),
+            expected_daily_wage=match.get("expected_daily_wage") if match.get("expected_daily_wage") is not None else profile.get("expected_daily_wage"),
+            availability_status=match.get("availability_status") or profile.get("availability_status"),
+            distance_m=match.get("distance_m"),
+            composite_score=match["composite_score"],
+            status=match["status"],
+            created_at=match["created_at"],
+        )
 
     @classmethod
     def list_for_user(cls, user: UserResponse, job_id: str) -> JobMatchesResponse:
         job = JobService.get_for_user(user, job_id)
-        matches = cls._current_rows(str(job.employer_id), job_id)
-        if not matches:
-            return JobMatchesResponse(matching_status="COMPLETED", matches=[])
-        result = []
-        for match in matches:
-            result.append(JobMatchWorkerResponse(
-                worker_profile_id=str(match["worker_profile_id"]),
-                name=match.get("name"),
-                trade_id=match.get("trade_id"),
-                skills=match.get("skills") or [],
-                experience_years=match.get("experience_years"),
-                expected_daily_wage=match.get("expected_daily_wage"),
-                availability_status=match.get("availability_status"),
-                distance_m=match.get("distance_m"),
-                composite_score=match["composite_score"],
-                status=match["status"],
-                created_at=match["created_at"],
-            ))
-        return JobMatchesResponse(matching_status="COMPLETED", matches=result)
+        pending_matches = cls._current_rows(str(job.employer_id), job_id)
+        accepted_matches = cls._accepted_rows(str(job.employer_id), job_id)
+        matching_workers = [cls._worker_response(match) for match in pending_matches]
+        selected_workers = [cls._worker_response(match) for match in accepted_matches]
+        selected_count = len(selected_workers)
+        return JobMatchesResponse(
+            matching_status="FOUND" if matching_workers else "NO_MATCHES",
+            matches=matching_workers,
+            selected_workers=selected_workers,
+            headcount_required=job.headcount_required,
+            selected_count=selected_count,
+            remaining_count=max(job.headcount_required - selected_count, 0),
+        )
 
     @classmethod
     def summaries_for_user(cls, user: UserResponse) -> list[JobMatchSummary]:
@@ -50,8 +78,9 @@ class JobMatchService:
         rows = cls._current_rows(employer_id)
         counts: dict[str, int] = {}
         for row in rows:
-            job_id = str(row["job_id"])
-            counts[job_id] = counts.get(job_id, 0) + 1
+            if row.get("status") == "PENDING":
+                job_id = str(row["job_id"])
+                counts[job_id] = counts.get(job_id, 0) + 1
         accepted_counts: dict[str, int] = {}
         if jobs:
             try:

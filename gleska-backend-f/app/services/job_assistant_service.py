@@ -84,6 +84,7 @@ MESSAGES = {
         "duration": "How many days will the workers be required to work?",
         "wage": "What daily wage (in ₹) would you like to offer per worker?",
         "timing": "Please provide the exact daily working hours, for example 8 AM to 5 PM.",
+        "duration_ambiguous": "How long is the job — {num} days, {num} months, or another duration?",
         "complete": "Everything looks complete! Please review the job preview and click 'Create Job' to publish it.",
     },
     "HI": {
@@ -98,6 +99,7 @@ MESSAGES = {
         "duration": "कामगारों की आवश्यकता कितने दिनों के लिए है?",
         "wage": "आप प्रति कामगार कितना दैनिक वेतन देना चाहते हैं?",
         "timing": "काम के रोज़ाना समय क्या होंगे? उदाहरण के लिए, सुबह 8 बजे से शाम 5 बजे तक।",
+        "duration_ambiguous": "नौकरी की अवधि कितनी है — {num} दिन, {num} महीने या कोई अन्य अवधि?",
         "complete": "सारी जानकारी पूरी है। कृपया नौकरी का विवरण देखें और नौकरी बनाने के लिए 'नौकरी बनाएं' पर क्लिक करें।",
     },
     "MR": {
@@ -112,6 +114,7 @@ MESSAGES = {
         "duration": "कामगार किती दिवसांसाठी हवे आहेत?",
         "wage": "प्रत्येक कामगाराला तुम्ही किती दैनिक वेतन देऊ इच्छिता?",
         "timing": "दररोजची कामाची वेळ काय असेल? उदाहरणार्थ, सकाळी 8 ते संध्याकाळी 5.",
+        "duration_ambiguous": "कामाचा कालावधी किती आहे — {num} दिवस, {num} महिने की इतर काही?",
         "complete": "सर्व माहिती पूर्ण आहे. कृपया नोकरीचा तपशील पाहा आणि नोकरी तयार करण्यासाठी 'नोकरी तयार करा' वर क्लिक करा.",
     },
     "TA": {
@@ -126,6 +129,7 @@ MESSAGES = {
         "duration": "தொழிலாளர்கள் எத்தனை நாட்களுக்கு தேவை?",
         "wage": "ஒரு தொழிலாளருக்கு எவ்வளவு தினசரி ஊதியம் வழங்க விரும்புகிறீர்கள்?",
         "timing": "தினசரி வேலை நேரம் என்ன? உதாரணமாக, காலை 8 மணி முதல் மாலை 5 மணி வரை.",
+        "duration_ambiguous": "வேலை காலம் எவ்வளவு — {num} நாட்கள், {num} மாதங்கள் அல்லது வேறு காலமா?",
         "complete": "அனைத்து தகவல்களும் முடிந்துவிட்டன. வேலை விவரத்தைப் பார்த்து, வேலை உருவாக்க 'வேலை உருவாக்கு' என்பதைக் கிளிக் செய்யவும்.",
     },
     "HINGLISH": {
@@ -140,6 +144,7 @@ MESSAGES = {
         "duration": "Workers kitne din ke liye chahiye?",
         "wage": "Aap per worker kitni daily wage dena chahenge?",
         "timing": "Daily working hours kya honge? Jaise subah 8 baje se shaam 5 baje tak.",
+        "duration_ambiguous": "Job kitne time ke liye hai — {num} days, {num} months, ya koi aur duration?",
         "complete": "Saari information complete hai. Job preview check karke job banane ke liye 'Job Banayein' par click karein.",
     },
 }
@@ -210,11 +215,11 @@ class JobAssistantService:
         user: UserResponse,
         employer_id: str,
         request: JobAssistantMessageRequest,
-    ) -> tuple[str, JobAssistantState, list[dict[str, Any]]]:
+    ) -> tuple[str, JobAssistantState, list[dict[str, Any]], int, bool]:
         if request.conversation_id:
             response = (
                 supabase.table("assistant_conversations")
-                .select("id, user_id, employer_id, structured_state, history, language, status")
+                .select("id, user_id, employer_id, structured_state, history, language, status, revision")
                 .eq("id", request.conversation_id)
                 .eq("user_id", user.id)
                 .eq("employer_id", employer_id)
@@ -229,20 +234,21 @@ class JobAssistantService:
             history = conversation.get("history") or []
             if not isinstance(history, list):
                 raise ValueError("CONVERSATION_HISTORY_INVALID")
-            return str(conversation["id"]), state, history
+            return str(conversation["id"]), state, history, int(conversation.get("revision") or 0), "revision" in conversation
 
         response = supabase.table("assistant_conversations").insert({
             "user_id": user.id,
             "employer_id": employer_id,
-            "structured_state": JobAssistantState().model_dump(mode="json"),
+            "structured_state": request.current_state.model_dump(mode="json"),
             "history": [],
             "language": request.language,
             "status": "ACTIVE",
+            "revision": 0,
         }).execute()
         conversation = cls._conversation_row(response)
         if not conversation.get("id"):
             raise ValueError("CONVERSATION_CREATE_FAILED")
-        return str(conversation["id"]), JobAssistantState(), []
+        return str(conversation["id"]), request.current_state, [], 0, True
 
     @classmethod
     def _persist_conversation(
@@ -253,21 +259,20 @@ class JobAssistantService:
         state: JobAssistantState,
         history: list[dict[str, Any]],
         language: str,
+        revision: int,
+        enforce_revision: bool = True,
     ) -> None:
-        response = (
-            supabase.table("assistant_conversations")
-            .update({
+        query = supabase.table("assistant_conversations").update({
                 "structured_state": state.model_dump(mode="json"),
                 "history": history,
                 "language": language,
-            })
-            .eq("id", conversation_id)
-            .eq("user_id", user.id)
-            .eq("employer_id", employer_id)
-            .execute()
-        )
+                "revision": revision + 1,
+            }).eq("id", conversation_id).eq("user_id", user.id).eq("employer_id", employer_id)
+        if enforce_revision:
+            query = query.eq("revision", revision)
+        response = query.execute()
         if not getattr(response, "data", None):
-            raise ValueError("CONVERSATION_NOT_FOUND")
+            raise ValueError("STALE_ASSISTANT_STATE")
 
     @staticmethod
     def _confirmation_token(user: UserResponse, conversation_id: str, state: JobAssistantState) -> str:
@@ -338,8 +343,7 @@ class JobAssistantService:
             or state.work_duration_days is None
             or not state.work_timing
             or state.min_experience is None
-            or state.min_experience < 1
-            or not state.required_skills
+            or state.min_experience < 0
         ):
             raise ValueError("ASSISTANT_NOT_READY")
         return JobCreate(
@@ -347,10 +351,10 @@ class JobAssistantService:
             title=state.title,
             headcount_required=state.headcount_required,
             max_daily_salary=Decimal(str(state.max_daily_salary)),
-            min_experience=state.min_experience,
+            min_experience=Decimal(str(state.min_experience)) if state.min_experience is not None else None,
             work_duration_days=state.work_duration_days,
             work_timing=state.work_timing,
-            required_skills=state.required_skills,
+            required_skills=state.required_skills or [],
         )
 
     @staticmethod
@@ -713,11 +717,11 @@ class JobAssistantService:
             "₹", "rs", "inr", "salary", "wage", "per day", "daily", "/day", "pay",
             "am", "pm", "shift", "timing", "hours"
         ]) or any(kw in lower for kw in ["कामगार", "कुक", "दिन", "दिवस", "வேலை", "தொழிலாளர்", "நாள்"])
-        if amb_match and not has_field_keyword and not context_field:
-            num = amb_match.group(1)
+        dur_amb_match = re.search(r"^(?:for|duration(?:\s+is)?|ke\s+liye)\s+(\d+)\.?$", lower)
+        if dur_amb_match:
             ambiguous_inputs.append({
-                "field": "ambiguous_number",
-                "note": f"Do you mean {num} workers or {num} days?",
+                "field": "ambiguous_duration",
+                "note": dur_amb_match.group(1),
             })
             return {
                 "extracted": extracted,
@@ -725,6 +729,31 @@ class JobAssistantService:
                 "ambiguous_inputs": ambiguous_inputs,
                 "is_correction": bool(re.search(r"actually|change|make\s+it|update|no|correction", lower)),
             }
+
+        if amb_match and not has_field_keyword:
+            num = amb_match.group(1)
+            if context_field == "work_duration_days":
+                ambiguous_inputs.append({
+                    "field": "ambiguous_duration",
+                    "note": num,
+                })
+                return {
+                    "extracted": extracted,
+                    "invalid_raw_inputs": invalid_raw_inputs,
+                    "ambiguous_inputs": ambiguous_inputs,
+                    "is_correction": bool(re.search(r"actually|change|make\s+it|update|no|correction", lower)),
+                }
+            elif not context_field:
+                ambiguous_inputs.append({
+                    "field": "ambiguous_number",
+                    "note": f"Do you mean {num} workers or {num} days?",
+                })
+                return {
+                    "extracted": extracted,
+                    "invalid_raw_inputs": invalid_raw_inputs,
+                    "ambiguous_inputs": ambiguous_inputs,
+                    "is_correction": bool(re.search(r"actually|change|make\s+it|update|no|correction", lower)),
+                }
 
         dur_neg = re.search(r"(-\d+)\s*(?:days?|working\s+days?|weeks?|months?)", lower)
         if dur_neg:
@@ -940,7 +969,9 @@ class JobAssistantService:
             raise ValueError("EMPLOYER_NOT_FOUND")
         employer_id = str(employer["id"])
 
-        conversation_id, server_state, history = cls._load_or_create_conversation(user, employer_id, request)
+        conversation_id, server_state, history, state_revision, revision_supported = cls._load_or_create_conversation(user, employer_id, request)
+        if request.state_revision is not None and request.state_revision != state_revision:
+            raise ValueError("STALE_ASSISTANT_STATE")
         now = datetime.now(timezone.utc).isoformat()
         history = [*history, {"role": "user", "content": request.message, "created_at": now}]
 
@@ -977,6 +1008,7 @@ class JobAssistantService:
         state = server_state.model_copy()
         messages = MESSAGES[request.language]
         validation_errors: list[str] = []
+        invalid_fields: list[str] = []
         updated_fields: list[str] = []
 
         # 1. Immediate validation of explicitly invalid inputs
@@ -985,18 +1017,23 @@ class JobAssistantService:
             raw_val = inv.get("raw_value")
             if field == "headcount_required":
                 validation_errors.append(messages["workers_invalid"])
+                invalid_fields.append("headcount_required")
                 state.headcount_required = None
             elif field == "work_duration_days":
                 validation_errors.append(messages["duration_invalid"])
+                invalid_fields.append("work_duration_days")
                 state.work_duration_days = None
             elif field == "max_daily_salary":
                 validation_errors.append(messages["wage_invalid"])
+                invalid_fields.append("max_daily_salary")
                 state.max_daily_salary = None
             elif field == "work_timing":
                 validation_errors.append(messages["timing_invalid"])
+                invalid_fields.append("work_timing")
                 state.work_timing = None
             elif field == "min_experience":
                 validation_errors.append(messages["experience_invalid"])
+                invalid_fields.append("min_experience")
                 state.min_experience = None
 
         # 2. Check ambiguous inputs
@@ -1005,6 +1042,13 @@ class JobAssistantService:
             note = amb.get("note")
             if field == "ambiguous_number":
                 validation_errors.append(messages["workers"] + " या " + messages["duration"] if request.language == "HI" else messages["workers"] if request.language != "EN" else note or "Do you mean workers or days?")
+            elif field == "ambiguous_duration":
+                num = note or "10"
+                msg_template = messages.get("duration_ambiguous", MESSAGES["EN"]["duration_ambiguous"])
+                validation_errors.append(msg_template.format(num=num))
+                invalid_fields.append("work_duration_days")
+                state.work_duration_days = None
+                state.work_duration_months = None
             elif field == "work_timing":
                 validation_errors.append(messages["timing"])
                 state.work_timing = None
@@ -1093,16 +1137,17 @@ class JobAssistantService:
         # Min Experience (Preserve existing if not mentioned; validate if provided)
         exp = extracted.get("min_experience")
         if exp is not None:
-            if exp < 1:
+            if exp < 0 or (0 < exp < 1) or exp > 50:
                 validation_errors.append(messages["experience_invalid"])
-                state.min_experience = None
-            elif exp > 50:
-                validation_errors.append(messages["experience_invalid"])
+                invalid_fields.append("min_experience")
                 state.min_experience = None
             else:
                 if state.min_experience != exp:
-                    state.min_experience = Decimal(str(exp))
-                    updated_fields.append(f"{exp} yr(s) experience")
+                    state.min_experience = float(exp)
+                    if exp == 0:
+                        updated_fields.append("no experience required")
+                    else:
+                        updated_fields.append(f"{exp} yr(s) experience")
 
         # Skills
         skills = extracted.get("required_skills") or []
@@ -1212,10 +1257,8 @@ class JobAssistantService:
             missing_fields.append("work_duration_days")
         if not state.work_timing:
             missing_fields.append("work_timing")
-        if state.min_experience is None or state.min_experience < 1:
+        if state.min_experience is None or state.min_experience < 0:
             missing_fields.append("min_experience")
-        if not state.required_skills:
-            missing_fields.append("required_skills")
 
         ready_to_create = len(missing_fields) == 0 and len(validation_errors) == 0
         if ready_to_create:
@@ -1223,7 +1266,7 @@ class JobAssistantService:
                 cls._job_create_from_state(state)
             except (ValueError, ValidationError):
                 ready_to_create = False
-                if "min_experience" not in missing_fields:
+                if "min_experience" not in missing_fields and (state.min_experience is None or state.min_experience < 0):
                     missing_fields.append("min_experience")
 
         logger.info(
@@ -1355,13 +1398,119 @@ class JobAssistantService:
 
         confirmation_token = cls._confirmation_token(user, conversation_id, state) if ready_to_create else None
         history.append({"role": "assistant", "content": assistant_message, "created_at": datetime.now(timezone.utc).isoformat()})
-        cls._persist_conversation(user, conversation_id, employer_id, state, history, request.language)
+        cls._persist_conversation(user, conversation_id, employer_id, state, history, request.language, state_revision, revision_supported)
         return JobAssistantResponse(
             conversation_id=conversation_id,
             assistant_message=assistant_message,
             structured_state=state,
             missing_fields=missing_fields,
             validation_errors=validation_errors,
+            invalid_fields=list(dict.fromkeys(invalid_fields)),
             ready_to_create=ready_to_create,
             confirmation_token=confirmation_token,
+            state_revision=state_revision + 1,
         )
+
+    @classmethod
+    def update_manual_state(cls, user: UserResponse, request):
+        employer_res = supabase.table("employer_profiles").select("id").eq("user_id", user.id).single().execute()
+        employer = employer_res.data or {}
+        if not employer.get("id"):
+            raise ValueError("EMPLOYER_NOT_FOUND")
+        response = supabase.table("assistant_conversations").select("structured_state, history, language, status, revision").eq("id", request.conversation_id).eq("user_id", user.id).eq("employer_id", employer["id"]).single().execute()
+        conversation = cls._conversation_row(response)
+        if not conversation or conversation.get("status") != "ACTIVE":
+            raise ValueError("CONVERSATION_NOT_FOUND")
+        revision = int(conversation.get("revision") or 0)
+        if revision != request.state_revision:
+            raise ValueError("STALE_ASSISTANT_STATE")
+        state = JobAssistantState.model_validate(request.state.model_dump(mode="json"))
+
+        language = conversation.get("language") or "EN"
+        messages = MESSAGES.get(language, MESSAGES["EN"])
+        missing_fields: list[str] = []
+        invalid_fields: list[str] = []
+        validation_errors: list[str] = []
+
+        # Validate title
+        if state.title is None:
+            missing_fields.append("title")
+        elif not state.title.strip():
+            invalid_fields.append("title")
+            validation_errors.append(messages["title"])
+
+        # Validate headcount_required
+        if state.headcount_required is None:
+            missing_fields.append("headcount_required")
+        elif state.headcount_required < 1 or state.headcount_required > 1000:
+            invalid_fields.append("headcount_required")
+            validation_errors.append(messages["workers_invalid"])
+
+        # Validate job_site_id
+        if state.job_site_id is None:
+            missing_fields.append("job_site_id")
+        else:
+            site_check = supabase.table("job_sites").select("id, name").eq("id", state.job_site_id).eq("employer_id", str(employer["id"])).execute()
+            site_row = cls._conversation_row(site_check)
+            if not site_row:
+                invalid_fields.append("job_site_id")
+                validation_errors.append(messages["site"])
+                state.job_site_id = None
+                state.job_site_name = None
+            else:
+                state.job_site_name = site_row.get("name") or "Work site"
+
+        # Validate max_daily_salary
+        if state.max_daily_salary is None:
+            missing_fields.append("max_daily_salary")
+        elif state.max_daily_salary <= 0 or state.max_daily_salary > 1_000_000:
+            invalid_fields.append("max_daily_salary")
+            validation_errors.append(messages["wage_invalid"])
+
+        # Validate work_duration_days
+        if state.work_duration_days is None:
+            missing_fields.append("work_duration_days")
+        elif state.work_duration_days < 1 or state.work_duration_days > 365:
+            invalid_fields.append("work_duration_days")
+            validation_errors.append(messages["duration_invalid"])
+
+        # Validate work_timing
+        if state.work_timing is None:
+            missing_fields.append("work_timing")
+        else:
+            is_valid_timing, normalized_timing = cls._validate_timing(state.work_timing)
+            if not is_valid_timing:
+                invalid_fields.append("work_timing")
+                validation_errors.append(messages["timing_invalid"])
+            else:
+                state.work_timing = normalized_timing
+
+        # Validate min_experience: None is missing, 0 is valid, >= 1 is valid, 0 < exp < 1 or < 0 or > 50 is invalid
+        if state.min_experience is None:
+            missing_fields.append("min_experience")
+        elif state.min_experience < 0 or (0 < state.min_experience < 1) or state.min_experience > 50:
+            invalid_fields.append("min_experience")
+            validation_errors.append(messages["experience_invalid"])
+
+        ready_to_create = not missing_fields and not invalid_fields and not validation_errors
+        if ready_to_create:
+            try:
+                cls._job_create_from_state(state)
+            except (ValueError, ValidationError):
+                ready_to_create = False
+                if "min_experience" not in missing_fields and (state.min_experience is None or state.min_experience < 0):
+                    missing_fields.append("min_experience")
+
+        next_revision = revision + 1
+        cls._persist_conversation(
+            user,
+            request.conversation_id,
+            str(employer["id"]),
+            state,
+            conversation.get("history") or [],
+            conversation.get("language") or "EN",
+            revision,
+            "revision" in conversation,
+        )
+        token = cls._confirmation_token(user, request.conversation_id, state) if ready_to_create else None
+        return state, missing_fields, invalid_fields, validation_errors, ready_to_create, token, next_revision

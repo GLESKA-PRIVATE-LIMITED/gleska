@@ -12,7 +12,7 @@ class JobAssistantState(BaseModel):
     title: str | None = Field(default=None, max_length=120)
     headcount_required: int | None = Field(default=None, ge=1, le=1000)
     max_daily_salary: float | None = Field(default=None, gt=0, le=1_000_000)
-    min_experience: Decimal | None = Field(default=None, ge=0, le=100)
+    min_experience: float | None = Field(default=None, ge=0, le=100)
     work_duration_days: int | None = Field(default=None, ge=1, le=365)
     work_duration_months: Decimal | None = Field(default=None, gt=0, le=12)
     work_timing: str | None = Field(default=None, max_length=120)
@@ -47,6 +47,7 @@ class JobAssistantMessageRequest(BaseModel):
     conversation_id: str | None = None
     current_state: JobAssistantState = Field(default_factory=JobAssistantState)
     selected_job_site_id: UUID | None = None
+    state_revision: int | None = None
 
     @field_validator("message")
     @classmethod
@@ -68,6 +69,23 @@ class JobAssistantResponse(BaseModel):
     invalid_fields: list[str] = Field(default_factory=list)
     ready_to_create: bool = False
     confirmation_token: str | None = None
+    state_revision: int = 0
+
+
+class JobAssistantStateUpdateRequest(BaseModel):
+    conversation_id: str
+    state: JobAssistantState
+    state_revision: int
+
+
+class JobAssistantStateUpdateResponse(BaseModel):
+    structured_state: JobAssistantState
+    missing_fields: list[str] = Field(default_factory=list)
+    invalid_fields: list[str] = Field(default_factory=list)
+    validation_errors: list[str] = Field(default_factory=list)
+    ready_to_create: bool = False
+    confirmation_token: str | None = None
+    state_revision: int
 
 
 class JobAssistantCreateRequest(BaseModel):

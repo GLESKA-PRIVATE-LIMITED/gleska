@@ -78,7 +78,7 @@ export default function WorkerProfilePage() {
   // Fetch worker profile on mount
   useEffect(() => {
     if (!isLoading && (!user || user.role !== "WORKER")) {
-      router.push("/worker/auth");
+      router.replace("/worker/auth");
       return;
     }
     if (isLoading || !user || user.role !== "WORKER") return;
@@ -264,7 +264,6 @@ export default function WorkerProfilePage() {
   const handleLogout = async () => {
     try {
       await logout();
-      router.push("/");
       toast.success("Logged out successfully");
     } catch {
       toast.error("Logout failed");

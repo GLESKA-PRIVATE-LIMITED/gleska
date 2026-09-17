@@ -101,15 +101,15 @@ export default function SubscriptionPage() {
   React.useEffect(() => {
     if (isLoading) return;
     if (!user) {
-      router.push("/employer/auth");
+      router.replace("/employer/auth");
       return;
     }
     if (user.role !== "EMPLOYER") {
-      router.push("/");
+      router.replace("/");
       return;
     }
     if (nextStep !== "DASHBOARD") {
-      router.push("/employer/onboarding");
+      router.replace("/employer/onboarding");
       return;
     }
 

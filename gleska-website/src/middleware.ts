@@ -56,8 +56,9 @@ export function middleware(request: NextRequest) {
   const isAuthenticated = hasGoleskaSession || hasGoleskaClientAuth || hasSupabaseAuthToken;
 
   if (!isAuthenticated) {
-    const targetAuth = isAdminProtected ? "/admin/login" : isWorkerProtected ? "/worker/auth" : "/employer/auth";
+    const targetAuth = isAdminProtected ? "/admin/login" : "/auth/signin";
     const redirectUrl = new URL(targetAuth, request.url);
+    if (!isAdminProtected) redirectUrl.searchParams.set("next", `${pathname}${request.nextUrl.search}`);
     return NextResponse.redirect(redirectUrl);
   }
 

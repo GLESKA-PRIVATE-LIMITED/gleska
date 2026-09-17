@@ -82,12 +82,16 @@ async def provision_authenticated_user(
         auth_user = supabase.auth.get_user(credentials.credentials).user
         if request.msg91_access_token:
             await MSG91Service().verify_access_token(request.msg91_access_token)
+        existing = AuthService.get_user_by_id(str(auth_user.id))
+        role = existing.get("role") if existing else request.role
+        if not role:
+            raise ValueError("ROLE_REQUIRED_FOR_NEW_ACCOUNT")
         user = AuthService.provision_supabase_user(
             user_id=str(auth_user.id),
             name=request.name or (auth_user.user_metadata or {}).get("name", ""),
             email=auth_user.email,
             mobile=request.mobile or auth_user.phone,
-            role=request.role,
+            role=role,
         )
         return UserResponse(**user)
     except ValueError as exc:
@@ -307,10 +311,7 @@ async def complete_msg91(request: dict, response: Response):
 async def login_msg91(request: dict, response: Response):
     """Authenticate an existing mobile account without creating a profile."""
     mobile = str(request.get("mobile", "")).strip()
-    role = str(request.get("role", "")).upper()
     access_token = str(request.get("msg91_access_token", "")).strip()
-    if role not in {"WORKER", "EMPLOYER"}:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="INVALID_ROLE")
     try:
         normalized_mobile = AuthService.normalize_mobile(mobile)
         await MSG91Service().verify_access_token(access_token)
@@ -320,10 +321,6 @@ async def login_msg91(request: dict, response: Response):
     existing = AuthService.get_user_by_mobile(normalized_mobile)
     if not existing:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No account exists with this mobile number. Please sign up first.")
-    try:
-        AuthService.ensure_role_allowed(existing, role)
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This account belongs to a different role.") from exc
 
     response.set_cookie(
         key="goleska_session",

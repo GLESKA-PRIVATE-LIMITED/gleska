@@ -1,21 +1,27 @@
 "use client";
 
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { CheckCircle2, Zap } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { useLanguage } from "@/context/LanguageContext";
 import { getRouteForNextStep } from "@/lib/auth-routing";
 import LanguageSelector from "@/components/landing/LanguageSelector";
 import AuthMethodPanel from "@/components/auth/AuthMethodPanel";
 
-export default function WorkerAuthPage() {
+function WorkerAuthContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user, isLoading: authLoading, nextStep } = useAuth();
+  const [authMode, setAuthMode] = useState<"login" | "signup">("login");
+  const registrationMode = searchParams.get("mode") === "signup";
+  const { t } = useLanguage();
 
   useEffect(() => {
-    if (!authLoading && user) router.push(getRouteForNextStep(user.role, nextStep));
+    if (!authLoading && user) router.replace(getRouteForNextStep(user.role, nextStep));
   }, [authLoading, user, nextStep, router]);
+
 
   return (
     <div className="relative min-h-screen bg-[#eef1fb] font-sans text-slate-900 selection:bg-indigo-500 selection:text-white dark:bg-slate-950 dark:text-slate-100">
@@ -41,13 +47,18 @@ export default function WorkerAuthPage() {
           <div className="rounded-3xl border border-slate-200/80 bg-white/80 p-6 sm:p-10 shadow-2xl shadow-slate-900/5 backdrop-blur-xl dark:border-slate-800/80 dark:bg-slate-900/90">
             <div className="mb-8 space-y-2">
               <h1 className="font-[var(--font-anton)] text-xl sm:text-2xl md:text-[1.7rem] uppercase leading-tight text-slate-900 dark:text-white sm:whitespace-nowrap">
-                CREATE INDIVIDUAL ACCOUNT
+                {!registrationMode && authMode === "login" ? t("nav.login") : t("auth.employeeTitle")}
               </h1>
               <p className="text-sm font-medium text-slate-600 dark:text-slate-300">
-                Get Your Work Done.
+                {!registrationMode && authMode === "login" ? t("auth.securityText") : t("auth.employeeTitle")}
               </p>
             </div>
-            <AuthMethodPanel role="WORKER" />
+            <AuthMethodPanel role="WORKER" initialMode={registrationMode ? "signup" : "login"} hideModeSelector={registrationMode} onModeChange={setAuthMode} />
+            {registrationMode && (
+              <Link href="/auth/signin" className="mt-4 block text-center text-sm font-semibold text-indigo-600 hover:text-indigo-500 dark:text-indigo-400 dark:hover:text-indigo-300">
+                Back to Sign In
+              </Link>
+            )}
           </div>
 
           <div className="mt-6 space-y-3 rounded-2xl border border-slate-200/80 bg-white/80 p-5 shadow-lg shadow-slate-900/5 backdrop-blur-xl dark:border-slate-800/80 dark:bg-slate-900/80">
@@ -63,5 +74,13 @@ export default function WorkerAuthPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function WorkerAuthPage() {
+  return (
+    <Suspense fallback={null}>
+      <WorkerAuthContent />
+    </Suspense>
   );
 }

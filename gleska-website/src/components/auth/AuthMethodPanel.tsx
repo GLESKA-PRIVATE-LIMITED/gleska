@@ -7,17 +7,17 @@ import { Mail, Loader2, X, Shield, FileText, CheckCircle2, ExternalLink } from "
 import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
 import { useLanguage } from "@/context/LanguageContext";
-import { getRouteForNextStep } from "@/lib/auth-routing";
+import { getRouteForAuthenticatedUser, getRouteForNextStep } from "@/lib/auth-routing";
 import { normalizeIndianMobile } from "@/lib/msg91";
 
 type Role = "WORKER" | "EMPLOYER";
 type OTPTransaction = { name: string; email: string; password: string; mobile: string; termsAccepted: boolean; requestId: string | null; channel: "SMS" | "EMAIL" };
 
-export default function AuthMethodPanel({ role, accountType = "BUSINESS" }: { role: Role; accountType?: "BUSINESS" | "INDIVIDUAL" }) {
+export default function AuthMethodPanel({ role, accountType = "BUSINESS", initialMode = "login", hideModeSelector = false, onModeChange, onCreateAccount }: { role?: Role; accountType?: "BUSINESS" | "INDIVIDUAL"; initialMode?: "login" | "signup"; hideModeSelector?: boolean; onModeChange?: (mode: "login" | "signup") => void; onCreateAccount?: () => void }) {
   const router = useRouter();
   const { t } = useLanguage();
   const { signInWithEmail, signInWithGoogle, signupPreflight, requestOTP, resendOTP, completeEmailSignup, loginWithMobile, refreshUser, isLoading: authLoading } = useAuth();
-  const [mode, setMode] = useState<"login" | "signup">("login");
+  const [mode, setMode] = useState<"login" | "signup">(initialMode);
   const [loginMethod, setLoginMethod] = useState<"email" | "mobile">("email");
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
@@ -32,6 +32,10 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS" }: { ro
   const [otpOpen, setOtpOpen] = useState(false);
   const [countdown, setCountdown] = useState(0);
   const [otpPurpose, setOtpPurpose] = useState<"signup" | "login">("signup");
+
+  useEffect(() => {
+    onModeChange?.(mode);
+  }, [mode, onModeChange]);
 
   const clearOtpTransaction = () => {
     setOtpTransaction(null);
@@ -137,6 +141,10 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS" }: { ro
     setSubmitting(true);
     try {
       if (mode === "signup") {
+        if (!role) {
+          onCreateAccount?.();
+          return;
+        }
         const canonicalMobile = normalizeIndianMobile(mobile);
         await signupPreflight(name, email, canonicalMobile, password, confirmPassword, role, termsAccepted);
         const otpResult = await requestOTP(canonicalMobile);
@@ -147,10 +155,10 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS" }: { ro
         setOtpOpen(true);
         toast.success(t('auth.otpSent'));
       } else {
-        await signInWithEmail(email, password, role);
+        const authenticatedUser = await signInWithEmail(email, password);
         const nextStep = await refreshUser();
         toast.success(t('auth.welcomeBack'));
-        router.push(getRouteForNextStep(role, nextStep));
+        router.replace(getRouteForAuthenticatedUser(authenticatedUser.role, nextStep, new URLSearchParams(window.location.search).get("next")));
       }
     } catch (error: unknown) {
       toast.error(error instanceof Error ? error.message : t('auth.googleError'));
@@ -177,6 +185,10 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS" }: { ro
     setSubmitting(true);
     try {
       if (otpPurpose === "signup") {
+        if (!role) {
+          onCreateAccount?.();
+          return;
+        }
         await completeEmailSignup(
           otpTransaction.email,
           otpTransaction.password,
@@ -188,12 +200,17 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS" }: { ro
           accountType,
         );
       } else {
-        await loginWithMobile(otpTransaction.mobile, otp, role);
+        const authenticatedUser = await loginWithMobile(otpTransaction.mobile, otp);
+        const nextStep = await refreshUser();
+        clearOtpTransaction();
+        toast.success(t('auth.welcomeBack'));
+        router.replace(getRouteForAuthenticatedUser(authenticatedUser.role, nextStep, new URLSearchParams(window.location.search).get("next")));
+        return;
       }
       const nextStep = await refreshUser();
       clearOtpTransaction();
-      toast.success(otpPurpose === "signup" ? t('auth.accountCreated') : t('auth.welcomeBack'));
-      router.push(getRouteForNextStep(role, nextStep));
+      toast.success(t('auth.accountCreated'));
+      router.replace(getRouteForNextStep(role, nextStep));
     } catch (error: unknown) {
       toast.error(error instanceof Error ? error.message : t('auth.invalidOtp'));
     } finally {
@@ -240,7 +257,7 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS" }: { ro
 
   return (
     <div className="mb-6 space-y-4 border-b border-slate-200/80 pb-6 dark:border-slate-800">
-      <div className="flex gap-2 text-xs font-bold uppercase tracking-wider">
+      {!hideModeSelector && <div className="flex gap-2 text-xs font-bold uppercase tracking-wider">
         <button
           type="button"
           onClick={() => { clearOtpTransaction(); setMode("login"); }}
@@ -254,7 +271,14 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS" }: { ro
         </button>
         <button
           type="button"
-          onClick={() => { clearOtpTransaction(); setMode("signup"); }}
+          onClick={() => {
+            clearOtpTransaction();
+            if (!role && onCreateAccount) {
+              onCreateAccount();
+              return;
+            }
+            setMode("signup");
+          }}
           className={`rounded-xl px-4 py-2.5 transition-all ${
             mode === "signup"
               ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-indigo-500/20"
@@ -263,7 +287,7 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS" }: { ro
         >
           {t('nav.signup')}
         </button>
-      </div>
+      </div>}
       {mode === "login" && (
         <div className="flex rounded-xl bg-slate-100/90 p-1 text-xs font-semibold dark:bg-slate-800/80">
           <button

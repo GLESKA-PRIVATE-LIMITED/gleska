@@ -94,15 +94,15 @@ export default function WorkerSubscriptionPage() {
   React.useEffect(() => {
     if (isLoading) return;
     if (!user) {
-      router.push("/worker/auth");
+      router.replace("/worker/auth");
       return;
     }
     if (user.role !== "WORKER") {
-      router.push("/");
+      router.replace("/");
       return;
     }
     if (nextStep !== "DASHBOARD") {
-      router.push("/worker/onboarding");
+      router.replace("/worker/onboarding");
       return;
     }
     const requestId = profileRequestRef.current + 1;

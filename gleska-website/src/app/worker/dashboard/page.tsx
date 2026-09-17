@@ -76,8 +76,8 @@ export default function WorkerDashboard() {
   const jobsRefreshedAfterLiveLocationRef = React.useRef(false);
 
   React.useEffect(() => {
-    if (!isLoading && !user) router.push("/worker/auth");
-    if (!isLoading && user && nextStep !== "DASHBOARD") router.push(nextStep === "WORKER_PROFILE" ? "/worker/onboarding" : "/worker/auth");
+    if (!isLoading && !user) router.replace("/worker/auth");
+    if (!isLoading && user && nextStep !== "DASHBOARD") router.replace(nextStep === "WORKER_PROFILE" ? "/worker/onboarding" : "/worker/auth");
   }, [isLoading, nextStep, router, user]);
 
   const loadProfile = React.useCallback(async () => {
@@ -208,7 +208,6 @@ export default function WorkerDashboard() {
   const handleLogout = async () => {
     try {
       await logout();
-      router.push("/");
       toast.success("Logged out successfully");
     } catch {
       toast.error("Logout failed");

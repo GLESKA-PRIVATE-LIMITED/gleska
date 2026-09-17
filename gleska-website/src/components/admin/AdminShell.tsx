@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
   Users,
@@ -12,6 +12,9 @@ import {
   MapPin,
   PanelLeft,
   LogOut,
+  HelpCircle,
+  Home,
+  User,
   X,
   Shield,
 } from "lucide-react";
@@ -30,6 +33,7 @@ const adminNavItems = [
   { href: "/admin/jobs", label: "Jobs", icon: Briefcase },
   { href: "/admin/payments", label: "Payments", icon: CreditCard },
   { href: "/admin/locations", label: "Locations", icon: MapPin },
+  { href: "/admin/help", label: "Help", icon: HelpCircle },
 ];
 
 export default function AdminShell({
@@ -41,6 +45,7 @@ export default function AdminShell({
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const pathname = usePathname();
+  const router = useRouter();
 
   const isLinkActive = (href: string) => {
     if (href === "/admin") {
@@ -50,6 +55,10 @@ export default function AdminShell({
   };
 
   const closeMobile = () => setIsMobileMenuOpen(false);
+  const handleLogout = async () => {
+    await onLogout();
+    router.replace("/");
+  };
 
   return (
     <div className="flex min-h-screen flex-col bg-[#eef1fb] font-sans text-slate-900 md:flex-row">
@@ -124,6 +133,13 @@ export default function AdminShell({
               );
             })}
           </nav>
+          <Link
+            href="/"
+            className={`mt-3 flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 ${!isSidebarOpen ? "justify-center" : ""}`}
+          >
+            <Home size={19} className="shrink-0" />
+            {isSidebarOpen && <span>Back to Home</span>}
+          </Link>
         </div>
 
         {/* Desktop Sidebar Bottom (Admin identity & Logout) */}
@@ -154,9 +170,17 @@ export default function AdminShell({
             )}
           </div>
 
+          <Link
+            href="/admin/profile"
+            className={`mt-2 flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 transition ${isSidebarOpen ? "" : "justify-center"}`}
+            title="Profile"
+          >
+            <User size={18} className="shrink-0" />
+            {isSidebarOpen && <span>Profile</span>}
+          </Link>
           <button
             type="button"
-            onClick={onLogout}
+            onClick={() => void handleLogout()}
             className={`mt-2 flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-semibold text-rose-600 hover:bg-rose-50 transition cursor-pointer ${
               isSidebarOpen ? "" : "justify-center"
             }`}
@@ -250,6 +274,14 @@ export default function AdminShell({
                   );
                 })}
               </nav>
+              <Link
+                href="/"
+                onClick={closeMobile}
+                className="mt-3 flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 transition"
+              >
+                <Home size={19} className="shrink-0" />
+                <span>Back to Home</span>
+              </Link>
             </div>
 
             <div className="border-t border-slate-200 pt-4">
@@ -273,6 +305,14 @@ export default function AdminShell({
                 </div>
               </div>
 
+              <Link
+                href="/admin/profile"
+                onClick={closeMobile}
+                className="mt-2 flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 transition"
+              >
+                <User size={18} className="shrink-0" />
+                <span>Profile</span>
+              </Link>
               <button
                 type="button"
                 onClick={() => {

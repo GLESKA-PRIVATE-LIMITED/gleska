@@ -49,9 +49,9 @@ export default function EmployerAttendancePage() {
 
   React.useEffect(() => {
     if (isLoading) return;
-    if (!user) router.push("/employer/auth");
-    else if (user.role !== "EMPLOYER") router.push("/");
-    else if (nextStep !== "DASHBOARD") router.push("/employer/onboarding");
+    if (!user) router.replace("/employer/auth");
+    else if (user.role !== "EMPLOYER") router.replace("/");
+    else if (nextStep !== "DASHBOARD") router.replace("/employer/onboarding");
   }, [isLoading, nextStep, router, user]);
 
   React.useEffect(() => {

@@ -3,16 +3,18 @@
 import React, { useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Briefcase, UserCheck, ArrowRight } from "lucide-react";
+import { ArrowLeft, Briefcase, UserCheck, ArrowRight, UserRound } from "lucide-react";
 import LanguageSelector from "@/components/landing/LanguageSelector";
 import { useLanguage } from "@/context/LanguageContext";
 import { useAuth } from "@/context/AuthContext";
 import { getRouteForNextStep } from "@/lib/auth-routing";
+import AuthMethodPanel from "@/components/auth/AuthMethodPanel";
 
 export default function SignInSelectionPage() {
   const { t } = useLanguage();
   const { user, isLoading: authLoading, nextStep } = useAuth();
   const router = useRouter();
+  const [showCreateAccount, setShowCreateAccount] = React.useState(false);
 
   useEffect(() => {
     if (!authLoading && user) {
@@ -41,27 +43,39 @@ export default function SignInSelectionPage() {
         </nav>
       </div>
 
-      {/* Selection cards */}
+      {/* Unified login and role-specific registration chooser */}
       <div className="relative z-10 flex min-h-[calc(100vh-100px)] items-center justify-center px-4 py-8 sm:px-6 sm:py-12">
-        <div className="w-full max-w-2xl space-y-8 sm:space-y-10 text-center">
+        <div className={`w-full ${showCreateAccount ? "max-w-4xl" : "max-w-md"} space-y-8 text-center`}>
           <div className="space-y-3">
             <div className="inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-4 py-1 text-xs font-semibold uppercase tracking-wider text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-300">
-              {t('auth.signinPageTitle')}
+              {showCreateAccount ? t("nav.signup") : t("nav.signIn")}
             </div>
             <h1 className="font-[var(--font-anton)] text-4xl sm:text-5xl uppercase leading-tight tracking-wide text-slate-900 dark:text-white">
-              {t('signin.selectRole')}
+              {showCreateAccount ? t("signin.selectRole") : t("nav.signIn")}
             </h1>
             <p className="mx-auto max-w-md text-base font-medium text-slate-600 dark:text-slate-300">
-              {t('signin.roleDescription')}
+              {showCreateAccount ? t("signin.roleDescription") : t("auth.securityText")}
             </p>
           </div>
 
-          <div className="grid grid-cols-1 gap-6 text-left sm:grid-cols-2">
-            {/*
-             * I NEED WORKERS — same destination as GetHiredSection: /employer/auth
-             */}
+          {!showCreateAccount ? (
+            <div className="rounded-3xl border border-slate-200/80 bg-white/80 p-6 text-left shadow-2xl shadow-slate-900/5 backdrop-blur-xl dark:border-slate-800/80 dark:bg-slate-900/90 sm:p-8">
+              <AuthMethodPanel onCreateAccount={() => setShowCreateAccount(true)} />
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-6 text-left md:grid-cols-3">
             <Link
-              href="/employer/auth"
+              href="/worker/auth?mode=signup"
+              className="group relative flex flex-col justify-between rounded-3xl border border-slate-200/80 bg-white/80 p-6 shadow-2xl shadow-slate-900/5 backdrop-blur-xl transition-all duration-300 hover:-translate-y-1.5 hover:border-amber-500/60 hover:shadow-xl dark:border-slate-800/80 dark:bg-slate-900/90"
+            >
+              <div className="space-y-4">
+                <div className="inline-flex h-14 w-14 items-center justify-center rounded-2xl border border-amber-200 bg-amber-50 text-amber-600 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-400"><UserRound size={28} /></div>
+                <div className="space-y-2"><h2 className="font-[var(--font-anton)] text-2xl uppercase tracking-wider text-slate-900 dark:text-white">{t("signin.workerTitle")}</h2><p className="text-sm font-medium leading-relaxed text-slate-600 dark:text-slate-300">{t("signin.workerDesc")}</p></div>
+              </div>
+              <div className="mt-8 flex items-center gap-2 text-sm font-bold text-amber-600"><span>Create account</span><ArrowRight size={18} /></div>
+            </Link>
+            <Link
+              href="/employer/auth?mode=signup"
               className="group relative flex flex-col justify-between rounded-3xl border border-slate-200/80 bg-white/80 p-6 sm:p-8 shadow-2xl shadow-slate-900/5 backdrop-blur-xl transition-all duration-300 hover:-translate-y-1.5 hover:border-blue-500/60 hover:shadow-xl dark:border-slate-800/80 dark:bg-slate-900/90"
             >
               <div className="space-y-4">
@@ -70,24 +84,21 @@ export default function SignInSelectionPage() {
                 </div>
                 <div className="space-y-2">
                   <h2 className="font-[var(--font-anton)] text-2xl uppercase tracking-wider text-slate-900 transition-colors group-hover:text-blue-600 dark:text-white dark:group-hover:text-blue-400">
-                    {t("signin.businessAccountTitle")}
+                    {t("signin.businessEmployerTitle")}
                   </h2>
                   <p className="text-sm font-medium leading-relaxed text-slate-600 dark:text-slate-300">
-                    {t("signin.businessAccountDesc")}
+                    {t("signin.businessEmployerDesc")}
                   </p>
                 </div>
               </div>
               <div className="mt-8 flex items-center gap-2 text-sm font-bold text-blue-600 transition-colors group-hover:text-blue-700 dark:text-blue-400 dark:group-hover:text-blue-300">
-                <span>{t('signin.continue')}</span>
+                <span>Create account</span>
                 <ArrowRight size={18} className="transition-transform group-hover:translate-x-1" />
               </div>
             </Link>
 
-            {/*
-             * INDIVIDUAL ACCOUNT — employer authentication with Individual intent
-             */}
             <Link
-              href="/employer/auth?account=individual"
+              href="/employer/auth?account=individual&mode=signup"
               className="group relative flex flex-col justify-between rounded-3xl border border-slate-200/80 bg-white/80 p-6 sm:p-8 shadow-2xl shadow-slate-900/5 backdrop-blur-xl transition-all duration-300 hover:-translate-y-1.5 hover:border-amber-500/60 hover:shadow-xl dark:border-slate-800/80 dark:bg-slate-900/90"
             >
               <div className="space-y-4">
@@ -96,19 +107,21 @@ export default function SignInSelectionPage() {
                 </div>
                 <div className="space-y-2">
                   <h2 className="font-[var(--font-anton)] text-2xl uppercase tracking-wider text-slate-900 transition-colors group-hover:text-amber-600 dark:text-white dark:group-hover:text-amber-400">
-                    {t("signin.individualAccountTitle")}
+                    {t("signin.individualEmployerTitle")}
                   </h2>
                   <p className="text-sm font-medium leading-relaxed text-slate-600 dark:text-slate-300">
-                    {t("signin.individualAccountDesc")}
+                    {t("signin.individualEmployerDesc")}
                   </p>
                 </div>
               </div>
               <div className="mt-8 flex items-center gap-2 text-sm font-bold text-amber-600 transition-colors group-hover:text-amber-700 dark:text-amber-400 dark:group-hover:text-amber-300">
-                <span>{t('signin.continue')}</span>
+                <span>Create account</span>
                 <ArrowRight size={18} className="transition-transform group-hover:translate-x-1" />
               </div>
             </Link>
-          </div>
+            </div>
+          )}
+          {showCreateAccount && <button type="button" onClick={() => setShowCreateAccount(false)} className="mx-auto inline-flex items-center gap-2 text-sm font-bold text-slate-600 hover:text-indigo-600 dark:text-slate-300 dark:hover:text-indigo-400"><ArrowLeft size={16} /> Back to Sign In</button>}
         </div>
       </div>
     </div>

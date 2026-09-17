@@ -121,11 +121,11 @@ export default function EmployerSecurityPage() {
   // --- Auth guard ---
   React.useEffect(() => {
     if (!isLoading && !user) {
-      router.push("/employer/auth");
+      router.replace("/employer/auth");
       return;
     }
     if (!isLoading && user && user.role !== "EMPLOYER") {
-      router.push("/");
+      router.replace("/");
       return;
     }
   }, [user, isLoading, router]);
@@ -228,7 +228,6 @@ export default function EmployerSecurityPage() {
   const handleLogout = async () => {
     try {
       await logout();
-      router.push("/");
       toast.success("Logged out successfully");
     } catch (err) {
       toast.error("Logout failed");

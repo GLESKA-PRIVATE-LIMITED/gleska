@@ -119,6 +119,10 @@ class JobMatchWorkerResponse(BaseModel):
 class JobMatchesResponse(BaseModel):
     matching_status: str
     matches: list[JobMatchWorkerResponse] = Field(default_factory=list)
+    selected_workers: list[JobMatchWorkerResponse] = Field(default_factory=list)
+    headcount_required: int = 0
+    selected_count: int = 0
+    remaining_count: int = 0
 
 
 class JobMatchSummary(BaseModel):

@@ -2,12 +2,13 @@
 
 import React from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   Briefcase,
   Building2,
   CreditCard,
   FileText,
+  Home,
   HelpCircle,
   LayoutDashboard,
   LogOut,
@@ -24,11 +25,11 @@ interface AccountManagementShellProps {
   kind: "employer" | "worker";
   name: string;
   accountLabel: string;
-  /** For employer kind: used to drive the profile popup menu. */
+  /** Employer account type retained for caller compatibility. */
   employerType?: string | null;
   /** For worker kind: direct href for the profile link. */
   profileHref?: string;
-  onLogout: () => void;
+  onLogout: () => void | Promise<void>;
   children: React.ReactNode;
 }
 
@@ -42,103 +43,63 @@ export function formatEmployerType(value?: string | null): string {
   return (value && labels[value]) || "Employer";
 }
 
-type MenuIcon = React.ComponentType<{ size?: number; className?: string }>;
-
-export function EmployerProfileMenuItems({
-  employerType,
-  onNavigate,
-  onLogout,
-}: {
-  employerType?: string | null;
-  onNavigate: () => void;
-  onLogout: () => void;
-}) {
-  const profileItems: { label: string; href: string; icon: MenuIcon }[] =
-    employerType === "INDIVIDUAL"
-      ? [{ label: "Individual Profile", href: "/employer/company-profile", icon: User }]
-      : employerType === "UNREGISTERED_BUSINESS"
-        ? [
-            { label: "Business Profile", href: "/employer/company-profile", icon: Building2 },
-            { label: "Proprietor Profile", href: "/employer/director-profile", icon: User },
-          ]
-        : [
-            { label: "Company Profile", href: "/employer/company-profile", icon: Building2 },
-            { label: "Director Profile", href: "/employer/director-profile", icon: User },
-          ];
-
-  return (
-    <div className="space-y-0.5">
-      {profileItems.map(({ label, href, icon: Icon }) => (
-        <Link
-          key={label}
-          href={href}
-          onClick={onNavigate}
-          className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
-        >
-          <Icon size={17} className="shrink-0 text-slate-500 dark:text-slate-400" />
-          <span>{label}</span>
-        </Link>
-      ))}
-      <button
-        type="button"
-        onClick={onLogout}
-        className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
-      >
-        <LogOut size={17} className="shrink-0" />
-        <span>Log out</span>
-      </button>
-    </div>
-  );
-}
-
-function WorkerProfileMenuItems({
-  profileHref,
-  onNavigate,
-  onLogout,
-}: {
-  profileHref: string;
-  onNavigate: () => void;
-  onLogout: () => void;
-}) {
-  return (
-    <div className="space-y-0.5">
-      <Link
-        href={profileHref}
-        onClick={onNavigate}
-        className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
-      >
-        <User size={17} className="shrink-0 text-slate-500 dark:text-slate-400" />
-        <span>Worker Profile</span>
-      </Link>
-      <button
-        type="button"
-        onClick={onLogout}
-        className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
-      >
-        <LogOut size={17} className="shrink-0" />
-        <span>Log out</span>
-      </button>
-    </div>
-  );
-}
-
 export default function AccountManagementShell({
   kind,
   name,
   accountLabel,
-  employerType,
   profileHref = "/worker/profile",
   onLogout,
   children,
 }: AccountManagementShellProps) {
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(true);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
-  const [isProfileMenuOpen, setIsProfileMenuOpen] = React.useState(false);
   const pathname = usePathname();
+  const router = useRouter();
 
   const employer = kind === "employer";
   const dashboardHref = employer ? "/employer/dashboard" : "/worker/dashboard";
   const closeMobile = () => setIsMobileMenuOpen(false);
+  const handleShellLogout = async () => {
+    await onLogout();
+    router.replace("/");
+  };
+
+  const renderMainActions = (mobile = false) => (
+    <div className="mt-3 space-y-1.5">
+      <Link
+        href="/"
+        onClick={mobile ? closeMobile : undefined}
+        className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
+      >
+        <Home size={17} className="shrink-0 text-slate-500 dark:text-slate-400" />
+        <span>Back to Home</span>
+      </Link>
+    </div>
+  );
+
+  const renderAccountActions = (mobile = false) => (
+    <div className="mt-3 space-y-1.5 border-t border-slate-200 pt-3 dark:border-slate-800">
+      <Link
+        href={employer ? "/employer/company-profile" : profileHref}
+        onClick={mobile ? closeMobile : undefined}
+        className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
+      >
+        <User size={17} className="shrink-0 text-slate-500 dark:text-slate-400" />
+        <span>Profile</span>
+      </Link>
+      <button
+        type="button"
+        onClick={() => {
+          if (mobile) closeMobile();
+          void handleShellLogout();
+        }}
+        className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
+      >
+        <LogOut size={17} className="shrink-0" />
+        <span>Log out</span>
+      </button>
+    </div>
+  );
 
   const employerNav = [
     { href: "/employer/dashboard", label: "Dashboard", icon: LayoutDashboard, isPage: true },
@@ -194,54 +155,15 @@ export default function AccountManagementShell({
           {(isSidebarOpen || mobile) && <span>{label}</span>}
         </Link>
       ))}
+      {renderMainActions(mobile)}
     </div>
   );
 
   // Bottom section for desktop sidebar
   const renderDesktopBottom = () => {
-    if (employer) {
-      return (
-        <div className="relative border-t border-slate-200 pt-4 dark:border-slate-800">
-          <button
-            type="button"
-            onClick={() => setIsProfileMenuOpen((open) => !open)}
-            className={`mb-1 flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left transition hover:bg-slate-100 dark:hover:bg-slate-800 ${!isSidebarOpen ? "justify-center" : ""}`}
-            title="Open account menu"
-          >
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-sm font-bold text-white shadow-xs">
-              {name.charAt(0).toUpperCase()}
-            </div>
-            {isSidebarOpen && (
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-bold text-slate-900 dark:text-white">{name}</p>
-                <p className="truncate text-xs text-slate-500 dark:text-slate-400">{accountLabel}</p>
-              </div>
-            )}
-          </button>
-          {isProfileMenuOpen && (
-            <div className="absolute bottom-full left-0 right-0 z-50 mb-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl dark:border-slate-800 dark:bg-slate-900">
-              <EmployerProfileMenuItems
-                employerType={employerType}
-                onNavigate={() => setIsProfileMenuOpen(false)}
-                onLogout={() => {
-                  setIsProfileMenuOpen(false);
-                  onLogout();
-                }}
-              />
-            </div>
-          )}
-        </div>
-      );
-    }
-    // Worker account menu
     return (
       <div className="relative border-t border-slate-200 pt-4 dark:border-slate-800">
-        <button
-          type="button"
-          onClick={() => setIsProfileMenuOpen((open) => !open)}
-          className={`mb-1 flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left transition hover:bg-slate-100 dark:hover:bg-slate-800 ${!isSidebarOpen ? "justify-center" : ""}`}
-          title="Open profile"
-        >
+        <div className={`mb-1 flex items-center gap-3 rounded-xl px-2 py-2 ${!isSidebarOpen ? "justify-center" : ""}`}>
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-sm font-bold text-white">
             {name.charAt(0).toUpperCase()}
           </div>
@@ -251,70 +173,17 @@ export default function AccountManagementShell({
               <p className="truncate text-xs text-slate-500">{accountLabel}</p>
             </div>
           )}
-        </button>
-        {isProfileMenuOpen && (
-          <div className="absolute bottom-full left-0 right-0 z-50 mb-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl dark:border-slate-800 dark:bg-slate-900">
-            <WorkerProfileMenuItems
-              profileHref={profileHref}
-              onNavigate={() => setIsProfileMenuOpen(false)}
-              onLogout={() => {
-                setIsProfileMenuOpen(false);
-                onLogout();
-              }}
-            />
-          </div>
-        )}
+        </div>
+        {renderAccountActions()}
       </div>
     );
   };
 
   // Bottom section for mobile drawer
   const renderMobileBottom = () => {
-    if (employer) {
-      return (
-        <div className="relative border-t border-slate-200 pt-4 dark:border-slate-800">
-          <button
-            type="button"
-            onClick={() => setIsProfileMenuOpen((open) => !open)}
-            className="mb-1 flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left transition hover:bg-slate-100 dark:hover:bg-slate-800"
-            title="Open account menu"
-          >
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-sm font-bold text-white shadow-xs">
-              {name.charAt(0).toUpperCase()}
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-bold text-slate-900 dark:text-white">{name}</p>
-              <p className="truncate text-xs text-slate-500 dark:text-slate-400">{accountLabel}</p>
-            </div>
-          </button>
-          {isProfileMenuOpen && (
-            <div className="mb-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl dark:border-slate-800 dark:bg-slate-900">
-              <EmployerProfileMenuItems
-                employerType={employerType}
-                onNavigate={() => {
-                  setIsProfileMenuOpen(false);
-                  closeMobile();
-                }}
-                onLogout={() => {
-                  setIsProfileMenuOpen(false);
-                  closeMobile();
-                  onLogout();
-                }}
-              />
-            </div>
-          )}
-        </div>
-      );
-    }
-    // Worker account menu
     return (
       <div className="relative border-t border-slate-200 pt-4 dark:border-slate-800">
-        <button
-          type="button"
-          onClick={() => setIsProfileMenuOpen((open) => !open)}
-          className="mb-1 flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left transition hover:bg-slate-100 dark:hover:bg-slate-800"
-          title="Open account menu"
-        >
+        <div className="mb-1 flex items-center gap-3 rounded-xl px-2 py-2">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-sm font-bold text-white shadow-xs">
             {name.charAt(0).toUpperCase()}
           </div>
@@ -322,23 +191,8 @@ export default function AccountManagementShell({
             <p className="truncate text-sm font-bold text-slate-900 dark:text-white">{name}</p>
             <p className="truncate text-xs text-slate-500 dark:text-slate-400">{accountLabel}</p>
           </div>
-        </button>
-        {isProfileMenuOpen && (
-          <div className="mb-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl dark:border-slate-800 dark:bg-slate-900">
-            <WorkerProfileMenuItems
-              profileHref={profileHref}
-              onNavigate={() => {
-                setIsProfileMenuOpen(false);
-                closeMobile();
-              }}
-              onLogout={() => {
-                setIsProfileMenuOpen(false);
-                closeMobile();
-                onLogout();
-              }}
-            />
-          </div>
-        )}
+        </div>
+        {renderAccountActions(true)}
       </div>
     );
   };

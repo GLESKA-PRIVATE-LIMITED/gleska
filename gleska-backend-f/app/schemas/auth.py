@@ -71,7 +71,7 @@ class ProvisionUserSchema(BaseModel):
     """Application profile data for an already authenticated Supabase identity."""
     name: str = Field(default="", max_length=120)
     mobile: Optional[str] = Field(default=None, max_length=32)
-    role: str = Field(..., pattern="^(WORKER|EMPLOYER|ADMIN)$")
+    role: Optional[str] = Field(default=None, pattern="^(WORKER|EMPLOYER|ADMIN)$")
     msg91_access_token: Optional[str] = None
 
 

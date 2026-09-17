@@ -123,15 +123,15 @@ export default function EmployerWorkersPage() {
   React.useEffect(() => {
     if (isAuthLoading) return;
     if (!user) {
-      router.push("/employer/auth");
+      router.replace("/employer/auth");
       return;
     }
     if (user.role !== "EMPLOYER") {
-      router.push("/");
+      router.replace("/");
       return;
     }
     if (nextStep !== "DASHBOARD") {
-      router.push("/employer/onboarding");
+      router.replace("/employer/onboarding");
     }
   }, [isAuthLoading, nextStep, router, user]);
 

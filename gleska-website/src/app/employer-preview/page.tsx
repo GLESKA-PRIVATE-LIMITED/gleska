@@ -54,6 +54,9 @@ interface JobItem {
   headcount_required: number;
   max_daily_salary: number | null;
   min_experience: number | null;
+  work_duration_days?: number | null;
+  work_timing?: string | null;
+  required_skills?: string[];
   status: string;
 }
 
@@ -144,8 +147,11 @@ export default function EmployerDashboardPreviewPage() {
           title: body.title,
           headcount_required: Number(body.headcount_required || 1),
           max_daily_salary: body.max_daily_salary ? Number(body.max_daily_salary) : null,
-          min_experience: body.min_experience ? Number(body.min_experience) : null,
-          status: "OPEN",
+          min_experience: body.min_experience !== undefined && body.min_experience !== null ? Number(body.min_experience) : null,
+          work_duration_days: body.work_duration_days ? Number(body.work_duration_days) : null,
+          work_timing: body.work_timing || null,
+          required_skills: body.required_skills || [],
+          status: "SEARCHING",
         };
         setJobs((prev) => [newJob, ...prev]);
         return { data: newJob, status: 201, statusText: "Created", headers: {}, config };
@@ -174,15 +180,16 @@ export default function EmployerDashboardPreviewPage() {
       isAuthenticated: true,
       isSubscribed: false,
       isLoading: false,
+      isLoggingOut: false,
       nextStep: "DASHBOARD" as const,
       error: null,
       login: async () => {},
-      loginWithMobile: async () => {},
+      loginWithMobile: async () => ({} as AuthUser),
       logout: async () => {},
       refreshUser: async () => "DASHBOARD" as const,
       requestOTP: async () => ({ requestId: null }),
       resendOTP: async () => {},
-      signInWithEmail: async () => {},
+      signInWithEmail: async () => mockUser,
       signInWithGoogle: async () => {},
       resolveGoogleSession: async () => ({ role: "EMPLOYER" as const, nextStep: "DASHBOARD" as const }),
       provisionSession: async () => ({ user: mockUser, nextStep: "DASHBOARD" as const }),

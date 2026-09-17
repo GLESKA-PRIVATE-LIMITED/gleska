@@ -73,12 +73,12 @@ export default function DirectorProfilePage() {
 
   React.useEffect(() => {
     if (!isLoading && !user) {
-      router.push("/employer/auth");
+      router.replace("/employer/auth");
       return;
     }
 
     if (!isLoading && user && user.role !== "EMPLOYER") {
-      router.push("/");
+      router.replace("/");
       return;
     }
 

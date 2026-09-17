@@ -37,17 +37,18 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isSubscribed: boolean;
   isLoading: boolean;
+  isLoggingOut: boolean;
   nextStep: NextStep | null;
   error: string | null;
   login: (mobile: string, otp: string, name: string, role: "WORKER" | "EMPLOYER" | "ADMIN") => Promise<void>;
-  loginWithMobile: (mobile: string, otp: string, role: "WORKER" | "EMPLOYER" | "ADMIN") => Promise<void>;
+  loginWithMobile: (mobile: string, otp: string) => Promise<AuthUser>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<NextStep | null>;
   requestOTP: (mobile: string) => Promise<{ requestId: string | null }>;
   resendOTP: (mobile: string, requestId?: string | null, channel?: "SMS" | "EMAIL") => Promise<void>;
-  signInWithEmail: (email: string, password: string, role: "WORKER" | "EMPLOYER" | "ADMIN") => Promise<void>;
-  signInWithGoogle: (role: "WORKER" | "EMPLOYER" | "ADMIN", accountType?: "BUSINESS" | "INDIVIDUAL") => Promise<void>;
-  provisionSession: (role: "WORKER" | "EMPLOYER" | "ADMIN", name?: string, accountType?: "BUSINESS" | "INDIVIDUAL") => Promise<{ user: AuthUser; nextStep: NextStep | null }>;
+  signInWithEmail: (email: string, password: string, role?: "WORKER" | "EMPLOYER" | "ADMIN") => Promise<AuthUser>;
+  signInWithGoogle: (role?: "WORKER" | "EMPLOYER" | "ADMIN", accountType?: "BUSINESS" | "INDIVIDUAL") => Promise<void>;
+  provisionSession: (role?: "WORKER" | "EMPLOYER" | "ADMIN", name?: string, accountType?: "BUSINESS" | "INDIVIDUAL") => Promise<{ user: AuthUser; nextStep: NextStep | null }>;
   completeEmailSignup: (email: string, password: string, name: string, mobile: string, otp: string, role: "WORKER" | "EMPLOYER" | "ADMIN", termsAccepted?: boolean, accountType?: "BUSINESS" | "INDIVIDUAL") => Promise<void>;
   requestPasswordReset: (phone: string) => Promise<void>;
   verifyPasswordResetOTP: (phone: string, msg91AccessToken: string) => Promise<string>;
@@ -61,15 +62,16 @@ export const AuthContext = createContext<AuthContextType>({
   isAuthenticated: false,
   isSubscribed: false,
   isLoading: true,
+  isLoggingOut: false,
   nextStep: null,
   error: null,
   login: async () => {},
-  loginWithMobile: async () => {},
+  loginWithMobile: async () => ({} as AuthUser),
   logout: async () => {},
   refreshUser: async () => null,
   requestOTP: async () => ({ requestId: null }),
   resendOTP: async () => {},
-  signInWithEmail: async () => {},
+  signInWithEmail: async () => ({} as AuthUser),
   signInWithGoogle: async () => {},
   provisionSession: async () => ({ user: {} as AuthUser, nextStep: null }),
   completeEmailSignup: async () => {},
@@ -117,6 +119,7 @@ const clearBackendSession = async () => {
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [nextStep, setNextStep] = useState<NextStep | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -246,11 +249,11 @@ const resendOTP = async (mobile: string, requestId: string | null = null, channe
     }
   };
 
-  const provisionSession = async (role: "WORKER" | "EMPLOYER" | "ADMIN", name = "", accountType: "BUSINESS" | "INDIVIDUAL" = "BUSINESS") => {
+  const provisionSession = async (role?: "WORKER" | "EMPLOYER" | "ADMIN", name = "", accountType: "BUSINESS" | "INDIVIDUAL" = "BUSINESS") => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) throw new Error("Authentication session was not created");
     await apiClient.post("/api/v1/auth/provision", {
-      role,
+      ...(role ? { role } : {}),
       name,
       mobile: session.user.phone || undefined,
     });
@@ -270,7 +273,7 @@ const resendOTP = async (mobile: string, requestId: string | null = null, channe
     return { user: state.data.user, nextStep: state.data.next_step || null };
   };
 
-  const signInWithEmail = async (email: string, password: string, role: "WORKER" | "EMPLOYER" | "ADMIN") => {
+  const signInWithEmail = async (email: string, password: string, role?: "WORKER" | "EMPLOYER" | "ADMIN") => {
     setError(null);
     setIsLoading(true);
     try {
@@ -282,7 +285,8 @@ const resendOTP = async (mobile: string, requestId: string | null = null, channe
       });
       if (signInError) throw signInError;
       // provisionSession already calls registerSession internally
-      await provisionSession(role);
+      const provisioned = await provisionSession(role);
+      return provisioned.user;
     } catch (err: any) {
       let message = err.message || "Email login failed";
       
@@ -304,15 +308,26 @@ const resendOTP = async (mobile: string, requestId: string | null = null, channe
     }
   };
 
-  const signInWithGoogle = async (role: "WORKER" | "EMPLOYER" | "ADMIN", accountType: "BUSINESS" | "INDIVIDUAL" = "BUSINESS") => {
+  const signInWithGoogle = async (role?: "WORKER" | "EMPLOYER" | "ADMIN", accountType: "BUSINESS" | "INDIVIDUAL" = "BUSINESS") => {
     clearSessionKey();
-    sessionStorage.setItem("goleska_oauth_role", role);
+    const requestedNext = new URLSearchParams(window.location.search).get("next") || "";
+      if (role) {
+        sessionStorage.setItem("goleska_oauth_role", role);
+      } else {
+        sessionStorage.removeItem("goleska_oauth_role");
+      }
     sessionStorage.setItem("goleska_oauth_account_type", accountType);
+    sessionStorage.setItem("goleska_oauth_next", requestedNext);
     try {
-      localStorage.setItem("goleska_oauth_role", role);
+      if (role) localStorage.setItem("goleska_oauth_role", role);
+        else {
+          localStorage.removeItem("goleska_oauth_role");
+        }
       localStorage.setItem("goleska_oauth_account_type", accountType);
+      localStorage.setItem("goleska_oauth_next", requestedNext);
       document.cookie = `goleska_oauth_role=${role}; path=/; max-age=600; SameSite=Lax`;
       document.cookie = `goleska_oauth_account_type=${accountType}; path=/; max-age=600; SameSite=Lax`;
+      document.cookie = `goleska_oauth_next=${encodeURIComponent(requestedNext)}; path=/; max-age=600; SameSite=Lax`;
     } catch {}
     const redirectTo =
       process.env.NODE_ENV === "development"
@@ -417,7 +432,7 @@ const resendOTP = async (mobile: string, requestId: string | null = null, channe
     }
   };
 
-  const loginWithMobile = async (mobile: string, otp: string, role: "WORKER" | "EMPLOYER" | "ADMIN") => {
+  const loginWithMobile = async (mobile: string, otp: string) => {
     setError(null);
     setIsLoading(true);
     try {
@@ -427,7 +442,6 @@ const resendOTP = async (mobile: string, requestId: string | null = null, channe
       await supabase.auth.signOut();
       const response = await apiClient.post("/api/v1/auth/login-msg91", {
         mobile,
-        role,
         msg91_access_token: msg91Result.accessToken,
       }, { skipSupabaseAuth: true });
       if (response.data.user?.id) {
@@ -437,6 +451,7 @@ const resendOTP = async (mobile: string, requestId: string | null = null, channe
       setNextStep(response.data.next_step);
       setClientAuthCookie();
       notifyAuthStateChange();
+      return response.data.user as AuthUser;
     } catch (err: any) {
       const message = err.response?.data?.detail || err.message || "Mobile login failed";
       setError(message);
@@ -447,8 +462,9 @@ const resendOTP = async (mobile: string, requestId: string | null = null, channe
   };
 
   const logout = async () => {
+    setError(null);
+    setIsLoggingOut(true);
     try {
-      setError(null);
       // Log security activity before signing out (non-blocking, best-effort)
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user?.id) {
@@ -462,22 +478,25 @@ const resendOTP = async (mobile: string, requestId: string | null = null, channe
         });
       }
       await apiClient.post("/api/v1/auth/logout", {}, { withCredentials: true });
-      await supabase.auth.signOut();
+    } catch (err) {
+      console.error("Backend logout error:", err);
+    } finally {
+      try {
+        await supabase.auth.signOut();
+      } catch (err) {
+        console.error("Supabase logout error:", err);
+      }
       setUser(null);
       setNextStep(null);
       clearClientAuthCookie();
       clearLanguageCache();
       clearSessionKey();
       notifyAuthStateChange();
-    } catch (err) {
-      console.error("Logout error:", err);
-    } finally {
-      setUser(null);
-      setNextStep(null);
-      clearClientAuthCookie();
-      clearLanguageCache();
-      clearSessionKey();
       setIsLoading(false);
+      setIsLoggingOut(false);
+      if (typeof window !== "undefined") {
+        window.location.replace("/");
+      }
     }
   };
 
@@ -512,6 +531,7 @@ const resendOTP = async (mobile: string, requestId: string | null = null, channe
         isAuthenticated: !!user,
         isSubscribed,
         isLoading,
+        isLoggingOut,
         nextStep,
         error,
         login,

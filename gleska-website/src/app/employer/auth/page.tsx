@@ -1,23 +1,23 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import React, { Suspense, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
+import { useLanguage } from "@/context/LanguageContext";
 import { CheckCircle2, Zap } from "lucide-react";
 import LanguageSelector from "@/components/landing/LanguageSelector";
 import AuthMethodPanel from "@/components/auth/AuthMethodPanel";
 import { getRouteForNextStep } from "@/lib/auth-routing";
 
-export default function EmployerAuthPage() {
+function EmployerAuthContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user, isLoading: authLoading, nextStep } = useAuth();
-  const [accountType, setAccountType] = useState<"BUSINESS" | "INDIVIDUAL">("BUSINESS");
-
-  useEffect(() => {
-    const requestedAccountType = new URLSearchParams(window.location.search).get("account");
-    if (requestedAccountType === "individual") setAccountType("INDIVIDUAL");
-  }, []);
+  const [authMode, setAuthMode] = useState<"login" | "signup">("login");
+  const registrationMode = searchParams.get("mode") === "signup";
+  const accountType = searchParams.get("account") === "individual" ? "INDIVIDUAL" : "BUSINESS";
+  const { t } = useLanguage();
 
   useEffect(() => {
     if (!authLoading && user) {
@@ -49,14 +49,19 @@ export default function EmployerAuthPage() {
           <div className="rounded-3xl border border-slate-200/80 bg-white/80 p-6 sm:p-10 shadow-2xl shadow-slate-900/5 backdrop-blur-xl dark:border-slate-800/80 dark:bg-slate-900/90">
             <div className="mb-8 space-y-2">
               <h1 className="font-[var(--font-anton)] text-xl sm:text-2xl md:text-[1.7rem] uppercase leading-tight text-slate-900 dark:text-white sm:whitespace-nowrap">
-                {accountType === "INDIVIDUAL" ? "CREATE INDIVIDUAL ACCOUNT" : "CREATE BUSINESS ACCOUNT"}
+                {!registrationMode && authMode === "login" ? t("nav.login") : accountType === "INDIVIDUAL" ? t("auth.loginHeading") : t("auth.businessHeading")}
               </h1>
               <p className="text-sm font-medium text-slate-600 dark:text-slate-300">
-                {accountType === "INDIVIDUAL" ? "Hire workers as an individual employer." : "Make company's brain."}
+                {!registrationMode && authMode === "login" ? t("auth.securityText") : accountType === "INDIVIDUAL" ? t("auth.individualSubtitle") : t("auth.businessSubtitle")}
               </p>
             </div>
 
-            <AuthMethodPanel role="EMPLOYER" accountType={accountType} />
+            <AuthMethodPanel role="EMPLOYER" accountType={accountType} initialMode={registrationMode ? "signup" : "login"} hideModeSelector={registrationMode} onModeChange={setAuthMode} />
+            {registrationMode && (
+              <Link href="/auth/signin" className="mt-4 block text-center text-sm font-semibold text-indigo-600 hover:text-indigo-500 dark:text-indigo-400 dark:hover:text-indigo-300">
+                Back to Sign In
+              </Link>
+            )}
           </div>
 
           <div className="mt-6 space-y-3 rounded-2xl border border-slate-200/80 bg-white/80 p-5 shadow-lg shadow-slate-900/5 backdrop-blur-xl dark:border-slate-800/80 dark:bg-slate-900/80">
@@ -74,5 +79,13 @@ export default function EmployerAuthPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function EmployerAuthPage() {
+  return (
+    <Suspense fallback={null}>
+      <EmployerAuthContent />
+    </Suspense>
   );
 }

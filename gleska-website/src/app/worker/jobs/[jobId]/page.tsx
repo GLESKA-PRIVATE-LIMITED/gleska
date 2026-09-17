@@ -63,7 +63,6 @@ export default function WorkerJobDetailsPage() {
 
   const handleLogout = async () => {
     await logout();
-    router.push("/");
   };
 
   const address = [job?.address, job?.city, job?.state].filter(Boolean).join(", ");

@@ -7,7 +7,7 @@ from app.core.security import require_employer
 from app.schemas.auth import UserResponse
 from app.schemas.job import JobCreate, JobDetailsResponse, JobMatchAcceptRequest, JobMatchAcceptResponse, JobMatchSummary, JobMatchesResponse, JobResponse
 from app.schemas.job_extraction import JobExtractionRequest, JobExtractionResponse
-from app.schemas.job_assistant import JobAssistantCreateRequest, JobAssistantMessageRequest, JobAssistantResponse
+from app.schemas.job_assistant import JobAssistantCreateRequest, JobAssistantMessageRequest, JobAssistantResponse, JobAssistantStateUpdateRequest, JobAssistantStateUpdateResponse
 from app.services.job_assistant_service import JobAssistantService
 from app.services.job_service import JobLifecycleError, JobNotFound, JobPaymentRequired, JobService
 from app.services.job_match_service import JobMatchService
@@ -204,3 +204,23 @@ async def create_confirmed_assistant_job(
     except Exception as exc:
         logger.exception("Confirmed assistant job creation failed: user_id=%s", user.id)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="JOB_CREATE_FAILED") from exc
+
+
+@router.post("/assistant/state", response_model=JobAssistantStateUpdateResponse)
+async def update_assistant_state(
+    request: JobAssistantStateUpdateRequest,
+    user: UserResponse = Depends(require_employer),
+):
+    try:
+        state, missing_fields, invalid_fields, validation_errors, ready_to_create, token, revision = JobAssistantService.update_manual_state(user, request)
+        return JobAssistantStateUpdateResponse(
+            structured_state=state,
+            missing_fields=missing_fields,
+            invalid_fields=invalid_fields,
+            validation_errors=validation_errors,
+            ready_to_create=ready_to_create,
+            confirmation_token=token,
+            state_revision=revision,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc

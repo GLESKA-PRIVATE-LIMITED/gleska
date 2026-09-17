@@ -399,15 +399,15 @@ export default function EmployerOnboarding() {
 
   useEffect(() => {
     if (!isLoading && !user) {
-      router.push("/employer/auth");
+      router.replace("/employer/auth");
     }
 
     if (!isLoading && user && user.role !== "EMPLOYER") {
-      router.push("/");
+      router.replace("/");
     }
 
     if (!isLoading && nextStep === "DASHBOARD") {
-      router.push("/employer/dashboard");
+      router.replace("/employer/dashboard");
     }
   }, [user, isLoading, nextStep, router]);
 
@@ -1045,7 +1045,7 @@ export default function EmployerOnboarding() {
       }
 
       toast.success("Onboarding completed successfully!");
-      router.push("/employer/dashboard");
+      router.replace("/employer/dashboard");
     } catch (err: unknown) {
       const message = getErrorDetail(err, "Failed to complete onboarding");
       setFormError(message);
@@ -1058,7 +1058,7 @@ export default function EmployerOnboarding() {
   const handleLogout = async () => {
     try {
       await logout();
-      router.push("/");
+      router.replace("/");
     } catch {
       toast.error("Logout failed");
     }
