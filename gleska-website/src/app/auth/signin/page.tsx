@@ -65,16 +65,6 @@ export default function SignInSelectionPage() {
           ) : (
             <div className="grid grid-cols-1 gap-6 text-left md:grid-cols-3">
             <Link
-              href="/worker/auth?mode=signup"
-              className="group relative flex flex-col justify-between rounded-3xl border border-slate-200/80 bg-white/80 p-6 shadow-2xl shadow-slate-900/5 backdrop-blur-xl transition-all duration-300 hover:-translate-y-1.5 hover:border-amber-500/60 hover:shadow-xl dark:border-slate-800/80 dark:bg-slate-900/90"
-            >
-              <div className="space-y-4">
-                <div className="inline-flex h-14 w-14 items-center justify-center rounded-2xl border border-amber-200 bg-amber-50 text-amber-600 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-400"><UserRound size={28} /></div>
-                <div className="space-y-2"><h2 className="font-[var(--font-anton)] text-2xl uppercase tracking-wider text-slate-900 dark:text-white">{t("signin.workerTitle")}</h2><p className="text-sm font-medium leading-relaxed text-slate-600 dark:text-slate-300">{t("signin.workerDesc")}</p></div>
-              </div>
-              <div className="mt-8 flex items-center gap-2 text-sm font-bold text-amber-600"><span>Create account</span><ArrowRight size={18} /></div>
-            </Link>
-            <Link
               href="/employer/auth?mode=signup"
               className="group relative flex flex-col justify-between rounded-3xl border border-slate-200/80 bg-white/80 p-6 sm:p-8 shadow-2xl shadow-slate-900/5 backdrop-blur-xl transition-all duration-300 hover:-translate-y-1.5 hover:border-blue-500/60 hover:shadow-xl dark:border-slate-800/80 dark:bg-slate-900/90"
             >
@@ -118,6 +108,17 @@ export default function SignInSelectionPage() {
                 <span>Create account</span>
                 <ArrowRight size={18} className="transition-transform group-hover:translate-x-1" />
               </div>
+            </Link>
+
+            <Link
+              href="/worker/auth?mode=signup"
+              className="group relative flex flex-col justify-between rounded-3xl border border-slate-200/80 bg-white/80 p-6 shadow-2xl shadow-slate-900/5 backdrop-blur-xl transition-all duration-300 hover:-translate-y-1.5 hover:border-amber-500/60 hover:shadow-xl dark:border-slate-800/80 dark:bg-slate-900/90"
+            >
+              <div className="space-y-4">
+                <div className="inline-flex h-14 w-14 items-center justify-center rounded-2xl border border-amber-200 bg-amber-50 text-amber-600 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-400"><UserRound size={28} /></div>
+                <div className="space-y-2"><h2 className="font-[var(--font-anton)] text-2xl uppercase tracking-wider text-slate-900 dark:text-white">{t("signin.workerTitle")}</h2><p className="text-sm font-medium leading-relaxed text-slate-600 dark:text-slate-300">{t("signin.workerDesc")}</p></div>
+              </div>
+              <div className="mt-8 flex items-center gap-2 text-sm font-bold text-amber-600"><span>Create account</span><ArrowRight size={18} /></div>
             </Link>
             </div>
           )}
