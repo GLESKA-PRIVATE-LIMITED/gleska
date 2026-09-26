@@ -1,0 +1,27 @@
+:root {
+  color-scheme: light;
+
+  --color-background: #eef1fb;
+  --color-surface: #ffffff;
+  --color-primary: #2563eb;
+  --color-text-primary: #0f172a;
+  --color-text-secondary: #64748b;
+  --color-border: #e2e8f0;
+  --color-success: #059669;
+  --color-warning: #d97706;
+  --color-error: #be123c;
+
+  --font-body: Inter, ui-sans-serif, system-ui, sans-serif;
+
+  --radius-control: 0.75rem;
+  --radius-card: 1rem;
+
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-6: 1.5rem;
+
+  --control-height: 2.75rem;
+  --shadow-card: 0 1px 2px rgb(15 23 42 / 5%);
+}

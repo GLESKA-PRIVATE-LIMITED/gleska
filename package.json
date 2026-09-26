@@ -1,0 +1,9 @@
+{
+  "dependencies": {
+    "@capacitor/app": "^8.1.1",
+    "@capacitor/browser": "^8.0.4",
+    "@supabase/supabase-js": "^2.117.2",
+    "lucide-react": "^1.48.0",
+    "react-router-dom": "^7.18.4"
+  }
+}
