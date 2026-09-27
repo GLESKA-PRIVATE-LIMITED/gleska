@@ -12,6 +12,7 @@ import {
   SignInSelectionScreen,
 } from "./features/auth/AuthScreens";
 import WorkerOnboardingScreen from "./features/worker/WorkerOnboardingScreen";
+import WorkerDashboardScreen from "./features/worker/WorkerDashboardScreen";
 import { routeForAuthState } from "./types/auth";
 
 function RootRoute() {
@@ -28,6 +29,7 @@ function DashboardRoute({ role }: { role: "WORKER" | "EMPLOYER" | "ADMIN" }) {
   if (user.role !== role || nextStep !== "DASHBOARD") {
     return <Navigate to={routeForAuthState(user.role, nextStep)} replace />;
   }
+  if (role === "WORKER") return <WorkerDashboardScreen />;
   return <AuthenticatedBoundary expectedRole={role} />;
 }
 

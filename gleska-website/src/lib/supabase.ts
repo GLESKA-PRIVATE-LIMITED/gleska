@@ -13,13 +13,16 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
         // The callback page (/auth/callback) is the ONLY place that exchanges the code.
         // detectSessionInUrl is DISABLED to avoid competing code exchange attempts.
         //
-        // Required Supabase configuration:
-        // Authentication → URL Configuration → Redirect URLs:
-        //   http://localhost:3000/auth/callback
+        // Supabase Authentication > URL Configuration > Redirect URLs:
+        //   http://localhost:3000/auth/callback (website development)
+        //   http://localhost:5173/auth/callback (mobile browser development)
         //   https://www.goleska.in/auth/callback
         //   https://goleska.in/auth/callback
-        //
-        // Google OAuth requires redirectTo to match Supabase allowlist exactly.
+        //   com.gleska.app://auth/callback (native Android)
+        // Keep the Supabase Site URL set to https://www.goleska.in.
+        // Google Console Authorized redirect URI (Google -> Supabase), not an app redirect:
+        //   https://mcnpjqshcajndscasbwu.supabase.co/auth/v1/callback
+        // App redirectTo values must match the Supabase Redirect URLs allowlist exactly.
         flowType: 'pkce',
         detectSessionInUrl: false,  // ✓ Disabled: callback page handles code exchange
         persistSession: true,

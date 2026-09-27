@@ -8,6 +8,7 @@ import { AxiosError } from "axios";
 import { useAuth } from "@/context/AuthContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { getRouteForAuthenticatedUser } from "@/lib/auth-routing";
+import { registerSession } from "@/lib/security";
 import { supabase } from "@/lib/supabase";
 import apiClient from "@/lib/api";
 
@@ -131,6 +132,7 @@ export default function AuthCallbackPage() {
           const existingRole = meRes.data.user.role as "WORKER" | "EMPLOYER";
           const nextStep = meRes.data.next_step;
           const requestedNext = getStoredNext();
+          await registerSession();
           clearStoredRole();
           setAuthState(meRes.data.user, meRes.data.next_step || null);
           const targetRoute = getRouteForAuthenticatedUser(existingRole, nextStep, requestedNext);

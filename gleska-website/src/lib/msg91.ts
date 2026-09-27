@@ -105,15 +105,15 @@ function getConfiguration(identifier = "") {
     identifier,
     exposeMethods: true,
     captchaRenderId: "",
-    success: (data: unknown) => {
-      console.log("[MSG91] configuration success:", data);
+    success: () => {
+      console.log("[MSG91] widget configuration succeeded.");
     },
     failure: (error: unknown) => {
       if (isAlreadyVerifiedError(error)) {
         console.info("[MSG91] OTP transaction was already completed.");
         return;
       }
-      console.error("[MSG91] configuration failure:", error);
+      console.error("[MSG91] widget configuration failed.");
     },
   };
 }
@@ -295,11 +295,11 @@ export async function sendOTP(mobile: string): Promise<{ normalizedMobile: strin
         console.log("[MSG91] OTP request ID received (absent - MSG91 manages transaction internally)");
       }
       console.log("[MSG91] OTP channel: SMS (managed internally by MSG91)");
-      console.log("[MSG91] sendOtp success:", data);
+      console.log("[MSG91] sendOtp succeeded.");
       resolve({ ...(asRecord(data) ?? {}), normalizedMobile, requestId: reqId });
     }, (error: unknown) => {
       window.clearTimeout(timeoutId);
-      console.error("[MSG91] sendOtp failure:", error);
+      console.error("[MSG91] sendOtp failed.");
       reject(error instanceof Error ? error : new Error("MSG91 OTP send failed."));
     });
   });
@@ -370,7 +370,7 @@ export async function verifyOTP(otp: string): Promise<{ accessToken: string; [ke
       const value = asRecord(data) ?? {};
       const accessToken = extractMsg91AccessToken(data);
 
-      console.log("[MSG91] verifyOtp success:", data);
+      console.log("[MSG91] verifyOtp succeeded.");
 
       if (!accessToken) {
         reject(new Error("MSG91 verification succeeded but no access token was returned."));
@@ -383,7 +383,7 @@ export async function verifyOTP(otp: string): Promise<{ accessToken: string; [ke
       settled = true;
       window.clearTimeout(timeoutId);
       otpVerificationInFlight = false;
-      console.error("[MSG91] verifyOtp failure:", error);
+      console.error("[MSG91] verifyOtp failed.");
       if (isAlreadyVerifiedError(error)) {
         reject(new Error("This OTP has already been used. Request a new OTP and try again."));
         return;
@@ -435,7 +435,7 @@ export async function retryOTP(channel: string | null, requestId?: string | null
       resolve((data as Record<string, unknown>) ?? {});
     }, (error: unknown) => {
       window.clearTimeout(timeoutId);
-      console.error("[MSG91] Retry failure:", error);
+      console.error("[MSG91] OTP retry failed.");
       if (isConfigError(error)) {
         reject(new Error("Unable to resend OTP due to a system configuration issue. Please contact support."));
       } else {

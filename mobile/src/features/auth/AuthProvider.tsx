@@ -44,6 +44,7 @@ interface AuthContextValue {
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+const oauthCallbackTasks = new Map<string, Promise<AuthStateResponse>>();
 
 function accountTypeFromStorage(): AccountType {
   return localStorage.getItem("goleska_oauth_account_type") === "INDIVIDUAL" ? "INDIVIDUAL" : "BUSINESS";
@@ -329,7 +330,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const completeOAuthCallback = async () => {
+  const completeOAuthCallback = () => {
     setError("");
     const params = new URLSearchParams(window.location.search);
     const oauthError = params.get("error_description") || params.get("error");
@@ -337,21 +338,49 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const code = params.get("code");
     if (!code) throw new Error("The Google sign-in callback did not include an authorization code.");
 
-    const { error: exchangeError } = await getSupabaseClient().auth.exchangeCodeForSession(code);
-    if (exchangeError) throw exchangeError;
+    const existingTask = oauthCallbackTasks.get(code);
+    if (existingTask) return existingTask;
 
-    try {
-      const state = await refreshAuth();
-      clearOAuthState();
-      return state;
-    } catch (authError) {
-      if (!(authError instanceof ApiError) || authError.status !== 401) throw authError;
-      const role = storedSignupRole();
-      if (!role) throw new Error("Cannot determine the selected account type for this new Google account.");
-      const state = await provisionAndRestore(role, "", accountTypeFromStorage());
-      clearOAuthState();
-      return state;
+    const callbackTask = (async () => {
+      const supabase = getSupabaseClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+        if (exchangeError) {
+          const { data: { session: recoveredSession } } = await supabase.auth.getSession();
+          if (!recoveredSession) throw exchangeError;
+        }
+      }
+
+      const callbackUrl = new URL(window.location.href);
+      callbackUrl.searchParams.delete("code");
+      callbackUrl.searchParams.delete("state");
+      callbackUrl.searchParams.delete("error");
+      callbackUrl.searchParams.delete("error_description");
+      window.history.replaceState(window.history.state, "", `${callbackUrl.pathname}${callbackUrl.search}${callbackUrl.hash}`);
+
+      try {
+        const state = await refreshAuth();
+        await registerMobileSession();
+        clearOAuthState();
+        return state;
+      } catch (authError) {
+        if (!(authError instanceof ApiError) || authError.status !== 401) throw authError;
+        const role = storedSignupRole();
+        if (!role) throw new Error("Cannot determine the selected account type for this new Google account.");
+        const state = await provisionAndRestore(role, "", accountTypeFromStorage());
+        clearOAuthState();
+        return state;
+      }
+    })();
+
+    oauthCallbackTasks.set(code, callbackTask);
+    while (oauthCallbackTasks.size > 4) {
+      const oldestCode = oauthCallbackTasks.keys().next().value;
+      if (oldestCode === undefined) break;
+      oauthCallbackTasks.delete(oldestCode);
     }
+    return callbackTask;
   };
 
   const requestPasswordResetOtp = async (mobile: string) => {

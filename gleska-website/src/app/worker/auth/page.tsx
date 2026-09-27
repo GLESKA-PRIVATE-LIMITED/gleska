@@ -2,7 +2,6 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import Link from "next/link";
 import { CheckCircle2, Zap } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useLanguage } from "@/context/LanguageContext";
@@ -54,11 +53,6 @@ function WorkerAuthContent() {
               </p>
             </div>
             <AuthMethodPanel role="WORKER" initialMode={registrationMode ? "signup" : "login"} hideModeSelector={registrationMode} onModeChange={setAuthMode} />
-            {registrationMode && (
-              <Link href="/auth/signin" className="mt-4 block text-center text-sm font-semibold text-indigo-600 hover:text-indigo-500 dark:text-indigo-400 dark:hover:text-indigo-300">
-                Back to Sign In
-              </Link>
-            )}
           </div>
 
           <div className="mt-6 space-y-3 rounded-2xl border border-slate-200/80 bg-white/80 p-5 shadow-lg shadow-slate-900/5 backdrop-blur-xl dark:border-slate-800/80 dark:bg-slate-900/80">

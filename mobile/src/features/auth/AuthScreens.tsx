@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent, useState, type FormEvent } from "react";
-import { ArrowLeft, BriefcaseBusiness, LoaderCircle, LockKeyhole, Mail, Phone, UserRound } from "lucide-react";
+import { ArrowLeft, ArrowRight, BriefcaseBusiness, LoaderCircle, Mail, Phone, UserCheck, UserRound } from "lucide-react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { missingBackendConfiguration, missingMsg91Configuration, missingSupabaseConfiguration } from "../../config/environment";
 import { useAuth, errorMessage } from "./AuthProvider";
@@ -22,8 +22,8 @@ function routeAfterAuth(state: AuthStateResponse, navigate: ReturnType<typeof us
   navigate(routeForAuthState(state.user.role, state.next_step), { replace: true });
 }
 
-function MobileHeader() {
-  return <header className="auth-header">
+function MobileHeader({ signup = false }: { signup?: boolean }) {
+  return <header className={`auth-header${signup ? " auth-header-signup" : ""}`}>
     <Link to="/auth/signin" className="brand-lockup" aria-label="GLESKA sign in">
       <img src="/favicon.ico" alt="" width="36" height="36" />
       <span>GO LESKA AI</span>
@@ -32,8 +32,8 @@ function MobileHeader() {
   </header>;
 }
 
-export function AuthLayout({ children }: { children: React.ReactNode }) {
-  return <div className="auth-page"><MobileHeader />{children}</div>;
+export function AuthLayout({ children, variant }: { children: React.ReactNode; variant?: "signup" | "selection" }) {
+  return <div className={`auth-page${variant ? ` auth-${variant}-page` : ""}`}><MobileHeader signup={variant !== undefined} />{children}</div>;
 }
 
 function InlineError({ children }: { children: string }) {
@@ -65,24 +65,25 @@ function AccountChoice({ role, accountType, title, description, icon: Icon, acce
   return <Link className={`account-choice account-choice-${accent}`} to={target}>
     <span className="account-choice-icon"><Icon size={22} /></span>
     <span className="account-choice-copy"><strong>{title}</strong><span>{description}</span></span>
-    <span className="account-choice-arrow" aria-hidden="true">›</span>
+    <span className="account-choice-action">Create account <ArrowRight size={16} aria-hidden="true" /></span>
   </Link>;
 }
 
 export function SignInSelectionScreen() {
   const [showAccounts, setShowAccounts] = useState(false);
   const { t } = useLanguage();
-  return <AuthLayout>
-    <main className="auth-content auth-content-wide">
-      <section className="auth-card">
-        <p className="auth-eyebrow">{showAccounts ? t("nav.signup") : t("nav.signIn")}</p>
-        <h1>{showAccounts ? t("signin.selectRole") : t("nav.signIn")}</h1>
-        <p className="auth-description">{t("auth.securityText")}</p>
+  return <AuthLayout variant={showAccounts ? "selection" : undefined}>
+    <main className="auth-content auth-signin-content">
+      <div className="auth-signin-hero">
+        <p className="auth-eyebrow">{showAccounts ? t("nav.signup") : "Sign in"}</p>
+        <h1>{showAccounts ? t("signin.selectRole") : "Sign in"}</h1>
+        <p className="auth-description">{showAccounts ? t("signin.roleDescription") : t("auth.securityText")}</p>
+      </div>
+      <section className="auth-card auth-signin-card">
         {!showAccounts ? <AuthForm role={undefined} accountType="BUSINESS" onCreateAccount={() => setShowAccounts(true)} /> : <div className="account-choice-list">
-          <AccountChoice role="WORKER" accountType="BUSINESS" title={t("signin.workerTitle")} description="Find work that matches your profile." icon={UserRound} accent="amber" />
-          <AccountChoice role="EMPLOYER" accountType="BUSINESS" title={t("signin.businessEmployerTitle")} description="Hire for your business or industry." icon={BriefcaseBusiness} accent="blue" />
-          <AccountChoice role="EMPLOYER" accountType="INDIVIDUAL" title={t("signin.individualEmployerTitle")} description="Hire as an individual employer." icon={UserRound} accent="amber" />
-          <button type="button" className="text-link auth-back-link" onClick={() => setShowAccounts(false)}><ArrowLeft size={16} /> {t("auth.back")}</button>
+          <AccountChoice role="EMPLOYER" accountType="BUSINESS" title={t("signin.businessSignupTitle")} description={t("signin.businessSignupDescription")} icon={BriefcaseBusiness} accent="blue" />
+          <AccountChoice role="EMPLOYER" accountType="INDIVIDUAL" title={t("signin.individualSignupTitle")} description={t("signin.individualSignupDescription")} icon={UserCheck} accent="amber" />
+          <AccountChoice role="WORKER" accountType="BUSINESS" title={t("signin.workerSignupTitle")} description={t("signin.workerSignupDescription")} icon={UserRound} accent="amber" />
         </div>}
       </section>
     </main>
@@ -94,14 +95,17 @@ export function RoleAuthScreen({ role }: { role: SignupRole }) {
   const accountType: AccountType = role === "EMPLOYER" && params.get("account") === "individual" ? "INDIVIDUAL" : "BUSINESS";
   const isDirectSignup = params.get("mode") === "signup";
   const { t } = useLanguage();
-  return <AuthLayout>
+  return <AuthLayout variant={isDirectSignup ? "signup" : undefined}>
     <main className="auth-content">
       <section className="auth-card">
         <p className="auth-eyebrow">{role === "WORKER" ? t("signin.workerTitle") : accountType === "INDIVIDUAL" ? t("signin.individualEmployerTitle") : t("signin.businessEmployerTitle")}</p>
-        <h1>{isDirectSignup ? t("nav.signup") : t("nav.signIn")}</h1>
-        <p className="auth-description">{t("auth.securityText")}</p>
+        <h1>{isDirectSignup
+          ? role === "WORKER" ? t("auth.employeeTitle") : accountType === "INDIVIDUAL" ? t("auth.individualSignupHeading") : t("auth.businessSignupHeading")
+          : t("nav.signIn")}</h1>
+        <p className="auth-description">{isDirectSignup
+          ? role === "WORKER" ? t("auth.employeeTitle") : accountType === "INDIVIDUAL" ? t("auth.individualSubtitle") : t("auth.businessSubtitle")
+          : t("auth.securityText")}</p>
         <AuthForm role={role} accountType={accountType} initialSignup={isDirectSignup} />
-        {isDirectSignup && <Link className="text-link auth-back-link" to={role === "WORKER" ? "/worker/auth" : "/employer/auth"}><ArrowLeft size={16} /> {t("auth.back")}</Link>}
       </section>
     </main>
   </AuthLayout>;
@@ -141,7 +145,7 @@ function AuthForm({ role, accountType, initialSignup = false, onCreateAccount }:
     if (auth.user && auth.nextStep) routeAfterAuth({ user: auth.user, next_step: auth.nextStep }, navigate);
   }, [auth.user, auth.nextStep, navigate]);
 
-  const input: SignupInput = { name, email, mobile, password, confirmPassword, role: role || "WORKER", accountType };
+    const input: SignupInput = { name, email, mobile, password, confirmPassword, role: role || "WORKER", accountType };
   const visibleError = localError || auth.error;
   const validMobile = /^\d{10}$/.test(mobile.replace(/\D/g, ""));
   const needsSupabase = signup || (!signup && loginMethod === "email");
@@ -262,11 +266,29 @@ function AuthForm({ role, accountType, initialSignup = false, onCreateAccount }:
 
   return <>
     {!initialSignup && role && <div className="auth-tabs" role="tablist" aria-label="Authentication method">
-      <button type="button" role="tab" aria-selected={!signup} className={!signup ? "active" : ""} onClick={() => { setSignup(false); setOtpPurpose(null); setLocalError(""); }}>{t("nav.signIn")}</button>
-      <button type="button" role="tab" aria-selected={signup} className={signup ? "active" : ""} onClick={() => { setSignup(true); setOtpPurpose(null); setLocalError(""); }}>{t("nav.signup")}</button>
+      <button type="button" role="tab" aria-selected={!signup} className={!signup ? "active" : ""} onClick={() => { setSignup(false); setOtpPurpose(null); setLocalError(""); }}>Login</button>
+      <button type="button" role="tab" aria-selected={signup} className={signup ? "active" : ""} onClick={() => { setSignup(true); setOtpPurpose(null); setLocalError(""); }}>Sign up</button>
     </div>}
 
-    {otpPurpose ? <form className="auth-form" onSubmit={(event) => void verify(event)}>
+    {otpPurpose === "signup" ? <div className="auth-otp-backdrop" role="presentation">
+      <section className="auth-otp-dialog" role="dialog" aria-modal="true" aria-labelledby="signup-otp-title">
+        <div className="auth-otp-heading">
+          <p className="auth-eyebrow">{t("auth.secureSignup")}</p>
+          <h2 id="signup-otp-title">{t("auth.verifyPhone")}</h2>
+          <p className="auth-description">{t("auth.signupCodeSent", { phone: `+91 ${mobile}` })}</p>
+        </div>
+        <form className="auth-form" onSubmit={(event) => void verify(event)}>
+          <label className="sr-only" htmlFor="signup-otp">6-digit verification code</label>
+          <input id="signup-otp" className="auth-input otp-input" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={otp} onChange={(event) => setOtp(event.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="000000" autoFocus />
+          <InlineError>{visibleError}</InlineError>
+          <button className="auth-primary" type="submit" disabled={busy || otp.length !== 6}>{busy && <LoaderCircle size={17} className="spin" />}{busy ? t("auth.verifying") : t("auth.verifyCreate")}</button>
+          <div className="auth-form-row">
+            <button className="text-link" type="button" onClick={() => { setOtpPurpose(null); setOtp(""); setLocalError(""); }}>{t("auth.cancel")}</button>
+            <button className="text-link" type="button" disabled={Boolean(countdown) || busy} onClick={() => void resend()}>{countdown ? t("auth.resendIn", { seconds: countdown }) : t("auth.resendOtp")}</button>
+          </div>
+        </form>
+      </section>
+    </div> : otpPurpose === "mobile-login" ? <form className="auth-form" onSubmit={(event) => void verify(event)}>
       <p className="auth-description">Enter the six-digit code sent to +{mobile.startsWith("91") ? mobile : `91${mobile}`}.</p>
       <label className="sr-only" htmlFor="auth-otp">{t("auth.verifyOtp")}</label>
       <input id="auth-otp" className="auth-input otp-input" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={otp} onChange={(event) => setOtp(event.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="000000" autoFocus />
@@ -281,17 +303,16 @@ function AuthForm({ role, accountType, initialSignup = false, onCreateAccount }:
         <button type="button" role="tab" aria-selected={loginMethod === "email"} className={loginMethod === "email" ? "active" : ""} onClick={() => setLoginMethod("email")}>{t("auth.emailPassword")}</button>
         <button type="button" role="tab" aria-selected={loginMethod === "mobile"} className={loginMethod === "mobile" ? "active" : ""} onClick={() => setLoginMethod("mobile")}>{t("auth.mobileOtp")}</button>
       </div>}
-      <form className="auth-form" onSubmit={(event) => void submit(event)}>
-        {signup && <label className="auth-field"><span>{t("auth.fullNameLabel")}</span><input className="auth-input" autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} required maxLength={120} /></label>}
-        {signup && <label className="auth-field"><span>{t("auth.emailLabel")}</span><span className="auth-input-with-icon"><Mail size={17} /><input className="auth-input" type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></span></label>}
-        {!signup && loginMethod === "email" && <label className="auth-field"><span>{t("auth.emailLabel")}</span><span className="auth-input-with-icon"><Mail size={17} /><input className="auth-input" type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></span></label>}
-        {(signup || (!signup && loginMethod === "mobile")) && <label className="auth-field"><span>{t("auth.mobileLabel")}</span><span className="auth-input-with-icon"><Phone size={17} /><span className="phone-prefix">+91</span><input className="auth-input" inputMode="numeric" autoComplete="tel-national" value={mobile} onChange={(event) => setMobile(event.target.value.replace(/\D/g, "").slice(0, 10))} required /></span></label>}
-        {(!signup && loginMethod === "email") && <label className="auth-field"><span>{t("auth.passwordLabel")}</span><span className="auth-input-with-icon"><LockKeyhole size={17} /><input className="auth-input" type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required /></span></label>}
-        {signup && <>
-          <label className="auth-field"><span>{t("auth.passwordLabel")}</span><span className="auth-input-with-icon"><LockKeyhole size={17} /><input className="auth-input" type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} required minLength={8} maxLength={128} /></span></label>
-          <label className="auth-field"><span>{t("auth.confirmPasswordLabel")}</span><span className="auth-input-with-icon"><LockKeyhole size={17} /><input className="auth-input" type="password" autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} required minLength={8} maxLength={128} /></span></label>
-          <label className="terms-check"><input type="checkbox" checked={termsAccepted} onChange={(event) => setTermsAccepted(event.target.checked)} /><span>{t("auth.termsAccepted")} <a href="https://www.goleska.in/terms" target="_blank" rel="noreferrer">Terms & Conditions</a></span></label>
-        </>}
+      <form className={`auth-form${signup ? " auth-signup-form" : ""}`} onSubmit={(event) => void submit(event)}>
+        {signup && <input className="auth-input" aria-label={t("auth.fullNameLabel")} placeholder={t("auth.fullNameLabel")} autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} required minLength={2} maxLength={120} />}
+        {signup && <span className="auth-input-with-icon"><Mail size={17} /><input className="auth-input" type="email" aria-label={t("auth.emailLabel")} placeholder={t("auth.emailLabel")} autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></span>}
+        {!signup && loginMethod === "email" && <label className="auth-field"><span>{t("auth.emailLabel")}</span><span className="auth-input-with-icon"><Mail size={17} /><input className="auth-input" type="email" placeholder={t("auth.emailLabel")} autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></span></label>}
+        {!signup && loginMethod === "email" && <label className="auth-field"><span>{t("auth.passwordLabel")}</span><input className="auth-input" type="password" placeholder={t("auth.passwordLabel")} autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required minLength={8} maxLength={128} /></label>}
+        {!signup && loginMethod === "mobile" && <label className="auth-field"><span>{t("auth.mobileLabel")}</span><span className="auth-input-with-icon"><Phone size={17} /><span className="phone-prefix">+91</span><input className="auth-input" placeholder={t("auth.mobileLabel")} inputMode="numeric" autoComplete="tel-national" value={mobile} onChange={(event) => setMobile(event.target.value.replace(/\D/g, "").slice(0, 10))} required /></span></label>}
+        {signup && <input className="auth-input" type="password" aria-label={t("auth.passwordLabel")} placeholder={t("auth.passwordLabel")} autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} required minLength={8} maxLength={128} />}
+        {signup && <input className="auth-input" type="password" aria-label={t("auth.confirmPasswordLabel")} placeholder={t("auth.confirmPasswordLabel")} autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} required minLength={8} maxLength={128} />}
+        {signup && <span className="auth-input-with-icon"><span className="phone-prefix">+91</span><input className="auth-input" aria-label={t("auth.mobileLabel")} placeholder={t("auth.mobileLabel")} inputMode="numeric" autoComplete="tel-national" value={mobile} onChange={(event) => setMobile(event.target.value.replace(/\D/g, "").slice(0, 10))} required /></span>}
+        {signup && <label className="terms-check"><input type="checkbox" checked={termsAccepted} onChange={(event) => setTermsAccepted(event.target.checked)} /><span>{t("auth.termsAccepted")} <a href="https://www.goleska.in/terms" target="_blank" rel="noreferrer">Terms & Conditions</a></span></label>}
         <InlineError>{visibleError}</InlineError>
         <ConfigurationNotice needsSupabase={needsSupabase} needsMsg91={needsMsg91} />
         <button className="auth-primary" type="submit" disabled={busy || missingBackendConfiguration() || (needsSupabase && missingSupabaseConfiguration()) || (needsMsg91 && missingMsg91Configuration()) || (signup && !termsAccepted)}>
@@ -362,6 +383,10 @@ export function ForgotPasswordScreen() {
 
   const verifyOtp = async (event: FormEvent) => {
     event.preventDefault();
+    if (!/^\d{6}$/.test(otp)) {
+      setError(t("auth.enterOtp"));
+      return;
+    }
     setBusy(true);
     setError("");
     try {
@@ -415,29 +440,27 @@ export function ForgotPasswordScreen() {
     }
   };
 
-  return <AuthLayout><main className="auth-content"><section className="auth-card">
-    <Link className="text-link auth-back-link" to="/auth/signin"><ArrowLeft size={16} /> {t("auth.back")}</Link>
-    <p className="auth-eyebrow">GLESKA</p>
-    <h1>{step === "success" ? t("auth.passwordUpdated") : t("auth.resetPassword")}</h1>
-    {step === "success" ? <Link className="auth-primary auth-link-button" to="/auth/signin">{t("nav.signIn")}</Link> : <>
-      <p className="auth-description">{step === "phone" ? "Enter the mobile number associated with your account." : step === "otp" ? `Enter the six-digit code sent to +91 ${mobile}.` : "Choose a new password for your account."}</p>
-      {step === "phone" && <form className="auth-form" onSubmit={(event) => void requestOtp(event)}>
-        <label className="auth-field"><span>{t("auth.mobileLabel")}</span><span className="auth-input-with-icon"><Phone size={17} /><span className="phone-prefix">+91</span><input className="auth-input" inputMode="numeric" autoComplete="tel-national" value={mobile} onChange={(event) => setMobile(event.target.value.replace(/\D/g, "").slice(0, 10))} required /></span></label>
+  return <AuthLayout><main className="recovery-page"><section className="recovery-card">
+    <Link className="recovery-back" to="/auth/signin"><ArrowLeft size={16} /> {t("auth.back")}</Link>
+    <h1>{step === "success" ? t("auth.passwordUpdatedTitle") : t("auth.resetPassword")}</h1>
+    {step === "success" ? <><p className="recovery-description">{t("auth.passwordResetSuccess")}</p><Link className="recovery-primary recovery-link-button" to="/auth/signin">{t("auth.continueLogin")}</Link></> : <>
+      <p className="recovery-description">{step === "phone" ? t("auth.enterPhoneHelper") : step === "otp" ? t("auth.resetCodeSent", { phone: `+91 ${mobile}` }) : t("auth.newPasswordHelper")}</p>
+      {step === "phone" && <form className="recovery-form" onSubmit={(event) => void requestOtp(event)}>
+        <div className="recovery-phone"><span>+91</span><input aria-label={t("auth.mobileLabel")} inputMode="numeric" autoComplete="tel-national" value={mobile} onChange={(event) => setMobile(event.target.value.replace(/\D/g, "").slice(0, 10))} placeholder={t("auth.mobileLabel")} required /></div>
         <InlineError>{error}</InlineError>
-        <ConfigurationNotice needsSupabase={false} needsMsg91 />
-        <button className="auth-primary" type="submit" disabled={busy || missingBackendConfiguration() || missingMsg91Configuration()}>{busy && <LoaderCircle size={17} className="spin" />}Send code</button>
+        <button className="recovery-primary" type="submit" disabled={busy || missingBackendConfiguration() || missingMsg91Configuration()}>{busy && <LoaderCircle size={16} className="spin" />}{t("auth.sendOtp")}</button>
       </form>}
-      {step === "otp" && <form className="auth-form" onSubmit={(event) => void verifyOtp(event)}>
-        <label className="sr-only" htmlFor="reset-otp">{t("auth.verifyOtp")}</label><input id="reset-otp" className="auth-input otp-input" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={otp} onChange={(event) => setOtp(event.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="000000" />
+      {step === "otp" && <form className="recovery-form" onSubmit={(event) => void verifyOtp(event)}>
+        <label className="sr-only" htmlFor="reset-otp">{t("auth.verifyOtp")}</label><input id="reset-otp" className="recovery-input recovery-otp" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={otp} onChange={(event) => setOtp(event.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="000000" />
         <InlineError>{error}</InlineError>
-        <button className="auth-primary" type="submit" disabled={busy || otp.length !== 6}>{busy && <LoaderCircle size={17} className="spin" />}{t("auth.verifyOtp")}</button>
-        <button className="text-link" type="button" disabled={busy || Boolean(countdown)} onClick={() => void resend()}>{countdown ? t("auth.resendIn", { seconds: countdown }) : t("auth.resend")}</button>
+        <button className="recovery-primary" type="submit" disabled={busy || otp.length !== 6}>{busy && <LoaderCircle size={16} className="spin" />}{t("auth.verifyOtp")}</button>
+        <div className="recovery-actions"><button type="button" onClick={() => { setStep("phone"); setOtp(""); setError(""); }}>{t("auth.changePhone")}</button><button type="button" disabled={busy || Boolean(countdown)} onClick={() => void resend()}>{countdown ? t("auth.resendIn", { seconds: countdown }) : t("auth.resendOtp")}</button></div>
       </form>}
-      {step === "password" && <form className="auth-form" onSubmit={(event) => void reset(event)}>
-        <label className="auth-field"><span>{t("auth.newPassword")}</span><input className="auth-input" type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} minLength={8} maxLength={128} required /></label>
-        <label className="auth-field"><span>{t("auth.confirmPasswordLabel")}</span><input className="auth-input" type="password" autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} minLength={8} maxLength={128} required /></label>
+      {step === "password" && <form className="recovery-form" onSubmit={(event) => void reset(event)}>
+        <label className="recovery-field"><span>{t("auth.newPassword")}</span><input className="recovery-input" type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} minLength={8} maxLength={128} required /></label>
+        <label className="recovery-field"><span>{t("auth.confirmPasswordLabel")}</span><input className="recovery-input" type="password" autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} minLength={8} maxLength={128} required /></label>
         <InlineError>{error}</InlineError>
-        <button className="auth-primary" type="submit" disabled={busy || password.length < 8 || password !== confirmPassword}>{busy && <LoaderCircle size={17} className="spin" />}{t("auth.resetPassword")}</button>
+        <button className="recovery-primary" type="submit" disabled={busy || password.length < 8 || password !== confirmPassword}>{busy && <LoaderCircle size={16} className="spin" />}{t("auth.resetPassword")}</button>
       </form>}
     </>}
   </section></main></AuthLayout>;
