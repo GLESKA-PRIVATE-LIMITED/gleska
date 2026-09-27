@@ -74,7 +74,6 @@ const translations: Record<LanguageCode, Record<string, string>> = {
     "auth.businessSubtitle": "Make company's brain.",
     "auth.individualSubtitle": "Hire workers as an individual employer.",
     "auth.accountReady": "Your GLESKA account is ready.",
-    "auth.workerProfile": "Complete your Worker profile to continue.",
     "auth.logout": "Log out",
   },
   HI: {
@@ -138,7 +137,6 @@ const translations: Record<LanguageCode, Record<string, string>> = {
     "auth.businessSubtitle": "कंपनी का ब्रेन बनाएं।",
     "auth.individualSubtitle": "व्यक्तिगत नियोक्ता के रूप में श्रमिकों को नियुक्त करें।",
     "auth.accountReady": "आपका GLESKA खाता तैयार है।",
-    "auth.workerProfile": "जारी रखने के लिए Worker प्रोफ़ाइल पूरी करें।",
     "auth.logout": "लॉग आउट",
   },
   MR: {
@@ -202,7 +200,6 @@ const translations: Record<LanguageCode, Record<string, string>> = {
     "auth.businessSubtitle": "कंपनीचे ब्रेन बनवा.",
     "auth.individualSubtitle": "वैयक्तिक नियोक्ता म्हणून कामगार नियुक्त करा.",
     "auth.accountReady": "तुमचे GLESKA खाते तयार आहे.",
-    "auth.workerProfile": "पुढे जाण्यासाठी Worker प्रोफाइल पूर्ण करा.",
     "auth.logout": "लॉग आउट",
   },
   TA: {
@@ -266,7 +263,6 @@ const translations: Record<LanguageCode, Record<string, string>> = {
     "auth.businessSubtitle": "நிறுவனத்தின் மூளையை உருவாக்கவும்.",
     "auth.individualSubtitle": "தனிநபர் முதலாளியாக தொழிலாளர்களை பணியமர்த்தவும்.",
     "auth.accountReady": "உங்கள் GLESKA கணக்கு தயாராக உள்ளது.",
-    "auth.workerProfile": "தொடர Worker சுயவிவரத்தை நிறைவு செய்யவும்.",
     "auth.logout": "வெளியேறு",
   },
 };

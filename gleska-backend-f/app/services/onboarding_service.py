@@ -17,20 +17,9 @@ class OnboardingService:
         "REGISTERED_BUSINESS_DETAILS",
         "UNREGISTERED_BUSINESS_DETAILS",
         "INDIVIDUAL_DETAILS",
-        "WORKER_PROFILE",
     ]:
         if user.role == "WORKER":
-            try:
-                response = (
-                    supabase.table("worker_profiles")
-                    .select("onboarding_status, profile_completed")
-                    .eq("user_id", user.id)
-                    .single()
-                    .execute()
-                )
-                return "DASHBOARD" if response.data and response.data.get("onboarding_status") == "COMPLETED" else "WORKER_PROFILE"
-            except Exception:
-                return "WORKER_PROFILE"
+            return "DASHBOARD"
 
         if user.role == "EMPLOYER":
             try:
@@ -74,7 +63,6 @@ class OnboardingService:
         "REGISTERED_BUSINESS_DETAILS",
         "UNREGISTERED_BUSINESS_DETAILS",
         "INDIVIDUAL_DETAILS",
-        "WORKER_PROFILE",
     ]:
         return OnboardingService.determine_next_step(user)
 

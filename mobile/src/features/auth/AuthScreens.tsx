@@ -573,15 +573,12 @@ export function AuthenticatedBoundary({ expectedRole }: { expectedRole?: UserRol
     if (!auth.user) navigate("/auth/signin", { replace: true });
     else if (expectedRole && auth.user.role !== expectedRole && auth.nextStep) {
       navigate(routeForAuthState(auth.user.role, auth.nextStep), { replace: true });
-    } else if (auth.user.role === "WORKER" && auth.nextStep && auth.nextStep !== "DASHBOARD") {
-      navigate("/worker/onboarding", { replace: true });
     } else if (auth.user.role === "EMPLOYER" && auth.nextStep && auth.nextStep !== "DASHBOARD") {
       navigate("/employer/onboarding", { replace: true });
     }
   }, [auth.isLoading, auth.user, auth.nextStep, expectedRole, navigate]);
 
   if (auth.isLoading || !auth.user || (expectedRole && auth.user.role !== expectedRole)) return <LoadingScreen />;
-  if (auth.user.role === "WORKER" && auth.nextStep !== "DASHBOARD") return <LoadingScreen />;
   if (auth.user.role === "EMPLOYER" && auth.nextStep !== "DASHBOARD") return <LoadingScreen />;
 
   const accountLabel = auth.user.role === "WORKER" ? "Worker" : auth.user.role === "EMPLOYER" ? "Employer" : "Admin";

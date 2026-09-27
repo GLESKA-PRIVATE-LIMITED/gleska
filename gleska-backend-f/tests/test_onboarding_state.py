@@ -1,27 +1,12 @@
-from types import SimpleNamespace
-
 from app.services import onboarding_service
 from app.services.onboarding_service import OnboardingService
 from app.schemas.auth import UserResponse
 
 
-def test_completed_worker_uses_persisted_onboarding_state(monkeypatch):
-    class Query:
-        def select(self, value):
-            return self
-
-        def eq(self, field, value):
-            return self
-
-        def single(self):
-            return self
-
-        def execute(self):
-            return SimpleNamespace(data={"onboarding_status": "COMPLETED", "profile_completed": False})
-
+def test_worker_does_not_require_profile_completion_to_reach_dashboard(monkeypatch):
     class FakeSupabase:
         def table(self, name):
-            return Query()
+            raise AssertionError("Worker routing must not depend on profile state")
 
     monkeypatch.setattr(onboarding_service, "supabase", FakeSupabase())
     user = UserResponse(

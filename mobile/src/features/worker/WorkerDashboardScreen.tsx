@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { BriefcaseBusiness, CheckCircle2, LayoutDashboard, LoaderCircle, LogOut, MapPin, PanelLeft, UserRound, X } from "lucide-react";
+import { BriefcaseBusiness, CheckCircle2, LoaderCircle, MapPin, UserRound, X } from "lucide-react";
 import { useAuth, errorMessage } from "../auth/AuthProvider";
 import { apiGet } from "../../lib/api";
-import { useNavigate } from "react-router-dom";
+import WorkerMobileShell from "./WorkerMobileShell";
 
 type WorkerProfile = {
   profile_completed: boolean;
@@ -44,8 +44,6 @@ function isSubscriptionActive(expiry?: string | null) {
 
 export default function WorkerDashboardScreen() {
   const auth = useAuth();
-  const navigate = useNavigate();
-  const [menuOpen, setMenuOpen] = useState(false);
   const [profile, setProfile] = useState<WorkerProfile | null>(null);
   const [jobs, setJobs] = useState<AvailableJob[]>([]);
   const [profileLoading, setProfileLoading] = useState(true);
@@ -112,20 +110,7 @@ export default function WorkerDashboardScreen() {
     ? new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "long", year: "numeric" }).format(new Date(profile.subscription_valid_until))
     : "";
 
-  const logout = async () => {
-    await auth.logout();
-    navigate("/auth/signin", { replace: true });
-  };
-
-  return <div className="worker-app-shell">
-    <header className="worker-app-header">
-      <button className="worker-menu-trigger" type="button" onClick={() => setMenuOpen(true)} aria-label="Open navigation">
-        <PanelLeft size={21} />
-      </button>
-      <span className="worker-brand">GO LESKA AI</span>
-      <span className="worker-header-spacer" />
-    </header>
-
+  return <WorkerMobileShell>
     <main className="worker-dashboard">
       <section className="worker-welcome-banner">
         <div className="worker-welcome-copy">
@@ -162,14 +147,6 @@ export default function WorkerDashboardScreen() {
 
     {(selectedJob || jobLoading || jobError) && <div className="worker-job-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) { setSelectedJob(null); setJobError(""); } }}><section className="worker-job-dialog" role="dialog" aria-modal="true" aria-labelledby="worker-job-title"><div className="worker-job-dialog-heading"><div><p className="auth-eyebrow">Job details</p><h2 id="worker-job-title">{selectedJob?.title || (jobLoading ? "Loading job details" : "Unable to load job")}</h2></div><button className="dashboard-icon-button" type="button" aria-label="Close job details" onClick={() => { setSelectedJob(null); setJobError(""); }}><X size={19} /></button></div>{jobLoading ? <div className="worker-dashboard-state"><LoaderCircle className="spin" size={20} /> Loading job details...</div> : jobError ? <div className="worker-dashboard-state worker-dashboard-error"><p>{jobError}</p></div> : selectedJob && <dl className="worker-job-detail-list"><div><dt>Employer</dt><dd>{selectedJob.employer_name || "Unavailable"}</dd></div><div><dt>Work site</dt><dd>{[selectedJob.site_name, selectedJob.address, selectedJob.city, selectedJob.state].filter(Boolean).join(", ") || "Unavailable"}</dd></div><div><dt>Daily wage</dt><dd>{selectedJob.salary > 0 ? `₹${selectedJob.salary}/day` : "Not specified"}</dd></div><div><dt>Positions</dt><dd>{selectedJob.headcount}</dd></div><div><dt>Experience</dt><dd>{selectedJob.min_experience == null ? "Not specified" : `${selectedJob.min_experience}+ years`}</dd></div><div><dt>Duration</dt><dd>{selectedJob.work_duration_days == null ? "Not specified" : `${selectedJob.work_duration_days} days`}</dd></div><div><dt>Work timing</dt><dd>{selectedJob.work_timing || "Not specified"}</dd></div><div><dt>Status</dt><dd>{selectedJob.status}</dd></div>{!!selectedJob.required_skills?.length && <div><dt>Required skills</dt><dd>{selectedJob.required_skills.join(", ")}</dd></div>}</dl>}</section></div>}
 
-    {menuOpen && <div className="worker-menu-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setMenuOpen(false); }}>
-      <aside className="worker-menu-drawer" aria-label="Worker navigation">
-        <div className="worker-menu-heading"><span className="worker-brand">GO LESKA AI</span><button className="worker-menu-close" type="button" aria-label="Close navigation" onClick={() => setMenuOpen(false)}><X size={21} /></button></div>
-        <div className="worker-menu-current"><LayoutDashboard size={19} /><strong>Dashboard</strong></div>
-        <div className="worker-menu-account"><span className="worker-account-initial">{auth.user?.name?.charAt(0).toUpperCase() || "W"}</span><div><strong>{auth.user?.name || "Worker"}</strong><span>Worker</span></div></div>
-        <button className="worker-menu-logout" type="button" onClick={() => void logout()}><LogOut size={18} /><span>Log out</span></button>
-      </aside>
-    </div>}
     </main>
-  </div>;
+  </WorkerMobileShell>;
 }

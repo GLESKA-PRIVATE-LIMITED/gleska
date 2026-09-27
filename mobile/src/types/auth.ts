@@ -8,8 +8,7 @@ export type NextStep =
   | "REGISTERED_INDUSTRY_DETAILS"
   | "REGISTERED_BUSINESS_DETAILS"
   | "UNREGISTERED_BUSINESS_DETAILS"
-  | "INDIVIDUAL_DETAILS"
-  | "WORKER_PROFILE";
+  | "INDIVIDUAL_DETAILS";
 
 export interface AuthUser {
   id: string;
@@ -36,6 +35,6 @@ export interface AuthStateResponse {
 
 export function routeForAuthState(role: UserRole, nextStep: NextStep): string {
   if (role === "ADMIN") return "/admin";
-  if (role === "WORKER") return nextStep === "DASHBOARD" ? "/worker/dashboard" : "/worker/onboarding";
+  if (role === "WORKER") return "/worker/dashboard";
   return nextStep === "DASHBOARD" ? "/employer/dashboard" : "/employer/onboarding";
 }
