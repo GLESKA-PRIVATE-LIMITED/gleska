@@ -8,6 +8,7 @@ import { useLanguage } from "@/context/LanguageContext";
 import { getRouteForNextStep } from "@/lib/auth-routing";
 import LanguageSelector from "@/components/landing/LanguageSelector";
 import AuthMethodPanel from "@/components/auth/AuthMethodPanel";
+import Link from "next/link";
 
 function WorkerAuthContent() {
   const router = useRouter();
