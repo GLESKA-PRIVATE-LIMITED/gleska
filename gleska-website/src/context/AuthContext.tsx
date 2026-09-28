@@ -20,6 +20,12 @@ export interface AuthUser {
   created_at: string;
   updated_at: string;
   subscription_valid_until?: string | null;
+  trial_started_at?: string | null;
+  trial_ends_at?: string | null;
+  trial_active?: boolean;
+  trial_days_remaining?: number;
+  subscription_active?: boolean;
+  payment_required?: boolean;
   profile_photo_url?: string | null;
 }
 
@@ -520,8 +526,13 @@ const resendOTP = async (mobile: string, requestId: string | null = null, channe
   };
 
   const isSubscribed = Boolean(
-    user?.subscription_valid_until &&
+    user?.subscription_active || user?.trial_active || (
+      user?.subscription_valid_until &&
       new Date(user.subscription_valid_until).getTime() > Date.now()
+    ) || (
+      user?.trial_ends_at &&
+      new Date(user.trial_ends_at).getTime() > Date.now()
+    )
   );
 
   return (

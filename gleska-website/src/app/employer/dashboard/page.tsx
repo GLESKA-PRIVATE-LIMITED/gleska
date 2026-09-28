@@ -229,6 +229,12 @@ interface EmployerProfile {
   contact_person_name?: string;
   created_at?: string;
   subscription_valid_until?: string | null;
+  trial_started_at?: string | null;
+  trial_ends_at?: string | null;
+  trial_active?: boolean;
+  trial_days_remaining?: number;
+  subscription_active?: boolean;
+  payment_required?: boolean;
   has_availed_free_dispatch?: boolean;
   logo_url?: string;
 }
@@ -1842,10 +1848,12 @@ export default function EmployerDashboard() {
             ) : (
               <>
                 <p className="mt-2 text-xl font-bold text-slate-900 dark:text-white">
-                  {isSubscriptionActive(employerProfile?.subscription_valid_until) ? "Active" : employerProfile?.subscription_valid_until ? "Expired" : "Not Active"}
+                  {employerProfile?.trial_active ? "FREE TRIAL ACTIVE" : employerProfile?.subscription_active ? "Active" : employerProfile?.payment_required ? "Payment Required" : "Not Active"}
                 </p>
-                {formatSubscriptionExpiry(employerProfile?.subscription_valid_until) && <p className="mt-1 text-sm text-slate-500">Expires {formatSubscriptionExpiry(employerProfile?.subscription_valid_until)}</p>}
-                <p className="mt-1 text-sm text-slate-500">Business subscription · ₹2,000 / month</p>
+                {formatSubscriptionExpiry(employerProfile?.subscription_valid_until) || formatSubscriptionExpiry(employerProfile?.trial_ends_at) ? (
+                  <p className="mt-1 text-sm text-slate-500">Active until {formatSubscriptionExpiry(employerProfile?.subscription_valid_until) || formatSubscriptionExpiry(employerProfile?.trial_ends_at)}</p>
+                ) : null}
+                <p className="mt-1 text-sm text-slate-500">Business subscription · ₹2,000 / 30 days</p>
               </>
             )}
           </div>

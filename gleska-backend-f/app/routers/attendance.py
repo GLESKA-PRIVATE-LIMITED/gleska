@@ -59,13 +59,20 @@ def attendance_http_error(exc: AttendanceError) -> JSONResponse:
 
 @worker_router.post("/check-in", response_model=AttendanceRecordResponse)
 async def worker_check_in(request: WorkerCheckInRequest, user: UserResponse = Depends(require_worker)):
-    profile_resp = supabase.table("worker_profiles").select("subscription_valid_until").eq("user_id", user.id).single().execute()
-    svu = (profile_resp.data or {}).get("subscription_valid_until")
+    profile_resp = supabase.table("worker_profiles").select("subscription_valid_until, trial_ends_at").eq("user_id", user.id).single().execute()
+    profile = profile_resp.data or {}
+    svu = profile.get("subscription_valid_until")
     if isinstance(svu, str):
         svu = datetime.fromisoformat(svu.replace("Z", "+00:00"))
     if svu and svu.tzinfo is None:
         svu = svu.replace(tzinfo=timezone.utc)
-    if not svu or svu <= datetime.now(timezone.utc):
+    trial_ends_at = profile.get("trial_ends_at")
+    if isinstance(trial_ends_at, str):
+        trial_ends_at = datetime.fromisoformat(trial_ends_at.replace("Z", "+00:00"))
+    if trial_ends_at and trial_ends_at.tzinfo is None:
+        trial_ends_at = trial_ends_at.replace(tzinfo=timezone.utc)
+    active = bool((svu is not None and svu > datetime.now(timezone.utc)) or (trial_ends_at is not None and trial_ends_at > datetime.now(timezone.utc)))
+    if not active:
         raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail="SUBSCRIPTION_REQUIRED")
 
     try:

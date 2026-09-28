@@ -12,9 +12,12 @@ import {
   SignInSelectionScreen,
 } from "./features/auth/AuthScreens";
 import WorkerAttendanceScreen from "./features/worker/WorkerAttendanceScreen";
+import WorkerCompaniesWorkedScreen from "./features/worker/WorkerCompaniesWorkedScreen";
 import WorkerDashboardScreen from "./features/worker/WorkerDashboardScreen";
+import WorkerDocumentsScreen from "./features/worker/WorkerDocumentsScreen";
 import WorkerMobileShell from "./features/worker/WorkerMobileShell";
 import WorkerProfileScreen from "./features/worker/WorkerProfileScreen";
+import WorkerSubscriptionScreen from "./features/worker/WorkerSubscriptionScreen";
 import { workerNavigation } from "./features/worker/workerNavigation";
 import { routeForAuthState } from "./types/auth";
 
@@ -57,6 +60,30 @@ function WorkerAttendanceRoute() {
   return <WorkerAttendanceScreen />;
 }
 
+function WorkerCompaniesWorkedRoute() {
+  const { user, nextStep, isLoading } = useAuth();
+  if (isLoading) return <LoadingScreen />;
+  if (!user) return <Navigate to="/auth/signin" replace />;
+  if (user.role !== "WORKER") return <Navigate to={nextStep ? routeForAuthState(user.role, nextStep) : "/auth/signin"} replace />;
+  return <WorkerCompaniesWorkedScreen />;
+}
+
+function WorkerDocumentsRoute() {
+  const { user, isLoading } = useAuth();
+  if (isLoading) return <LoadingScreen />;
+  if (!user) return <Navigate to="/auth/signin" replace />;
+  if (user.role !== "WORKER") return <Navigate to="/worker/auth" replace />;
+  return <WorkerDocumentsScreen />;
+}
+
+function WorkerSubscriptionRoute() {
+  const { user, nextStep, isLoading } = useAuth();
+  if (isLoading) return <LoadingScreen />;
+  if (!user) return <Navigate to="/auth/signin" replace />;
+  if (user.role !== "WORKER") return <Navigate to={nextStep ? routeForAuthState(user.role, nextStep) : "/auth/signin"} replace />;
+  return <WorkerSubscriptionScreen />;
+}
+
 function WorkerRouteUnavailable({ label }: { label: string }) {
   const { user, nextStep, isLoading } = useAuth();
   if (isLoading) return <LoadingScreen />;
@@ -89,6 +116,9 @@ function AppRoutes() {
     if (screen === "dashboard") return <Route key={href} path={href} element={<DashboardRoute role="WORKER" />} />;
     if (screen === "profile") return <Route key={href} path={href} element={<WorkerProfileRoute />} />;
     if (screen === "attendance") return <Route key={href} path={href} element={<WorkerAttendanceRoute />} />;
+    if (screen === "companies-worked") return <Route key={href} path={href} element={<WorkerCompaniesWorkedRoute />} />;
+    if (screen === "documents") return <Route key={href} path={href} element={<WorkerDocumentsRoute />} />;
+    if (screen === "subscription") return <Route key={href} path={href} element={<WorkerSubscriptionRoute />} />;
     return <Route key={href} path={href} element={<WorkerRouteUnavailable label={label} />} />;
   });
 

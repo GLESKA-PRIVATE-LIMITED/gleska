@@ -8,6 +8,7 @@ from uuid import uuid4
 from app.core.supabase import supabase
 from app.schemas.auth import UserResponse
 from app.schemas.job import JobCreate, JobDetailsResponse, JobResponse, JobSiteDetailsResponse
+from app.services.entitlements import employer_state
 from app.services.matching_service import MatchingError, MatchingService
 
 logger = logging.getLogger(__name__)
@@ -48,7 +49,7 @@ class JobService:
     def _employer_profile(user: UserResponse) -> dict[str, Any]:
         response = (
             supabase.table("employer_profiles")
-            .select("id, onboarding_status, employer_type, subscription_valid_until, has_availed_free_dispatch")
+            .select("id, onboarding_status, employer_type, subscription_valid_until, trial_started_at, trial_ends_at")
             .eq("user_id", user.id)
             .single()
             .execute()
@@ -98,14 +99,10 @@ class JobService:
         cls._owned_site(str(employer["id"]), str(request.job_site_id))
         is_individual = employer.get("employer_type") == "INDIVIDUAL"
 
-        # Business employers require an active subscription to create jobs
+        # Business employers require either a paid subscription or an active trial to create jobs.
         if not is_individual:
-            subscription_until = employer.get("subscription_valid_until")
-            if isinstance(subscription_until, str):
-                subscription_until = datetime.fromisoformat(subscription_until.replace("Z", "+00:00"))
-            if subscription_until and subscription_until.tzinfo is None:
-                subscription_until = subscription_until.replace(tzinfo=timezone.utc)
-            if not subscription_until or subscription_until <= datetime.now(timezone.utc):
+            entitlements = employer_state(employer)
+            if not entitlements["subscription_active"]:
                 raise JobPaymentRequired("SUBSCRIPTION_REQUIRED")
 
         rpc_params = {

@@ -56,6 +56,17 @@ function isSubscriptionActive(value?: string | null): boolean {
   return Boolean(value && new Date(value).getTime() > Date.now());
 }
 
+function isWorkerAccessActive(
+  subscriptionValidUntil?: string | null,
+  trialEndsAt?: string | null,
+  subscriptionActive?: boolean,
+  trialActive?: boolean,
+): boolean {
+  if (subscriptionActive !== undefined) return Boolean(subscriptionActive);
+  if (trialActive !== undefined) return Boolean(trialActive);
+  return isSubscriptionActive(subscriptionValidUntil) || isSubscriptionActive(trialEndsAt);
+}
+
 function formatSubscriptionExpiry(value?: string | null): string | null {
   if (!value) return null;
   return new Intl.DateTimeFormat("en-IN", {
@@ -74,6 +85,11 @@ type WorkerProfile = {
   latitude?: number | null;
   longitude?: number | null;
   subscription_valid_until?: string | null;
+  trial_started_at?: string | null;
+  trial_ends_at?: string | null;
+  trial_active?: boolean;
+  subscription_active?: boolean;
+  trial_days_remaining?: number;
 };
 
 type AvailableJob = {
@@ -303,8 +319,19 @@ export default function WorkerDashboardScreen() {
     currentLocationAddress ||
     profile?.address ||
     [profile?.city, profile?.state].filter(Boolean).join(", ");
-  const subscriptionActive = isSubscriptionActive(profile?.subscription_valid_until);
-  const subscriptionExpiry = formatSubscriptionExpiry(profile?.subscription_valid_until);
+  const subscriptionActive = isWorkerAccessActive(
+    profile?.subscription_valid_until,
+    profile?.trial_ends_at,
+    profile?.subscription_active,
+    profile?.trial_active,
+  );
+  const trialActive = Boolean(
+    profile?.trial_active ||
+      (profile?.trial_ends_at && new Date(profile.trial_ends_at).getTime() > Date.now()),
+  );
+  const subscriptionExpiry =
+    formatSubscriptionExpiry(profile?.subscription_valid_until) ||
+    formatSubscriptionExpiry(profile?.trial_ends_at);
 
   return (
     <WorkerMobileShell>
@@ -356,13 +383,15 @@ export default function WorkerDashboardScreen() {
             <SectionState loading={loading.profile} error={errors.profile} retry={loadProfile}>
               <strong>
                 {subscriptionActive
-                  ? "Active"
-                  : profile?.subscription_valid_until
-                  ? "Expired"
+                  ? trialActive
+                    ? "FREE TRIAL ACTIVE"
+                    : "Active"
                   : "Not Active"}
               </strong>
-              {subscriptionExpiry && <p>Expires {subscriptionExpiry}</p>}
-              <small>Worker / Employee · ₹200 / month</small>
+              {subscriptionExpiry && (
+                <p>{trialActive ? "Active until " : "Expires "}{subscriptionExpiry}</p>
+              )}
+              <small>{trialActive ? "Worker / Employee · 1 month free trial" : "Worker / Employee · ₹200 / month"}</small>
               {!subscriptionActive && (
                 <Link to="/worker/subscription" className="worker-renew-link">
                   Renew Subscription

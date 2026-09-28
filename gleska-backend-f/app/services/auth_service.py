@@ -2,6 +2,7 @@
 
 import re
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from app.core.supabase import supabase
@@ -140,11 +141,15 @@ class AuthService:
 
             if not worker_profile_response.data:
                 logger.info("Creating worker profile for user_id_suffix=%s", user_id[-4:])
+                trial_started_at = datetime.now(timezone.utc)
+                trial_ends_at = trial_started_at + timedelta(days=30)
                 supabase.table("worker_profiles").insert({
                     "user_id": user_id,
                     "availability_status": "OFFLINE",
                     "profile_completed": False,
                     "onboarding_status": "NOT_STARTED",
+                    "trial_started_at": trial_started_at.isoformat(),
+                    "trial_ends_at": trial_ends_at.isoformat(),
                 }).execute()
 
         elif role == "EMPLOYER":
@@ -158,11 +163,15 @@ class AuthService:
 
             if not employer_profile_response.data:
                 logger.info("Creating employer profile for user_id_suffix=%s", user_id[-4:])
+                trial_started_at = datetime.now(timezone.utc)
+                trial_ends_at = trial_started_at + timedelta(days=30)
                 supabase.table("employer_profiles").insert({
                     "user_id": user_id,
                     "contact_person_name": name,
                     "onboarding_status": "NOT_STARTED",
                     "verification_status": "PENDING",
+                    "trial_started_at": trial_started_at.isoformat(),
+                    "trial_ends_at": trial_ends_at.isoformat(),
                 }).execute()
 
         return user
@@ -273,10 +282,28 @@ class AuthService:
         if role == "WORKER":
             profile = supabase.table("worker_profiles").select("id").eq("user_id", user_id).execute()
             if not profile.data:
-                supabase.table("worker_profiles").insert({"user_id": user_id, "availability_status": "OFFLINE", "profile_completed": False, "onboarding_status": "NOT_STARTED"}).execute()
+                trial_started_at = datetime.now(timezone.utc)
+                trial_ends_at = trial_started_at + timedelta(days=30)
+                supabase.table("worker_profiles").insert({
+                    "user_id": user_id,
+                    "availability_status": "OFFLINE",
+                    "profile_completed": False,
+                    "onboarding_status": "NOT_STARTED",
+                    "trial_started_at": trial_started_at.isoformat(),
+                    "trial_ends_at": trial_ends_at.isoformat(),
+                }).execute()
         else:
             profile = supabase.table("employer_profiles").select("id").eq("user_id", user_id).execute()
             if not profile.data:
-                supabase.table("employer_profiles").insert({"user_id": user_id, "contact_person_name": user_data["name"], "onboarding_status": "NOT_STARTED", "verification_status": "PENDING"}).execute()
+                trial_started_at = datetime.now(timezone.utc)
+                trial_ends_at = trial_started_at + timedelta(days=30)
+                supabase.table("employer_profiles").insert({
+                    "user_id": user_id,
+                    "contact_person_name": user_data["name"],
+                    "onboarding_status": "NOT_STARTED",
+                    "verification_status": "PENDING",
+                    "trial_started_at": trial_started_at.isoformat(),
+                    "trial_ends_at": trial_ends_at.isoformat(),
+                }).execute()
 
         return user_record

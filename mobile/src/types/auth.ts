@@ -24,6 +24,12 @@ export interface AuthUser {
   created_at: string;
   updated_at: string;
   subscription_valid_until?: string | null;
+  trial_started_at?: string | null;
+  trial_ends_at?: string | null;
+  trial_active?: boolean;
+  trial_days_remaining?: number;
+  subscription_active?: boolean;
+  payment_required?: boolean;
   profile_photo_url?: string | null;
 }
 

@@ -47,6 +47,12 @@ class UserResponse(BaseModel):
     employer_type: Optional[str] = None
     profile_completed: Optional[bool] = None
     subscription_valid_until: Optional[datetime] = None
+    trial_started_at: Optional[datetime] = None
+    trial_ends_at: Optional[datetime] = None
+    trial_active: bool = False
+    trial_days_remaining: int = 0
+    subscription_active: bool = False
+    payment_required: bool = False
     profile_photo_url: Optional[str] = None
 
     class Config:

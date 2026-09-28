@@ -9,6 +9,7 @@ from app.core.config import settings
 from app.core.security import create_access_token, get_current_user, get_optional_current_user, security
 from app.core.supabase import supabase
 from app.services.auth_service import AuthService
+from app.services.entitlements import employer_state, worker_state
 from app.services.msg91_service import MSG91Service
 from app.services.onboarding_service import OnboardingService
 from app.schemas.auth import UserResponse, ProvisionUserSchema, RegisterSessionSchema, SignupPreflightSchema, MobileVerifiedSignupSchema, PasswordResetRequestSchema, PasswordResetVerifySchema, PasswordResetCompleteSchema, ResendOTPSchema
@@ -342,19 +343,34 @@ async def get_current_user_info(user: UserResponse = Depends(get_current_user)):
     photo_row = supabase.table("users").select("profile_photo_path").eq("id", user.id).single().execute().data or {}
     application_user["profile_photo_url"] = get_signed_profile_photo_url(photo_row.get("profile_photo_path"))
     if user.role == "WORKER":
-        profile_response = supabase.table("worker_profiles").select("onboarding_status, profile_completed").eq("user_id", user.id).single().execute()
+        profile_response = supabase.table("worker_profiles").select("onboarding_status, profile_completed, trial_started_at, trial_ends_at, subscription_valid_until").eq("user_id", user.id).single().execute()
         profile = profile_response.data or {}
+        entitlement = worker_state(profile)
         application_user.update({
             "onboarding_status": profile.get("onboarding_status", "NOT_STARTED"),
             "profile_completed": profile.get("profile_completed", False),
+            "trial_started_at": profile.get("trial_started_at"),
+            "trial_ends_at": profile.get("trial_ends_at"),
+            "trial_active": entitlement.get("trial_active", False),
+            "trial_days_remaining": entitlement.get("trial_days_remaining", 0),
+            "subscription_valid_until": profile.get("subscription_valid_until"),
+            "subscription_active": entitlement.get("subscription_active", False),
+            "payment_required": entitlement.get("payment_required", True),
         })
     elif user.role == "EMPLOYER":
-        profile_response = supabase.table("employer_profiles").select("employer_type, onboarding_status, subscription_valid_until").eq("user_id", user.id).single().execute()
+        profile_response = supabase.table("employer_profiles").select("employer_type, onboarding_status, subscription_valid_until, trial_started_at, trial_ends_at").eq("user_id", user.id).single().execute()
         profile = profile_response.data or {}
+        entitlement = employer_state(profile)
         application_user.update({
             "employer_type": profile.get("employer_type"),
             "onboarding_status": profile.get("onboarding_status", "NOT_STARTED"),
             "subscription_valid_until": profile.get("subscription_valid_until"),
+            "trial_started_at": profile.get("trial_started_at"),
+            "trial_ends_at": profile.get("trial_ends_at"),
+            "trial_active": entitlement.get("trial_active", False),
+            "trial_days_remaining": entitlement.get("trial_days_remaining", 0),
+            "subscription_active": entitlement.get("subscription_active", False),
+            "payment_required": entitlement.get("payment_required", True),
         })
     return {
         "success": True,

@@ -35,6 +35,7 @@ from app.services.profile_photo_service import (
 )
 from app.services.geocoding_service import GeocodingError, GeocodingService
 from app.services.google_routes_service import GoogleRoutesError, GoogleRoutesService
+from app.services.entitlements import worker_state
 from app.services.matching_service import MatchingError, MatchingService
 
 router = APIRouter(prefix="/workers", tags=["workers"])
@@ -111,7 +112,7 @@ async def get_worker_job_route(job_id: str, user: UserResponse):
     """Return the best road route from the worker's current location to the selected job site."""
     profile_response = (
         supabase.table("worker_profiles")
-        .select("id, latitude, longitude, subscription_valid_until")
+        .select("id, latitude, longitude, subscription_valid_until, trial_ends_at")
         .eq("user_id", user.id)
         .single()
         .execute()
@@ -124,12 +125,8 @@ async def get_worker_job_route(job_id: str, user: UserResponse):
     if not profile:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Worker profile not found")
 
-    subscription_until = profile.get("subscription_valid_until")
-    if isinstance(subscription_until, str):
-        subscription_until = datetime.fromisoformat(subscription_until.replace("Z", "+00:00"))
-    if subscription_until and subscription_until.tzinfo is None:
-        subscription_until = subscription_until.replace(tzinfo=timezone.utc)
-    if not subscription_until or subscription_until <= datetime.now(timezone.utc):
+    entitlement = worker_state(profile)
+    if not entitlement.get("subscription_active"):
         raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail="SUBSCRIPTION_REQUIRED")
 
     location_response = (
@@ -286,7 +283,9 @@ async def get_worker_profile(user: UserResponse = Depends(require_worker)):
                 detail="Worker profile not found",
             )
 
-        return WorkerProfileResponse(**response.data)
+        profile = response.data
+        entitlement = worker_state(profile)
+        return WorkerProfileResponse(**{**profile, **entitlement})
 
     except HTTPException:
         raise
@@ -441,7 +440,9 @@ async def update_worker_profile(
                 .single()
                 .execute()
             )
-            return WorkerProfileResponse(**response.data)
+            profile = response.data or {}
+            entitlement = worker_state(profile)
+            return WorkerProfileResponse(**{**profile, **entitlement})
 
         # Update worker profile
         response = (
@@ -458,6 +459,7 @@ async def update_worker_profile(
             )
 
         updated_profile = response.data[0]
+        entitlement = worker_state(updated_profile)
         matching_fields_changed = any(
             previous_matching_values.get(field) != updated_profile.get(field)
             for field in previous_matching_values
@@ -468,7 +470,7 @@ async def update_worker_profile(
             except MatchingError:
                 logger.exception("Worker candidate reconciliation failed: worker_profile_id=%s", updated_profile.get("id"))
 
-        return WorkerProfileResponse(**updated_profile)
+        return WorkerProfileResponse(**{**updated_profile, **entitlement})
 
     except HTTPException:
         raise
@@ -551,7 +553,7 @@ async def get_available_jobs(
     try:
         worker_response = (
             supabase.table("worker_profiles")
-            .select("id, profile_completed, availability_status, latitude, longitude, subscription_valid_until")
+            .select("id, profile_completed, availability_status, latitude, longitude, subscription_valid_until, trial_ends_at")
             .eq("user_id", user.id)
             .single()
             .execute()
@@ -562,12 +564,8 @@ async def get_available_jobs(
         if not worker:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Worker profile not found")
 
-        subscription_until = worker.get("subscription_valid_until")
-        if isinstance(subscription_until, str):
-            subscription_until = datetime.fromisoformat(subscription_until.replace("Z", "+00:00"))
-        if subscription_until and subscription_until.tzinfo is None:
-            subscription_until = subscription_until.replace(tzinfo=timezone.utc)
-        if not subscription_until or subscription_until <= datetime.now(timezone.utc):
+        entitlement = worker_state(worker)
+        if not entitlement.get("subscription_active"):
             raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail="SUBSCRIPTION_REQUIRED")
         current_location = (
             supabase.table("worker_current_locations")

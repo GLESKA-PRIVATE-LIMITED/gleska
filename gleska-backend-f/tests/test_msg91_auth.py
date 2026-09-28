@@ -82,6 +82,144 @@ def test_role_conflict_is_detected():
         AuthService.ensure_role_allowed(existing, payload_role)
 
 
+def test_provision_supabase_user_worker_inserts_trial_dates(monkeypatch):
+    from datetime import datetime, timedelta, timezone
+
+    calls = {}
+
+    class FakeUsersTable:
+        def select(self, *_args, **_kwargs):
+            self._select_called = True
+            return self
+
+        def eq(self, *_args, **_kwargs):
+            return self
+
+        def ilike(self, *_args, **_kwargs):
+            return self
+
+        def upsert(self, data, on_conflict):
+            calls["user_upsert"] = data
+            return self
+
+        def execute(self):
+            if self.__dict__.get("_select_called"):
+                return SimpleNamespace(data=[])
+            return SimpleNamespace(data=[calls["user_upsert"]])
+
+    class FakeWorkerProfilesTable:
+        def select(self, *_args, **_kwargs):
+            self._select_called = True
+            return self
+
+        def eq(self, *_args, **_kwargs):
+            return self
+
+        def execute(self):
+            if "worker_insert" in calls:
+                return SimpleNamespace(data=[{"id": "profile-id"}])
+            return SimpleNamespace(data=[])
+
+        def insert(self, data):
+            calls["worker_insert"] = data
+            return self
+
+    class FakeSupabase:
+        def table(self, table_name):
+            if table_name == "users":
+                return FakeUsersTable()
+            if table_name == "worker_profiles":
+                return FakeWorkerProfilesTable()
+            raise AssertionError(f"Unexpected table: {table_name}")
+
+    monkeypatch.setattr("app.services.auth_service.supabase", FakeSupabase())
+
+    user = AuthService.provision_supabase_user(
+        user_id="11111111-1111-1111-1111-111111111111",
+        name="Worker User",
+        role="WORKER",
+        email="worker@example.com",
+        mobile="9876543210",
+    )
+
+    assert user["role"] == "WORKER"
+    assert "worker_insert" in calls
+    assert "trial_started_at" in calls["worker_insert"]
+    assert "trial_ends_at" in calls["worker_insert"]
+
+    started = datetime.fromisoformat(calls["worker_insert"]["trial_started_at"].replace("Z", "+00:00"))
+    ended = datetime.fromisoformat(calls["worker_insert"]["trial_ends_at"].replace("Z", "+00:00"))
+    assert ended - started == timedelta(days=30)
+
+
+def test_provision_supabase_user_business_employer_inserts_trial_dates(monkeypatch):
+    from datetime import datetime, timedelta
+
+    calls = {}
+
+    class FakeUsersTable:
+        def select(self, *_args, **_kwargs):
+            return self
+
+        def eq(self, *_args, **_kwargs):
+            return self
+
+        def ilike(self, *_args, **_kwargs):
+            return self
+
+        def upsert(self, data, on_conflict):
+            calls["user_upsert"] = data
+            return self
+
+        def execute(self):
+            if "user_upsert" in calls:
+                return SimpleNamespace(data=[calls["user_upsert"]])
+            return SimpleNamespace(data=[])
+
+    class FakeEmployerProfilesTable:
+        def select(self, *_args, **_kwargs):
+            return self
+
+        def eq(self, *_args, **_kwargs):
+            return self
+
+        def execute(self):
+            if "employer_insert" in calls:
+                return SimpleNamespace(data=[{"id": "profile-id"}])
+            return SimpleNamespace(data=[])
+
+        def insert(self, data):
+            calls["employer_insert"] = data
+            return self
+
+    class FakeSupabase:
+        def table(self, table_name):
+            if table_name == "users":
+                return FakeUsersTable()
+            if table_name == "employer_profiles":
+                return FakeEmployerProfilesTable()
+            raise AssertionError(f"Unexpected table: {table_name}")
+
+    monkeypatch.setattr("app.services.auth_service.supabase", FakeSupabase())
+
+    user = AuthService.provision_supabase_user(
+        user_id="11111111-1111-1111-1111-111111111111",
+        name="Business User",
+        role="EMPLOYER",
+        email="business@example.com",
+        mobile="9876543210",
+    )
+
+    assert user["role"] == "EMPLOYER"
+    assert "employer_insert" in calls
+    assert "trial_started_at" in calls["employer_insert"]
+    assert "trial_ends_at" in calls["employer_insert"]
+
+    started = datetime.fromisoformat(calls["employer_insert"]["trial_started_at"].replace("Z", "+00:00"))
+    ended = datetime.fromisoformat(calls["employer_insert"]["trial_ends_at"].replace("Z", "+00:00"))
+    assert ended - started == timedelta(days=30)
+
+
 def test_create_user_uses_supabase_auth_parent_id(monkeypatch):
     auth_user_id = "11111111-1111-1111-1111-111111111111"
     calls = {}

@@ -21,6 +21,11 @@ type WorkerProfile = {
   latitude?: number | null;
   longitude?: number | null;
   subscription_valid_until?: string | null;
+  trial_started_at?: string | null;
+  trial_ends_at?: string | null;
+  trial_active?: boolean;
+  subscription_active?: boolean;
+  trial_days_remaining?: number;
 };
 
 type AvailableJob = {
@@ -215,8 +220,17 @@ export default function WorkerDashboard() {
   };
 
   const location = currentLocationAddress || profile?.address || [profile?.city, profile?.state].filter(Boolean).join(", ");
-  const subscriptionActive = isSubscriptionActive(profile?.subscription_valid_until);
-  const subscriptionExpiry = formatSubscriptionExpiry(profile?.subscription_valid_until);
+  const subscriptionActive =
+    profile?.subscription_active === true ||
+    profile?.trial_active === true ||
+    isSubscriptionActive(profile?.subscription_valid_until) ||
+    isSubscriptionActive(profile?.trial_ends_at);
+  const trialActive =
+    profile?.trial_active === true ||
+    isSubscriptionActive(profile?.trial_ends_at);
+  const subscriptionExpiry =
+    formatSubscriptionExpiry(profile?.subscription_valid_until) ||
+    formatSubscriptionExpiry(profile?.trial_ends_at);
 
   return (
     <AccountManagementShell kind="worker" name={user.name || "Worker"} accountLabel="Worker" profileHref="/worker/profile" onLogout={() => void handleLogout()}>
@@ -232,7 +246,7 @@ export default function WorkerDashboard() {
 
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"><div className="flex items-center justify-between"><h2 className="font-bold">Availability</h2><CheckCircle2 size={20} className="text-emerald-600" /></div><SectionState loading={loading.profile} error={errors.profile} retry={loadProfile}><p className="mt-5 text-2xl font-bold">{profile?.availability_status || "-"}</p></SectionState></section>
-          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"><div className="flex items-center justify-between"><h2 className="font-bold">Subscription</h2><CheckCircle2 size={20} className={subscriptionActive ? "text-emerald-600" : "text-amber-600"} /></div><SectionState loading={loading.profile} error={errors.profile} retry={loadProfile}><p className="mt-5 text-2xl font-bold">{subscriptionActive ? "Active" : profile?.subscription_valid_until ? "Expired" : "Not Active"}</p>{subscriptionExpiry && <p className="mt-1 text-sm text-slate-500">Expires {subscriptionExpiry}</p>}<p className="mt-1 text-sm text-slate-500">Worker / Employee · ₹200 / month</p>{!subscriptionActive && <Link href="/worker/subscription" className="mt-3 inline-block text-sm font-bold text-blue-700">Renew Subscription</Link>}</SectionState></section>
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"><div className="flex items-center justify-between"><h2 className="font-bold">Subscription</h2><CheckCircle2 size={20} className={subscriptionActive ? "text-emerald-600" : "text-amber-600"} /></div><SectionState loading={loading.profile} error={errors.profile} retry={loadProfile}><p className="mt-5 text-2xl font-bold">{subscriptionActive ? (trialActive ? "FREE TRIAL ACTIVE" : "Active") : profile?.subscription_valid_until || profile?.trial_ends_at ? "Not Active" : "Not Active"}</p>{subscriptionActive ? <p className="mt-1 text-sm text-slate-500">{trialActive ? "1 Month Free Trial" : "Worker / Employee · ₹200 / month"}</p> : <p className="mt-1 text-sm text-slate-500">Worker / Employee · ₹200 / month</p>}{subscriptionExpiry && <p className="mt-1 text-sm text-slate-500">{trialActive ? "Active until " : "Expires "}{subscriptionExpiry}</p>}{!subscriptionActive && <Link href="/worker/subscription" className="mt-3 inline-block text-sm font-bold text-blue-700">Renew Subscription</Link>}</SectionState></section>
           <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"><div className="flex items-center justify-between gap-3"><h2 className="font-bold">Current location</h2><MapPin size={20} className="text-blue-600" /></div><SectionState loading={loading.profile} error={errors.profile} retry={loadProfile}><p className="mt-5 wrap-break-word text-sm font-semibold leading-6">{location || "Location unavailable"}</p></SectionState></section>
         </div>
 

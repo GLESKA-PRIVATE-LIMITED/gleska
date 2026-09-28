@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 import json
 from types import SimpleNamespace
@@ -211,6 +211,52 @@ def test_create_job_rejects_incomplete_onboarding(monkeypatch):
 
     with pytest.raises(PermissionError, match="EMPLOYER_ONBOARDING_INCOMPLETE"):
         JobService.create(USER, request)
+
+
+def test_create_job_allows_business_trial_entitlement(monkeypatch):
+    fake = FakeSupabase()
+    fake.tables["employer_profiles"].rows[0]["employer_type"] = "REGISTERED_BUSINESS"
+    fake.tables["employer_profiles"].rows[0]["subscription_valid_until"] = None
+    fake.tables["employer_profiles"].rows[0]["trial_ends_at"] = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
+    monkeypatch.setattr(job_service, "supabase", fake)
+    monkeypatch.setattr(job_service.MatchingService, "create_matches", lambda job_id: [])
+
+    result = JobService.create(USER, JobCreate(job_site_id=SITE_ID, title="Paver", headcount_required=2))
+
+    assert result.status == "SEARCHING"
+    assert fake.tables["jobs"].payload["title"] == "Paver"
+
+
+def test_individual_employer_free_worker_allowance_starts_at_three(monkeypatch):
+    fake = SimpleNamespace()
+    fake.tables = {
+        "job_matches": SimpleNamespace(
+            select=lambda *args, **kwargs: fake.tables["job_matches"],
+            eq=lambda *args, **kwargs: fake.tables["job_matches"],
+            execute=lambda: SimpleNamespace(data=[]),
+        )
+    }
+
+    from app.services import job_match_service
+
+    class JobStub:
+        id = "job-1"
+        employer_id = "profile-id"
+        headcount_required = 1
+
+    monkeypatch.setattr(job_match_service.JobService, "get_for_user", lambda *args, **kwargs: JobStub())
+    monkeypatch.setattr(job_match_service.JobService, "_employer_profile", lambda *args, **kwargs: {"id": "profile-id", "employer_type": "INDIVIDUAL", "subscription_valid_until": None, "has_availed_free_dispatch": False})
+    monkeypatch.setattr(job_match_service.supabase, "rpc", lambda *args, **kwargs: SimpleNamespace(data=[{"match_id": "match-id", "worker_profile_id": "worker-1", "match_status": "ACCEPTED", "job_status": "SEARCHING", "accepted_count": 1}]))
+    monkeypatch.setattr(job_match_service.supabase, "table", lambda name: SimpleNamespace(
+        update=lambda *args, **kwargs: SimpleNamespace(eq=lambda *a, **k: SimpleNamespace(execute=lambda: SimpleNamespace(data=[{}]))),
+        insert=lambda *args, **kwargs: SimpleNamespace(execute=lambda: SimpleNamespace(data=[{}])),
+        select=lambda *args, **kwargs: SimpleNamespace(eq=lambda *a, **k: SimpleNamespace(execute=lambda: SimpleNamespace(data=[]))),
+    ))
+
+    accepted = job_match_service.JobMatchService.accept_for_user(USER, "job-1", "worker-1")
+
+    assert accepted.worker_profile_id == "worker-1"
+    assert accepted.match_status == "ACCEPTED"
 
 
 def test_list_jobs_is_scoped_to_authenticated_employer(monkeypatch):

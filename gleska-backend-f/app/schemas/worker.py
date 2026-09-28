@@ -33,6 +33,12 @@ class WorkerProfileResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     subscription_valid_until: Optional[datetime] = None
+    trial_started_at: Optional[datetime] = None
+    trial_ends_at: Optional[datetime] = None
+    trial_active: bool = False
+    trial_days_remaining: int = 0
+    subscription_active: bool = False
+    payment_required: bool = False
 
     class Config:
         from_attributes = True

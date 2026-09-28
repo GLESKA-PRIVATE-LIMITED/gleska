@@ -16,6 +16,15 @@ class EmployerProfileResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     subscription_valid_until: datetime | None = None
+    trial_started_at: datetime | None = None
+    trial_ends_at: datetime | None = None
+    trial_active: bool = False
+    trial_days_remaining: int = 0
+    subscription_active: bool = False
+    payment_required: bool = False
+    free_worker_limit: int = 3
+    free_workers_used: int = 0
+    free_workers_remaining: int = 3
     has_availed_free_dispatch: bool = False
 
     class Config:

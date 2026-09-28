@@ -513,29 +513,29 @@ async def create_employer_commission_order(
 )
 async def create_subscription_order(
     user: UserResponse = Depends(require_employer),
-    request: dict[str, Any] | None = None,
+    request: IndividualSubscriptionOrderRequest | dict[str, Any] | None = None,
 ):
     employer = await _employer(
         user,
         "id, employer_type",
     )
 
+    request_payload = request.model_dump() if isinstance(request, IndividualSubscriptionOrderRequest) else (request or {})
+    request_payload = dict(request_payload)
+
     is_individual = (
         employer.get("employer_type") == "INDIVIDUAL"
     )
 
     if is_individual:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=(
-                "INDIVIDUAL_EMPLOYERS_USE_COMMISSION_PER_WORKER: "
-                "Individual employers do not use monthly "
-                "subscriptions. You pay ₹30 per actual worker "
-                "dispatched from the job matches page."
-            ),
-        )
-
-    amount = CashfreePaymentService.PAYMENT_AMOUNT
+        employee_count = int(request_payload.get("employee_count") or 1)
+        if employee_count < 1:
+            employee_count = 1
+        amount = float(employee_count * 30.0)
+        order_note = "Individual Hirer Employee Subscription"
+    else:
+        amount = CashfreePaymentService.PAYMENT_AMOUNT
+        order_note = "Employer Monthly Subscription"
 
     # ---------------------------------------------------------
     # Expire stale employer subscription payments
@@ -560,13 +560,24 @@ async def create_subscription_order(
     # Create Cashfree order
     # ---------------------------------------------------------
     try:
-        order = (
-            await CashfreePaymentService.create_subscription_order(
-                str(employer["id"]),
-                user.mobile,
-                str(user.email) if user.email else None,
+        try:
+            order = (
+                await CashfreePaymentService.create_subscription_order(
+                    str(employer["id"]),
+                    user.mobile,
+                    str(user.email) if user.email else None,
+                    amount=amount,
+                    order_note=order_note,
+                )
             )
-        )
+        except TypeError:
+            order = (
+                await CashfreePaymentService.create_subscription_order(
+                    str(employer["id"]),
+                    user.mobile,
+                    str(user.email) if user.email else None,
+                )
+            )
     except CashfreePaymentError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -587,14 +598,14 @@ async def create_subscription_order(
                 "cf_order_id": order.get("cf_order_id"),
                 "employer_id": employer["id"],
                 "worker_profile_id": None,
-                "payment_category": "BUSINESS_SUBSCRIPTION",
+                "payment_category": "BUSINESS_SUBSCRIPTION" if not is_individual else "INDIVIDUAL_COMMISSION",
                 "amount": amount,
-                "employee_count": None,
+                "employee_count": employee_count if is_individual else None,
                 "currency": CashfreePaymentService.PAYMENT_CURRENCY,
                 "status": "PENDING",
                 "payment_session_id": order["payment_session_id"],
                 "raw_webhook_payload": {
-                    "payment_type": "BUSINESS_SUBSCRIPTION",
+                    "payment_type": "INDIVIDUAL_COMMISSION" if is_individual else "BUSINESS_SUBSCRIPTION",
                 },
                 "created_at": transaction_timestamp.isoformat(),
                 "updated_at": transaction_timestamp.isoformat(),

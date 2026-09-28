@@ -22,6 +22,10 @@ interface WorkerProfile {
   id: string;
   account_type?: string | null;
   subscription_valid_until?: string | null;
+  trial_started_at?: string | null;
+  trial_ends_at?: string | null;
+  trial_active?: boolean;
+  subscription_active?: boolean;
 }
 
 function getRequestError(error: unknown): string {
@@ -149,20 +153,26 @@ export default function WorkerSubscriptionPage() {
   if (isLoading || loading) return <div className="flex min-h-screen items-center justify-center bg-[#eef1fb] dark:bg-slate-950"><Loader2 size={36} className="animate-spin text-blue-600" /></div>;
   if (!user || user.role !== "WORKER" || !profile) return null;
 
-  const active = isSubscriptionActive(profile.subscription_valid_until);
-  const expiry = formatSubscriptionExpiry(profile.subscription_valid_until);
+  const active =
+    profile.subscription_active === true ||
+    profile.trial_active === true ||
+    isSubscriptionActive(profile.subscription_valid_until) ||
+    isSubscriptionActive(profile.trial_ends_at);
+  const expiry =
+    formatSubscriptionExpiry(profile.subscription_valid_until) ||
+    formatSubscriptionExpiry(profile.trial_ends_at);
   return (
     <AccountManagementShell kind="worker" name={user.name} accountLabel={profile.account_type || "EMPLOYEE"} profileHref="/worker/profile" onLogout={() => void logout()}>
       <WorkerPageFrame className="text-slate-900 dark:text-slate-100">
           <WorkerPageHeader eyebrow="Worker workspace" title="Subscription" description="Manage your subscription and payment details." />
           <div className="grid gap-6 lg:grid-cols-[1.35fr_0.65fr]"><section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900 sm:p-8"><h2 className="text-sm font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Current Subscription</h2>
             <div className="mt-6 grid gap-4 sm:grid-cols-2">
-              <div className="rounded-2xl bg-slate-50 p-5 dark:bg-slate-800/70"><p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">Current status</p><p className={`mt-2 flex items-center gap-2 text-lg font-bold ${active ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"}`}>{active ? <CheckCircle2 size={20} /> : <AlertCircle size={20} />}{active ? "Active" : profile.subscription_valid_until ? "Expired" : "Not Active"}</p>{expiry && <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">Expires: {expiry}</p>}</div>
-              <div className="rounded-2xl bg-slate-50 p-5 dark:bg-slate-800/70"><p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">Plan</p><p className="mt-2 text-lg font-bold text-slate-900 dark:text-white">Worker / Employee</p><p className="mt-1 text-sm text-slate-600 dark:text-slate-300">₹200 / month</p><p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Billing period: Monthly</p></div>
+              <div className="rounded-2xl bg-slate-50 p-5 dark:bg-slate-800/70"><p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">Current status</p><p className={`mt-2 flex items-center gap-2 text-lg font-bold ${active ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"}`}>{active ? <CheckCircle2 size={20} /> : <AlertCircle size={20} />}{active ? "ACTIVE — FREE TRIAL" : "NOT ACTIVE"}</p>{expiry && <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{active ? "Free trial active until " : "Trial ended on "}{expiry}</p>}</div>
+              <div className="rounded-2xl bg-slate-50 p-5 dark:bg-slate-800/70"><p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">Plan</p><p className="mt-2 text-lg font-bold text-slate-900 dark:text-white">Worker / Employee</p><p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{active ? "1 Month Free Trial" : "₹200 / month"}</p><p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{active ? "No payment required while the free trial is active." : "Cashfree monthly plan applies after trial expiry."}</p></div>
             </div>
             {message && <p className={`mt-6 rounded-xl px-4 py-3 text-sm ${paymentState === "success" ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300" : "bg-blue-50 text-blue-800 dark:bg-blue-950/40 dark:text-blue-300"}`} role="status">{paymentState === "success" && "✓ "}{message}</p>}
             {error && <p className="mt-6 rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:bg-rose-950/40 dark:text-rose-300" role="alert">{error}</p>}
-            <button type="button" onClick={() => void handleSubscribe()} disabled={paymentLoading} className="mt-8 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto">{paymentLoading && <Loader2 size={17} className="animate-spin" />}{paymentLoading ? "Creating secure payment..." : active ? "Renew Subscription" : "Subscribe Now"}</button>
+            <button type="button" onClick={() => void handleSubscribe()} disabled={paymentLoading || active} className="mt-8 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto">{paymentLoading && <Loader2 size={17} className="animate-spin" />}{paymentLoading ? "Creating secure payment..." : active ? "Trial Active — No Payment Required" : "Subscribe Now"}</button>
           </section><aside className="space-y-6"><WorkspaceCard><h2 className="text-sm font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Payment</h2><p className="mt-3 text-sm text-slate-600 dark:text-slate-300">Payments are securely handled through Cashfree checkout.</p></WorkspaceCard><WorkspaceCard><h2 className="text-sm font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Payment History</h2><PaymentHistoryList items={paymentHistory} emptyMessage="No worker payment history available." /></WorkspaceCard></aside></div>
       </WorkerPageFrame>
     </AccountManagementShell>

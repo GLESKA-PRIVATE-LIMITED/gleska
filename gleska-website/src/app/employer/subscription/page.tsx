@@ -13,6 +13,14 @@ interface EmployerProfile {
   contact_person_name?: string | null;
   employer_type?: string | null;
   subscription_valid_until?: string | null;
+  trial_started_at?: string | null;
+  trial_ends_at?: string | null;
+  trial_active?: boolean;
+  trial_days_remaining?: number;
+  subscription_active?: boolean;
+  payment_required?: boolean;
+  free_workers_used?: number;
+  free_workers_remaining?: number;
   has_availed_free_dispatch?: boolean | null;
 }
 
@@ -175,9 +183,12 @@ export default function SubscriptionPage() {
   const employerType = profile.employer_type || "";
   const isBusiness = BUSINESS_TYPES.has(employerType);
   const isIndividual = employerType === "INDIVIDUAL";
-  const active = isSubscriptionActive(profile.subscription_valid_until);
-  const expiry = formatSubscriptionExpiry(profile.subscription_valid_until);
-  const canSubscribe = isBusiness;
+  const trialActive = Boolean(profile.trial_active);
+  const subscriptionActive = Boolean(profile.subscription_active);
+  const active = subscriptionActive || trialActive;
+  const paymentRequired = Boolean(profile.payment_required);
+  const expiry = formatSubscriptionExpiry(profile.subscription_valid_until) || formatSubscriptionExpiry(profile.trial_ends_at);
+  const canSubscribe = isBusiness && paymentRequired;
   const plan = isBusiness ? "Business subscription" : isIndividual ? "Individual hirer" : "Subscription";
   const price = isBusiness ? "₹2,000 / month" : isIndividual ? "₹30 per actual worker dispatched" : "Unavailable";
 
@@ -216,22 +227,26 @@ export default function SubscriptionPage() {
                 <>
                   <p className="mt-2 flex items-center gap-2 text-lg font-bold text-emerald-600 dark:text-emerald-400">
                     <CheckCircle2 size={20} />
-                    Commission-Based (Pay per worker)
+                    3 Workers Free
                   </p>
                   <p className="mt-2 text-xs font-medium text-slate-600 dark:text-slate-300">
-                    {profile.has_availed_free_dispatch
-                      ? "First qualifying free dispatch has been used."
-                      : "1 free worker dispatch available for your first hiring."}
+                    {profile.free_workers_remaining ?? 3} of 3 free workers remaining.
+                  </p>
+                  <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">
+                    Workers after the first 3 use the existing ₹30 commission flow.
                   </p>
                 </>
               ) : (
                 <>
                   <p className={`mt-2 flex items-center gap-2 text-lg font-bold ${active ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"}`}>
                     {active ? <CheckCircle2 size={20} /> : <AlertCircle size={20} />}
-                    {active ? "Active" : profile.subscription_valid_until ? "Expired" : "Not Active"}
+                    {trialActive ? "FREE TRIAL ACTIVE" : subscriptionActive ? "ACTIVE" : paymentRequired ? "Payment Required" : "Not Active"}
                   </p>
-                  {active && profile.subscription_valid_until && (
-                    <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">Expires: {expiry}</p>
+                  {expiry && (
+                    <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">Active until: {expiry}</p>
+                  )}
+                  {!active && !paymentRequired && (
+                    <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">No active subscription or trial.</p>
                   )}
                 </>
               )}
@@ -240,20 +255,24 @@ export default function SubscriptionPage() {
               <p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">Plan</p>
               <p className="mt-2 text-lg font-bold text-slate-900 dark:text-white">{plan}</p>
               <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{price}</p>
-              {isBusiness && <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Billing period: Monthly</p>}
+              {isBusiness && (
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  {trialActive ? "1 Month Free Trial" : subscriptionActive ? "₹2,000 / 30 days" : paymentRequired ? "₹2,000 / 30 days" : "Billing period: Monthly"}
+                </p>
+              )}
               {isIndividual && (
-                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">No recurring monthly fees. You only pay when you dispatch an actual worker.</p>
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">3 workers free. Each additional worker uses the current ₹30 commission flow.</p>
               )}
             </div>
           </div>
 
           {isIndividual && (
             <div className="mt-6 rounded-xl bg-blue-50 px-5 py-4 text-sm text-blue-900 dark:bg-blue-950/40 dark:text-blue-200">
-              <p className="font-semibold">How commission works for Individual Hirers:</p>
+              <p className="font-semibold">How the free-worker entitlements work:</p>
               <ul className="mt-2 list-inside list-disc space-y-1 text-xs text-blue-800 dark:text-blue-300">
-                <li>You can post jobs and receive candidate matches freely without paying upfront.</li>
-                <li>Your first qualifying worker dispatch is completely free.</li>
-                <li>Subsequent worker dispatches require a ₹30 commission per worker, payable directly when you select a worker on the dashboard.</li>
+                <li>You receive 3 free unique workers for life.</li>
+                <li>Each accepted worker is counted once per employer, even across jobs.</li>
+                <li>Workers after the first 3 use the existing ₹30 commission payment flow.</li>
               </ul>
             </div>
           )}
@@ -268,7 +287,7 @@ export default function SubscriptionPage() {
               className="mt-8 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
             >
               {isPaymentLoading && <Loader2 size={17} className="animate-spin" />}
-              {isPaymentLoading ? "Creating secure payment..." : active ? "Renew Subscription" : "Subscribe Now"}
+              {isPaymentLoading ? "Creating secure payment..." : paymentRequired ? "Subscribe Now" : "Renew Subscription"}
             </button>
           )}
           </section>
