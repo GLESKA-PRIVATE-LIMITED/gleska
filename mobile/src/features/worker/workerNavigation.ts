@@ -13,7 +13,7 @@ import {
 
 export const workerNavigation = [
   { href: "/worker/dashboard", label: "Dashboard", icon: LayoutDashboard, section: "pages", screen: "dashboard" },
-  { href: "/worker/attendance", label: "Attendance", icon: Clock3, section: "pages", screen: "unavailable" },
+  { href: "/worker/attendance", label: "Attendance", icon: Clock3, section: "pages", screen: "attendance" },
   { href: "/worker/companies-worked", label: "Companies Worked", icon: Building2, section: "pages", screen: "unavailable" },
   { href: "/worker/documents", label: "Documents", icon: FileText, section: "pages", screen: "unavailable" },
   { href: "/worker/subscription", label: "Subscription", icon: CreditCard, section: "pages", screen: "unavailable" },

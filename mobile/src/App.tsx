@@ -11,6 +11,7 @@ import {
   RoleAuthScreen,
   SignInSelectionScreen,
 } from "./features/auth/AuthScreens";
+import WorkerAttendanceScreen from "./features/worker/WorkerAttendanceScreen";
 import WorkerDashboardScreen from "./features/worker/WorkerDashboardScreen";
 import WorkerMobileShell from "./features/worker/WorkerMobileShell";
 import WorkerProfileScreen from "./features/worker/WorkerProfileScreen";
@@ -48,6 +49,14 @@ function WorkerProfileRoute() {
   return <WorkerProfileScreen />;
 }
 
+function WorkerAttendanceRoute() {
+  const { user, nextStep, isLoading } = useAuth();
+  if (isLoading) return <LoadingScreen />;
+  if (!user) return <Navigate to="/auth/signin" replace />;
+  if (user.role !== "WORKER") return <Navigate to={nextStep ? routeForAuthState(user.role, nextStep) : "/auth/signin"} replace />;
+  return <WorkerAttendanceScreen />;
+}
+
 function WorkerRouteUnavailable({ label }: { label: string }) {
   const { user, nextStep, isLoading } = useAuth();
   if (isLoading) return <LoadingScreen />;
@@ -79,6 +88,7 @@ function AppRoutes() {
   const workerRoutes = workerNavigation.map(({ href, label, screen }) => {
     if (screen === "dashboard") return <Route key={href} path={href} element={<DashboardRoute role="WORKER" />} />;
     if (screen === "profile") return <Route key={href} path={href} element={<WorkerProfileRoute />} />;
+    if (screen === "attendance") return <Route key={href} path={href} element={<WorkerAttendanceRoute />} />;
     return <Route key={href} path={href} element={<WorkerRouteUnavailable label={label} />} />;
   });
 
