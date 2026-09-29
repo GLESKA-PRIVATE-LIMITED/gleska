@@ -22,6 +22,7 @@ from app.services.cashfree_payment_service import (
     CashfreePaymentError,
     CashfreePaymentService,
 )
+from app.services.entitlements import INDIVIDUAL_COMMISSION_AMOUNT
 
 router = APIRouter(prefix="/payments", tags=["payments"])
 logger = logging.getLogger(__name__)
@@ -368,7 +369,7 @@ async def create_employer_commission_order(
     # ---------------------------------------------------------
     # 5. Server-controlled commission amount
     # ---------------------------------------------------------
-    amount = 30.0
+    amount = INDIVIDUAL_COMMISSION_AMOUNT
 
     # ---------------------------------------------------------
     # 6. Expire only an existing pending commission for

@@ -2,9 +2,10 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pytest
+from pydantic import ValidationError
 
 from app.routers import employers
-from app.schemas.employer import IndividualOnboardingSchema
+from app.schemas.employer import IndividualOnboardingSchema, RegisteredBusinessOnboardingSchema
 from app.services import verification_service
 from app.services.verification_service import VerificationService
 
@@ -94,6 +95,56 @@ async def test_employer_onboarding_allows_custom_contacts_and_falls_back(monkeyp
 
     assert result_fallback.company_email == "account@example.com"
     assert result_fallback.company_phone == "919876543210"
+
+
+@pytest.mark.asyncio
+async def test_individual_step_one_saves_address_without_later_step_fields(monkeypatch):
+    fake = FakeSupabase()
+    fake.queries["users"] = Query("users", [{}])
+    monkeypatch.setattr(employers, "supabase", fake)
+
+    request = IndividualOnboardingSchema(address="12 Main Road")
+    result = await employers._update_onboarding(USER, "INDIVIDUAL", request.model_dump())
+
+    assert result.address == "12 Main Road"
+    saved = fake.queries["employer_onboarding_details"].payload
+    assert saved["address"] == "12 Main Road"
+    assert "city" not in saved
+    assert "state" not in saved
+    assert "pincode" not in saved
+    assert "work_location" not in saved
+    assert "company_email" not in saved
+    assert "company_phone" not in saved
+
+
+@pytest.mark.asyncio
+async def test_individual_optional_profile_fields_are_persisted(monkeypatch):
+    fake = FakeSupabase()
+    monkeypatch.setattr(employers, "supabase", fake)
+
+    request = IndividualOnboardingSchema(
+        address="12 Main Road",
+        website_url="https://example.com",
+        annual_revenue="Under $50k",
+        description="Independent contractor",
+    )
+    result = await employers._update_onboarding(USER, "INDIVIDUAL", request.model_dump())
+
+    assert result.website_url == "https://example.com"
+    assert result.annual_revenue == "Under $50k"
+    assert result.description == "Independent contractor"
+    saved = fake.queries["employer_onboarding_details"].payload
+    assert saved["website_url"] == "https://example.com"
+    assert saved["annual_revenue"] == "Under $50k"
+    assert saved["description"] == "Independent contractor"
+
+
+def test_registered_business_schema_requires_frontend_required_category():
+    with pytest.raises(ValidationError):
+        RegisteredBusinessOnboardingSchema(
+            business_name="Example Business",
+            business_type="Private Limited",
+        )
 
 
 @pytest.mark.asyncio

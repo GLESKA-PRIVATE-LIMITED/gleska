@@ -20,47 +20,60 @@ USER = UserResponse(
 )
 
 
-class Query:
-    def __init__(self, count):
-        self.count = count
-        self.filters = []
-        self.select_args = None
-
-    def select(self, fields, **kwargs):
-        self.select_args = (fields, kwargs)
-        return self
-
-    def eq(self, field, value):
-        self.filters.append((field, value))
-        return self
-
-    def execute(self):
-        return SimpleNamespace(count=self.count)
-
-
-class FakeSupabase:
-    def __init__(self, count):
-        self.query = Query(count)
-
-    def table(self, name):
-        assert name == "worker_profiles"
-        return self.query
-
-
 @pytest.mark.asyncio
 @pytest.mark.parametrize("count", [0, 1, 3])
-async def test_available_worker_count_uses_current_completed_profiles(monkeypatch, count):
-    fake = FakeSupabase(count)
-    monkeypatch.setattr(employers, "supabase", fake)
+async def test_available_worker_count_uses_employer_match_candidates(monkeypatch, count):
+    monkeypatch.setattr(
+        employers.JobMatchService,
+        "available_worker_count_for_user",
+        lambda user: count,
+    )
+    monkeypatch.setattr(employers.JobMatchService, "active_worker_count_for_user", lambda user: 1)
 
     result = await employers.get_available_worker_count(USER)
 
-    assert result == {"count": count}
-    assert fake.query.select_args == ("id", {"count": "exact", "head": True})
-    assert fake.query.filters == [
-        ("availability_status", "AVAILABLE"),
-        ("profile_completed", True),
-    ]
+    assert result == {"count": count, "active_count": 1}
+
+
+@pytest.mark.asyncio
+async def test_available_worker_count_is_zero_without_current_matches(monkeypatch):
+    from app.services.job_match_service import JobMatchService
+    from app.services.job_service import JobService
+
+    monkeypatch.setattr(JobService, "_employer_profile", staticmethod(lambda user: {"id": "employer-id"}))
+    monkeypatch.setattr(JobMatchService, "_current_rows", staticmethod(lambda employer_id: []))
+
+    assert JobMatchService.available_worker_count_for_user(USER) == 0
+
+
+def test_active_worker_count_is_distinct(monkeypatch):
+    from app.services import job_match_service
+    from app.services.job_match_service import JobMatchService
+    from app.services.job_service import JobService
+
+    class Query:
+        def select(self, fields):
+            assert fields == "worker_profile_id,jobs!inner(status,employer_id)"
+            return self
+
+        def eq(self, field, value):
+            return self
+
+        def in_(self, field, values):
+            assert (field, values) == ("jobs.status", ["SEARCHING", "FILLED"])
+            return self
+
+        def execute(self):
+            return SimpleNamespace(data=[
+                {"worker_profile_id": "worker-a"},
+                {"worker_profile_id": "worker-a"},
+                {"worker_profile_id": "worker-b"},
+            ])
+
+    monkeypatch.setattr(JobService, "_employer_profile", staticmethod(lambda user: {"id": "employer-id"}))
+    monkeypatch.setattr(job_match_service.supabase, "table", lambda name: Query())
+
+    assert JobMatchService.active_worker_count_for_user(USER) == 2
 
 
 @pytest.mark.asyncio

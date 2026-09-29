@@ -81,3 +81,24 @@ def test_individual_requires_separate_address_and_preserves_location_fields():
 
     assert valid is True
     assert message == ""
+
+
+def test_individual_draft_requires_address_but_not_later_step_fields():
+    valid, message = OnboardingService.validate_onboarding_fields(
+        "INDIVIDUAL",
+        {"address": "12 Main Road"},
+        require_all_fields=False,
+    )
+
+    assert valid is True
+    assert message == ""
+
+
+def test_individual_final_validation_still_requires_later_step_fields():
+    valid, message = OnboardingService.validate_onboarding_fields(
+        "INDIVIDUAL",
+        {"address": "12 Main Road"},
+    )
+
+    assert valid is False
+    assert message == "company_email is required for individual employer"

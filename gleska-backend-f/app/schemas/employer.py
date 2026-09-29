@@ -25,6 +25,8 @@ class EmployerProfileResponse(BaseModel):
     free_worker_limit: int = 3
     free_workers_used: int = 0
     free_workers_remaining: int = 3
+    commission_required_for_next_worker: bool = False
+    commission_amount: float = 30.0
     has_availed_free_dispatch: bool = False
 
     class Config:
@@ -152,8 +154,8 @@ class RegisteredBusinessOnboardingSchema(BaseModel):
     """Onboarding schema for registered business."""
     business_name: str
     business_type: str
+    business_category: str
     industry_category: Optional[str] = None
-    business_category: Optional[str] = None
     registered_address: Optional[str] = None
     city: Optional[str] = None
     state: Optional[str] = None
@@ -209,14 +211,17 @@ class UnregisteredBusinessOnboardingSchema(BaseModel):
 class IndividualOnboardingSchema(BaseModel):
     """Onboarding schema for individual employer."""
     address: str
-    city: str
-    state: str
-    pincode: str
-    work_location: str
+    city: Optional[str] = None
+    state: Optional[str] = None
+    pincode: Optional[str] = None
+    work_location: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     company_email: Optional[str] = None
     company_phone: Optional[str] = None
+    website_url: Optional[str] = None
+    annual_revenue: Optional[str] = None
+    description: Optional[str] = None
 
 
 class CompanyProfileUpdateSchema(BaseModel):

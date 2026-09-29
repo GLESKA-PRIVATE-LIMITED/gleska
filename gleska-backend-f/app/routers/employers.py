@@ -21,6 +21,8 @@ from app.schemas.employer import (
     EmployerPreferencesUpdate,
 )
 from app.services.onboarding_service import OnboardingService
+from app.services.entitlements import employer_state
+from app.services.job_match_service import JobMatchService
 from app.services.verification_service import VerificationService
 from app.schemas.verification import (
     VerificationRecordResponse,
@@ -113,7 +115,7 @@ async def get_employer_profile(user: UserResponse = Depends(require_employer)):
                 if update_res.data:
                     employer["verification_status"] = persisted_status
 
-        return EmployerProfileResponse(**employer)
+        return EmployerProfileResponse(**{**employer, **employer_state(employer)})
 
     except HTTPException:
         raise
@@ -126,17 +128,12 @@ async def get_employer_profile(user: UserResponse = Depends(require_employer)):
 
 @router.get("/me/available-worker-count")
 async def get_available_worker_count(user: UserResponse = Depends(require_employer)):
-    """Return workers currently available for matching."""
-    del user
+    """Return distinct currently eligible worker matches across this employer's jobs."""
     try:
-        response = (
-            supabase.table("worker_profiles")
-            .select("id", count="exact", head=True)
-            .eq("availability_status", "AVAILABLE")
-            .eq("profile_completed", True)
-            .execute()
-        )
-        return {"count": response.count or 0}
+        return {
+            "count": JobMatchService.available_worker_count_for_user(user),
+            "active_count": JobMatchService.active_worker_count_for_user(user),
+        }
     except Exception as exc:
         logger.exception("Available worker count request failed")
         raise HTTPException(
@@ -784,14 +781,16 @@ async def _update_onboarding(
         effective_email = provided_email or primary_email
         effective_phone = provided_phone or primary_phone
 
-        if not effective_email or not effective_phone:
+        if employer_type != "INDIVIDUAL" and (not effective_email or not effective_phone):
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="Employer email and phone number are required before onboarding can continue",
             )
 
-        data["company_email"] = effective_email
-        data["company_phone"] = effective_phone
+        if effective_email:
+            data["company_email"] = effective_email
+        if effective_phone:
+            data["company_phone"] = effective_phone
 
         existing_details_response = (
             supabase.table("employer_onboarding_details")
@@ -837,7 +836,11 @@ async def _update_onboarding(
             employer_type,
             data,
             require_registered_business_location=employer_type != "REGISTERED_BUSINESS",
-            require_all_fields=employer_type not in {"REGISTERED_INDUSTRY", "REGISTERED_BUSINESS"},
+            require_all_fields=employer_type not in {
+                "REGISTERED_INDUSTRY",
+                "REGISTERED_BUSINESS",
+                "INDIVIDUAL",
+            },
         )
         if not is_valid:
             raise HTTPException(

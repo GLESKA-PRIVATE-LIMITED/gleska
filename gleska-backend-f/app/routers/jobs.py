@@ -12,6 +12,7 @@ from app.services.job_assistant_service import JobAssistantService
 from app.services.job_service import JobLifecycleError, JobNotFound, JobPaymentRequired, JobService
 from app.services.job_match_service import JobMatchService
 from app.services.matching_service import MatchingError
+from app.services.entitlements import INDIVIDUAL_COMMISSION_AMOUNT
 from app.services.gemini_service import (
     GeminiConfigurationError,
     GeminiProviderError,
@@ -132,7 +133,7 @@ async def accept_job_match(
                 status_code=status.HTTP_402_PAYMENT_REQUIRED,
                 detail={
                     "code": "COMMISSION_REQUIRED",
-                    "amount": 30.0,
+                    "amount": INDIVIDUAL_COMMISSION_AMOUNT,
                     "currency": "INR",
                     "job_id": job_id,
                     "worker_profile_id": str(request.worker_profile_id),

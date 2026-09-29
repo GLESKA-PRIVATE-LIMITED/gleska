@@ -19,8 +19,11 @@ interface EmployerProfile {
   trial_days_remaining?: number;
   subscription_active?: boolean;
   payment_required?: boolean;
-  free_workers_used?: number;
-  free_workers_remaining?: number;
+  free_worker_limit: number;
+  free_workers_used: number;
+  free_workers_remaining: number;
+  commission_required_for_next_worker: boolean;
+  commission_amount: number;
   has_availed_free_dispatch?: boolean | null;
 }
 
@@ -190,7 +193,11 @@ export default function SubscriptionPage() {
   const expiry = formatSubscriptionExpiry(profile.subscription_valid_until) || formatSubscriptionExpiry(profile.trial_ends_at);
   const canSubscribe = isBusiness && paymentRequired;
   const plan = isBusiness ? "Business subscription" : isIndividual ? "Individual hirer" : "Subscription";
-  const price = isBusiness ? "₹2,000 / month" : isIndividual ? "₹30 per actual worker dispatched" : "Unavailable";
+  const commissionAmount = profile.commission_amount;
+  const freeWorkerLimit = profile.free_worker_limit;
+  const freeWorkersUsed = profile.free_workers_used;
+  const freeWorkersRemaining = profile.free_workers_remaining;
+  const price = isBusiness ? "₹2,000 / month" : isIndividual ? `₹${commissionAmount} per additional worker dispatched` : "Unavailable";
 
   return (
     <AccountManagementShell
@@ -226,14 +233,21 @@ export default function SubscriptionPage() {
               {isIndividual ? (
                 <>
                   <p className="mt-2 flex items-center gap-2 text-lg font-bold text-emerald-600 dark:text-emerald-400">
-                    <CheckCircle2 size={20} />
-                    3 Workers Free
+                    {freeWorkersRemaining > 0 ? <CheckCircle2 size={20} /> : <AlertCircle size={20} />}
+                    {freeWorkersRemaining > 0 ? `${freeWorkerLimit} Workers Free` : "No free workers remaining"}
                   </p>
                   <p className="mt-2 text-xs font-medium text-slate-600 dark:text-slate-300">
-                    {profile.free_workers_remaining ?? 3} of 3 free workers remaining.
+                    {freeWorkersUsed} of {freeWorkerLimit} free workers used.
                   </p>
                   <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">
-                    Workers after the first 3 use the existing ₹30 commission flow.
+                    {freeWorkersRemaining > 0
+                      ? `${freeWorkersRemaining} free workers remaining.`
+                      : `Additional unique workers use the ₹${commissionAmount} commission flow.`}
+                  </p>
+                  <p className="mt-2 text-xs font-medium text-slate-600 dark:text-slate-300">
+                    {profile.commission_required_for_next_worker
+                      ? `Commission required for the next unique worker: ₹${commissionAmount}.`
+                      : "No commission is required for the next unique worker."}
                   </p>
                 </>
               ) : (
@@ -261,7 +275,9 @@ export default function SubscriptionPage() {
                 </p>
               )}
               {isIndividual && (
-                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">3 workers free. Each additional worker uses the current ₹30 commission flow.</p>
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  {freeWorkersUsed} of {freeWorkerLimit} free unique workers used. Additional workers: ₹{commissionAmount} each.
+                </p>
               )}
             </div>
           </div>
@@ -270,9 +286,9 @@ export default function SubscriptionPage() {
             <div className="mt-6 rounded-xl bg-blue-50 px-5 py-4 text-sm text-blue-900 dark:bg-blue-950/40 dark:text-blue-200">
               <p className="font-semibold">How the free-worker entitlements work:</p>
               <ul className="mt-2 list-inside list-disc space-y-1 text-xs text-blue-800 dark:text-blue-300">
-                <li>You receive 3 free unique workers for life.</li>
+                <li>You receive {freeWorkerLimit} free unique workers for life.</li>
                 <li>Each accepted worker is counted once per employer, even across jobs.</li>
-                <li>Workers after the first 3 use the existing ₹30 commission payment flow.</li>
+                <li>Workers after the free limit use the existing ₹{commissionAmount} commission payment flow.</li>
               </ul>
             </div>
           )}

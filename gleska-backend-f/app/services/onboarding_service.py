@@ -162,8 +162,10 @@ class OnboardingService:
                 "pincode",
                 "work_location",
             ]
+            if OnboardingService._missing_required_value(data.get("address")):
+                return False, "address is required for individual employer"
             if require_all_fields:
-                for field in required_fields:
+                for field in required_fields[1:]:
                     if OnboardingService._missing_required_value(data.get(field)):
                         return False, f"{field} is required for individual employer"
 

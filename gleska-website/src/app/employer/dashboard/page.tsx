@@ -235,6 +235,11 @@ interface EmployerProfile {
   trial_days_remaining?: number;
   subscription_active?: boolean;
   payment_required?: boolean;
+  free_worker_limit: number;
+  free_workers_used: number;
+  free_workers_remaining: number;
+  commission_required_for_next_worker: boolean;
+  commission_amount: number;
   has_availed_free_dispatch?: boolean;
   logo_url?: string;
 }
@@ -356,6 +361,7 @@ export default function EmployerDashboard() {
   const [isSiteSaving, setIsSiteSaving] = React.useState(false);
   const [jobs, setJobs] = React.useState<Job[]>([]);
   const [availableWorkerCount, setAvailableWorkerCount] = React.useState(0);
+  const [activeWorkerCount, setActiveWorkerCount] = React.useState(0);
   const [assistantMessages, setAssistantMessages] = React.useState<AssistantMessage[]>([
     {
       id: "welcome",
@@ -644,6 +650,7 @@ export default function EmployerDashboard() {
       } catch {
         setJobMatchSummaryState("ERROR");
       }
+      void loadAvailableWorkerCount();
 
       toast.success("Job created successfully!");
 
@@ -745,6 +752,17 @@ export default function EmployerDashboard() {
     }
   }, [user]);
 
+  const loadAvailableWorkerCount = React.useCallback(async () => {
+    try {
+      const response = await apiClient.get<{ count: number; active_count: number }>("/api/v1/employers/me/available-worker-count", { withCredentials: true });
+      setAvailableWorkerCount(response.data.count);
+      setActiveWorkerCount(response.data.active_count);
+    } catch {
+      setAvailableWorkerCount(0);
+      setActiveWorkerCount(0);
+    }
+  }, []);
+
   useEffect(() => {
     if (!isLoading && !user) {
       router.replace("/employer/auth");
@@ -765,16 +783,7 @@ export default function EmployerDashboard() {
 
     void Promise.resolve().then(loadEmployerProfile);
 
-    const loadAvailableWorkerCount = async () => {
-      try {
-        const response = await apiClient.get<{ count: number }>('/api/v1/employers/me/available-worker-count', { withCredentials: true });
-        setAvailableWorkerCount(response.data.count);
-      } catch {
-        setAvailableWorkerCount(0);
-      }
-    };
-
-    loadAvailableWorkerCount();
+    void loadAvailableWorkerCount();
 
     const loadJobSites = async () => {
       setIsSiteLoading(true);
@@ -812,7 +821,7 @@ export default function EmployerDashboard() {
     };
 
     loadJobs();
-  }, [isLoading, loadEmployerProfile, user]);
+  }, [isLoading, loadAvailableWorkerCount, loadEmployerProfile, user]);
 
   useEffect(() => {
     if (isLoading || !user || user.role !== "EMPLOYER") return;
@@ -1240,6 +1249,7 @@ export default function EmployerDashboard() {
       } catch {
         setJobMatchSummaryState("ERROR");
       }
+      void loadAvailableWorkerCount();
 
       toast.success("Job created successfully!");
       setAssistantMessages((prev) => [
@@ -1428,6 +1438,8 @@ export default function EmployerDashboard() {
           : match),
       } : current);
       setSelectedJob((current) => current ? { ...current, status: response.data.job_status } : current);
+      void loadAvailableWorkerCount();
+      void loadEmployerProfile();
       toast.success("Worker selected");
     } catch (err: any) {
       if (selectedJobRequestRef.current !== requestId || selectedJobId !== jobId) return;
@@ -1842,8 +1854,17 @@ export default function EmployerDashboard() {
             <p className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Subscription</p>
             {employerProfile?.employer_type === "INDIVIDUAL" ? (
               <>
-                <p className="mt-2 text-xl font-bold text-slate-900 dark:text-white">Commission-Based</p>
-                <p className="mt-1 text-sm text-slate-500">₹30 per worker dispatched</p>
+                <p className="mt-2 text-xl font-bold text-slate-900 dark:text-white">
+                  {employerProfile.commission_required_for_next_worker ? "Commission required for next worker" : "Free-worker entitlement available"}
+                </p>
+                <p className="mt-1 text-sm text-slate-500">
+                  {employerProfile.free_workers_used} of {employerProfile.free_worker_limit} free unique workers used
+                </p>
+                <p className="mt-1 text-sm text-slate-500">
+                  {employerProfile.free_workers_remaining > 0
+                    ? `${employerProfile.free_workers_remaining} free workers remaining`
+                    : `₹${employerProfile.commission_amount} per additional unique worker`}
+                </p>
               </>
             ) : (
               <>
@@ -1878,20 +1899,22 @@ export default function EmployerDashboard() {
               </div>
             </div>
 
-            {/* Available Workers Card */}
+            {/* Employer-eligible match candidates */}
             <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900">
               <div className="mb-4 flex items-center gap-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-50 dark:bg-indigo-950">
                   <Users size={20} className="text-indigo-600 dark:text-indigo-400" />
                 </div>
                 <h3 className="text-sm font-bold uppercase text-slate-600 dark:text-slate-400">
-                  Workers
+                  Available matches
                 </h3>
               </div>
               <div className="space-y-2">
                 <p className="text-3xl font-bold text-slate-900 dark:text-white">{availableWorkerCount}</p>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Available for jobs
+                  {jobs.length === 0
+                    ? "Post a job to see eligible workers"
+                    : "Eligible, unselected workers across current jobs"}
                 </p>
               </div>
             </div>

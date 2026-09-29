@@ -101,6 +101,7 @@ def test_employer_accepts_a_specific_worker_for_a_specific_job(monkeypatch):
     }])
     monkeypatch.setattr(job_match_service, "supabase", fake)
     monkeypatch.setattr(JobService, "get_for_user", staticmethod(lambda user, job_id: SimpleNamespace(employer_id="employer-id")))
+    monkeypatch.setattr(JobService, "_employer_profile", staticmethod(lambda user: {"id": "employer-id", "employer_type": "INDIVIDUAL"}))
 
     result = JobMatchService.accept_for_user(USER, "job-id", "worker-id")
 
@@ -112,6 +113,40 @@ def test_employer_accepts_a_specific_worker_for_a_specific_job(monkeypatch):
         "p_job_id": "job-id",
         "p_worker_profile_id": "worker-id",
     }
+
+
+def test_claim_count_uses_unique_authoritative_rows_and_ignores_legacy_flag(monkeypatch):
+    from app.services import entitlements
+
+    class ClaimsQuery:
+        def select(self, fields):
+            assert fields == "worker_profile_id"
+            return self
+
+        def eq(self, field, value):
+            assert (field, value) == ("employer_id", "employer-id")
+            return self
+
+        def execute(self):
+            return SimpleNamespace(data=[{"worker_profile_id": f"worker-{index}"} for index in range(used)])
+
+    class ClaimsSupabase:
+        def table(self, name):
+            assert name == "individual_free_worker_claims"
+            return ClaimsQuery()
+
+    for used in range(4):
+        monkeypatch.setattr(entitlements, "supabase", ClaimsSupabase())
+        state = entitlements.employer_state({
+            "id": "employer-id",
+            "employer_type": "INDIVIDUAL",
+            "has_availed_free_dispatch": True,
+        })
+        assert state["free_worker_limit"] == 3
+        assert state["free_workers_used"] == used
+        assert state["free_workers_remaining"] == max(3 - used, 0)
+        assert state["commission_required_for_next_worker"] is (used >= 3)
+        assert state["commission_amount"] == 30.0
 
 
 def test_acceptance_migrations_qualify_worker_profile_id_references():

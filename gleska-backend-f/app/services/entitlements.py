@@ -6,6 +6,8 @@ from typing import Any
 from app.core.supabase import supabase
 
 FREE_TRIAL_DAYS = 30
+INDIVIDUAL_FREE_WORKER_LIMIT = 3
+INDIVIDUAL_COMMISSION_AMOUNT = 30.0
 
 
 def _to_utc_datetime(value: Any) -> datetime | None:
@@ -70,20 +72,20 @@ def employer_state(profile: dict[str, Any] | None) -> dict[str, Any]:
     state["subscription_valid_until"] = subscription_until
     state["subscription_active"] = bool(state["trial_active"] or subscription_active)
     state["payment_required"] = not state["subscription_active"]
-    state["free_worker_limit"] = 3
+    state["free_worker_limit"] = INDIVIDUAL_FREE_WORKER_LIMIT
     state["free_workers_used"] = 0
-    state["free_workers_remaining"] = 3
-    if profile.get("id"):
-        try:
-            response = (
-                supabase.table("individual_free_worker_claims")
-                .select("worker_profile_id")
-                .eq("employer_id", profile["id"])
-                .execute()
-            )
-            used = len(response.data or [])
-            state["free_workers_used"] = used
-            state["free_workers_remaining"] = max(3 - used, 0)
-        except Exception:
-            pass
+    state["free_workers_remaining"] = INDIVIDUAL_FREE_WORKER_LIMIT
+    state["commission_amount"] = INDIVIDUAL_COMMISSION_AMOUNT
+    if profile.get("employer_type") == "INDIVIDUAL" and profile.get("id"):
+        response = (
+            supabase.table("individual_free_worker_claims")
+            .select("worker_profile_id")
+            .eq("employer_id", profile["id"])
+            .execute()
+        )
+        used = len(response.data or [])
+        remaining = max(INDIVIDUAL_FREE_WORKER_LIMIT - used, 0)
+        state["free_workers_used"] = used
+        state["free_workers_remaining"] = remaining
+    state["commission_required_for_next_worker"] = state["free_workers_remaining"] == 0
     return state

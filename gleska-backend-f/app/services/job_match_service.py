@@ -1,6 +1,5 @@
 """Employer-owned retrieval of safe worker match projections."""
 
-from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from app.core.supabase import supabase
@@ -110,6 +109,25 @@ class JobMatchService:
         ]
 
     @classmethod
+    def available_worker_count_for_user(cls, user: UserResponse) -> int:
+        employer = JobService._employer_profile(user)
+        rows = cls._current_rows(str(employer["id"]))
+        return len({str(row["worker_profile_id"]) for row in rows if row.get("worker_profile_id")})
+
+    @staticmethod
+    def active_worker_count_for_user(user: UserResponse) -> int:
+        employer = JobService._employer_profile(user)
+        response = (
+            supabase.table("job_matches")
+            .select("worker_profile_id,jobs!inner(status,employer_id)")
+            .eq("jobs.employer_id", employer["id"])
+            .eq("status", "ACCEPTED")
+            .in_("jobs.status", ["SEARCHING", "FILLED"])
+            .execute()
+        )
+        return len({str(row["worker_profile_id"]) for row in (response.data or []) if row.get("worker_profile_id")})
+
+    @classmethod
     def accept_for_user(cls, user: UserResponse, job_id: str, worker_profile_id: str) -> JobMatchAcceptResponse:
         from datetime import datetime, timezone
         job = JobService.get_for_user(user, job_id)
@@ -121,47 +139,6 @@ class JobMatchService:
             entitlements = employer_state(employer)
             if not entitlements["subscription_active"]:
                 raise ValueError("SUBSCRIPTION_REQUIRED")
-
-        # 2. Individual Employers receive three lifetime free unique-worker slots; afterwards a commission is required.
-        consumed_free_dispatch = False
-        if employer_type == "INDIVIDUAL":
-            claimed = (
-                supabase.table("individual_free_worker_claims")
-                .select("worker_profile_id")
-                .eq("employer_id", employer["id"])
-                .execute()
-            )
-            claimed_ids = {str(row.get("worker_profile_id")) for row in (claimed.data or [])}
-            if str(worker_profile_id) not in claimed_ids:
-                if len(claimed_ids) < 3:
-                    consumed_free_dispatch = True
-                else:
-                    paid_commission_resp = (
-                        supabase.table("payment_transactions")
-                        .select("id, job_id, amount, payment_category, raw_webhook_payload")
-                        .eq("employer_id", employer["id"])
-                        .eq("payment_category", "INDIVIDUAL_COMMISSION")
-                        .eq("status", "SUCCESS")
-                        .execute()
-                    )
-                    has_paid = False
-                    for p in (paid_commission_resp.data or []):
-                        payload = p.get("raw_webhook_payload") or {}
-                        p_job_id = p.get("job_id") or payload.get("job_id")
-                        p_worker_id = payload.get("worker_profile_id")
-                        try:
-                            p_amount = Decimal(str(p.get("amount")))
-                        except (InvalidOperation, TypeError):
-                            p_amount = Decimal("0")
-                        if (
-                            str(p_job_id) == str(job_id)
-                            and str(p_worker_id) == str(worker_profile_id)
-                            and p_amount == Decimal("30")
-                        ):
-                            has_paid = True
-                            break
-                    if not has_paid:
-                        raise ValueError("COMMISSION_REQUIRED")
 
         try:
             rpc_response = supabase.rpc("accept_job_match", {
@@ -178,13 +155,6 @@ class JobMatchService:
         accepted = response.data[0] if isinstance(getattr(response, "data", None), list) and response.data else getattr(response, "data", None)
         if not accepted:
             raise ValueError("MATCH_ACCEPT_FAILED")
-
-        # Record the worker as a free claim once a free slot is used.
-        if consumed_free_dispatch:
-            supabase.table("individual_free_worker_claims").insert({
-                "employer_id": employer["id"],
-                "worker_profile_id": worker_profile_id,
-            }).execute()
 
         return JobMatchAcceptResponse(
             match_id=str(accepted["match_id"]),
