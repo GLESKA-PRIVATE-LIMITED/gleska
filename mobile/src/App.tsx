@@ -1,15 +1,14 @@
+import { useEffect, useRef } from "react";
 import { BrowserRouter, Link, Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider, useAuth } from "./features/auth/AuthProvider";
 import { LanguageProvider } from "./features/auth/LanguageContext";
 import {
-  AuthenticatedBoundary,
-  EmployerOnboardingNotAvailableScreen,
   ForgotPasswordScreen,
   LoadingScreen,
   OAuthCallbackScreen,
   ResetPasswordScreen,
   RoleAuthScreen,
-  SignInSelectionScreen,
+  WelcomeScreen,
 } from "./features/auth/AuthScreens";
 import WorkerAttendanceScreen from "./features/worker/WorkerAttendanceScreen";
 import WorkerCompaniesWorkedScreen from "./features/worker/WorkerCompaniesWorkedScreen";
@@ -21,92 +20,89 @@ import WorkerSubscriptionScreen from "./features/worker/WorkerSubscriptionScreen
 import WorkerSettingsSecurityScreen from "./features/worker/WorkerSettingsSecurityScreen";
 import WorkerHelpScreen from "./features/worker/WorkerHelpScreen";
 import { workerNavigation } from "./features/worker/workerNavigation";
-import { routeForAuthState } from "./types/auth";
 
 function RootRoute() {
-  const { user, nextStep, isLoading } = useAuth();
+  const { user, isLoading, logout } = useAuth();
+  const isClearingNonWorker = useRef(false);
+  useEffect(() => {
+    if (user && user.role !== "WORKER" && !isClearingNonWorker.current) {
+      isClearingNonWorker.current = true;
+      void logout();
+    }
+  }, [user, logout]);
   if (isLoading) return <LoadingScreen />;
   if (user?.role === "WORKER") return <Navigate to="/worker/dashboard" replace />;
-  if (user && nextStep) return <Navigate to={routeForAuthState(user.role, nextStep)} replace />;
-  return <Navigate to="/auth/signin" replace />;
+  if (user) return <LoadingScreen />;
+  return <WelcomeScreen />;
 }
 
-function DashboardRoute({ role }: { role: "WORKER" | "EMPLOYER" | "ADMIN" }) {
-  const { user, nextStep, isLoading } = useAuth();
+function DashboardRoute() {
+  const { user, isLoading } = useAuth();
   if (isLoading) return <LoadingScreen />;
-  if (!user) return <Navigate to="/auth/signin" replace />;
-  if (role === "WORKER") {
-    if (user.role !== "WORKER") return <Navigate to={nextStep ? routeForAuthState(user.role, nextStep) : "/auth/signin"} replace />;
-    return <WorkerDashboardScreen />;
-  }
-  if (!nextStep) return <Navigate to="/auth/signin" replace />;
-  if (user.role !== role || nextStep !== "DASHBOARD") {
-    return <Navigate to={routeForAuthState(user.role, nextStep)} replace />;
-  }
-  return <AuthenticatedBoundary expectedRole={role} />;
+  if (!user || user.role !== "WORKER") return <Navigate to="/" replace />;
+  return <WorkerDashboardScreen />;
 }
 
 function WorkerProfileRoute() {
-  const { user, nextStep, isLoading } = useAuth();
+  const { user, isLoading } = useAuth();
   if (isLoading) return <LoadingScreen />;
-  if (!user) return <Navigate to="/auth/signin" replace />;
-  if (user.role !== "WORKER") return <Navigate to={nextStep ? routeForAuthState(user.role, nextStep) : "/auth/signin"} replace />;
+  if (!user) return <Navigate to="/" replace />;
+  if (user.role !== "WORKER") return <Navigate to="/" replace />;
   return <WorkerProfileScreen />;
 }
 
 function WorkerAttendanceRoute() {
-  const { user, nextStep, isLoading } = useAuth();
+  const { user, isLoading } = useAuth();
   if (isLoading) return <LoadingScreen />;
-  if (!user) return <Navigate to="/auth/signin" replace />;
-  if (user.role !== "WORKER") return <Navigate to={nextStep ? routeForAuthState(user.role, nextStep) : "/auth/signin"} replace />;
+  if (!user) return <Navigate to="/" replace />;
+  if (user.role !== "WORKER") return <Navigate to="/" replace />;
   return <WorkerAttendanceScreen />;
 }
 
 function WorkerCompaniesWorkedRoute() {
-  const { user, nextStep, isLoading } = useAuth();
+  const { user, isLoading } = useAuth();
   if (isLoading) return <LoadingScreen />;
-  if (!user) return <Navigate to="/auth/signin" replace />;
-  if (user.role !== "WORKER") return <Navigate to={nextStep ? routeForAuthState(user.role, nextStep) : "/auth/signin"} replace />;
+  if (!user) return <Navigate to="/" replace />;
+  if (user.role !== "WORKER") return <Navigate to="/" replace />;
   return <WorkerCompaniesWorkedScreen />;
 }
 
 function WorkerDocumentsRoute() {
   const { user, isLoading } = useAuth();
   if (isLoading) return <LoadingScreen />;
-  if (!user) return <Navigate to="/auth/signin" replace />;
-  if (user.role !== "WORKER") return <Navigate to="/worker/auth" replace />;
+  if (!user) return <Navigate to="/" replace />;
+  if (user.role !== "WORKER") return <Navigate to="/" replace />;
   return <WorkerDocumentsScreen />;
 }
 
 function WorkerSubscriptionRoute() {
-  const { user, nextStep, isLoading } = useAuth();
+  const { user, isLoading } = useAuth();
   if (isLoading) return <LoadingScreen />;
-  if (!user) return <Navigate to="/auth/signin" replace />;
-  if (user.role !== "WORKER") return <Navigate to={nextStep ? routeForAuthState(user.role, nextStep) : "/auth/signin"} replace />;
+  if (!user) return <Navigate to="/" replace />;
+  if (user.role !== "WORKER") return <Navigate to="/" replace />;
   return <WorkerSubscriptionScreen />;
 }
 
 function WorkerSettingsSecurityRoute() {
-  const { user, nextStep, isLoading } = useAuth();
+  const { user, isLoading } = useAuth();
   if (isLoading) return <LoadingScreen />;
-  if (!user) return <Navigate to="/auth/signin" replace />;
-  if (user.role !== "WORKER") return <Navigate to={nextStep ? routeForAuthState(user.role, nextStep) : "/auth/signin"} replace />;
+  if (!user) return <Navigate to="/" replace />;
+  if (user.role !== "WORKER") return <Navigate to="/" replace />;
   return <WorkerSettingsSecurityScreen />;
 }
 
 function WorkerHelpRoute() {
-  const { user, nextStep, isLoading } = useAuth();
+  const { user, isLoading } = useAuth();
   if (isLoading) return <LoadingScreen />;
-  if (!user) return <Navigate to="/auth/signin" replace />;
-  if (user.role !== "WORKER") return <Navigate to={nextStep ? routeForAuthState(user.role, nextStep) : "/auth/signin"} replace />;
+  if (!user) return <Navigate to="/" replace />;
+  if (user.role !== "WORKER") return <Navigate to="/" replace />;
   return <WorkerHelpScreen />;
 }
 
 function WorkerRouteUnavailable({ label }: { label: string }) {
-  const { user, nextStep, isLoading } = useAuth();
+  const { user, isLoading } = useAuth();
   if (isLoading) return <LoadingScreen />;
-  if (!user) return <Navigate to="/auth/signin" replace />;
-  if (user.role !== "WORKER") return <Navigate to={nextStep ? routeForAuthState(user.role, nextStep) : "/auth/signin"} replace />;
+  if (!user || user.role !== "WORKER") return <Navigate to="/" replace />;
 
   return <WorkerMobileShell>
     <main className="auth-content">
@@ -120,18 +116,9 @@ function WorkerRouteUnavailable({ label }: { label: string }) {
   </WorkerMobileShell>;
 }
 
-function EmployerOnboardingRoute() {
-  const { user, nextStep, isLoading } = useAuth();
-  if (isLoading) return <LoadingScreen />;
-  if (!user || !nextStep) return <Navigate to="/auth/signin" replace />;
-  if (user.role !== "EMPLOYER") return <Navigate to={routeForAuthState(user.role, nextStep)} replace />;
-  if (nextStep === "DASHBOARD") return <Navigate to="/employer/dashboard" replace />;
-  return <EmployerOnboardingNotAvailableScreen />;
-}
-
 function AppRoutes() {
   const workerRoutes = workerNavigation.map(({ href, label, screen }) => {
-    if (screen === "dashboard") return <Route key={href} path={href} element={<DashboardRoute role="WORKER" />} />;
+    if (screen === "dashboard") return <Route key={href} path={href} element={<DashboardRoute />} />;
     if (screen === "profile") return <Route key={href} path={href} element={<WorkerProfileRoute />} />;
     if (screen === "attendance") return <Route key={href} path={href} element={<WorkerAttendanceRoute />} />;
     if (screen === "companies-worked") return <Route key={href} path={href} element={<WorkerCompaniesWorkedRoute />} />;
@@ -144,9 +131,8 @@ function AppRoutes() {
 
   return <Routes>
     <Route path="/" element={<RootRoute />} />
-    <Route path="/auth/signin" element={<SignInSelectionScreen />} />
     <Route path="/worker/auth" element={<RoleAuthScreen role="WORKER" />} />
-    <Route path="/employer/auth" element={<RoleAuthScreen role="EMPLOYER" />} />
+    <Route path="/auth/signin" element={<RoleAuthScreen role="WORKER" />} />
     <Route path="/auth/forgot-password" element={<ForgotPasswordScreen />} />
     <Route path="/auth/reset-password" element={<ResetPasswordScreen />} />
     <Route path="/auth/callback" element={<OAuthCallbackScreen />} />
@@ -154,9 +140,6 @@ function AppRoutes() {
     <Route path="/worker/settings" element={<Navigate to="/worker/settings-security" replace />} />
     <Route path="/worker/security" element={<Navigate to="/worker/settings-security" replace />} />
     {workerRoutes}
-    <Route path="/employer/onboarding" element={<EmployerOnboardingRoute />} />
-    <Route path="/employer/dashboard" element={<DashboardRoute role="EMPLOYER" />} />
-    <Route path="/admin" element={<DashboardRoute role="ADMIN" />} />
     <Route path="*" element={<Navigate to="/" replace />} />
   </Routes>;
 }

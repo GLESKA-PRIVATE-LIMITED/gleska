@@ -52,7 +52,7 @@ function WorkerMobileDrawer({ open, onOpen, onClose }: { open: boolean; onOpen: 
   const handleLogout = async () => {
     onClose();
     await logout();
-    navigate("/auth/signin", { replace: true });
+    navigate("/", { replace: true });
   };
 
   return <>

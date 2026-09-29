@@ -37,6 +37,8 @@ const translations: Record<LanguageCode, Record<string, string>> = {
     "auth.emailPassword": "Email & password",
     "auth.loginButton": "Login with email",
     "auth.signupButton": "Verify phone & create account",
+    "auth.alreadyHaveAccount": "Already have an account?",
+    "auth.dontHaveAccount": "Don't have an account?",
     "auth.sendMobileOtpButton": "Send mobile OTP",
     "auth.forgotPassword": "Forgot password?",
     "auth.googleButton": "Sign in with Google",

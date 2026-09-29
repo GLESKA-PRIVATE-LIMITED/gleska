@@ -1,13 +1,13 @@
 import { useEffect, useEffectEvent, useState, type FormEvent } from "react";
-import { ArrowLeft, ArrowRight, BriefcaseBusiness, LoaderCircle, Mail, Phone, UserCheck, UserRound } from "lucide-react";
+import { ArrowLeft, LoaderCircle, Mail, Phone } from "lucide-react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { missingBackendConfiguration, missingMsg91Configuration, missingSupabaseConfiguration } from "../../config/environment";
 import { useAuth, errorMessage } from "./AuthProvider";
 import { LanguageSelector, useLanguage } from "./LanguageContext";
 import { getSupabaseClient } from "../../lib/supabase";
-import { routeForAuthState, type AccountType, type AuthStateResponse, type UserRole } from "../../types/auth";
+import { type AccountType, type AuthStateResponse } from "../../types/auth";
 
-type SignupRole = Exclude<UserRole, "ADMIN">;
+type SignupRole = "WORKER";
 type SignupInput = {
   name: string;
   email: string;
@@ -19,12 +19,12 @@ type SignupInput = {
 };
 
 function routeAfterAuth(state: AuthStateResponse, navigate: ReturnType<typeof useNavigate>) {
-  navigate(routeForAuthState(state.user.role, state.next_step), { replace: true });
+  navigate(state.user.role === "WORKER" ? "/worker/dashboard" : "/", { replace: true });
 }
 
 function MobileHeader({ signup = false }: { signup?: boolean }) {
   return <header className={`auth-header${signup ? " auth-header-signup" : ""}`}>
-    <Link to="/auth/signin" className="brand-lockup" aria-label="GLESKA sign in">
+    <Link to="/" className="brand-lockup" aria-label="GLESKA welcome">
       <img src="/favicon.ico" alt="" width="36" height="36" />
       <span>GO LESKA AI</span>
     </Link>
@@ -34,6 +34,25 @@ function MobileHeader({ signup = false }: { signup?: boolean }) {
 
 export function AuthLayout({ children, variant }: { children: React.ReactNode; variant?: "signup" | "selection" }) {
   return <div className={`auth-page${variant ? ` auth-${variant}-page` : ""}`}><MobileHeader signup={variant !== undefined} />{children}</div>;
+}
+
+export function WelcomeScreen() {
+  return <main className="welcome-page">
+    <div className="welcome-content">
+      <header className="welcome-brand" aria-label="GLESKA">
+        <img src="/favicon.ico" alt="" width="48" height="48" />
+        <span>GO LESKA AI</span>
+      </header>
+      <section className="welcome-message" aria-labelledby="welcome-title">
+        <h1 id="welcome-title">Kaam Milega. Turant.</h1>
+        <p>INDIA'S BLUE-COLLAR PROFESSIONALS DESERVE BETTER. GO LESKA MATCHES VERIFIED WORKERS TO REAL JOBS, POWERED BY AI, BUILT FOR FACTORIES AND BUSINESSES.</p>
+      </section>
+      <nav className="welcome-actions" aria-label="Worker account actions">
+        <Link className="welcome-primary" to="/worker/auth?mode=signup">Get Started</Link>
+        <Link className="welcome-signin" to="/worker/auth">Already have an account? <strong>Sign in</strong></Link>
+      </nav>
+    </div>
+  </main>;
 }
 
 function InlineError({ children }: { children: string }) {
@@ -49,61 +68,20 @@ function ConfigurationNotice({ needsSupabase = true, needsMsg91 = false }: { nee
   return <p className="auth-error" role="alert">Authentication is unavailable until the public mobile configuration is set: {missing.join(", ")}.</p>;
 }
 
-function AccountChoice({ role, accountType, title, description, icon: Icon, accent }: {
-  role: SignupRole;
-  accountType: AccountType;
-  title: string;
-  description: string;
-  icon: typeof UserRound;
-  accent: "amber" | "blue";
-}) {
-  const target = role === "WORKER"
-    ? "/worker/auth?mode=signup"
-    : accountType === "INDIVIDUAL"
-      ? "/employer/auth?account=individual&mode=signup"
-      : "/employer/auth?mode=signup";
-  return <Link className={`account-choice account-choice-${accent}`} to={target}>
-    <span className="account-choice-icon"><Icon size={22} /></span>
-    <span className="account-choice-copy"><strong>{title}</strong><span>{description}</span></span>
-    <span className="account-choice-action">Create account <ArrowRight size={16} aria-hidden="true" /></span>
-  </Link>;
-}
-
-export function SignInSelectionScreen() {
-  const [showAccounts, setShowAccounts] = useState(false);
-  const { t } = useLanguage();
-  return <AuthLayout variant={showAccounts ? "selection" : undefined}>
-    <main className="auth-content auth-signin-content">
-      <div className="auth-signin-hero">
-        <p className="auth-eyebrow">{showAccounts ? t("nav.signup") : "Sign in"}</p>
-        <h1>{showAccounts ? t("signin.selectRole") : "Sign in"}</h1>
-        <p className="auth-description">{showAccounts ? t("signin.roleDescription") : t("auth.securityText")}</p>
-      </div>
-      <section className="auth-card auth-signin-card">
-        {!showAccounts ? <AuthForm role={undefined} accountType="BUSINESS" onCreateAccount={() => setShowAccounts(true)} /> : <div className="account-choice-list">
-          <AccountChoice role="EMPLOYER" accountType="BUSINESS" title={t("signin.businessSignupTitle")} description={t("signin.businessSignupDescription")} icon={BriefcaseBusiness} accent="blue" />
-          <AccountChoice role="EMPLOYER" accountType="INDIVIDUAL" title={t("signin.individualSignupTitle")} description={t("signin.individualSignupDescription")} icon={UserCheck} accent="amber" />
-          <AccountChoice role="WORKER" accountType="BUSINESS" title={t("signin.workerSignupTitle")} description={t("signin.workerSignupDescription")} icon={UserRound} accent="amber" />
-        </div>}
-      </section>
-    </main>
-  </AuthLayout>;
-}
-
 export function RoleAuthScreen({ role }: { role: SignupRole }) {
   const [params] = useSearchParams();
-  const accountType: AccountType = role === "EMPLOYER" && params.get("account") === "individual" ? "INDIVIDUAL" : "BUSINESS";
+  const accountType: AccountType = "BUSINESS";
   const isDirectSignup = params.get("mode") === "signup";
   const { t } = useLanguage();
   return <AuthLayout variant={isDirectSignup ? "signup" : undefined}>
     <main className="auth-content">
       <section className="auth-card">
-        <p className="auth-eyebrow">{role === "WORKER" ? t("signin.workerTitle") : accountType === "INDIVIDUAL" ? t("signin.individualEmployerTitle") : t("signin.businessEmployerTitle")}</p>
+        <p className="auth-eyebrow">{t("signin.workerTitle")}</p>
         <h1>{isDirectSignup
-          ? role === "WORKER" ? t("auth.employeeTitle") : accountType === "INDIVIDUAL" ? t("auth.individualSignupHeading") : t("auth.businessSignupHeading")
+          ? t("auth.employeeTitle")
           : t("nav.signIn")}</h1>
         <p className="auth-description">{isDirectSignup
-          ? role === "WORKER" ? t("auth.employeeTitle") : accountType === "INDIVIDUAL" ? t("auth.individualSubtitle") : t("auth.businessSubtitle")
+          ? t("auth.employeeTitle")
           : t("auth.securityText")}</p>
         <AuthForm role={role} accountType={accountType} initialSignup={isDirectSignup} />
       </section>
@@ -111,14 +89,12 @@ export function RoleAuthScreen({ role }: { role: SignupRole }) {
   </AuthLayout>;
 }
 
-function AuthForm({ role, accountType, initialSignup = false, onCreateAccount }: {
+function AuthForm({ role, accountType, initialSignup = false }: {
   role: SignupRole | undefined;
   accountType: AccountType;
   initialSignup?: boolean;
-  onCreateAccount?: () => void;
 }) {
   const navigate = useNavigate();
-  const location = useLocation();
   const { t } = useLanguage();
   const auth = useAuth();
   const [signup, setSignup] = useState(initialSignup);
@@ -328,8 +304,6 @@ function AuthForm({ role, accountType, initialSignup = false, onCreateAccount }:
         </button>
         <p className="auth-footnote">{t("auth.securityText")}</p>
       </>}
-      {onCreateAccount && !signup && <button className="text-link create-account-link" type="button" onClick={onCreateAccount}>{t("nav.signup")}</button>}
-      {location.pathname !== "/auth/signin" && !initialSignup && <Link className="text-link auth-back-link" to="/auth/signin"><ArrowLeft size={16} /> {t("auth.back")}</Link>}
     </>}
   </>;
 }
@@ -561,45 +535,4 @@ export function OAuthCallbackScreen() {
 export function LoadingScreen() {
   const { t } = useLanguage();
   return <main className="auth-loading"><LoaderCircle size={28} className="spin" /><p>{t("auth.loading")}</p></main>;
-}
-
-export function AuthenticatedBoundary({ expectedRole }: { expectedRole?: UserRole }) {
-  const auth = useAuth();
-  const navigate = useNavigate();
-  const { t } = useLanguage();
-
-  useEffect(() => {
-    if (auth.isLoading) return;
-    if (!auth.user) navigate("/auth/signin", { replace: true });
-    else if (expectedRole && auth.user.role !== expectedRole && auth.nextStep) {
-      navigate(routeForAuthState(auth.user.role, auth.nextStep), { replace: true });
-    } else if (auth.user.role === "EMPLOYER" && auth.nextStep && auth.nextStep !== "DASHBOARD") {
-      navigate("/employer/onboarding", { replace: true });
-    }
-  }, [auth.isLoading, auth.user, auth.nextStep, expectedRole, navigate]);
-
-  if (auth.isLoading || !auth.user || (expectedRole && auth.user.role !== expectedRole)) return <LoadingScreen />;
-  if (auth.user.role === "EMPLOYER" && auth.nextStep !== "DASHBOARD") return <LoadingScreen />;
-
-  const accountLabel = auth.user.role === "WORKER" ? "Worker" : auth.user.role === "EMPLOYER" ? "Employer" : "Admin";
-  const readyMessage = auth.user.role === "WORKER" ? t("auth.accountReady") : `Signed in to GLESKA as ${accountLabel}.`;
-  return <AuthLayout><main className="auth-content"><section className="auth-card auth-status-card">
-    <p className="auth-eyebrow">{accountLabel}</p><h1>{auth.user.name || accountLabel}</h1><p className="auth-description">{readyMessage}</p>
-    {auth.user.role !== "WORKER" && <p className="auth-description">This role's onboarding and workspace are not included in this mobile phase. Your authenticated account remains available through the website.</p>}
-    <button className="auth-secondary logout-button" type="button" onClick={() => void auth.logout()}><ArrowLeft size={16} /> {t("auth.logout")}</button>
-  </section></main></AuthLayout>;
-}
-
-export function EmployerOnboardingNotAvailableScreen() {
-  const auth = useAuth();
-  const { t } = useLanguage();
-  if (auth.isLoading) return <LoadingScreen />;
-  if (!auth.user || auth.user.role !== "EMPLOYER") return <LoadingScreen />;
-  return <AuthLayout><main className="auth-content"><section className="auth-card auth-status-card">
-    <p className="auth-eyebrow">Employer onboarding</p>
-    <h1>Continue on GLESKA</h1>
-    <p className="auth-description">Your backend onboarding step is {auth.nextStep || "not available"}. Employer onboarding is not implemented in this mobile phase, so no type-specific business flow is being substituted.</p>
-    <a className="auth-primary auth-link-button" href="https://www.goleska.in/employer/auth">Open GLESKA website</a>
-    <button className="auth-secondary logout-button" type="button" onClick={() => void auth.logout()}>{t("auth.logout")}</button>
-  </section></main></AuthLayout>;
 }

@@ -459,6 +459,23 @@ button:disabled {
   margin-top: var(--space-3);
 }
 
+.auth-account-prompt {
+  margin: var(--space-3) 0 0;
+  color: var(--color-text-secondary);
+  font-size: 0.8125rem;
+  text-align: center;
+}
+
+.auth-account-prompt a {
+  color: var(--color-primary);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.auth-account-prompt a:hover {
+  text-decoration: underline;
+}
+
 .auth-divider {
   display: flex;
   align-items: center;
@@ -4133,5 +4150,113 @@ button:disabled {
 
   .worker-profile-current-location .worker-profile-text-action {
     margin-left: 3rem;
+  }
+}
+
+.welcome-page {
+  display: flex;
+  min-height: 100vh;
+  min-height: 100dvh;
+  justify-content: center;
+  background: var(--color-background);
+  padding: max(1.25rem, env(safe-area-inset-top)) max(1.25rem, env(safe-area-inset-right)) max(1.25rem, env(safe-area-inset-bottom)) max(1.25rem, env(safe-area-inset-left));
+}
+
+.welcome-content {
+  display: flex;
+  width: 100%;
+  max-width: 30rem;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 2.5rem;
+  padding-block: 1.25rem;
+}
+
+.welcome-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--color-text-primary);
+  font-family: Anton, Impact, "Arial Narrow", sans-serif;
+  font-size: 1.5rem;
+  text-transform: uppercase;
+}
+
+.welcome-brand img {
+  flex: none;
+  border-radius: 0.75rem;
+  object-fit: contain;
+}
+
+.welcome-message {
+  padding-block: 2rem;
+}
+
+.welcome-message h1 {
+  max-width: 9ch;
+  margin: 0 0 1.25rem;
+  color: var(--color-text-primary);
+  font-family: Anton, Impact, "Arial Narrow", sans-serif;
+  font-size: 3rem;
+  font-weight: 400;
+  line-height: 1.02;
+}
+
+.welcome-message p {
+  max-width: 30rem;
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1.65;
+}
+
+.welcome-actions {
+  display: grid;
+  gap: 0.75rem;
+  padding-bottom: 0.5rem;
+  text-align: center;
+}
+
+.welcome-primary {
+  display: inline-flex;
+  min-height: 3.5rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.welcome-primary:hover {
+  background: #1d4ed8;
+}
+
+.welcome-signin {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  color: var(--color-text-secondary);
+  font-size: 0.875rem;
+  text-decoration: none;
+}
+
+.welcome-signin strong {
+  color: var(--color-primary);
+}
+
+@media (max-height: 700px) {
+  .welcome-content {
+    gap: 1rem;
+    padding-block: 0.25rem;
+  }
+
+  .welcome-message {
+    padding-block: 0.75rem;
   }
 }
