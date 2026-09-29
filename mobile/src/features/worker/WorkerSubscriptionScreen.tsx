@@ -55,10 +55,6 @@ function formatSubscriptionExpiry(value?: string | null): string | null {
   }).format(new Date(value));
 }
 
-function isSubscriptionActive(value?: string | null): boolean {
-  return Boolean(value && new Date(value).getTime() > Date.now());
-}
-
 export default function WorkerSubscriptionScreen() {
   const navigate = useNavigate();
   const { user, isLoading } = useAuth();
@@ -162,16 +158,8 @@ export default function WorkerSubscriptionScreen() {
     return null;
   }
 
-  const active =
-    profile.subscription_active === true ||
-    profile.trial_active === true ||
-    isSubscriptionActive(profile.subscription_valid_until) ||
-    isSubscriptionActive(profile.trial_ends_at);
-
-  const trialActive = Boolean(
-    profile.trial_active ||
-    (profile.trial_ends_at && new Date(profile.trial_ends_at).getTime() > Date.now()),
-  );
+  const active = profile.subscription_active === true;
+  const trialActive = profile.trial_active === true;
 
   const expiry = formatSubscriptionExpiry(profile.subscription_valid_until) || formatSubscriptionExpiry(profile.trial_ends_at);
   const showPaymentCta = !active;

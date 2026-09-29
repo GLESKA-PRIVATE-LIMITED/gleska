@@ -1,7 +1,5 @@
-"use client";
-
-import WorkerSecuritySettingsPage from "@/components/worker/WorkerSecuritySettingsPage";
+import { redirect } from "next/navigation";
 
 export default function WorkerSecurityPage() {
-  return <WorkerSecuritySettingsPage />;
+  redirect("/worker/settings-security");
 }

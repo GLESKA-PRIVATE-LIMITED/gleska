@@ -273,6 +273,7 @@ def test_create_user_uses_supabase_auth_parent_id(monkeypatch):
 async def test_msg91_login_uses_existing_role_without_request_role(monkeypatch):
     from app.routers import auth as auth_router
 
+    monkeypatch.setattr(auth_router.settings, "ENVIRONMENT", "production")
     existing = application_user("WORKER")
     monkeypatch.setattr(AuthService, "normalize_mobile", staticmethod(lambda mobile: "919999999999"))
     monkeypatch.setattr(AuthService, "get_user_by_mobile", staticmethod(lambda mobile: existing))
@@ -291,7 +292,10 @@ async def test_msg91_login_uses_existing_role_without_request_role(monkeypatch):
 
     assert result["user"].role == "WORKER"
     assert result["next_step"] == "WORKER_PROFILE"
-    assert "goleska_session" in response.headers.get("set-cookie", "")
+    cookie = response.headers.get("set-cookie", "").lower()
+    assert "goleska_session" in cookie
+    assert "samesite=none" in cookie
+    assert "secure" in cookie
 
 
 @pytest.mark.asyncio

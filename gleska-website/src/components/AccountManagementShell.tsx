@@ -13,7 +13,6 @@ import {
   LayoutDashboard,
   LogOut,
   PanelLeft,
-  Settings,
   ShieldCheck,
   User,
   Users,
@@ -47,7 +46,6 @@ export default function AccountManagementShell({
   kind,
   name,
   accountLabel,
-  profileHref = "/worker/profile",
   onLogout,
   children,
 }: AccountManagementShellProps) {
@@ -79,14 +77,14 @@ export default function AccountManagementShell({
 
   const renderAccountActions = (mobile = false) => (
     <div className="mt-3 space-y-1.5 border-t border-slate-200 pt-3 dark:border-slate-800">
-      <Link
-        href={employer ? "/employer/company-profile" : profileHref}
+      {employer && <Link
+        href="/employer/company-profile"
         onClick={mobile ? closeMobile : undefined}
         className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
       >
         <User size={17} className="shrink-0 text-slate-500 dark:text-slate-400" />
         <span>Profile</span>
-      </Link>
+      </Link>}
       <button
         type="button"
         onClick={() => {
@@ -117,9 +115,9 @@ export default function AccountManagementShell({
     { href: "/worker/companies-worked", label: "Companies Worked", icon: Building2, isPage: true },
     { href: "/worker/documents", label: "Documents", icon: FileText, isPage: true },
     { href: "/worker/subscription", label: "Subscription", icon: CreditCard, isPage: true },
-    { href: "/worker/security", label: "Security", icon: ShieldCheck, isPage: true },
-    { href: "/worker/settings", label: "Settings", icon: Settings, isPage: true },
+    { href: "/worker/settings-security", label: "Settings & Security", icon: ShieldCheck, isPage: true },
     { href: "/worker/help", label: "Help", icon: HelpCircle, isPage: true },
+    { href: "/worker/profile", label: "Profile", icon: User, isPage: true },
   ];
 
   const navigation = employer ? employerNav : workerNav;

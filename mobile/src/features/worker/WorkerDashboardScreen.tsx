@@ -52,21 +52,6 @@ function shouldSendLiveLocationUpdate(
   return hasHeartbeat || movementMeters >= MIN_LOCATION_MOVEMENT_METERS;
 }
 
-function isSubscriptionActive(value?: string | null): boolean {
-  return Boolean(value && new Date(value).getTime() > Date.now());
-}
-
-function isWorkerAccessActive(
-  subscriptionValidUntil?: string | null,
-  trialEndsAt?: string | null,
-  subscriptionActive?: boolean,
-  trialActive?: boolean,
-): boolean {
-  if (subscriptionActive !== undefined) return Boolean(subscriptionActive);
-  if (trialActive !== undefined) return Boolean(trialActive);
-  return isSubscriptionActive(subscriptionValidUntil) || isSubscriptionActive(trialEndsAt);
-}
-
 function formatSubscriptionExpiry(value?: string | null): string | null {
   if (!value) return null;
   return new Intl.DateTimeFormat("en-IN", {
@@ -82,6 +67,7 @@ type WorkerProfile = {
   address?: string | null;
   city?: string | null;
   state?: string | null;
+  current_location?: { address?: string | null } | null;
   latitude?: number | null;
   longitude?: number | null;
   subscription_valid_until?: string | null;
@@ -178,7 +164,7 @@ export default function WorkerDashboardScreen() {
     try {
       const data = await apiGet<WorkerProfile>("/api/v1/workers/me");
       setProfile(data);
-      setCurrentLocationAddress(data.address || [data.city, data.state].filter(Boolean).join(", "));
+      setCurrentLocationAddress(data.current_location?.address || data.address || [data.city, data.state].filter(Boolean).join(", "));
     } catch {
       setErrors((current) => ({ ...current, profile: "Unable to load your profile summary." }));
     } finally {
@@ -319,23 +305,15 @@ export default function WorkerDashboardScreen() {
     currentLocationAddress ||
     profile?.address ||
     [profile?.city, profile?.state].filter(Boolean).join(", ");
-  const subscriptionActive = isWorkerAccessActive(
-    profile?.subscription_valid_until,
-    profile?.trial_ends_at,
-    profile?.subscription_active,
-    profile?.trial_active,
-  );
-  const trialActive = Boolean(
-    profile?.trial_active ||
-      (profile?.trial_ends_at && new Date(profile.trial_ends_at).getTime() > Date.now()),
-  );
+  const subscriptionActive = profile?.subscription_active === true;
+  const trialActive = profile?.trial_active === true;
   const subscriptionExpiry =
     formatSubscriptionExpiry(profile?.subscription_valid_until) ||
     formatSubscriptionExpiry(profile?.trial_ends_at);
 
   return (
     <WorkerMobileShell>
-      <main className="worker-dashboard">
+      <main className="worker-dashboard worker-home-dashboard">
         <section className="worker-welcome-banner">
           <div className="worker-welcome-copy">
             <p>Welcome back</p>

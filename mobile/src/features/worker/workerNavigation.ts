@@ -4,10 +4,8 @@ import {
   CreditCard,
   FileText,
   HelpCircle,
-  Home,
   LayoutDashboard,
   ShieldCheck,
-  Settings,
   UserRound,
 } from "lucide-react";
 
@@ -17,14 +15,7 @@ export const workerNavigation = [
   { href: "/worker/companies-worked", label: "Companies Worked", icon: Building2, section: "pages", screen: "companies-worked" },
   { href: "/worker/documents", label: "Documents", icon: FileText, section: "pages", screen: "documents" },
   { href: "/worker/subscription", label: "Subscription", icon: CreditCard, section: "pages", screen: "subscription" },
-  { href: "/worker/security", label: "Security", icon: ShieldCheck, section: "pages", screen: "unavailable" },
-  { href: "/worker/settings", label: "Settings", icon: Settings, section: "pages", screen: "unavailable" },
-  { href: "/worker/help", label: "Help", icon: HelpCircle, section: "pages", screen: "unavailable" },
-  { href: "/worker/profile", label: "Profile", icon: UserRound, section: "account", screen: "profile" },
+  { href: "/worker/settings-security", label: "Settings & Security", icon: ShieldCheck, section: "pages", screen: "settings-security" },
+  { href: "/worker/help", label: "Help", icon: HelpCircle, section: "pages", screen: "help" },
+  { href: "/worker/profile", label: "Profile", icon: UserRound, section: "pages", screen: "profile" },
 ] as const;
-
-export const workerHomeNavigation = {
-  href: "/",
-  label: "Back to Home",
-  icon: Home,
-};

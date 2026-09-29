@@ -1,11 +1,16 @@
 from pathlib import Path
+from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+from fastapi import HTTPException
 from pydantic import ValidationError
 
 from app.main import app
+from app.routers import attendance as attendance_router
 from app.schemas.attendance import AttendanceLocationRequest, EmployerAttendanceUpdateRequest, WorkerCheckInRequest
+from app.schemas.auth import UserResponse
 from app.services.attendance_service import ATTENDANCE_GEOFENCE_METERS
 from app.routers.attendance import attendance_http_error
 from app.services.attendance_service import AttendanceError, AttendanceService
@@ -40,6 +45,62 @@ def test_location_request_rejects_unreliable_or_null_island_coordinates():
 def test_check_in_requires_match_id():
     with pytest.raises(ValidationError):
         WorkerCheckInRequest(latitude=18.5, longitude=73.8, accuracy=20)
+
+
+@pytest.mark.asyncio
+async def test_check_in_uses_shared_entitlement_for_future_trial(monkeypatch):
+    now = datetime.now(timezone.utc)
+
+    class ProfileQuery:
+        def select(self, *_args):
+            return self
+
+        def eq(self, *_args):
+            return self
+
+        def single(self):
+            return self
+
+        def execute(self):
+            return SimpleNamespace(data={
+                "subscription_valid_until": None,
+                "trial_started_at": (now + timedelta(days=1)).isoformat(),
+                "trial_ends_at": (now + timedelta(days=31)).isoformat(),
+            })
+
+    class FakeSupabase:
+        def table(self, _name):
+            return ProfileQuery()
+
+    monkeypatch.setattr(attendance_router, "supabase", FakeSupabase())
+    monkeypatch.setattr(
+        attendance_router.AttendanceService,
+        "check_in",
+        lambda *_args: pytest.fail("attendance must not proceed for an inactive trial"),
+    )
+    user = UserResponse(
+        id=str(uuid4()),
+        name="Worker",
+        mobile="919876543210",
+        email="worker@example.com",
+        role="WORKER",
+        is_mobile_verified=True,
+        is_active=True,
+        created_at=now,
+        updated_at=now,
+    )
+    request = WorkerCheckInRequest(
+        job_match_id=uuid4(),
+        latitude=18.5,
+        longitude=73.8,
+        accuracy=20,
+    )
+
+    with pytest.raises(HTTPException) as error:
+        await attendance_router.worker_check_in(request, user)
+
+    assert error.value.status_code == 402
+    assert error.value.detail == "SUBSCRIPTION_REQUIRED"
 
 
 def test_correction_requires_reason_and_valid_time_order():

@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -49,6 +49,10 @@ class FakeQuery:
         self.single_result = True
         return self
 
+    def maybe_single(self):
+        self.single_result = True
+        return self
+
     def update(self, data):
         self.updated = data
         self.row.update(data)
@@ -59,12 +63,32 @@ class FakeQuery:
         return SimpleNamespace(data=self.row if self.single_result else [self.row] if self.row else [])
 
 
-class FakeSupabase:
+class FakeCurrentLocationQuery:
     def __init__(self, row):
-        self.query = FakeQuery(row)
+        self.row = row
 
-    def table(self, _name):
-        return self.query
+    def select(self, _fields):
+        return self
+
+    def eq(self, _field, _value):
+        return self
+
+    def maybe_single(self):
+        return self
+
+    def execute(self):
+        if self.row is None:
+            return None
+        return SimpleNamespace(data=self.row)
+
+
+class FakeSupabase:
+    def __init__(self, row, current_location=None):
+        self.query = FakeQuery(row)
+        self.current_location_query = FakeCurrentLocationQuery(current_location)
+
+    def table(self, name):
+        return self.current_location_query if name == "worker_current_locations" else self.query
 
 
 @pytest.mark.asyncio
@@ -89,6 +113,109 @@ async def test_worker_profile_save_and_followup_get_persist_trade_and_completion
     assert loaded.trade_id == "Electrician"
     assert loaded.onboarding_status == "COMPLETED"
     assert fake_supabase.query.updated["onboarding_status"] == "COMPLETED"
+
+
+@pytest.mark.asyncio
+async def test_worker_profile_returns_fresh_current_location(monkeypatch):
+    current_location = {
+        "latitude": 18.5,
+        "longitude": 73.8,
+        "accuracy_m": 25,
+        "address": "Current GPS address",
+        "updated_at": datetime.now(timezone.utc),
+    }
+    fake_supabase = FakeSupabase(profile_row(), current_location)
+    monkeypatch.setattr(workers, "supabase", fake_supabase)
+
+    loaded = await get_worker_profile(USER)
+
+    assert loaded.current_location is not None
+    assert loaded.current_location.address == "Current GPS address"
+
+
+@pytest.mark.asyncio
+async def test_worker_profile_handles_no_current_location_row(monkeypatch):
+    monkeypatch.setattr(workers, "supabase", FakeSupabase(profile_row(), None))
+
+    loaded = await get_worker_profile(USER)
+
+    assert loaded.id == "profile-id"
+    assert loaded.current_location is None
+    assert loaded.model_dump(mode="json")["current_location"] is None
+
+
+@pytest.mark.parametrize("location_kind", ["null_accuracy", "malformed_coordinates", "malformed_timestamp"])
+@pytest.mark.asyncio
+async def test_worker_profile_ignores_unusable_current_location(monkeypatch, location_kind):
+    now = datetime.now(timezone.utc)
+    locations = {
+        "null_accuracy": {
+            "latitude": 18.5,
+            "longitude": 73.8,
+            "accuracy_m": None,
+            "updated_at": now,
+        },
+        "malformed_coordinates": {
+            "latitude": "not-a-coordinate",
+            "longitude": 73.8,
+            "accuracy_m": 25,
+            "updated_at": now,
+        },
+        "malformed_timestamp": {
+            "latitude": 18.5,
+            "longitude": 73.8,
+            "accuracy_m": 25,
+            "updated_at": "not-a-timestamp",
+        },
+    }
+    monkeypatch.setattr(workers, "supabase", FakeSupabase(profile_row(), locations[location_kind]))
+
+    loaded = await get_worker_profile(USER)
+
+    assert loaded.id == "profile-id"
+    assert loaded.current_location is None
+
+
+@pytest.mark.parametrize("entitlement", ["active_trial", "expired_trial", "active_subscription", "none"])
+@pytest.mark.asyncio
+async def test_worker_profile_serializes_legacy_entitlement_fields(monkeypatch, entitlement):
+    now = datetime.now(timezone.utc)
+    entitlement_fields = {
+        "active_trial": {
+            "trial_started_at": now - timedelta(days=1),
+            "trial_ends_at": now + timedelta(days=1),
+            "subscription_valid_until": None,
+        },
+        "expired_trial": {
+            "trial_started_at": now - timedelta(days=31),
+            "trial_ends_at": now - timedelta(days=1),
+            "subscription_valid_until": None,
+        },
+        "active_subscription": {
+            "trial_started_at": None,
+            "trial_ends_at": None,
+            "subscription_valid_until": now + timedelta(days=30),
+        },
+        "none": {
+            "trial_started_at": None,
+            "trial_ends_at": None,
+            "subscription_valid_until": None,
+            "address": None,
+            "latitude": None,
+            "longitude": None,
+        },
+    }
+    monkeypatch.setattr(
+        workers,
+        "supabase",
+        FakeSupabase(profile_row(**entitlement_fields[entitlement]), None),
+    )
+
+    loaded = await get_worker_profile(USER)
+
+    assert loaded.model_dump(mode="json")["id"] == "profile-id"
+    assert loaded.subscription_active is (entitlement in {"active_trial", "active_subscription"})
+    assert loaded.trial_active is (entitlement == "active_trial")
 
 
 def test_worker_profile_rejects_blank_trade():

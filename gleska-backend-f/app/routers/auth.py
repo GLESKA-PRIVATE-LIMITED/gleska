@@ -287,7 +287,7 @@ async def complete_msg91(request: dict, response: Response):
         value=session_token,
         httponly=True,
         secure=settings.ENVIRONMENT == "production",
-        samesite="lax",
+        samesite="none" if settings.ENVIRONMENT == "production" else "lax",
         max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         path="/",
     )
@@ -328,7 +328,7 @@ async def login_msg91(request: dict, response: Response):
         value=create_access_token(existing["id"]),
         httponly=True,
         secure=settings.ENVIRONMENT == "production",
-        samesite="lax",
+        samesite="none" if settings.ENVIRONMENT == "production" else "lax",
         max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         path="/",
     )

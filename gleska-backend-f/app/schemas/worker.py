@@ -8,6 +8,16 @@ from datetime import datetime
 MAX_EXPECTED_DAILY_WAGE = 1_000_000
 
 
+class WorkerCurrentLocationResponse(BaseModel):
+    """The latest GPS location saved for a worker."""
+
+    latitude: float
+    longitude: float
+    accuracy_m: float
+    address: Optional[str] = None
+    updated_at: datetime
+
+
 class WorkerProfileResponse(BaseModel):
     """Worker profile response."""
     id: str
@@ -25,6 +35,7 @@ class WorkerProfileResponse(BaseModel):
     location_updated_at: Optional[datetime] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
+    current_location: Optional[WorkerCurrentLocationResponse] = None
     marital_status: Optional[str] = None
     blood_group: Optional[str] = None
     skills: Optional[list[str]] = None
@@ -133,16 +144,6 @@ class WorkerLocationUpdate(BaseModel):
         if self.latitude == 0 and self.longitude == 0:
             raise ValueError("latitude and longitude cannot both be zero")
         return self
-
-
-class WorkerCurrentLocationResponse(BaseModel):
-    """The latest GPS location saved for a worker."""
-
-    latitude: float
-    longitude: float
-    accuracy_m: float
-    address: Optional[str] = None
-    updated_at: datetime
 
 
 class WorkerRouteOrigin(BaseModel):

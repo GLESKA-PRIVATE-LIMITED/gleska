@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 
 import { LogOut, PanelLeft, X } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthProvider";
-import { workerHomeNavigation, workerNavigation } from "./workerNavigation";
+import { workerNavigation } from "./workerNavigation";
 
 function WorkerMobileDrawer({ open, onOpen, onClose }: { open: boolean; onOpen: () => void; onClose: () => void }) {
   const { user, logout } = useAuth();
@@ -89,27 +89,18 @@ function WorkerMobileDrawer({ open, onOpen, onClose }: { open: boolean; onOpen: 
         </div>
 
         <nav className="worker-menu-navigation" aria-label="Worker pages">
-          {workerNavigation.filter(({ section }) => section === "pages").map(({ href, label, icon: Icon, screen }) => (
-            screen === "unavailable"
-              ? <button key={href} className="worker-menu-item" type="button" disabled title={`${label} is not available in this mobile app yet`} aria-label={`${label}, not available in this mobile app`}>
-                  <Icon size={21} aria-hidden="true" />
-                  <span>{label}</span>
-                </button>
-              : <Link
-                  key={href}
-                  to={href}
-                  className={`worker-menu-item${activeHref === href ? " is-active" : ""}`}
-                  aria-current={activeHref === href ? "page" : undefined}
-                  onClick={onClose}
-                >
-                  <Icon size={21} aria-hidden="true" />
-                  <span>{label}</span>
-                </Link>
+          {workerNavigation.filter(({ section }) => section === "pages").map(({ href, label, icon: Icon }) => (
+            <Link
+              key={href}
+              to={href}
+              className={`worker-menu-item${activeHref === href ? " is-active" : ""}`}
+              aria-current={activeHref === href ? "page" : undefined}
+              onClick={onClose}
+            >
+              <Icon size={21} aria-hidden="true" />
+              <span>{label}</span>
+            </Link>
           ))}
-          <Link className="worker-menu-item worker-menu-home" to={workerHomeNavigation.href} onClick={onClose}>
-            <workerHomeNavigation.icon size={21} aria-hidden="true" />
-            <span>{workerHomeNavigation.label}</span>
-          </Link>
         </nav>
 
         <section className="worker-menu-account" aria-label="Current user">
@@ -125,18 +116,6 @@ function WorkerMobileDrawer({ open, onOpen, onClose }: { open: boolean; onOpen: 
         </section>
 
         <div className="worker-menu-account-actions">
-          {workerNavigation.filter(({ section }) => section === "account").map(({ href, label, icon: Icon }) => (
-            <Link
-              key={href}
-              className={`worker-menu-item${activeHref === href ? " is-active" : ""}`}
-              to={href}
-              aria-current={activeHref === href ? "page" : undefined}
-              onClick={onClose}
-            >
-              <Icon size={21} aria-hidden="true" />
-              <span>{label}</span>
-            </Link>
-          ))}
           <button className="worker-menu-logout" type="button" onClick={() => void handleLogout()}>
             <LogOut size={21} aria-hidden="true" />
             <span>Log out</span>

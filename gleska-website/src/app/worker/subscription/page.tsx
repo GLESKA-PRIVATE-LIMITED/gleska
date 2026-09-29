@@ -8,7 +8,7 @@ import apiClient from "@/lib/api";
 import AccountManagementShell from "@/components/AccountManagementShell";
 import { WorkerPageFrame, WorkerPageHeader, WorkspaceCard } from "@/components/worker/WorkspaceUI";
 import PaymentHistoryList, { type PaymentHistoryItem } from "@/components/PaymentHistoryList";
-import { formatSubscriptionExpiry, isSubscriptionActive } from "@/lib/subscription";
+import { formatSubscriptionExpiry } from "@/lib/subscription";
 
 declare global {
   interface Window {
@@ -153,11 +153,7 @@ export default function WorkerSubscriptionPage() {
   if (isLoading || loading) return <div className="flex min-h-screen items-center justify-center bg-[#eef1fb] dark:bg-slate-950"><Loader2 size={36} className="animate-spin text-blue-600" /></div>;
   if (!user || user.role !== "WORKER" || !profile) return null;
 
-  const active =
-    profile.subscription_active === true ||
-    profile.trial_active === true ||
-    isSubscriptionActive(profile.subscription_valid_until) ||
-    isSubscriptionActive(profile.trial_ends_at);
+  const active = profile.subscription_active === true;
   const expiry =
     formatSubscriptionExpiry(profile.subscription_valid_until) ||
     formatSubscriptionExpiry(profile.trial_ends_at);
@@ -167,7 +163,7 @@ export default function WorkerSubscriptionPage() {
           <WorkerPageHeader eyebrow="Worker workspace" title="Subscription" description="Manage your subscription and payment details." />
           <div className="grid gap-6 lg:grid-cols-[1.35fr_0.65fr]"><section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900 sm:p-8"><h2 className="text-sm font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Current Subscription</h2>
             <div className="mt-6 grid gap-4 sm:grid-cols-2">
-              <div className="rounded-2xl bg-slate-50 p-5 dark:bg-slate-800/70"><p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">Current status</p><p className={`mt-2 flex items-center gap-2 text-lg font-bold ${active ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"}`}>{active ? <CheckCircle2 size={20} /> : <AlertCircle size={20} />}{active ? "ACTIVE — FREE TRIAL" : "NOT ACTIVE"}</p>{expiry && <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{active ? "Free trial active until " : "Trial ended on "}{expiry}</p>}</div>
+              <div className="rounded-2xl bg-slate-50 p-5 dark:bg-slate-800/70"><p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">Current status</p><p className={`mt-2 flex items-center gap-2 text-lg font-bold ${active ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"}`}>{active ? <CheckCircle2 size={20} /> : <AlertCircle size={20} />}{active ? (profile.trial_active ? "ACTIVE — FREE TRIAL" : "ACTIVE") : "NOT ACTIVE"}</p>{expiry && <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{active ? (profile.trial_active ? "Free trial active until " : "Valid until ") : "Expired on "}{expiry}</p>}</div>
               <div className="rounded-2xl bg-slate-50 p-5 dark:bg-slate-800/70"><p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">Plan</p><p className="mt-2 text-lg font-bold text-slate-900 dark:text-white">Worker / Employee</p><p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{active ? "1 Month Free Trial" : "₹200 / month"}</p><p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{active ? "No payment required while the free trial is active." : "Cashfree monthly plan applies after trial expiry."}</p></div>
             </div>
             {message && <p className={`mt-6 rounded-xl px-4 py-3 text-sm ${paymentState === "success" ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300" : "bg-blue-50 text-blue-800 dark:bg-blue-950/40 dark:text-blue-300"}`} role="status">{paymentState === "success" && "✓ "}{message}</p>}

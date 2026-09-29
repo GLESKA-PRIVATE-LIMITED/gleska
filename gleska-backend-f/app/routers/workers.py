@@ -1,11 +1,13 @@
 """Worker-specific endpoints."""
 
 import logging
+import math
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, status, Depends
 from app.core.security import get_current_user, require_worker
+from app.core.config import settings
 from app.core.supabase import supabase
 from app.schemas.auth import UserResponse
 from app.services.auth_service import AuthService
@@ -80,6 +82,54 @@ def _is_current_location_fresh(updated_at: Any) -> bool:
     if updated_at.tzinfo is None:
         updated_at = updated_at.replace(tzinfo=timezone.utc)
     return datetime.now(timezone.utc) - updated_at <= CURRENT_LOCATION_MAX_AGE
+
+
+def _valid_profile_current_location(response: Any) -> dict[str, Any] | None:
+    if response is None:
+        return None
+
+    location = getattr(response, "data", None)
+    if isinstance(location, list):
+        location = location[0] if location else None
+    if not isinstance(location, dict):
+        return None
+
+    latitude = location.get("latitude")
+    longitude = location.get("longitude")
+    accuracy = location.get("accuracy_m")
+    if isinstance(latitude, bool) or isinstance(longitude, bool) or isinstance(accuracy, bool):
+        return None
+    try:
+        latitude = float(latitude)
+        longitude = float(longitude)
+        accuracy = float(accuracy)
+    except (TypeError, ValueError):
+        return None
+    if (
+        not math.isfinite(latitude)
+        or not math.isfinite(longitude)
+        or not math.isfinite(accuracy)
+        or not -90 <= latitude <= 90
+        or not -180 <= longitude <= 180
+        or not 0 < accuracy <= 1000
+    ):
+        return None
+
+    updated_at = location.get("updated_at")
+    try:
+        if not _is_current_location_fresh(updated_at):
+            return None
+    except (OverflowError, TypeError, ValueError):
+        return None
+
+    address = location.get("address")
+    return {
+        "latitude": latitude,
+        "longitude": longitude,
+        "accuracy_m": accuracy,
+        "address": address if isinstance(address, str) else None,
+        "updated_at": updated_at,
+    }
 
 
 def _parse_location_coordinates(value: Any) -> tuple[float, float] | None:
@@ -284,16 +334,28 @@ async def get_worker_profile(user: UserResponse = Depends(require_worker)):
             )
 
         profile = response.data
+        current_location_response = (
+            supabase.table("worker_current_locations")
+            .select("latitude, longitude, accuracy_m, address, updated_at")
+            .eq("worker_profile_id", profile["id"])
+            .maybe_single()
+            .execute()
+        )
+        current_location = _valid_profile_current_location(current_location_response)
+        if current_location is not None:
+            profile = {**profile, "current_location": current_location}
         entitlement = worker_state(profile)
         return WorkerProfileResponse(**{**profile, **entitlement})
 
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception as exc:
+        if settings.ENVIRONMENT != "production":
+            logger.exception("Worker profile request failed")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
-        )
+            detail="WORKER_PROFILE_READ_FAILED",
+        ) from exc
 
 
 @router.get("/me/preferences", response_model=WorkerPreferencesResponse)

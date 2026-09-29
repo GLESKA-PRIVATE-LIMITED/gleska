@@ -1,0 +1,421 @@
+.worker-settings-security-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.worker-settings-security-header {
+  align-items: flex-end;
+}
+
+.worker-settings-security-header h1 {
+  margin: 0.25rem 0;
+  font-size: 1.5rem;
+  line-height: 1.2;
+}
+
+.worker-settings-security-header > div > p:last-child {
+  margin: 0.35rem 0 0;
+  color: var(--color-text-secondary);
+  font-size: 0.875rem;
+  line-height: 1.35rem;
+}
+
+.worker-settings-security-card {
+  display: grid;
+  min-width: 0;
+  gap: 1rem;
+}
+
+.worker-settings-security-section-heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.worker-settings-security-icon {
+  display: grid;
+  width: 2.5rem;
+  height: 2.5rem;
+  flex: none;
+  place-items: center;
+  border-radius: 0.75rem;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.worker-settings-security-section-heading h2,
+.worker-settings-security-section-heading p,
+.worker-settings-security-content h3 {
+  margin: 0;
+}
+
+.worker-settings-security-section-heading h2 {
+  color: var(--color-text-primary);
+  font-size: 1.05rem;
+  font-weight: 800;
+  line-height: 1.4rem;
+}
+
+.worker-settings-security-section-heading p {
+  margin-top: 0.2rem;
+  color: var(--color-text-secondary);
+  font-size: 0.8rem;
+  line-height: 1.15rem;
+}
+
+.worker-settings-security-list,
+.worker-settings-security-content {
+  display: grid;
+  min-width: 0;
+  gap: 0.75rem;
+}
+
+.worker-settings-security-content {
+  gap: 1.5rem;
+}
+
+.worker-settings-security-content section {
+  display: grid;
+  min-width: 0;
+  gap: 0.75rem;
+}
+
+.worker-settings-security-content h3 {
+  color: var(--color-text-primary);
+  font-size: 0.95rem;
+  font-weight: 800;
+  line-height: 1.35rem;
+}
+
+.worker-settings-security-content h3 span {
+  color: var(--color-text-secondary);
+  font-weight: 500;
+}
+
+.worker-settings-security-preference {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  min-height: 4.25rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
+  background: var(--color-surface);
+  padding: 0.75rem;
+  text-align: left;
+}
+
+.worker-settings-security-preference-copy {
+  display: grid;
+  min-width: 0;
+  gap: 0.25rem;
+}
+
+.worker-settings-security-preference-copy strong {
+  color: var(--color-text-primary);
+  font-size: 0.875rem;
+  line-height: 1.2rem;
+}
+
+.worker-settings-security-preference-copy > span {
+  color: var(--color-text-secondary);
+  font-size: 0.75rem;
+  line-height: 1.1rem;
+}
+
+.worker-settings-security-toggle {
+  display: inline-flex;
+  width: 2.75rem;
+  height: 1.5rem;
+  flex: none;
+  align-items: center;
+  border-radius: 999px;
+  background: #cbd5e1;
+  padding: 0.25rem;
+  transition: background-color 150ms ease;
+}
+
+.worker-settings-security-toggle.is-on {
+  background: var(--color-primary);
+}
+
+.worker-settings-security-toggle > span {
+  width: 1rem;
+  height: 1rem;
+  border-radius: 50%;
+  background: white;
+  transition: transform 150ms ease;
+}
+
+.worker-settings-security-toggle.is-on > span {
+  transform: translateX(1.25rem);
+}
+
+.worker-settings-security-saving-icon {
+  flex: none;
+  color: var(--color-primary);
+}
+
+.worker-settings-security-saving {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  color: #1d4ed8;
+  font-size: 0.8rem;
+}
+
+.worker-settings-security-success,
+.worker-settings-security-error,
+.worker-settings-security-error-message {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin: 0;
+  border: 1px solid #a7f3d0;
+  border-radius: 0.75rem;
+  background: #ecfdf5;
+  padding: 0.75rem;
+  color: #047857;
+  font-size: 0.85rem;
+  line-height: 1.25rem;
+}
+
+.worker-settings-security-success svg {
+  flex: none;
+}
+
+.worker-settings-security-error,
+.worker-settings-security-error-message {
+  border-color: #fecdd3;
+  background: #fff1f2;
+  color: #be123c;
+}
+
+.worker-settings-security-error {
+  display: grid;
+  justify-items: start;
+}
+
+.worker-settings-security-error p,
+.worker-settings-security-error-message {
+  margin: 0;
+}
+
+.worker-settings-security-session,
+.worker-settings-security-activity {
+  display: grid;
+  min-width: 0;
+  gap: 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
+  background: var(--color-surface);
+  padding: 0.875rem;
+}
+
+.worker-settings-security-session-main {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 0.625rem;
+}
+
+.worker-settings-security-session-main > svg {
+  flex: none;
+  margin-top: 0.1rem;
+  color: var(--color-text-secondary);
+}
+
+.worker-settings-security-session-copy {
+  display: grid;
+  min-width: 0;
+  gap: 0.25rem;
+}
+
+.worker-settings-security-session-copy p,
+.worker-settings-security-activity p,
+.worker-settings-security-activity small {
+  overflow-wrap: anywhere;
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: 0.75rem;
+  line-height: 1.15rem;
+}
+
+.worker-settings-security-session-copy .worker-settings-security-session-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--color-text-primary);
+  font-size: 0.875rem;
+  font-weight: 750;
+  line-height: 1.2rem;
+}
+
+.worker-settings-security-current {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  border-radius: 999px;
+  background: #ecfdf5;
+  padding: 0.15rem 0.4rem;
+  color: #047857;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.worker-settings-security-current svg {
+  flex: none;
+}
+
+.worker-settings-security-revoke {
+  display: inline-flex;
+  min-height: 2.5rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  border: 1px solid #fecdd3;
+  border-radius: 0.625rem;
+  background: white;
+  padding: 0.5rem 0.75rem;
+  color: #be123c;
+  font-size: 0.8rem;
+  font-weight: 750;
+}
+
+.worker-settings-security-revoke:disabled {
+  opacity: 0.55;
+}
+
+.worker-settings-security-activity {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.worker-settings-security-activity > div {
+  display: grid;
+  min-width: 0;
+  gap: 0.25rem;
+}
+
+.worker-settings-security-activity strong {
+  color: var(--color-text-primary);
+  font-size: 0.85rem;
+  font-weight: 750;
+  text-transform: capitalize;
+}
+
+.worker-settings-security-activity small {
+  display: block;
+}
+
+.worker-settings-security-activity time {
+  color: var(--color-text-secondary);
+  font-size: 0.7rem;
+  line-height: 1.1rem;
+}
+
+.worker-settings-security-dialog-backdrop {
+  position: fixed;
+  z-index: 60;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow-y: auto;
+  background: rgb(15 23 42 / 55%);
+  padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
+}
+
+.worker-settings-security-dialog {
+  width: min(100%, 26rem);
+  border: 1px solid var(--color-border);
+  border-radius: 1rem;
+  background: var(--color-surface);
+  padding: 1.125rem;
+  box-shadow: 0 18px 40px rgb(15 23 42 / 24%);
+}
+
+.worker-settings-security-dialog-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.worker-settings-security-dialog-heading h2,
+.worker-settings-security-dialog-heading p {
+  margin: 0;
+}
+
+.worker-settings-security-dialog-heading h2 {
+  color: var(--color-text-primary);
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.worker-settings-security-dialog-heading p {
+  margin-top: 0.4rem;
+  color: var(--color-text-secondary);
+  font-size: 0.85rem;
+  line-height: 1.3rem;
+}
+
+.worker-settings-security-dialog-heading > button {
+  display: grid;
+  width: 2.25rem;
+  height: 2.25rem;
+  min-height: 2.25rem;
+  flex: none;
+  place-items: center;
+  border: 0;
+  border-radius: 0.5rem;
+  background: transparent;
+  color: var(--color-text-secondary);
+}
+
+.worker-settings-security-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.625rem;
+  margin-top: 1.25rem;
+}
+
+.worker-settings-security-revoke--confirm {
+  border-color: transparent;
+  background: #e11d48;
+  color: white;
+}
+
+@media (min-width: 40rem) {
+  .worker-settings-security-page {
+    gap: 1.25rem;
+  }
+
+  .worker-settings-security-header h1 {
+    font-size: 1.75rem;
+  }
+
+  .worker-settings-security-card {
+    padding: 1.5rem;
+  }
+
+  .worker-settings-security-preference {
+    padding: 1rem;
+  }
+
+  .worker-settings-security-session {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    padding: 1rem;
+  }
+
+  .worker-settings-security-activity {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    padding: 1rem;
+  }
+}

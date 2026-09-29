@@ -10,7 +10,7 @@ import AccountManagementShell from "@/components/AccountManagementShell";
 import { useAuth } from "@/context/AuthContext";
 import apiClient from "@/lib/api";
 import { getLocationErrorMessage, normalizeCoordinates, shouldSendLiveLocationUpdate, type LiveLocationSnapshot } from "@/lib/location";
-import { formatSubscriptionExpiry, isSubscriptionActive } from "@/lib/subscription";
+import { formatSubscriptionExpiry } from "@/lib/subscription";
 
 type WorkerProfile = {
   profile_completed: boolean;
@@ -18,6 +18,7 @@ type WorkerProfile = {
   address?: string | null;
   city?: string | null;
   state?: string | null;
+  current_location?: { address?: string | null } | null;
   latitude?: number | null;
   longitude?: number | null;
   subscription_valid_until?: string | null;
@@ -91,7 +92,7 @@ export default function WorkerDashboard() {
     try {
       const response = await apiClient.get<WorkerProfile>("/api/v1/workers/me");
       setProfile(response.data);
-      setCurrentLocationAddress(response.data.address || [response.data.city, response.data.state].filter(Boolean).join(", "));
+      setCurrentLocationAddress(response.data.current_location?.address || response.data.address || [response.data.city, response.data.state].filter(Boolean).join(", "));
     } catch {
       setErrors((current) => ({ ...current, profile: "Unable to load your profile summary." }));
     } finally {
@@ -220,14 +221,8 @@ export default function WorkerDashboard() {
   };
 
   const location = currentLocationAddress || profile?.address || [profile?.city, profile?.state].filter(Boolean).join(", ");
-  const subscriptionActive =
-    profile?.subscription_active === true ||
-    profile?.trial_active === true ||
-    isSubscriptionActive(profile?.subscription_valid_until) ||
-    isSubscriptionActive(profile?.trial_ends_at);
-  const trialActive =
-    profile?.trial_active === true ||
-    isSubscriptionActive(profile?.trial_ends_at);
+  const subscriptionActive = profile?.subscription_active === true;
+  const trialActive = profile?.trial_active === true;
   const subscriptionExpiry =
     formatSubscriptionExpiry(profile?.subscription_valid_until) ||
     formatSubscriptionExpiry(profile?.trial_ends_at);

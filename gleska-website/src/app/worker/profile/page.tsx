@@ -1,6 +1,6 @@
 "use client";
 
-import React, { FormEvent, useEffect, useRef, useState } from "react";
+import React, { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   User,
@@ -13,10 +13,7 @@ import {
   Briefcase,
   Save,
   Camera,
-  Star,
   Home,
-  Check,
-  Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 import apiClient from "@/lib/api";
@@ -25,6 +22,7 @@ import LocationPicker, { LocationSelection } from "@/components/LocationPicker";
 import { getBrowserLocation } from "@/lib/location";
 import { useWorkerProfilePhoto } from "@/lib/useWorkerProfilePhoto";
 import AccountManagementShell from "@/components/AccountManagementShell";
+import { WorkerErrorState, WorkerPageFrame, WorkerPageHeader } from "@/components/worker/WorkspaceUI";
 
 type Profile = {
   trade_id?: string | null;
@@ -42,6 +40,9 @@ type Profile = {
   blood_group?: string | null;
   skills?: string[] | null;
   profile_completed?: boolean;
+  trial_active?: boolean;
+  subscription_active?: boolean;
+  payment_required?: boolean;
 };
 
 export default function WorkerProfilePage() {
@@ -50,15 +51,14 @@ export default function WorkerProfilePage() {
 
   // Profile data states
   const [profile, setProfile] = useState<Profile>({ availability_status: "OFFLINE" });
-  const [initialProfile, setInitialProfile] = useState<Profile>({ availability_status: "OFFLINE" });
   const [loading, setLoading] = useState(true);
+  const [profileLoadError, setProfileLoadError] = useState("");
   const [saving, setSaving] = useState(false);
   const [detectedLocation, setDetectedLocation] = useState<LocationSelection | null>(null);
 
-  // Local display states (matching Figma fields)
-  const [maritalStatus, setMaritalStatus] = useState("Unmarried");
-  const [bloodGroup, setBloodGroup] = useState("AB+");
-  const [skills, setSkills] = useState<string[]>(["Electrician", "Wiring", "Panel Repair", "Troubleshooting"]);
+  const [maritalStatus, setMaritalStatus] = useState("");
+  const [bloodGroup, setBloodGroup] = useState("");
+  const [skills, setSkills] = useState<string[]>([]);
   const [newSkillInput, setNewSkillInput] = useState("");
   const [showSkillInput, setShowSkillInput] = useState(false);
 
@@ -75,51 +75,34 @@ export default function WorkerProfilePage() {
   const [phoneInput, setPhoneInput] = useState("");
   const [emailInput, setEmailInput] = useState("");
 
-  // Fetch worker profile on mount
+  const loadProfile = useCallback(async () => {
+    if (!user || user.role !== "WORKER") return;
+    setLoading(true);
+    setProfileLoadError("");
+    try {
+      const response = await apiClient.get<Profile>("/api/v1/workers/me");
+      setProfile(response.data);
+      setDisplayNameInput(user.name || "");
+      setPhoneInput(user.mobile || "");
+      setEmailInput(user.email || "");
+      setMaritalStatus(response.data.marital_status || "");
+      setBloodGroup(response.data.blood_group || "");
+      setSkills(Array.isArray(response.data.skills) ? response.data.skills : []);
+    } catch (error: unknown) {
+      const detail = (error as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+      setProfileLoadError(typeof detail === "string" ? detail : "Unable to load your profile. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
   useEffect(() => {
     if (!isLoading && (!user || user.role !== "WORKER")) {
       router.replace("/worker/auth");
       return;
     }
-    if (isLoading || !user || user.role !== "WORKER") return;
-
-    setDisplayNameInput(user.name || "");
-    setPhoneInput(user.mobile || "");
-    setEmailInput(user.email || "");
-    setMaritalStatus("Unmarried");
-    setBloodGroup("A+");
-
-    apiClient
-      .get("/api/v1/workers/me")
-      .then((response) => {
-        setProfile(response.data);
-        setInitialProfile(response.data);
-
-        // Load marital status and blood group from API (default if not set)
-        if (response.data.marital_status) {
-          setMaritalStatus(response.data.marital_status);
-        } else {
-          setMaritalStatus("Unmarried");
-        }
-        if (response.data.blood_group) {
-          setBloodGroup(response.data.blood_group);
-        } else {
-          setBloodGroup("A+");
-        }
-
-        // Load skills from API or populate from trade_id
-        if (response.data.skills && Array.isArray(response.data.skills)) {
-          setSkills(response.data.skills);
-        } else if (response.data.trade_id) {
-          const trade = response.data.trade_id;
-          if (!skills.includes(trade)) {
-            setSkills((prev) => Array.from(new Set([trade, ...prev])));
-          }
-        }
-      })
-      .catch(() => toast.error("Unable to load your profile"))
-      .finally(() => setLoading(false));
-  }, [isLoading, user, router]);
+    if (!isLoading && user?.role === "WORKER") void Promise.resolve().then(loadProfile);
+  }, [isLoading, loadProfile, router, user]);
 
   // Location handlers
   const selectLocation = (location: LocationSelection) => {
@@ -135,7 +118,7 @@ export default function WorkerProfilePage() {
     }));
   };
 
-  const useCurrentLocation = async () => {
+  const detectCurrentLocation = async () => {
     try {
       const coordinates = await getBrowserLocation();
       const response = await apiClient.get("/api/v1/locations/reverse", {
@@ -156,7 +139,7 @@ export default function WorkerProfilePage() {
       if (error instanceof Error) {
         if ("code" in error && error.code === "INACCURATE") {
           // Accuracy > 1000m
-          const accuracy = (error as any).accuracy;
+          const accuracy = (error as Error & { accuracy?: number }).accuracy ?? 0;
           toast.error(`Location accuracy is too low (${Math.round(accuracy / 1000)}km). Enable device location services or try from a device with GPS.`);
         } else if ("code" in error && typeof error.code === "number") {
           // GeolocationPositionError
@@ -198,7 +181,6 @@ export default function WorkerProfilePage() {
         location_source: "GPS",
       });
       setProfile((current) => ({ ...current, ...profileResponse.data, address: response.data.address || profileResponse.data.address }));
-      setInitialProfile((current) => ({ ...current, ...profileResponse.data, address: response.data.address || profileResponse.data.address }));
       setDetectedLocation(null);
       toast.success("GPS Location updated");
     } catch {
@@ -231,20 +213,15 @@ export default function WorkerProfilePage() {
         name: displayNameInput.trim(),
         mobile: phoneInput.trim(),
         email: emailInput.trim() || null,
-        marital_status: maritalStatus,
-        blood_group: bloodGroup,
+        marital_status: maritalStatus || null,
+        blood_group: bloodGroup || null,
         skills,
       });
       setProfile(response.data);
-      setInitialProfile(response.data);
 
       // Update marital/blood/skills from response
-      if (response.data.marital_status) {
-        setMaritalStatus(response.data.marital_status);
-      }
-      if (response.data.blood_group) {
-        setBloodGroup(response.data.blood_group);
-      }
+      setMaritalStatus(response.data.marital_status || "");
+      setBloodGroup(response.data.blood_group || "");
       if (response.data.skills && Array.isArray(response.data.skills)) {
         setSkills(response.data.skills);
       }
@@ -254,8 +231,9 @@ export default function WorkerProfilePage() {
       setIsEditingProfessional(false);
       toast.success("Profile saved successfully");
       await refreshUser();
-    } catch (error: any) {
-      toast.error(error.response?.data?.detail || "Unable to save profile");
+    } catch (error: unknown) {
+      const detail = (error as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+      toast.error(typeof detail === "string" ? detail : "Unable to save profile");
     } finally {
       setSaving(false);
     }
@@ -299,6 +277,18 @@ export default function WorkerProfilePage() {
   };
 
   const profileStrength = calculateProfileStrength();
+  const membershipStatus = profile.trial_active
+    ? "Free Trial"
+    : profile.subscription_active
+      ? "Active Subscription"
+      : profile.payment_required
+        ? "Payment Required"
+        : null;
+  const availabilityLabel = profile.availability_status === "AVAILABLE"
+    ? "Available"
+    : profile.availability_status === "ON_JOB"
+      ? "On a job"
+      : "Offline";
 
   if (isLoading || loading || !user) {
     return (
@@ -311,6 +301,19 @@ export default function WorkerProfilePage() {
     );
   }
 
+  if (profileLoadError) {
+    return (
+      <AccountManagementShell kind="worker" name={user.name || "Worker"} accountLabel="Worker" profileHref="/worker/profile" onLogout={() => void handleLogout()}>
+        <WorkerPageFrame>
+          <WorkerPageHeader title="Your Profile" description="View and update your personal and professional details." />
+          <div className="mt-6">
+            <WorkerErrorState message={profileLoadError} onRetry={() => void loadProfile()} />
+          </div>
+        </WorkerPageFrame>
+      </AccountManagementShell>
+    );
+  }
+
   return (
     <AccountManagementShell kind="worker" name={user.name || "Worker"} accountLabel="Worker" profileHref="/worker/profile" onLogout={() => void handleLogout()}>
     <div className="flex flex-col md:flex-row min-h-screen bg-[#eef1fb] font-sans text-slate-900 dark:bg-slate-950 dark:text-slate-100">
@@ -318,25 +321,15 @@ export default function WorkerProfilePage() {
       <div className="flex-1 flex flex-col min-w-0 min-h-screen overflow-y-auto">
         <main className="flex-1 mx-auto w-full max-w-7xl px-4 sm:px-6 py-6 sm:py-8 space-y-6 pb-12">
           {/* Top Banner Card matching Figma */}
-          <div className="relative overflow-hidden rounded-3xl bg-linear-to-r from-blue-600 via-indigo-600 to-purple-600 p-6 sm:p-8 text-white shadow-xl">
+          <div className="relative overflow-hidden rounded-3xl bg-linear-to-r from-blue-600 via-indigo-600 to-purple-600 p-5 sm:p-6 text-white shadow-xl">
             {/* Ambient Background Accents */}
             <div className="pointer-events-none absolute -top-24 -right-24 h-72 w-72 rounded-full bg-white/10 blur-3xl" />
             <div className="pointer-events-none absolute -bottom-24 -left-24 h-72 w-72 rounded-full bg-purple-400/20 blur-3xl" />
 
-            <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-              {/* Left Side Header Text + Profile Strength */}
-              <div className="space-y-4 max-w-lg">
-                <div>
-                  <h1 className="font-(--font-anton) text-3xl sm:text-4xl uppercase tracking-wide">
-                    Your Profile
-                  </h1>
-                  <p className="text-blue-100 text-sm sm:text-base mt-1">
-                    Let others know who you are
-                  </p>
-                </div>
-
+            <div className="relative z-10 grid min-w-0 gap-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+              <div className="min-w-0 max-w-lg">
                 {/* Profile Strength Box */}
-                <div className="rounded-2xl bg-white/15 backdrop-blur-md p-4 border border-white/20 shadow-inner w-full max-w-sm">
+                <div className="w-full max-w-sm rounded-2xl border border-white/20 bg-white/15 p-3.5 shadow-inner backdrop-blur-md sm:p-4">
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-xs font-bold uppercase tracking-wider text-blue-100">
                       Profile Strength
@@ -355,22 +348,20 @@ export default function WorkerProfilePage() {
                 </div>
               </div>
 
-              {/* Right Side Avatar + Name + Badge */}
-              <div className="flex items-center gap-4 sm:gap-6 self-start md:self-center">
-                <div className="text-right hidden sm:block">
-                  <div className="flex items-center justify-end gap-1.5">
-                    <h2 className="text-2xl font-bold text-white">{user.name || "Worker"}</h2>
-                    <CheckCircle2 size={20} className="text-blue-300 fill-blue-500 shrink-0" />
+              <div className="flex min-w-0 items-center justify-between gap-3 md:justify-end md:gap-5">
+                <div className="min-w-0">
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    <h2 className="break-words text-xl font-bold text-white sm:text-2xl">{user.name || "Worker"}</h2>
+                    {user.is_mobile_verified && <CheckCircle2 size={20} className="shrink-0 fill-blue-500 text-blue-300" />}
                   </div>
-                  <div className="mt-1.5 flex justify-end">
-                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-400 px-3 py-1 text-xs font-extrabold text-slate-950 uppercase tracking-wide shadow-xs">
-                      <Star size={12} className="fill-slate-950" /> Premium Member
-                    </span>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <span className="inline-flex max-w-full items-center rounded-full bg-white/15 px-3 py-1 text-xs font-bold uppercase tracking-wide text-white">{availabilityLabel}</span>
+                    {membershipStatus && <span className="inline-flex max-w-full items-center rounded-full bg-slate-900/15 px-3 py-1 text-xs font-bold text-white">{membershipStatus}</span>}
                   </div>
                 </div>
 
-                <div className="relative">
-                  <div className="flex h-20 w-20 sm:h-24 sm:w-24 items-center justify-center overflow-hidden rounded-full border-4 border-white/30 bg-blue-500 text-3xl font-extrabold text-white shadow-xl backdrop-blur-md">
+                <div className="relative shrink-0">
+                  <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-full border-4 border-white/30 bg-blue-500 text-2xl font-extrabold text-white shadow-xl backdrop-blur-md sm:h-20 sm:w-20">
                     {user.profile_photo_url ? (
                       <img src={user.profile_photo_url} alt="Profile" className="h-full w-full object-cover" />
                     ) : (
@@ -383,7 +374,7 @@ export default function WorkerProfilePage() {
                     title="Change profile photo"
                     onClick={() => profilePhotoInputRef.current?.click()}
                     disabled={isProfilePhotoUploading}
-                    className="absolute bottom-0 right-0 flex h-8 w-8 items-center justify-center rounded-full bg-white text-blue-600 shadow-md hover:scale-110 transition cursor-pointer"
+                    className="absolute bottom-0 right-0 flex h-8 w-8 items-center justify-center rounded-full bg-white text-blue-600 shadow-md transition hover:scale-110"
                   >
                     <Camera size={16} />
                   </button>
@@ -604,7 +595,7 @@ export default function WorkerProfilePage() {
                       </div>
                       <button
                         type="button"
-                        onClick={() => void useCurrentLocation()}
+                        onClick={() => void detectCurrentLocation()}
                         className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline shrink-0"
                       >
                         Detect GPS &gt;
@@ -644,7 +635,7 @@ export default function WorkerProfilePage() {
                       <LocationPicker
                         value={profile.address || ""}
                         onSelect={selectLocation}
-                        onUseCurrentLocation={useCurrentLocation}
+                        onUseCurrentLocation={detectCurrentLocation}
                       />
                       <div className="grid grid-cols-2 gap-3">
                         <div>
@@ -757,6 +748,7 @@ export default function WorkerProfilePage() {
                       SKILLS / EXPERTISE
                     </p>
                     <div className="flex flex-wrap items-center gap-2 pt-1">
+                      {skills.length === 0 && <p className="w-full text-sm text-slate-500 dark:text-slate-400">No skills added yet</p>}
                       {skills.map((skill, index) => (
                         <span
                           key={index}
@@ -882,16 +874,17 @@ export default function WorkerProfilePage() {
           </div>
         </main>
 
-        {/* Fixed Floating Save Changes Button */}
-        <button
-          type="button"
-          disabled={saving}
-          onClick={() => void save()}
-          className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-2xl bg-blue-600 px-6 py-3 font-bold text-white shadow-2xl hover:bg-blue-500 active:scale-95 transition disabled:opacity-50 cursor-pointer"
-        >
-          {saving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
-          <span>Save Changes</span>
-        </button>
+        <div className="mx-auto flex w-full max-w-7xl justify-end px-4 pb-8 sm:px-6">
+          <button
+            type="button"
+            disabled={saving}
+            onClick={() => void save()}
+            className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-bold text-white shadow-md transition hover:bg-blue-500 active:scale-95 disabled:opacity-50"
+          >
+            {saving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+            <span>Save Changes</span>
+          </button>
+        </div>
       </div>
     </div>
     </AccountManagementShell>

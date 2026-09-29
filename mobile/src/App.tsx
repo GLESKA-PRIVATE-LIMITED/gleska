@@ -18,6 +18,8 @@ import WorkerDocumentsScreen from "./features/worker/WorkerDocumentsScreen";
 import WorkerMobileShell from "./features/worker/WorkerMobileShell";
 import WorkerProfileScreen from "./features/worker/WorkerProfileScreen";
 import WorkerSubscriptionScreen from "./features/worker/WorkerSubscriptionScreen";
+import WorkerSettingsSecurityScreen from "./features/worker/WorkerSettingsSecurityScreen";
+import WorkerHelpScreen from "./features/worker/WorkerHelpScreen";
 import { workerNavigation } from "./features/worker/workerNavigation";
 import { routeForAuthState } from "./types/auth";
 
@@ -84,6 +86,22 @@ function WorkerSubscriptionRoute() {
   return <WorkerSubscriptionScreen />;
 }
 
+function WorkerSettingsSecurityRoute() {
+  const { user, nextStep, isLoading } = useAuth();
+  if (isLoading) return <LoadingScreen />;
+  if (!user) return <Navigate to="/auth/signin" replace />;
+  if (user.role !== "WORKER") return <Navigate to={nextStep ? routeForAuthState(user.role, nextStep) : "/auth/signin"} replace />;
+  return <WorkerSettingsSecurityScreen />;
+}
+
+function WorkerHelpRoute() {
+  const { user, nextStep, isLoading } = useAuth();
+  if (isLoading) return <LoadingScreen />;
+  if (!user) return <Navigate to="/auth/signin" replace />;
+  if (user.role !== "WORKER") return <Navigate to={nextStep ? routeForAuthState(user.role, nextStep) : "/auth/signin"} replace />;
+  return <WorkerHelpScreen />;
+}
+
 function WorkerRouteUnavailable({ label }: { label: string }) {
   const { user, nextStep, isLoading } = useAuth();
   if (isLoading) return <LoadingScreen />;
@@ -119,6 +137,8 @@ function AppRoutes() {
     if (screen === "companies-worked") return <Route key={href} path={href} element={<WorkerCompaniesWorkedRoute />} />;
     if (screen === "documents") return <Route key={href} path={href} element={<WorkerDocumentsRoute />} />;
     if (screen === "subscription") return <Route key={href} path={href} element={<WorkerSubscriptionRoute />} />;
+    if (screen === "settings-security") return <Route key={href} path={href} element={<WorkerSettingsSecurityRoute />} />;
+    if (screen === "help") return <Route key={href} path={href} element={<WorkerHelpRoute />} />;
     return <Route key={href} path={href} element={<WorkerRouteUnavailable label={label} />} />;
   });
 
@@ -131,6 +151,8 @@ function AppRoutes() {
     <Route path="/auth/reset-password" element={<ResetPasswordScreen />} />
     <Route path="/auth/callback" element={<OAuthCallbackScreen />} />
     <Route path="/worker/onboarding" element={<Navigate to="/worker/dashboard" replace />} />
+    <Route path="/worker/settings" element={<Navigate to="/worker/settings-security" replace />} />
+    <Route path="/worker/security" element={<Navigate to="/worker/settings-security" replace />} />
     {workerRoutes}
     <Route path="/employer/onboarding" element={<EmployerOnboardingRoute />} />
     <Route path="/employer/dashboard" element={<DashboardRoute role="EMPLOYER" />} />
