@@ -106,7 +106,7 @@ export default function WorkerSubscriptionPage() {
       return;
     }
     if (nextStep !== "DASHBOARD") {
-      router.replace("/worker/onboarding");
+      router.replace("/worker/dashboard");
       return;
     }
     const requestId = profileRequestRef.current + 1;

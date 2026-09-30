@@ -16,7 +16,6 @@ class OnboardingService:
         "REGISTERED_INDUSTRY_DETAILS",
         "REGISTERED_BUSINESS_DETAILS",
         "UNREGISTERED_BUSINESS_DETAILS",
-        "INDIVIDUAL_DETAILS",
     ]:
         if user.role == "WORKER":
             return "DASHBOARD"
@@ -39,6 +38,8 @@ class OnboardingService:
 
                 if onboarding_status == "COMPLETED":
                     return "DASHBOARD"
+                if employer_type == "INDIVIDUAL":
+                    return "DASHBOARD"
                 if onboarding_status == "NOT_STARTED":
                     return "EMPLOYER_TYPE_SELECTION"
                 if employer_type == "REGISTERED_INDUSTRY":
@@ -47,8 +48,6 @@ class OnboardingService:
                     return "REGISTERED_BUSINESS_DETAILS"
                 if employer_type == "UNREGISTERED_BUSINESS":
                     return "UNREGISTERED_BUSINESS_DETAILS"
-                if employer_type == "INDIVIDUAL":
-                    return "INDIVIDUAL_DETAILS"
                 return "EMPLOYER_TYPE_SELECTION"
             except Exception:
                 return "EMPLOYER_TYPE_SELECTION"
@@ -62,7 +61,6 @@ class OnboardingService:
         "REGISTERED_INDUSTRY_DETAILS",
         "REGISTERED_BUSINESS_DETAILS",
         "UNREGISTERED_BUSINESS_DETAILS",
-        "INDIVIDUAL_DETAILS",
     ]:
         return OnboardingService.determine_next_step(user)
 
@@ -82,14 +80,13 @@ class OnboardingService:
         if employer_type == "REGISTERED_INDUSTRY":
             required_fields = [
                 "business_name",
+                "business_type",
+                "business_category",
                 "industry_type",
                 "industry_category",
                 "registered_address",
                 "company_email",
                 "company_phone",
-                "city",
-                "state",
-                "pincode",
                 "work_location",
                 "director_name",
                 "director_phone",
@@ -116,7 +113,7 @@ class OnboardingService:
                 "director_aadhaar",
             ]
             if require_registered_business_location:
-                required_fields.extend(["registered_address", "city", "state", "pincode", "work_location"])
+                required_fields.extend(["registered_address", "work_location"])
             if require_all_fields:
                 for field in required_fields:
                     if OnboardingService._missing_required_value(data.get(field)):
@@ -125,18 +122,13 @@ class OnboardingService:
         elif employer_type == "UNREGISTERED_BUSINESS":
             required_fields = [
                 "business_name",
-                "business_type",
-                "nature_of_business",
+                "business_category",
                 "number_of_proprietors",
                 "company_email",
                 "company_phone",
                 "proprietor_name",
                 "proprietor_aadhaar",
-                "industry_category",
                 "address",
-                "city",
-                "state",
-                "pincode",
                 "work_location",
             ]
             if require_all_fields:
@@ -147,10 +139,20 @@ class OnboardingService:
             num_proprietors = data.get("number_of_proprietors")
             if num_proprietors is not None:
                 try:
-                    if int(num_proprietors) < 1:
+                    normalized_count = int(num_proprietors)
+                    if normalized_count < 1:
                         return False, "number_of_proprietors must be at least 1"
                 except (ValueError, TypeError):
                     return False, "number_of_proprietors must be a valid number"
+
+                proprietor_names = data.get("proprietor_names")
+                if proprietor_names is None:
+                    if require_all_fields and normalized_count > 1:
+                        return False, "proprietor_names is required for each proprietor"
+                elif len(proprietor_names) != normalized_count:
+                    return False, "proprietor_names must match number_of_proprietors"
+                elif any(not str(name).strip() for name in proprietor_names):
+                    return False, "Every proprietor name is required"
 
         elif employer_type == "INDIVIDUAL":
             required_fields = [

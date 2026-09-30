@@ -38,10 +38,14 @@ class FakeSupabase:
 
 
 @pytest.mark.asyncio
-async def test_unregistered_aadhaar_requires_real_provider_and_uses_saved_proprietor(monkeypatch):
+async def test_unregistered_aadhaar_uses_authenticated_registrant_name(monkeypatch):
     fake = FakeSupabase(
         {"id": "employer-id", "employer_type": "UNREGISTERED_BUSINESS"},
-        {"proprietor_aadhaar": "123456789012"},
+        {
+            "proprietor_aadhaar": "123456789012",
+            "proprietor_name": "Amit Kumar",
+            "proprietor_names": ["Amit Kumar", "Rahul Sharma"],
+        },
     )
     monkeypatch.setattr(employers, "supabase", fake)
     monkeypatch.setattr(
@@ -71,11 +75,58 @@ async def test_unregistered_aadhaar_requires_real_provider_and_uses_saved_propri
     monkeypatch.setattr(VerificationService, "request_verification", staticmethod(request_verification))
 
     with pytest.raises(HTTPException) as error:
-        await employers.request_onboarding_verification("AADHAAR", SimpleNamespace(reference=None), SimpleNamespace(id="user-id", role="EMPLOYER"))
+        await employers.request_onboarding_verification(
+            "AADHAAR",
+            SimpleNamespace(reference=None, registrant_name="Client Supplied Name"),
+            SimpleNamespace(id="user-id", role="EMPLOYER", name="Rahul Sharma"),
+        )
 
     assert error.value.status_code == 503
     assert error.value.detail["code"] == VerificationService.PROVIDER_NOT_CONFIGURED
     assert captured["args"] == ("employer-id", "AADHAAR", "UNREGISTERED_BUSINESS", "123456789012")
+    assert captured["kwargs"]["expected_details"]["proprietor_name"] == "Rahul Sharma"
+
+
+@pytest.mark.asyncio
+async def test_unregistered_aadhaar_otp_uses_authenticated_registrant_name(monkeypatch):
+    fake = FakeSupabase(
+        {"id": "employer-id", "employer_type": "UNREGISTERED_BUSINESS"},
+        {
+            "proprietor_name": "Amit Kumar",
+            "proprietor_names": ["Amit Kumar", "Rahul Sharma"],
+        },
+    )
+    monkeypatch.setattr(employers, "supabase", fake)
+    captured = {}
+
+    async def verify_aadhaar_otp(employer_id, otp, expected_details):
+        captured["employer_id"] = employer_id
+        captured["otp"] = otp
+        captured["expected_details"] = expected_details
+        return {
+            "id": "verification-id",
+            "employer_id": employer_id,
+            "verification_type": "AADHAAR",
+            "status": "VERIFIED",
+            "provider_reference_id": None,
+            "failure_reason": None,
+            "verified_at": "2026-01-01T00:00:00Z",
+            "created_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-01-01T00:00:00Z",
+            "provider": "cashfree",
+            "provider_metadata": None,
+        }
+
+    monkeypatch.setattr(VerificationService, "verify_aadhaar_otp", verify_aadhaar_otp)
+    result = await employers.verify_onboarding_aadhaar_otp(
+        SimpleNamespace(otp="123456"),
+        SimpleNamespace(id="user-id", role="EMPLOYER", name="Rahul Sharma"),
+    )
+
+    assert result.status == "VERIFIED"
+    assert captured["employer_id"] == "employer-id"
+    assert captured["otp"] == "123456"
+    assert captured["expected_details"]["proprietor_name"] == "Rahul Sharma"
 
 
 @pytest.mark.asyncio
@@ -154,6 +205,7 @@ async def test_unregistered_business_details_can_be_saved_before_aadhaar_verific
             "nature_of_business": "Retail",
             "number_of_proprietors": "1",
             "proprietor_name": "Amit Kumar",
+            "proprietor_names": ["Amit Kumar"],
             "proprietor_aadhaar": "123456789012",
             "industry_category": "Retail",
             "address": "Main Road",
@@ -168,3 +220,4 @@ async def test_unregistered_business_details_can_be_saved_before_aadhaar_verific
 
     assert result.business_name == "Local Shop"
     assert result.company_email == "owner@example.com"
+    assert result.proprietor_names == ["Amit Kumar"]

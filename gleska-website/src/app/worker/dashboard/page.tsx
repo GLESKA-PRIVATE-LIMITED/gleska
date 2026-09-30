@@ -83,7 +83,7 @@ export default function WorkerDashboard() {
 
   React.useEffect(() => {
     if (!isLoading && !user) router.replace("/worker/auth");
-    if (!isLoading && user && nextStep !== "DASHBOARD") router.replace(nextStep === "WORKER_PROFILE" ? "/worker/onboarding" : "/worker/auth");
+    if (!isLoading && user && user.role === "WORKER" && nextStep !== "DASHBOARD") router.replace("/worker/dashboard");
   }, [isLoading, nextStep, router, user]);
 
   const loadProfile = React.useCallback(async () => {

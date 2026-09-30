@@ -93,10 +93,16 @@ class EmployerOnboardingDetailsResponse(BaseModel):
     gstin: Optional[str] = None
     registration_number: Optional[str] = None
     cin_number: Optional[str] = None
+    pan_number: Optional[str] = None
+    tan_number: Optional[str] = None
     udyam_number: Optional[str] = None
+    proprietor_aadhaar: Optional[str] = None
+    bank_account_number: Optional[str] = None
+    business_document_url: Optional[str] = None
     director_data: Optional[list] = None
     nature_of_business: Optional[str] = None
     number_of_proprietors: Optional[int] = Field(default=None, ge=1)
+    proprietor_names: Optional[list[str]] = None
     company_email: Optional[str] = None
     company_phone: Optional[str] = None
     proprietor_name: Optional[str] = None
@@ -120,6 +126,7 @@ class EmployerOnboardingDetailsResponse(BaseModel):
 
 class RegisteredIndustryOnboardingSchema(BaseModel):
     """Onboarding schema for registered industry."""
+    business_type: Optional[str] = None
     industry_type: Optional[str] = None
     industry_category: Optional[str] = None
     business_name: Optional[str] = None
@@ -185,24 +192,26 @@ class RegisteredBusinessOnboardingSchema(BaseModel):
 class UnregisteredBusinessOnboardingSchema(BaseModel):
     """Onboarding schema for unregistered business."""
     business_name: str
-    business_type: str
+    business_type: Optional[str] = None
     business_category: Optional[str] = None
-    industry_category: str
-    address: str
-    city: str
-    state: str
-    pincode: str
-    work_location: str
+    industry_category: Optional[str] = None
+    address: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    pincode: Optional[str] = None
+    work_location: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     nature_of_business: Optional[str] = None
     number_of_proprietors: Optional[int] = Field(default=None, ge=1)
+    proprietor_names: Optional[list[str]] = None
     company_email: Optional[str] = None
     company_phone: Optional[str] = None
     proprietor_name: Optional[str] = None
     proprietor_aadhaar: Optional[str] = None
     udyam_number: Optional[str] = None
     website_url: Optional[str] = None
+    annual_revenue: Optional[str] = None
     description: Optional[str] = None
     services_required: Optional[list] = None
     hiring_mode: Optional[str] = None

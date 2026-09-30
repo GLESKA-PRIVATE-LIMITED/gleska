@@ -136,7 +136,6 @@ function AppRoutes() {
     <Route path="/auth/forgot-password" element={<ForgotPasswordScreen />} />
     <Route path="/auth/reset-password" element={<ResetPasswordScreen />} />
     <Route path="/auth/callback" element={<OAuthCallbackScreen />} />
-    <Route path="/worker/onboarding" element={<Navigate to="/worker/dashboard" replace />} />
     <Route path="/worker/settings" element={<Navigate to="/worker/settings-security" replace />} />
     <Route path="/worker/security" element={<Navigate to="/worker/settings-security" replace />} />
     {workerRoutes}

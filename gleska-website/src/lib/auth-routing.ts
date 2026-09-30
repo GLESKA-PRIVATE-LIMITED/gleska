@@ -4,7 +4,7 @@ type Role = "WORKER" | "EMPLOYER" | "ADMIN";
 
 export function getRouteForNextStep(role: Role, nextStep: NextStep | string | null | undefined): string {
   if (role === "WORKER") {
-    return nextStep === "DASHBOARD" ? "/worker/dashboard" : "/worker/onboarding";
+    return "/worker/dashboard";
   }
 
   if (role === "EMPLOYER") {
