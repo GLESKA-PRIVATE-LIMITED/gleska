@@ -50,6 +50,9 @@ interface EmployerDetails {
   pan_number?: string;
   tan_number?: string;
   registration_number?: string;
+  number_of_proprietors?: number;
+  proprietor_names?: string[];
+  proprietor_name?: string;
   logo_url?: string;
 }
 
@@ -59,6 +62,10 @@ export default function CompanyProfilePage() {
   const [employerProfile, setEmployerProfile] = React.useState<EmployerProfile | null>(null);
   const [isSaving, setIsSaving] = React.useState(false);
   const [isDataLoading, setIsDataLoading] = React.useState(true);
+  const [proprietorDetails, setProprietorDetails] = React.useState<{
+    count: number | null;
+    names: string[];
+  }>({ count: null, names: [] });
 
   // Real Company Information Form State
   const [formData, setFormData] = React.useState<EmployerDetails>({
@@ -98,6 +105,15 @@ export default function CompanyProfilePage() {
         if (emp) {
           setEmployerProfile(emp);
         }
+        const activeProprietorDetails = emp?.employer_type === "UNREGISTERED_BUSINESS"
+          ? det.proprietor_names || (det.proprietor_name ? [det.proprietor_name] : [])
+          : [];
+        setProprietorDetails({
+          count: emp?.employer_type === "UNREGISTERED_BUSINESS" && typeof det.number_of_proprietors === "number"
+            ? det.number_of_proprietors
+            : null,
+          names: activeProprietorDetails,
+        });
 
         // Derive real address string from stored details
         const fullAddress =
@@ -141,6 +157,15 @@ export default function CompanyProfilePage() {
               .maybeSingle();
 
             if (det) {
+              const isActiveUnregistered = prof.employer_type === "UNREGISTERED_BUSINESS";
+              setProprietorDetails({
+                count: isActiveUnregistered && typeof det.number_of_proprietors === "number"
+                  ? det.number_of_proprietors
+                  : null,
+                names: isActiveUnregistered
+                  ? det.proprietor_names || (det.proprietor_name ? [det.proprietor_name] : [])
+                  : [],
+              });
               setFormData({
                 business_name: det.business_name || prof.contact_person_name || user.name || "",
                 company_phone: det.company_phone || user.mobile || "",
@@ -610,6 +635,22 @@ export default function CompanyProfilePage() {
                       </div>
                     ))}
                   </div>}
+
+                  {isUnregistered && (proprietorDetails.count !== null || proprietorDetails.names.length > 0) && (
+                    <section className="rounded-xl border border-slate-200 p-4 dark:border-slate-800">
+                      <h4 className="text-sm font-bold text-slate-900 dark:text-white">Proprietor Details</h4>
+                      {proprietorDetails.count !== null && (
+                        <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+                          Number of Proprietors: {proprietorDetails.count}
+                        </p>
+                      )}
+                      {proprietorDetails.names.length > 0 && (
+                        <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+                          Names: {proprietorDetails.names.join(", ")}
+                        </p>
+                      )}
+                    </section>
+                  )}
 
                   {/* Verification Callout Alert Notice */}
                   {isRegistered && <div className="mt-6 flex items-start gap-3 rounded-2xl bg-blue-50/80 p-4 border border-blue-100 dark:border-blue-900/50 dark:bg-blue-950/30">

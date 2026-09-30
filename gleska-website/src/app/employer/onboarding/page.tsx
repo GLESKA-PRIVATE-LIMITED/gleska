@@ -383,6 +383,34 @@ const ONBOARDING_FIELDS = [
   "business_category",
 ];
 
+function formDataFromDetails(
+  details: Record<string, unknown>,
+  user?: { email?: string | null; mobile?: string | null },
+): OnboardingFormData {
+  const savedFormData = Object.fromEntries(
+    ONBOARDING_FIELDS.filter(
+      (field) => details[field] !== null && details[field] !== undefined
+    ).map((field) => [field, String(details[field])])
+  ) as OnboardingFormData;
+  const rawProprietorNames = Array.isArray(details.proprietor_names) && details.proprietor_names.length > 0
+    ? details.proprietor_names.map((name: unknown) => String(name ?? ""))
+    : details.proprietor_name
+    ? [String(details.proprietor_name)]
+    : [];
+  const savedProprietorCount = Math.max(0, Number(savedFormData.number_of_proprietors) || 0);
+  const savedProprietorNames = Array.from(
+    { length: savedProprietorCount },
+    (_, index) => rawProprietorNames[index] || (index === 0 ? savedFormData.proprietor_name || "" : "")
+  );
+  savedProprietorNames.forEach((name, index) => {
+    savedFormData[`proprietor_name_${index + 1}`] = name;
+  });
+  if (savedProprietorNames[0]) savedFormData.proprietor_name = savedProprietorNames[0];
+  if (!savedFormData.company_email && user?.email) savedFormData.company_email = user.email;
+  if (!savedFormData.company_phone && user?.mobile) savedFormData.company_phone = user.mobile;
+  return savedFormData;
+}
+
 export default function EmployerOnboarding() {
   const router = useRouter();
   const { user, isLoading, nextStep, logout, refreshUser } = useAuth();
@@ -448,30 +476,7 @@ export default function EmployerOnboarding() {
         const employer = response.data?.employer;
         const details = response.data?.details || {};
         const savedVerification = response.data?.verification || { required: [], records: [] };
-        const savedFormData = Object.fromEntries(
-          ONBOARDING_FIELDS.filter(
-            (field) => details[field] !== null && details[field] !== undefined
-          ).map((field) => [field, String(details[field])])
-        );
-        const rawProprietorNames = Array.isArray(details.proprietor_names) && details.proprietor_names.length > 0
-          ? details.proprietor_names.map((name: unknown) => String(name ?? ""))
-          : details.proprietor_name
-          ? [String(details.proprietor_name)]
-          : [];
-        const savedProprietorCount = Math.max(0, Number(savedFormData.number_of_proprietors) || 0);
-        const savedProprietorNames = Array.from(
-          { length: savedProprietorCount },
-          (_, index) => rawProprietorNames[index] || (index === 0 ? savedFormData.proprietor_name || "" : "")
-        );
-        savedProprietorNames.forEach((name: string, index: number) => {
-          savedFormData[`proprietor_name_${index + 1}`] = name;
-        });
-        if (savedProprietorNames[0]) {
-          savedFormData.proprietor_name = savedProprietorNames[0];
-        }
-
-        if (!savedFormData.company_email && user.email) savedFormData.company_email = user.email;
-        if (!savedFormData.company_phone && user.mobile) savedFormData.company_phone = user.mobile;
+        const savedFormData = formDataFromDetails(details, user);
 
         if (employer?.employer_type) {
           const selectedType = employer.employer_type as EmployerType;
@@ -580,20 +585,18 @@ export default function EmployerOnboarding() {
       await apiClient.post("/api/v1/employers/onboarding/type", {
         employer_type: type as EmployerType,
       });
-      const verificationResponse = await apiClient.get("/api/v1/employers/onboarding/verifications", {
+      const onboardingResponse = await apiClient.get("/api/v1/employers/onboarding", {
         withCredentials: true,
       });
+      const selectedDetails = onboardingResponse.data?.details || {};
+      const selectedFormData = formDataFromDetails(selectedDetails, user);
       const nextVerification = {
-        required: verificationResponse.data?.required || [],
-        records: verificationResponse.data?.records || [],
+        required: onboardingResponse.data?.verification?.required || [],
+        records: onboardingResponse.data?.verification?.records || [],
       };
       setVerification(nextVerification);
       setEmployerType(type as EmployerType);
-      setFormData((current) => ({
-        ...current,
-        company_email: current.company_email || user.email || "",
-        company_phone: current.company_phone || user.mobile || "",
-      }));
+      setFormData(selectedFormData);
 
       transitionToStep(1, "next");
       toast.success("Employer category set");
@@ -662,6 +665,34 @@ export default function EmployerOnboarding() {
   };
 
   const buildPayload = () => {
+    const commonFields = new Set([
+      "business_name", "business_category", "website_url", "annual_revenue", "description",
+      "company_email", "company_phone", "work_location", "latitude", "longitude", "address",
+      "hiring_mode",
+    ]);
+    const registeredFields = new Set([
+      "business_type", "registered_address", "gstin", "registration_number", "cin_number",
+      "pan_number", "udyam_number", "tan_number", "director_name", "director_phone",
+      "director_email", "director_address", "director_aadhaar",
+    ]);
+    const industryFields = new Set([
+      "industry_category", "industry_type", "nature_of_business", "services_required", "director_data",
+    ]);
+    const unregisteredFields = new Set([
+      "number_of_proprietors", "proprietor_names", "proprietor_name", "proprietor_aadhaar",
+    ]);
+    const allowedFields = new Set(commonFields);
+    if (employerType === "REGISTERED_BUSINESS" || employerType === "REGISTERED_INDUSTRY") {
+      registeredFields.forEach((field) => allowedFields.add(field));
+    }
+    if (employerType === "REGISTERED_INDUSTRY") {
+      industryFields.forEach((field) => allowedFields.add(field));
+    }
+    if (employerType === "UNREGISTERED_BUSINESS") {
+      unregisteredFields.forEach((field) => allowedFields.add(field));
+    }
+    const allowField = (field: string) =>
+      allowedFields.has(field) || (employerType === "UNREGISTERED_BUSINESS" && /^proprietor_name_\d+$/.test(field));
     const registeredIndustryCompanyFields = new Set([
       "business_name",
       "business_type",
@@ -675,14 +706,9 @@ export default function EmployerOnboarding() {
       "annual_revenue",
       "description",
     ]);
-    const payload = Object.fromEntries(
+    const payload: Record<string, string | string[]> = Object.fromEntries(
       Object.entries(formData).filter(([field, value]) => {
-        if (
-          employerType === "UNREGISTERED_BUSINESS" &&
-          (field === "proprietor_name" || /^proprietor_name_\d+$/.test(field))
-        ) {
-          return false;
-        }
+        if (!allowField(field)) return false;
         if (employerType === "REGISTERED_INDUSTRY" && activeStep === 1) {
           return registeredIndustryCompanyFields.has(field) && value && value.trim() !== "";
         }
@@ -1742,7 +1768,7 @@ export default function EmployerOnboarding() {
                     )}
 
                     {/* STEP 2: CONTACT / AUTHORIZED SIGNATORY */}
-                    {activeStep === 2 && employerType !== "" && (
+                    {activeStep === 2 && (
                       <form onSubmit={handleProceedFromStep2} className="space-y-5">
                         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                           {(employerType === "REGISTERED_BUSINESS" || employerType === "REGISTERED_INDUSTRY") && (

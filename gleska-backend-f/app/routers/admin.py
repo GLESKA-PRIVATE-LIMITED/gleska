@@ -16,6 +16,8 @@ from app.services.auth_service import AuthService
 from app.services.matching_service import MatchingError, MatchingService
 from app.services.document_service import WORKER_DOCUMENTS_BUCKET, WorkerDocumentService
 from app.services.profile_photo_service import get_signed_profile_photo_url, now_iso
+from app.services.onboarding_service import OnboardingService
+from app.services.verification_service import VerificationService
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 audit_logger = logging.getLogger("admin.audit")
@@ -251,6 +253,7 @@ class AdminEmployerDetailResponse(BaseModel):
     nature_of_business: Optional[str] = None
     annual_revenue: Optional[str] = None
     number_of_proprietors: Optional[int] = None
+    proprietor_names: Optional[list[str]] = None
     company_email: Optional[str] = None
     company_phone: Optional[str] = None
     proprietor_name: Optional[str] = None
@@ -1113,6 +1116,9 @@ async def list_admin_employers(
             user_info = row.get("users") or {}
             onb_raw = row.get("employer_onboarding_details")
             onb_info = onb_raw[0] if isinstance(onb_raw, list) and onb_raw else (onb_raw if isinstance(onb_raw, dict) else {})
+            onb_info = OnboardingService.active_details_for_type(
+                row.get("employer_type") or "", onb_info
+            )
 
             items.append(
                 AdminEmployerItem(
@@ -1166,6 +1172,9 @@ async def get_admin_employer_details(
     # 1. Onboarding details (if any)
     onb_raw = employer_row.get("employer_onboarding_details")
     onb = onb_raw[0] if isinstance(onb_raw, list) and onb_raw else (onb_raw if isinstance(onb_raw, dict) else {})
+    employer_type = employer_row.get("employer_type") or ""
+    onb = OnboardingService.active_details_for_type(employer_type, onb)
+    active_verification_types = set(VerificationService.required_for(employer_type, onb))
 
     # 2. Employer verifications
     verifications_res = (
@@ -1187,6 +1196,7 @@ async def get_admin_employer_details(
             created_at=v["created_at"],
         )
         for v in raw_verifs
+        if v.get("verification_type") in active_verification_types
     ]
 
     # 3. Live counts (single aggregation query each for the requested employer)
@@ -1234,7 +1244,7 @@ async def get_admin_employer_details(
         created_at=employer_row["created_at"],
         updated_at=employer_row.get("updated_at"),
         contact_person_name=employer_row.get("contact_person_name"),
-        employer_type=employer_row.get("employer_type"),
+        employer_type=employer_type,
         onboarding_status=employer_row.get("onboarding_status") or "NOT_STARTED",
         verification_status=employer_row.get("verification_status") or "PENDING",
         subscription_valid_until=str(employer_row.get("subscription_valid_until")) if employer_row.get("subscription_valid_until") else None,
@@ -1260,6 +1270,7 @@ async def get_admin_employer_details(
         nature_of_business=onb.get("nature_of_business"),
         annual_revenue=onb.get("annual_revenue"),
         number_of_proprietors=onb.get("number_of_proprietors"),
+        proprietor_names=onb.get("proprietor_names"),
         company_email=onb.get("company_email"),
         company_phone=onb.get("company_phone"),
         proprietor_name=onb.get("proprietor_name"),
@@ -1350,11 +1361,66 @@ async def update_admin_employer_profile(
         val_cp = values.pop("contact_person_name")
         if val_cp and val_cp.strip():
             profile_updates["contact_person_name"] = val_cp.strip()
+    onb_updates = values
+    directory_changed = False
     if "employer_type" in values:
-        profile_updates["employer_type"] = values.pop("employer_type")
+        next_type = values.pop("employer_type")
+        previous_type = employer_row.get("employer_type") or ""
+        if next_type != previous_type:
+            directory_changed = True
+            valid_types = {"REGISTERED_BUSINESS", "REGISTERED_INDUSTRY", "UNREGISTERED_BUSINESS", "INDIVIDUAL"}
+            if next_type not in valid_types:
+                raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid employer type")
+
+            onb_raw = employer_row.get("employer_onboarding_details")
+            existing_details = onb_raw[0] if isinstance(onb_raw, list) and onb_raw else (onb_raw if isinstance(onb_raw, dict) else {})
+            target_details, snapshots = OnboardingService.switch_directory_details(
+                previous_type, next_type, existing_details
+            )
+            target_updates = {
+                key: value for key, value in onb_updates.items()
+                if key in OnboardingService.fields_for_type(next_type)
+            }
+            target_details.update(target_updates)
+            snapshots = OnboardingService.directory_snapshots(next_type, target_details, snapshots)
+            onb_updates = {
+                **target_details,
+                "directory_data": snapshots,
+            }
+
+            if previous_type:
+                supabase.table("employer_verifications").update({
+                    "status": "FAILED",
+                    "failure_reason": "Employer directory changed; verification required again",
+                    "verified_at": None,
+                }).eq("employer_id", profile_id).execute()
+
+            profile_updates.update({
+                "employer_type": next_type,
+                "onboarding_status": "COMPLETED" if next_type == "INDIVIDUAL" else "IN_PROGRESS",
+                "verification_status": "PENDING",
+            })
+        else:
+            profile_updates["employer_type"] = next_type
+
+    if onb_updates and not directory_changed:
+        current_type = employer_row.get("employer_type") or ""
+        existing_raw = employer_row.get("employer_onboarding_details")
+        existing_details = existing_raw[0] if isinstance(existing_raw, list) and existing_raw else (existing_raw if isinstance(existing_raw, dict) else {})
+        unsupported_fields = sorted(
+            key for key in onb_updates
+            if key not in OnboardingService.fields_for_type(current_type)
+        )
+        if unsupported_fields:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Fields are not applicable to {current_type}: {', '.join(unsupported_fields)}",
+            )
+        onb_updates = OnboardingService.active_details_payload(
+            current_type, existing_details, onb_updates
+        )
 
     # 3. employer_onboarding_details table: remainder of values
-    onb_updates = values
     updated_fields = list(user_updates.keys()) + list(profile_updates.keys()) + list(onb_updates.keys())
 
     updated_time = now_iso()

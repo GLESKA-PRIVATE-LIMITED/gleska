@@ -119,6 +119,7 @@ interface EmployerDetailResponse {
   nature_of_business: string | null;
   annual_revenue: string | null;
   number_of_proprietors: number | null;
+  proprietor_names: string[] | null;
   company_email: string | null;
   company_phone: string | null;
   proprietor_name: string | null;
@@ -1293,15 +1294,25 @@ export default function AdminEmployersPage() {
                           </div>
 
                           <div className="grid grid-cols-2 gap-3 text-slate-700">
-                            {employerDetail.proprietor_name && (
+                            {employerDetail.employer_type === "UNREGISTERED_BUSINESS" && employerDetail.number_of_proprietors != null && (
                               <div>
-                                <span className="text-slate-400">Proprietor Name:</span>
+                                <span className="text-slate-400">Number of Proprietors:</span>
                                 <p className="font-semibold text-slate-800 mt-0.5">
-                                  {employerDetail.proprietor_name}
+                                  {employerDetail.number_of_proprietors}
                                 </p>
                               </div>
                             )}
-                            {employerDetail.director_name && (
+                            {employerDetail.employer_type === "UNREGISTERED_BUSINESS" && (employerDetail.proprietor_names?.length || employerDetail.proprietor_name) && (
+                              <div>
+                                <span className="text-slate-400">Proprietor Names:</span>
+                                <p className="font-semibold text-slate-800 mt-0.5">
+                                  {(employerDetail.proprietor_names?.length
+                                    ? employerDetail.proprietor_names
+                                    : [employerDetail.proprietor_name]).join(", ")}
+                                </p>
+                              </div>
+                            )}
+                            {employerDetail.employer_type !== "UNREGISTERED_BUSINESS" && employerDetail.director_name && (
                               <div>
                                 <span className="text-slate-400">Director Name:</span>
                                 <p className="font-semibold text-slate-800 mt-0.5">

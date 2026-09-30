@@ -9,6 +9,114 @@ import re
 class OnboardingService:
     """Service to manage user onboarding state and determine next steps."""
 
+    COMMON_ONBOARDING_FIELDS = {
+        "business_name", "business_category", "website_url", "annual_revenue", "description",
+        "company_email", "company_phone", "work_location", "latitude", "longitude",
+        "address", "city", "state", "pincode", "hiring_mode", "bank_account_holder_name", "bank_ifsc",
+        "bank_account_number", "business_document_url",
+    }
+    REGISTERED_ONBOARDING_FIELDS = {
+        "business_type", "registered_address", "gstin", "registration_number", "cin_number",
+        "pan_number", "udyam_number", "tan_number", "director_name", "director_phone",
+        "director_email", "director_address", "director_aadhaar",
+    }
+    INDUSTRY_ONBOARDING_FIELDS = {
+        "industry_category", "industry_type", "nature_of_business", "services_required", "director_data",
+    }
+    UNREGISTERED_ONBOARDING_FIELDS = {
+        "address", "number_of_proprietors", "proprietor_names", "proprietor_name", "proprietor_aadhaar",
+    }
+    DETAIL_METADATA_FIELDS = {"id", "employer_id", "created_at", "updated_at"}
+
+    @classmethod
+    def fields_for_type(cls, employer_type: str) -> set[str]:
+        fields = set(cls.COMMON_ONBOARDING_FIELDS)
+        if employer_type in {"REGISTERED_BUSINESS", "REGISTERED_INDUSTRY"}:
+            fields.update(cls.REGISTERED_ONBOARDING_FIELDS)
+        if employer_type == "REGISTERED_INDUSTRY":
+            fields.update(cls.INDUSTRY_ONBOARDING_FIELDS)
+        if employer_type == "UNREGISTERED_BUSINESS":
+            fields.update(cls.UNREGISTERED_ONBOARDING_FIELDS)
+        return fields
+
+    @classmethod
+    def active_details_for_type(cls, employer_type: str, details: dict | None) -> dict:
+        details = details or {}
+        snapshots = details.get("directory_data")
+        source = snapshots.get(employer_type) if isinstance(snapshots, dict) else None
+        source = source if isinstance(source, dict) else details
+        allowed_fields = cls.fields_for_type(employer_type)
+        active_details = {
+            key: value
+            for key, value in source.items()
+            if key in allowed_fields
+        }
+        active_details.update({
+            key: value
+            for key, value in details.items()
+            if key in cls.DETAIL_METADATA_FIELDS
+        })
+        return active_details
+
+    @classmethod
+    def directory_snapshots(cls, employer_type: str, details: dict, existing: dict | None = None) -> dict:
+        snapshots = dict(existing or {})
+        snapshots[employer_type] = {
+            key: value
+            for key, value in details.items()
+            if key in cls.fields_for_type(employer_type)
+        }
+        return snapshots
+
+    @classmethod
+    def active_details_payload(
+        cls,
+        employer_type: str,
+        existing: dict | None,
+        updates: dict,
+    ) -> dict:
+        allowed_fields = cls.fields_for_type(employer_type)
+        active_details = cls.active_details_for_type(employer_type, existing)
+        active_details.update({
+            key: value for key, value in updates.items() if key in allowed_fields
+        })
+        active_details = {
+            key: value for key, value in active_details.items() if key in allowed_fields
+        }
+        existing_snapshots = (existing or {}).get("directory_data")
+        snapshots = cls.directory_snapshots(
+            employer_type,
+            active_details,
+            existing_snapshots if isinstance(existing_snapshots, dict) else {},
+        )
+        return {"directory_data": snapshots, **active_details}
+
+    @classmethod
+    def switch_directory_details(
+        cls,
+        previous_type: str | None,
+        next_type: str,
+        existing: dict | None,
+    ) -> tuple[dict, dict]:
+        existing = existing or {}
+        snapshots = existing.get("directory_data")
+        snapshots = dict(snapshots) if isinstance(snapshots, dict) else {}
+        previous_details = cls.active_details_for_type(previous_type or "", existing)
+        if previous_type:
+            snapshots = cls.directory_snapshots(previous_type, previous_details, snapshots)
+
+        common_details = {
+            key: existing[key]
+            for key in cls.COMMON_ONBOARDING_FIELDS
+            if key in existing and existing[key] is not None
+        }
+        target_details = {
+            **(snapshots.get(next_type) if isinstance(snapshots.get(next_type), dict) else {}),
+            **common_details,
+        }
+        snapshots = cls.directory_snapshots(next_type, target_details, snapshots)
+        return target_details, snapshots
+
     @staticmethod
     def determine_next_step(user: UserResponse) -> Literal[
         "DASHBOARD",
