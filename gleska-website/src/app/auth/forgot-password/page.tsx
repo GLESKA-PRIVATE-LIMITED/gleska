@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import LanguageSelector from "@/components/landing/LanguageSelector";
 import { useAuth } from "@/context/AuthContext";
 import { useLanguage } from "@/context/LanguageContext";
+import apiClient from "@/lib/api";
 import { initializeMSG91Widget, normalizeIndianMobile, sendOTP, verifyOTP, retryOTP } from "@/lib/msg91";
 
 type Step = "phone" | "otp" | "password" | "success";
@@ -19,6 +20,7 @@ export default function ForgotPasswordPage() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [resetAuthorization, setResetAuthorization] = useState("");
+  const [requestId, setRequestId] = useState<string | null>(null);
   const [step, setStep] = useState<Step>("phone");
   const [submitting, setSubmitting] = useState(false);
   const [countdown, setCountdown] = useState(0);
@@ -38,9 +40,13 @@ export default function ForgotPasswordPage() {
     }
     setSubmitting(true);
     try {
+      setRequestId(null);
+      setOtp("");
       await requestPasswordReset(normalizedPhone);
       await initializeMSG91Widget();
-      await sendOTP(normalizedPhone);
+      setRequestId(null);
+      const transaction = await sendOTP(normalizedPhone);
+      setRequestId(transaction.requestId);
       setPhone(normalizedPhone);
       setStep("otp");
       setCountdown(30);
@@ -74,8 +80,15 @@ export default function ForgotPasswordPage() {
     if (countdown) return;
     setSubmitting(true);
     try {
+      const normalizedPhone = normalizeIndianMobile(phone);
+      await apiClient.post(
+        "/api/v1/auth/resend-otp",
+        { mobile: normalizedPhone, channel: "SMS" },
+        { skipSupabaseAuth: true }
+      );
       await initializeMSG91Widget();
-      await retryOTP("SMS");
+      const transaction = await retryOTP("SMS", requestId);
+      setRequestId(transaction.requestId ?? null);
       setOtp("");
       setCountdown(30);
       toast.success(t('auth.resetSentAgain'));
@@ -126,7 +139,7 @@ export default function ForgotPasswordPage() {
       <main className="relative z-10 flex min-h-[calc(100vh-100px)] items-center justify-center px-4 py-8 sm:px-6">
       <div className="w-full max-w-md rounded-3xl border border-slate-200/80 bg-white/90 p-5 shadow-2xl shadow-slate-900/5 sm:p-8">
         <Link href="/" className="mb-6 inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-blue-600"><ArrowLeft size={16} /> {t('shared.back')}</Link>
-        {step === "success" ? <><h1 className="font-(--font-anton) text-3xl uppercase leading-tight text-slate-900 sm:text-4xl">{t('auth.passwordUpdated')}</h1><p className="mt-4 text-sm leading-relaxed text-slate-600">{t('auth.passwordResetSuccess')}</p><Link href="/" className="mt-6 flex min-h-14 w-full items-center justify-center rounded-full bg-linear-to-r from-blue-600 via-indigo-600 to-emerald-600 px-4 text-center font-bold text-white shadow-lg shadow-indigo-500/20">{t('shared.continueLogin')}</Link></> : <>
+        {step === "success" ? <><h1 className="font-(--font-anton) text-3xl uppercase leading-tight text-slate-900 sm:text-4xl">{t('auth.passwordUpdated')}</h1><p className="mt-4 text-sm leading-relaxed text-slate-600">{t('auth.passwordResetSuccess')}</p><Link href="/login" className="mt-6 flex min-h-14 w-full items-center justify-center rounded-full bg-linear-to-r from-blue-600 via-indigo-600 to-emerald-600 px-4 text-center font-bold text-white shadow-lg shadow-indigo-500/20">{t('shared.continueLogin')}</Link></> : <>
           <h1 className="font-(--font-anton) text-3xl uppercase leading-tight text-slate-900 sm:text-4xl">{t('shared.resetPassword')}</h1>
           <p className="mt-3 text-sm leading-relaxed text-slate-600">{step === "phone" ? t('shared.enterPhone') : step === "otp" ? t('shared.enterCode', { phone: phone || t('shared.phone') }) : t('auth.newPasswordHelper')}</p>
           {step === "phone" && <form onSubmit={requestOTP} className="mt-6 grid gap-3"><div className="flex min-h-14 items-center rounded-2xl border border-slate-200 bg-white px-4 transition focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-100"><span className="mr-2 text-sm font-semibold text-slate-500">+91</span><input required inputMode="numeric" value={phone.replace(/^91/, "")} onChange={(event) => setPhone(event.target.value.replace(/\D/g, "").slice(0, 10))} placeholder={t('auth.mobileLabel')} className="min-w-0 flex-1 bg-transparent py-3 text-slate-900 outline-none placeholder:text-slate-400" /></div><button disabled={submitting} className="flex min-h-14 w-full items-center justify-center gap-2 rounded-full bg-linear-to-r from-blue-600 via-indigo-600 to-emerald-600 px-4 font-bold text-white shadow-lg shadow-indigo-500/20 disabled:opacity-50">{submitting && <Loader2 size={16} className="animate-spin" />}{t('shared.sendOtp')}</button></form>}

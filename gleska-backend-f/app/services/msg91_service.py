@@ -10,6 +10,7 @@ from collections import defaultdict
 import httpx
 
 from app.core.config import settings
+from app.services.auth_service import AuthService
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,28 @@ OTP_RESEND_COOLDOWN_SECONDS = 30  # Minimum seconds between resend attempts
 
 class MSG91Service:
     """Validate MSG91 access tokens returned after OTP widget verification."""
+
+    async def verify_access_token_for_mobile(
+        self,
+        access_token: str,
+        submitted_mobile: str,
+    ) -> dict[str, Any]:
+        payload = await self.verify_access_token(access_token)
+        provider_mobile = payload.get("message")
+        if not isinstance(provider_mobile, str) or not provider_mobile.strip():
+            logger.warning("MSG91 verification response did not include a verified mobile identity")
+            raise ValueError("MSG91_VERIFIED_MOBILE_MISSING")
+
+        try:
+            verified_mobile = AuthService.normalize_mobile(provider_mobile)
+            expected_mobile = AuthService.normalize_mobile(submitted_mobile)
+        except ValueError as exc:
+            raise ValueError("MSG91_VERIFIED_MOBILE_MISSING") from exc
+
+        if verified_mobile != expected_mobile:
+            logger.warning("MSG91 verified mobile did not match submitted mobile")
+            raise ValueError("MSG91_MOBILE_MISMATCH")
+        return payload
 
     async def verify_access_token(self, access_token: str) -> dict[str, Any]:
         if not access_token or not access_token.strip():
@@ -83,9 +106,12 @@ class MSG91Service:
             logger.warning("MSG91 returned a non-JSON verification response")
             raise ValueError("INVALID_MSG91_VERIFICATION") from exc
 
-        if not isinstance(payload, dict) or payload.get("type") != "success" or not payload.get("message"):
+        if not isinstance(payload, dict) or payload.get("type") != "success":
             logger.warning("MSG91 payload did not indicate successful token validation")
             raise ValueError("INVALID_MSG91_VERIFICATION")
+        if not isinstance(payload.get("message"), str) or not payload["message"].strip():
+            logger.warning("MSG91 verification response did not include a verified mobile identity")
+            raise ValueError("MSG91_VERIFIED_MOBILE_MISSING")
 
         logger.info("MSG91 verification succeeded: status=%s", response.status_code)
         return payload

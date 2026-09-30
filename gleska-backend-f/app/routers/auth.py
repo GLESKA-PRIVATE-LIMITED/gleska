@@ -20,6 +20,56 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 logger = logging.getLogger(__name__)
 
 
+def _is_auth_account_exists_error(exc: Exception) -> bool:
+    code = str(getattr(exc, "code", "")).lower()
+    message = str(getattr(exc, "message", "") or exc).lower()
+    if code in {"user_already_exists", "email_exists", "user_exists"}:
+        return True
+    return any(
+        phrase in message
+        for phrase in (
+            "already been registered",
+            "user already registered",
+            "user already exists",
+            "email already exists",
+            "email already in use",
+            "email_exists",
+            "user_already_exists",
+            "user_exists",
+        )
+    )
+
+
+def _is_public_identity_conflict(exc: Exception) -> bool:
+    if str(getattr(exc, "code", "")) != "23505":
+        return False
+    diagnostic = " ".join(
+        str(getattr(exc, attribute, "") or "")
+        for attribute in ("message", "details", "hint")
+    ) + " " + str(exc)
+    return any(
+        constraint in diagnostic.lower()
+        for constraint in ("users_email_lower_unique", "users_mobile_key")
+    )
+
+
+def _log_sanitized_signup_failure(stage: str, exc: Exception) -> None:
+    status_code = getattr(exc, "status_code", None)
+    logger.error(
+        "Mobile-verified signup failed: stage=%s error_type=%s status=%s",
+        stage,
+        type(exc).__name__,
+        status_code if isinstance(status_code, int) else "unavailable",
+    )
+
+
+def _cleanup_new_auth_user(user_id: str) -> None:
+    try:
+        supabase.auth.admin.delete_user(user_id)
+    except Exception as exc:
+        _log_sanitized_signup_failure("auth_cleanup", exc)
+
+
 @router.post("/forgot-password/request-otp")
 async def request_password_reset_otp(request: PasswordResetRequestSchema):
     try:
@@ -82,7 +132,10 @@ async def provision_authenticated_user(
     try:
         auth_user = supabase.auth.get_user(credentials.credentials).user
         if request.msg91_access_token:
-            await MSG91Service().verify_access_token(request.msg91_access_token)
+            await MSG91Service().verify_access_token_for_mobile(
+                request.msg91_access_token,
+                request.mobile or auth_user.phone or "",
+            )
         existing = AuthService.get_user_by_id(str(auth_user.id))
         role = existing.get("role") if existing else request.role
         if not role:
@@ -170,14 +223,26 @@ async def signup_mobile_verified(request: MobileVerifiedSignupSchema):
 
     try:
         normalized_mobile = AuthService.normalize_mobile(request.mobile)
-        await MSG91Service().verify_access_token(request.msg91_access_token)
+        await MSG91Service().verify_access_token_for_mobile(
+            request.msg91_access_token, normalized_mobile
+        )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
 
-    if AuthService.get_user_by_email(str(request.email).lower()) or AuthService.get_user_by_mobile(normalized_mobile):
+    try:
+        existing_email = AuthService.get_user_by_email(str(request.email).lower())
+        existing_mobile = AuthService.get_user_by_mobile(normalized_mobile)
+    except Exception as exc:
+        _log_sanitized_signup_failure("public_user_lookup", exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="USER_LOOKUP_FAILED",
+        ) from exc
+    if existing_email or existing_mobile:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="An account already exists with this email or mobile number. Please login instead.")
 
     auth_user_id = None
+    auth_stage = "auth_user_creation"
     try:
         from datetime import datetime, timezone
         now_iso = datetime.now(timezone.utc).isoformat()
@@ -194,6 +259,7 @@ async def signup_mobile_verified(request: MobileVerifiedSignupSchema):
             },
         })
         auth_user_id = str(auth_response.user.id)
+        auth_stage = "application_provisioning"
         user = AuthService.provision_supabase_user(
             user_id=auth_user_id,
             name=request.name,
@@ -205,15 +271,40 @@ async def signup_mobile_verified(request: MobileVerifiedSignupSchema):
         )
         return UserResponse(**user)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="An account already exists with this email or mobile number. Please login instead.") from exc
-    except Exception as exc:
+        if str(exc) == "ACCOUNT_IDENTIFIER_CONFLICT":
+            if auth_user_id:
+                _cleanup_new_auth_user(auth_user_id)
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="An account already exists with this email or mobile number. Please login instead.",
+            ) from exc
         if auth_user_id:
-            try:
-                supabase.auth.admin.delete_user(auth_user_id)
-            except Exception:
-                logger.exception("Failed to clean up Supabase identity after provisioning failure")
-        logger.exception("Mobile-verified signup failed")
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Unable to create this account. The email or mobile may already be registered.") from exc
+            _cleanup_new_auth_user(auth_user_id)
+        _log_sanitized_signup_failure(auth_stage, exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="USER_PROVISIONING_FAILED",
+        ) from exc
+    except Exception as exc:
+        if auth_stage == "auth_user_creation" and _is_auth_account_exists_error(exc):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="An authentication account already exists for this email. Sign in to restore your GLESKA profile.",
+            ) from exc
+        if auth_stage == "application_provisioning" and _is_public_identity_conflict(exc):
+            if auth_user_id:
+                _cleanup_new_auth_user(auth_user_id)
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="An account already exists with this email or mobile number. Please login instead.",
+            ) from exc
+        if auth_user_id:
+            _cleanup_new_auth_user(auth_user_id)
+        _log_sanitized_signup_failure(auth_stage, exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="AUTH_USER_CREATION_FAILED" if auth_stage == "auth_user_creation" else "USER_PROVISIONING_FAILED",
+        ) from exc
 
 
 @router.post("/complete-msg91")
@@ -235,13 +326,15 @@ async def complete_msg91(request: dict, response: Response):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="INVALID_MOBILE") from exc
 
     try:
-        await MSG91Service().verify_access_token(access_token)
+        await MSG91Service().verify_access_token_for_mobile(access_token, normalized_mobile)
     except ValueError as exc:
         code = str(exc)
         status_map = {
             "INVALID_MSG91_TOKEN": status.HTTP_400_BAD_REQUEST,
             "INVALID_MSG91_VERIFICATION": status.HTTP_401_UNAUTHORIZED,
             "EXPIRED_MSG91_TOKEN": status.HTTP_401_UNAUTHORIZED,
+            "MSG91_MOBILE_MISMATCH": status.HTTP_401_UNAUTHORIZED,
+            "MSG91_VERIFIED_MOBILE_MISSING": status.HTTP_401_UNAUTHORIZED,
             "MSG91_CONFIGURATION_ERROR": status.HTTP_500_INTERNAL_SERVER_ERROR,
             "MSG91_SERVICE_UNAVAILABLE": status.HTTP_503_SERVICE_UNAVAILABLE,
         }
@@ -315,9 +408,20 @@ async def login_msg91(request: dict, response: Response):
     access_token = str(request.get("msg91_access_token", "")).strip()
     try:
         normalized_mobile = AuthService.normalize_mobile(mobile)
-        await MSG91Service().verify_access_token(access_token)
+        await MSG91Service().verify_access_token_for_mobile(access_token, normalized_mobile)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        error_status = (
+            status.HTTP_401_UNAUTHORIZED
+            if str(exc) in {
+                "INVALID_MSG91_TOKEN",
+                "INVALID_MSG91_VERIFICATION",
+                "EXPIRED_MSG91_TOKEN",
+                "MSG91_MOBILE_MISMATCH",
+                "MSG91_VERIFIED_MOBILE_MISSING",
+            }
+            else status.HTTP_400_BAD_REQUEST
+        )
+        raise HTTPException(status_code=error_status, detail=str(exc)) from exc
 
     existing = AuthService.get_user_by_mobile(normalized_mobile)
     if not existing:

@@ -27,16 +27,16 @@ interface AuthContextValue {
   error: string;
   refreshAuth: () => Promise<AuthStateResponse>;
   signInWithEmail: (email: string, password: string) => Promise<AuthStateResponse>;
-  sendLoginOtp: (mobile: string) => Promise<void>;
+  sendLoginOtp: (mobile: string) => Promise<{ requestId: string | null }>;
   signInWithMobileOtp: (mobile: string, otp: string) => Promise<AuthStateResponse>;
-  beginSignup: (input: SignupInput) => Promise<void>;
+  beginSignup: (input: SignupInput) => Promise<{ requestId: string | null }>;
   completeSignup: (input: SignupInput, otp: string) => Promise<AuthStateResponse>;
   startGoogleAuth: (role: Exclude<UserRole, "ADMIN"> | undefined, accountType: AccountType) => Promise<void>;
   completeOAuthCallback: () => Promise<AuthStateResponse>;
-  requestPasswordResetOtp: (mobile: string) => Promise<void>;
+  requestPasswordResetOtp: (mobile: string) => Promise<{ requestId: string | null }>;
   verifyPasswordResetOtp: (mobile: string, otp: string) => Promise<string>;
-  retryPasswordResetOtp: () => Promise<void>;
-  retryOtp: (mobile: string) => Promise<void>;
+  retryPasswordResetOtp: (mobile: string, requestId: string | null) => Promise<string | null>;
+  retryOtp: (mobile: string, requestId: string | null) => Promise<string | null>;
   resetPasswordWithAuthorization: (authorization: string, password: string, confirmPassword: string) => Promise<void>;
   resetPasswordWithRecoverySession: (password: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -227,7 +227,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const sendLoginOtp = async (mobile: string) => {
     setError("");
-    await sendMsg91Otp(mobile);
+    return await sendMsg91Otp(mobile);
   };
 
   const signInWithMobileOtp = async (mobile: string, otp: string) => {
@@ -264,7 +264,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       role: input.role,
       terms_accepted: true,
     }, { skipSupabaseAuth: true });
-    await sendMsg91Otp(mobile);
+    return await sendMsg91Otp(mobile);
   };
 
   const completeSignup = async (input: SignupInput, otp: string) => {
@@ -386,7 +386,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const requestPasswordResetOtp = async (mobile: string) => {
     const normalizedMobile = normalizeIndianMobile(mobile);
     await apiPost("/api/v1/auth/forgot-password/request-otp", { phone: normalizedMobile }, { skipSupabaseAuth: true });
-    await sendMsg91Otp(normalizedMobile);
+    return await sendMsg91Otp(normalizedMobile);
   };
 
   const verifyPasswordResetOtp = async (mobile: string, otp: string) => {
@@ -398,13 +398,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return response.reset_authorization;
   };
 
-  const retryPasswordResetOtp = async () => {
-    await retryMsg91Otp("SMS");
+  const retryPasswordResetOtp = async (mobile: string, requestId: string | null) => {
+    const normalizedMobile = normalizeIndianMobile(mobile);
+    await apiPost("/api/v1/auth/resend-otp", { mobile: normalizedMobile, channel: "SMS" }, { skipSupabaseAuth: true });
+    const result = await retryMsg91Otp("SMS", requestId);
+    return result.requestId;
   };
 
-  const retryOtp = async (mobile: string) => {
-    await apiPost("/api/v1/auth/resend-otp", { mobile: normalizeIndianMobile(mobile), channel: "SMS" }, { skipSupabaseAuth: true });
-    await retryMsg91Otp("SMS");
+  const retryOtp = async (mobile: string, requestId: string | null) => {
+    const normalizedMobile = normalizeIndianMobile(mobile);
+    await apiPost("/api/v1/auth/resend-otp", { mobile: normalizedMobile, channel: "SMS" }, { skipSupabaseAuth: true });
+    const result = await retryMsg91Otp("SMS", requestId);
+    return result.requestId;
   };
 
   const resetPasswordWithAuthorization = async (authorization: string, password: string, confirmPassword: string) => {

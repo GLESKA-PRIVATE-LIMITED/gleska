@@ -19,7 +19,6 @@ declare global {
 }
 
 let sdkPromise: Promise<Msg91Methods> | null = null;
-let requestId: string | undefined;
 
 function getMethods(): Msg91Methods | null {
   if (window.initSendOTP && window.sendOtp && window.verifyOtp && window.retryOtp) {
@@ -139,12 +138,11 @@ function requestIdFrom(value: unknown): string | undefined {
   return typeof candidate === "string" ? candidate : undefined;
 }
 
-export async function sendMsg91Otp(mobile: string) {
+export async function sendMsg91Otp(mobile: string): Promise<{ requestId: string | null }> {
   const normalizedMobile = normalizeIndianMobile(mobile);
   if (!/^91\d{10}$/.test(normalizedMobile)) throw new Error("Enter a valid Indian mobile number.");
   const sdk = await initializeMsg91();
-  requestId = undefined;
-  return new Promise<void>((resolve, reject) => {
+  return new Promise<{ requestId: string | null }>((resolve, reject) => {
     let settled = false;
     const timeout = window.setTimeout(() => {
       settled = true;
@@ -154,8 +152,8 @@ export async function sendMsg91Otp(mobile: string) {
       if (settled) return;
       settled = true;
       window.clearTimeout(timeout);
-      requestId = requestIdFrom(result);
-      resolve();
+      const nextRequestId = requestIdFrom(result) ?? null;
+      resolve({ requestId: nextRequestId });
     }, (error) => {
       if (settled) return;
       settled = true;
@@ -217,9 +215,13 @@ export async function verifyMsg91Otp(otp: string): Promise<string> {
   });
 }
 
-export async function retryMsg91Otp(channel: "SMS" | "EMAIL" = "SMS") {
+export async function retryMsg91Otp(channel: "SMS" | "EMAIL" = "SMS", currentRequestId?: string | null): Promise<{ requestId: string | null }> {
+  if (!currentRequestId?.trim()) {
+    throw new Error("A current MSG91 request ID is unavailable. Start a new OTP transaction to resend.");
+  }
+
   const sdk = await initializeMsg91();
-  return new Promise<void>((resolve, reject) => {
+  return new Promise<{ requestId: string | null }>((resolve, reject) => {
     let settled = false;
     const timeout = window.setTimeout(() => {
       settled = true;
@@ -229,13 +231,13 @@ export async function retryMsg91Otp(channel: "SMS" | "EMAIL" = "SMS") {
       if (settled) return;
       settled = true;
       window.clearTimeout(timeout);
-      requestId = requestIdFrom(result) ?? requestId;
-      resolve();
+      const nextRequestId = requestIdFrom(result) ?? null;
+      resolve({ requestId: nextRequestId });
     }, (error) => {
       if (settled) return;
       settled = true;
       window.clearTimeout(timeout);
       reject(providerError(error, "MSG91 could not resend the OTP."));
-    }, requestId);
+    }, currentRequestId);
   });
 }

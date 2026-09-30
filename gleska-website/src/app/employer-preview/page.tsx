@@ -188,7 +188,7 @@ export default function EmployerDashboardPreviewPage() {
       logout: async () => {},
       refreshUser: async () => "DASHBOARD" as const,
       requestOTP: async () => ({ requestId: null }),
-      resendOTP: async () => {},
+      resendOTP: async () => null,
       signInWithEmail: async () => mockUser,
       signInWithGoogle: async () => {},
       resolveGoogleSession: async () => ({ role: "EMPLOYER" as const, nextStep: "DASHBOARD" as const }),

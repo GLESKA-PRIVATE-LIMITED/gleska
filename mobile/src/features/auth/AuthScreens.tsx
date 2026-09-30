@@ -107,6 +107,7 @@ function AuthForm({ role, accountType, initialSignup = false }: {
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [otp, setOtp] = useState("");
   const [otpPurpose, setOtpPurpose] = useState<"signup" | "mobile-login" | null>(null);
+  const [requestId, setRequestId] = useState<string | null>(null);
   const [countdown, setCountdown] = useState(0);
   const [busy, setBusy] = useState(false);
   const [localError, setLocalError] = useState("");
@@ -149,7 +150,8 @@ function AuthForm({ role, accountType, initialSignup = false }: {
       }
       setBusy(true);
       try {
-        await auth.beginSignup(input);
+        const result = await auth.beginSignup(input);
+        setRequestId(result.requestId ?? null);
         setOtpPurpose("signup");
         setOtp("");
         setCountdown(30);
@@ -168,7 +170,8 @@ function AuthForm({ role, accountType, initialSignup = false }: {
       }
       setBusy(true);
       try {
-        await auth.sendLoginOtp(mobile);
+        const result = await auth.sendLoginOtp(mobile);
+        setRequestId(result.requestId ?? null);
         setOtpPurpose("mobile-login");
         setOtp("");
         setCountdown(30);
@@ -219,7 +222,8 @@ function AuthForm({ role, accountType, initialSignup = false }: {
     setBusy(true);
     setLocalError("");
     try {
-      await auth.retryOtp(mobile);
+      const nextRequestId = await auth.retryOtp(mobile, requestId);
+      setRequestId(nextRequestId ?? null);
       setOtp("");
       setCountdown(30);
     } catch (error) {
@@ -259,7 +263,7 @@ function AuthForm({ role, accountType, initialSignup = false }: {
           <InlineError>{visibleError}</InlineError>
           <button className="auth-primary" type="submit" disabled={busy || otp.length !== 6}>{busy && <LoaderCircle size={17} className="spin" />}{busy ? t("auth.verifying") : t("auth.verifyCreate")}</button>
           <div className="auth-form-row">
-            <button className="text-link" type="button" onClick={() => { setOtpPurpose(null); setOtp(""); setLocalError(""); }}>{t("auth.cancel")}</button>
+            <button className="text-link" type="button" onClick={() => { setOtpPurpose(null); setRequestId(null); setOtp(""); setLocalError(""); }}>{t("auth.cancel")}</button>
             <button className="text-link" type="button" disabled={Boolean(countdown) || busy} onClick={() => void resend()}>{countdown ? t("auth.resendIn", { seconds: countdown }) : t("auth.resendOtp")}</button>
           </div>
         </form>
@@ -271,7 +275,7 @@ function AuthForm({ role, accountType, initialSignup = false }: {
       <InlineError>{visibleError}</InlineError>
       <button className="auth-primary" type="submit" disabled={busy || otp.length !== 6}>{busy && <LoaderCircle size={17} className="spin" />}{t("auth.verifyOtp")}</button>
       <div className="auth-form-row">
-        <button className="text-link" type="button" onClick={() => { setOtpPurpose(null); setOtp(""); setLocalError(""); }}>{t("auth.back")}</button>
+        <button className="text-link" type="button" onClick={() => { setOtpPurpose(null); setRequestId(null); setOtp(""); setLocalError(""); }}>{t("auth.back")}</button>
         <button className="text-link" type="button" disabled={Boolean(countdown) || busy} onClick={() => void resend()}>{countdown ? t("auth.resendIn", { seconds: countdown }) : t("auth.resend")}</button>
       </div>
     </form> : <>
@@ -328,6 +332,7 @@ export function ForgotPasswordScreen() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [requestId, setRequestId] = useState<string | null>(null);
   const [countdown, setCountdown] = useState(0);
 
   useEffect(() => {
@@ -345,7 +350,8 @@ export function ForgotPasswordScreen() {
     setBusy(true);
     setError("");
     try {
-      await auth.requestPasswordResetOtp(mobile);
+      const result = await auth.requestPasswordResetOtp(mobile);
+      setRequestId(result.requestId ?? null);
       setStep("otp");
       setCountdown(30);
     } catch (requestError) {
@@ -377,7 +383,8 @@ export function ForgotPasswordScreen() {
     setBusy(true);
     setError("");
     try {
-      await auth.retryPasswordResetOtp();
+      const nextRequestId = await auth.retryPasswordResetOtp(mobile, requestId);
+      setRequestId(nextRequestId ?? null);
       setOtp("");
       setCountdown(30);
     } catch (retryError) {

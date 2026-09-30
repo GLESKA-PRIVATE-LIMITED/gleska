@@ -49,7 +49,7 @@ interface AuthContextType {
   logout: () => Promise<void>;
   refreshUser: () => Promise<NextStep | null>;
   requestOTP: (mobile: string) => Promise<{ requestId: string | null }>;
-  resendOTP: (mobile: string, requestId?: string | null, channel?: "SMS" | "EMAIL") => Promise<void>;
+  resendOTP: (mobile: string, requestId: string | null, channel: "SMS" | "EMAIL") => Promise<string | null>;
   signInWithEmail: (email: string, password: string, role?: "WORKER" | "EMPLOYER" | "ADMIN") => Promise<AuthUser>;
   signInWithGoogle: (role?: "WORKER" | "EMPLOYER" | "ADMIN", accountType?: "BUSINESS" | "INDIVIDUAL") => Promise<void>;
   provisionSession: (role?: "WORKER" | "EMPLOYER" | "ADMIN", name?: string, accountType?: "BUSINESS" | "INDIVIDUAL") => Promise<{ user: AuthUser; nextStep: NextStep | null }>;
@@ -74,7 +74,7 @@ export const AuthContext = createContext<AuthContextType>({
   logout: async () => {},
   refreshUser: async () => null,
   requestOTP: async () => ({ requestId: null }),
-  resendOTP: async () => {},
+  resendOTP: async () => null,
   signInWithEmail: async () => ({} as AuthUser),
   signInWithGoogle: async () => {},
   provisionSession: async () => ({ user: {} as AuthUser, nextStep: null }),
@@ -215,7 +215,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
-const resendOTP = async (mobile: string, requestId: string | null = null, channel: "SMS" | "EMAIL" = "SMS") => {
+const resendOTP = async (mobile: string, requestId: string | null, channel: "SMS" | "EMAIL") => {
     try {
       setError(null);
 
@@ -245,7 +245,8 @@ const resendOTP = async (mobile: string, requestId: string | null = null, channe
 
       // Only if backend approved, call MSG91 retry
       await initializeMSG91Widget();
-      await retryOTP(channel, requestId);
+      const result = await retryOTP(channel, requestId);
+      return result.requestId;
     } catch (err: any) {
       const message = err.message || "Failed to resend OTP";
       setError(message);

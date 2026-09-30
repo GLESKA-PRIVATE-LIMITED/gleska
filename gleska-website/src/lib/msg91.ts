@@ -34,8 +34,14 @@ const SDK_TIMEOUT_MS = 10000;
 const OTP_TIMEOUT_MS = 20000;
 
 let sdkPromise: Promise<void> | null = null;
-let lastReqId: string | null = null;
-let otpVerificationInFlight = false;
+let activeOtpOperation: "send" | "verify" | "retry" | null = null;
+
+function beginOtpOperation(operation: "send" | "verify" | "retry"): void {
+  if (activeOtpOperation) {
+    throw new Error("An OTP request is already in progress. Please wait and try again.");
+  }
+  activeOtpOperation = operation;
+}
 
 export function normalizeIndianMobile(mobile: string): string {
   const cleaned = mobile.replace(/\D/g, "");
@@ -272,37 +278,43 @@ export async function sendOTP(mobile: string): Promise<{ normalizedMobile: strin
     throw new Error("MSG91 SDK is not available in the server environment.");
   }
 
-  const globalWindow = window as Msg91Window;
-  await initializeMSG91Widget();
+  beginOtpOperation("send");
+  try {
+    const globalWindow = window as Msg91Window;
+    await initializeMSG91Widget();
 
-  if (typeof globalWindow.sendOtp !== "function") {
-    throw new Error("MSG91 SDK failed to load.");
-  }
+    if (typeof globalWindow.sendOtp !== "function") {
+      throw new Error("MSG91 SDK failed to load.");
+    }
 
-  return await new Promise<{ normalizedMobile: string; requestId: string | null; [key: string]: unknown }>((resolve, reject) => {
-    const timeoutId = window.setTimeout(() => {
-      reject(new Error("MSG91 OTP request timed out after 20 seconds."));
-    }, OTP_TIMEOUT_MS);
+    return await new Promise<{ normalizedMobile: string; requestId: string | null; [key: string]: unknown }>((resolve, reject) => {
+      let settled = false;
+      const timeoutId = window.setTimeout(() => {
+        settled = true;
+        reject(new Error("MSG91 OTP request timed out after 20 seconds."));
+      }, OTP_TIMEOUT_MS);
 
-    console.log("[MSG91] OTP requested for mobile (last 4 digits):", normalizedMobile.slice(-4));
-    globalWindow.sendOtp!(normalizedMobile, (data: unknown) => {
-      window.clearTimeout(timeoutId);
-      const reqId = resolveRequestId(data);
-      if (reqId) {
-        lastReqId = reqId;
-        console.log("[MSG91] OTP request ID received (present)");
-      } else {
-        console.log("[MSG91] OTP request ID received (absent - MSG91 manages transaction internally)");
-      }
-      console.log("[MSG91] OTP channel: SMS (managed internally by MSG91)");
-      console.log("[MSG91] sendOtp succeeded.");
-      resolve({ ...(asRecord(data) ?? {}), normalizedMobile, requestId: reqId });
-    }, (error: unknown) => {
-      window.clearTimeout(timeoutId);
-      console.error("[MSG91] sendOtp failed.");
-      reject(error instanceof Error ? error : new Error("MSG91 OTP send failed."));
+      console.log("[MSG91] OTP requested for mobile (last 4 digits):", normalizedMobile.slice(-4));
+      globalWindow.sendOtp!(normalizedMobile, (data: unknown) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timeoutId);
+        const requestId = resolveRequestId(data);
+        console.log(`[MSG91] OTP request ID received: ${requestId ? "present" : "absent"}`);
+        console.log("[MSG91] OTP channel: SMS (managed internally by MSG91)");
+        console.log("[MSG91] sendOtp succeeded.");
+        resolve({ ...(asRecord(data) ?? {}), normalizedMobile, requestId });
+      }, (error: unknown) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timeoutId);
+        console.error("[MSG91] sendOtp failed.");
+        reject(error instanceof Error ? error : new Error("MSG91 OTP send failed."));
+      });
     });
-  });
+  } finally {
+    activeOtpOperation = null;
+  }
 }
 
 function extractMsg91AccessToken(value: unknown): string | null {
@@ -341,71 +353,63 @@ export async function verifyOTP(otp: string): Promise<{ accessToken: string; [ke
     throw new Error("MSG91 SDK is not available in the server environment.");
   }
 
-  const globalWindow = window as Msg91Window;
-  await initializeMSG91Widget();
+  beginOtpOperation("verify");
+  try {
+    const globalWindow = window as Msg91Window;
+    await initializeMSG91Widget();
 
-  if (typeof globalWindow.verifyOtp !== "function") {
-    throw new Error("MSG91 SDK failed to load.");
-  }
+    if (typeof globalWindow.verifyOtp !== "function") {
+      throw new Error("MSG91 SDK failed to load.");
+    }
 
-  if (otpVerificationInFlight) {
-    throw new Error("OTP verification is already in progress.");
-  }
-  otpVerificationInFlight = true;
+    return await new Promise<{ accessToken: string; [key: string]: unknown }>((resolve, reject) => {
+      let settled = false;
+      const timeoutId = window.setTimeout(() => {
+        settled = true;
+        reject(new Error("MSG91 OTP verification timed out after 20 seconds."));
+      }, OTP_TIMEOUT_MS);
 
-  return await new Promise<{ accessToken: string; [key: string]: unknown }>((resolve, reject) => {
-    let settled = false;
-    const timeoutId = window.setTimeout(() => {
-      settled = true;
-      otpVerificationInFlight = false;
-      reject(new Error("MSG91 OTP verification timed out after 20 seconds."));
-    }, OTP_TIMEOUT_MS);
+      console.log("[MSG91] verifyOtp called");
+      globalWindow.verifyOtp!(otp, (data: unknown) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timeoutId);
+        const value = asRecord(data) ?? {};
+        const accessToken = extractMsg91AccessToken(data);
 
-    console.log("[MSG91] verifyOtp called");
-    globalWindow.verifyOtp!(otp, (data: unknown) => {
-      if (settled) return;
-      settled = true;
-      window.clearTimeout(timeoutId);
-      otpVerificationInFlight = false;
-      const value = asRecord(data) ?? {};
-      const accessToken = extractMsg91AccessToken(data);
+        console.log("[MSG91] verifyOtp succeeded.");
 
-      console.log("[MSG91] verifyOtp succeeded.");
+        if (!accessToken) {
+          reject(new Error("MSG91 verification succeeded but no access token was returned."));
+          return;
+        }
 
-      if (!accessToken) {
-        reject(new Error("MSG91 verification succeeded but no access token was returned."));
-        return;
-      }
-
-      resolve({ ...value, accessToken });
-    }, (error: unknown) => {
-      if (settled) return;
-      settled = true;
-      window.clearTimeout(timeoutId);
-      otpVerificationInFlight = false;
-      console.error("[MSG91] verifyOtp failed.");
-      if (isAlreadyVerifiedError(error)) {
-        reject(new Error("This OTP has already been used. Request a new OTP and try again."));
-        return;
-      }
-      reject(error instanceof Error ? error : new Error("MSG91 OTP verification failed."));
+        resolve({ ...value, accessToken });
+      }, (error: unknown) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timeoutId);
+        console.error("[MSG91] verifyOtp failed.");
+        if (isAlreadyVerifiedError(error)) {
+          reject(new Error("This OTP has already been used. Request a new OTP and try again."));
+          return;
+        }
+        reject(error instanceof Error ? error : new Error("MSG91 OTP verification failed."));
+      });
     });
-  });
+  } finally {
+    activeOtpOperation = null;
+  }
 }
 
-export async function retryOTP(channel: string | null, requestId?: string | null): Promise<{ [key: string]: unknown }> {
+export async function retryOTP(channel: string | null, requestId: string | null): Promise<{ requestId: string | null; [key: string]: unknown }> {
   if (typeof window === "undefined") {
     throw new Error("MSG91 SDK is not available in the server environment.");
   }
 
-  const globalWindow = window as Msg91Window;
-  await initializeMSG91Widget();
-
-  if (typeof globalWindow.retryOtp !== "function") {
-    throw new Error("MSG91 SDK failed to load.");
+  if (!requestId?.trim()) {
+    throw new Error("A current MSG91 request ID is unavailable. Start a new OTP transaction to resend.");
   }
-
-  const requestIdToUse = requestId ?? lastReqId ?? null;
 
   let retryChannel: string | null = null;
   if (channel === "SMS") {
@@ -415,34 +419,56 @@ export async function retryOTP(channel: string | null, requestId?: string | null
   } else if (channel === "11" || channel === "3" || channel === "4" || channel === "12") {
     retryChannel = channel;
   }
+  if (!retryChannel) {
+    throw new Error("This OTP channel cannot be resent.");
+  }
 
-  return await new Promise<{ [key: string]: unknown }>((resolve, reject) => {
-    const timeoutId = window.setTimeout(() => {
-      reject(new Error("MSG91 OTP retry timed out after 20 seconds."));
-    }, OTP_TIMEOUT_MS);
+  beginOtpOperation("retry");
+  try {
+    const globalWindow = window as Msg91Window;
+    await initializeMSG91Widget();
 
-    console.log("[MSG91] Resend requested");
-    console.log(`[MSG91] Original OTP channel: ${channel || "unknown"}`);
-    console.log(`[MSG91] Original request ID present: ${!!requestIdToUse}`);
-    console.log("[MSG91] Backend resend authorization: allowed");
-    console.log("[MSG91] Calling MSG91 retry");
+    if (typeof globalWindow.retryOtp !== "function") {
+      throw new Error("MSG91 SDK failed to load.");
+    }
 
-    globalWindow.retryOtp!(retryChannel, (data: unknown) => {
-      window.clearTimeout(timeoutId);
-      const nextRequestId = resolveRequestId(data);
-      if (nextRequestId) lastReqId = nextRequestId;
-      console.log("[MSG91] MSG91 retry successful");
-      resolve((data as Record<string, unknown>) ?? {});
-    }, (error: unknown) => {
-      window.clearTimeout(timeoutId);
-      console.error("[MSG91] OTP retry failed.");
-      if (isConfigError(error)) {
-        reject(new Error("Unable to resend OTP due to a system configuration issue. Please contact support."));
-      } else {
-        reject(error instanceof Error ? error : new Error("MSG91 OTP retry failed."));
-      }
-    }, requestIdToUse ?? undefined);
-  });
+    return await new Promise<{ requestId: string | null; [key: string]: unknown }>((resolve, reject) => {
+      let settled = false;
+      const timeoutId = window.setTimeout(() => {
+        settled = true;
+        reject(new Error("MSG91 OTP retry timed out after 20 seconds."));
+      }, OTP_TIMEOUT_MS);
+
+      console.log("[MSG91] Resend requested");
+      console.log(`[MSG91] Original OTP channel: ${channel || "unknown"}`);
+      console.log("[MSG91] Calling MSG91 retry");
+
+      globalWindow.retryOtp!(retryChannel, (data: unknown) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timeoutId);
+        const nextRequestId = resolveRequestId(data);
+        if (nextRequestId) {
+          console.log("[MSG91] MSG91 retry successful; new request ID received.");
+        } else {
+          console.log("[MSG91] MSG91 retry successful; no new request ID returned.");
+        }
+        resolve({ ...(asRecord(data) ?? {}), requestId: nextRequestId });
+      }, (error: unknown) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timeoutId);
+        console.error("[MSG91] OTP retry failed.");
+        if (isConfigError(error)) {
+          reject(new Error("Unable to resend OTP due to a system configuration issue. Please contact support."));
+        } else {
+          reject(error instanceof Error ? error : new Error("MSG91 OTP retry failed."));
+        }
+      }, requestId);
+    });
+  } finally {
+    activeOtpOperation = null;
+  }
 }
 
 export const normalizeMobileForDisplay = (mobile: string) => {

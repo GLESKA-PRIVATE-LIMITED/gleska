@@ -194,7 +194,7 @@ async def test_signup_mobile_verified_endpoint_stores_terms_server_side():
 
     with patch.object(AuthService, "get_user_by_email", return_value=None), \
          patch.object(AuthService, "get_user_by_mobile", return_value=None), \
-         patch("app.routers.auth.MSG91Service.verify_access_token", new_callable=AsyncMock, return_value={"type": "success"}), \
+         patch("app.routers.auth.MSG91Service.verify_access_token_for_mobile", new_callable=AsyncMock, return_value={"type": "success", "message": "919876543210"}) as verify_mobile, \
          patch("app.routers.auth.supabase.auth.admin", mock_admin), \
          patch.object(AuthService, "provision_supabase_user", return_value=mock_provisioned_user) as mock_provision:
         
@@ -217,6 +217,7 @@ async def test_signup_mobile_verified_endpoint_stores_terms_server_side():
             data = res.json()
             assert data["id"] == "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
             assert data["terms_accepted"] is True
+            verify_mobile.assert_awaited_once_with("valid_token", "919876543210")
 
             # Verify admin.create_user called with user_metadata containing terms
             admin_call = mock_admin.create_user.call_args[0][0]
@@ -227,3 +228,261 @@ async def test_signup_mobile_verified_endpoint_stores_terms_server_side():
             provision_kwargs = mock_provision.call_args[1]
             assert provision_kwargs["terms_accepted"] is True
             assert "terms_accepted_at" in provision_kwargs
+
+
+@pytest.mark.asyncio
+async def test_signup_rejects_msg91_phone_mismatch_before_user_creation(monkeypatch):
+    from app.routers import auth as auth_router
+
+    monkeypatch.setattr(
+        auth_router.MSG91Service,
+        "verify_access_token_for_mobile",
+        AsyncMock(side_effect=ValueError("MSG91_MOBILE_MISMATCH")),
+    )
+    monkeypatch.setattr(
+        AuthService,
+        "get_user_by_email",
+        staticmethod(lambda _email: (_ for _ in ()).throw(AssertionError("duplicate lookup must not run"))),
+    )
+    monkeypatch.setattr(
+        auth_router.supabase.auth.admin,
+        "create_user",
+        MagicMock(side_effect=AssertionError("Auth identity must not be created")),
+    )
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/api/v1/auth/signup-mobile-verified", json={
+            "name": "Phone Mismatch",
+            "email": "phone-mismatch@example.com",
+            "mobile": "9876543210",
+            "password": "Password123!",
+            "confirm_password": "Password123!",
+            "role": "WORKER",
+            "msg91_access_token": "verified-token",
+            "terms_accepted": True,
+        })
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "MSG91_MOBILE_MISMATCH"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("duplicate_field", ["email", "mobile"])
+async def test_signup_mobile_verified_reports_public_user_duplicates(monkeypatch, duplicate_field):
+    from app.routers import auth as auth_router
+
+    monkeypatch.setattr(
+        auth_router.MSG91Service,
+        "verify_access_token_for_mobile",
+        AsyncMock(return_value={"type": "success", "message": "919876543210"}),
+    )
+    monkeypatch.setattr(
+        AuthService,
+        "get_user_by_email",
+        staticmethod(lambda _email: {"id": "existing-id"} if duplicate_field == "email" else None),
+    )
+    monkeypatch.setattr(
+        AuthService,
+        "get_user_by_mobile",
+        staticmethod(lambda _mobile: {"id": "existing-id"} if duplicate_field == "mobile" else None),
+    )
+    monkeypatch.setattr(auth_router.supabase.auth.admin, "create_user", MagicMock(side_effect=AssertionError("must not create Auth user")))
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/api/v1/auth/signup-mobile-verified", json={
+            "name": "Existing User",
+            "email": "existing@example.com",
+            "mobile": "9876543210",
+            "password": "Password123!",
+            "confirm_password": "Password123!",
+            "role": "WORKER",
+            "msg91_access_token": "verified-token",
+            "terms_accepted": True,
+        })
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "An account already exists with this email or mobile number. Please login instead."
+
+
+@pytest.mark.asyncio
+async def test_signup_auth_existing_email_returns_controlled_auth_conflict(monkeypatch):
+    from app.routers import auth as auth_router
+
+    monkeypatch.setattr(
+        auth_router.MSG91Service,
+        "verify_access_token_for_mobile",
+        AsyncMock(return_value={"type": "success", "message": "919876543210"}),
+    )
+    monkeypatch.setattr(AuthService, "get_user_by_email", staticmethod(lambda _email: None))
+    monkeypatch.setattr(AuthService, "get_user_by_mobile", staticmethod(lambda _mobile: None))
+    create_user = MagicMock(
+        side_effect=RuntimeError("A user with this email address has already been registered")
+    )
+    monkeypatch.setattr(auth_router.supabase.auth.admin, "create_user", create_user)
+    delete_user = MagicMock()
+    monkeypatch.setattr(auth_router.supabase.auth.admin, "delete_user", delete_user)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/api/v1/auth/signup-mobile-verified", json={
+            "name": "Auth Only User",
+            "email": "auth-only@example.com",
+            "mobile": "9876543210",
+            "password": "Password123!",
+            "confirm_password": "Password123!",
+            "role": "WORKER",
+            "msg91_access_token": "verified-token",
+            "terms_accepted": True,
+        })
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "An authentication account already exists for this email. Sign in to restore your GLESKA profile."
+    delete_user.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_signup_database_provisioning_failure_is_not_reported_as_duplicate(monkeypatch):
+    from app.routers import auth as auth_router
+
+    auth_user = MagicMock(id="auth-user-id")
+    admin = MagicMock()
+    admin.create_user.return_value = MagicMock(user=auth_user)
+    monkeypatch.setattr(auth_router.supabase.auth, "admin", admin)
+    monkeypatch.setattr(
+        auth_router.MSG91Service,
+        "verify_access_token_for_mobile",
+        AsyncMock(return_value={"type": "success", "message": "919876543210"}),
+    )
+    monkeypatch.setattr(AuthService, "get_user_by_email", staticmethod(lambda _email: None))
+    monkeypatch.setattr(AuthService, "get_user_by_mobile", staticmethod(lambda _mobile: None))
+    monkeypatch.setattr(
+        AuthService,
+        "provision_supabase_user",
+        staticmethod(lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("database write failed"))),
+    )
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/api/v1/auth/signup-mobile-verified", json={
+            "name": "Provision Failure",
+            "email": "provision-failure@example.com",
+            "mobile": "9876543210",
+            "password": "Password123!",
+            "confirm_password": "Password123!",
+            "role": "WORKER",
+            "msg91_access_token": "verified-token",
+            "terms_accepted": True,
+        })
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == "USER_PROVISIONING_FAILED"
+    admin.delete_user.assert_called_once_with("auth-user-id")
+
+
+@pytest.mark.asyncio
+async def test_signup_public_identity_unique_race_returns_duplicate_conflict(monkeypatch):
+    from app.routers import auth as auth_router
+
+    class PublicEmailUniqueViolation(RuntimeError):
+        code = "23505"
+        message = 'duplicate key violates constraint "users_email_lower_unique"'
+
+    auth_user = MagicMock(id="auth-user-id")
+    admin = MagicMock()
+    admin.create_user.return_value = MagicMock(user=auth_user)
+    monkeypatch.setattr(auth_router.supabase.auth, "admin", admin)
+    monkeypatch.setattr(
+        auth_router.MSG91Service,
+        "verify_access_token_for_mobile",
+        AsyncMock(return_value={"type": "success", "message": "919876543210"}),
+    )
+    monkeypatch.setattr(AuthService, "get_user_by_email", staticmethod(lambda _email: None))
+    monkeypatch.setattr(AuthService, "get_user_by_mobile", staticmethod(lambda _mobile: None))
+    monkeypatch.setattr(
+        AuthService,
+        "provision_supabase_user",
+        staticmethod(lambda **_kwargs: (_ for _ in ()).throw(PublicEmailUniqueViolation())),
+    )
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/api/v1/auth/signup-mobile-verified", json={
+            "name": "Concurrent Duplicate",
+            "email": "raced-email@example.com",
+            "mobile": "9876543210",
+            "password": "Password123!",
+            "confirm_password": "Password123!",
+            "role": "WORKER",
+            "msg91_access_token": "verified-token",
+            "terms_accepted": True,
+        })
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "An account already exists with this email or mobile number. Please login instead."
+    admin.delete_user.assert_called_once_with("auth-user-id")
+
+
+@pytest.mark.asyncio
+async def test_signup_unexpected_provisioning_value_error_is_not_reported_as_duplicate(monkeypatch):
+    from app.routers import auth as auth_router
+
+    auth_user = MagicMock(id="auth-user-id")
+    admin = MagicMock()
+    admin.create_user.return_value = MagicMock(user=auth_user)
+    monkeypatch.setattr(auth_router.supabase.auth, "admin", admin)
+    monkeypatch.setattr(
+        auth_router.MSG91Service,
+        "verify_access_token_for_mobile",
+        AsyncMock(return_value={"type": "success", "message": "919876543210"}),
+    )
+    monkeypatch.setattr(AuthService, "get_user_by_email", staticmethod(lambda _email: None))
+    monkeypatch.setattr(AuthService, "get_user_by_mobile", staticmethod(lambda _mobile: None))
+    monkeypatch.setattr(
+        AuthService,
+        "provision_supabase_user",
+        staticmethod(lambda **_kwargs: (_ for _ in ()).throw(ValueError("UNEXPECTED_RECONCILIATION_FAILURE"))),
+    )
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/api/v1/auth/signup-mobile-verified", json={
+            "name": "Unexpected Provisioning Failure",
+            "email": "unexpected-provisioning@example.com",
+            "mobile": "9876543210",
+            "password": "Password123!",
+            "confirm_password": "Password123!",
+            "role": "WORKER",
+            "msg91_access_token": "verified-token",
+            "terms_accepted": True,
+        })
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == "USER_PROVISIONING_FAILED"
+    admin.delete_user.assert_called_once_with("auth-user-id")
+
+
+@pytest.mark.asyncio
+async def test_signup_unexpected_auth_failure_is_not_reported_as_duplicate(monkeypatch):
+    from app.routers import auth as auth_router
+
+    admin = MagicMock()
+    admin.create_user.side_effect = RuntimeError("auth provider unavailable")
+    monkeypatch.setattr(auth_router.supabase.auth, "admin", admin)
+    monkeypatch.setattr(
+        auth_router.MSG91Service,
+        "verify_access_token_for_mobile",
+        AsyncMock(return_value={"type": "success", "message": "919876543210"}),
+    )
+    monkeypatch.setattr(AuthService, "get_user_by_email", staticmethod(lambda _email: None))
+    monkeypatch.setattr(AuthService, "get_user_by_mobile", staticmethod(lambda _mobile: None))
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/api/v1/auth/signup-mobile-verified", json={
+            "name": "Unexpected Failure",
+            "email": "unexpected-failure@example.com",
+            "mobile": "9876543210",
+            "password": "Password123!",
+            "confirm_password": "Password123!",
+            "role": "WORKER",
+            "msg91_access_token": "verified-token",
+            "terms_accepted": True,
+        })
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == "AUTH_USER_CREATION_FAILED"

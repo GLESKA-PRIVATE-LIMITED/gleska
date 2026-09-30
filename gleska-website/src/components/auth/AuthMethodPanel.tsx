@@ -82,6 +82,7 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS", initia
       }
       setSubmitting(true);
       try {
+        clearOtpTransaction();
         const otpResult = await requestOTP(canonicalMobile);
         setOtpTransaction({ name: "", email: "", password: "", mobile: canonicalMobile, termsAccepted: false, requestId: otpResult?.requestId ?? null, channel: "SMS" });
         setOtpPurpose("login");
@@ -147,6 +148,7 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS", initia
         }
         const canonicalMobile = normalizeIndianMobile(mobile);
         await signupPreflight(name, email, canonicalMobile, password, confirmPassword, role, termsAccepted);
+        clearOtpTransaction();
         const otpResult = await requestOTP(canonicalMobile);
         setOtpTransaction({ name, email, password, mobile: canonicalMobile, termsAccepted, requestId: otpResult?.requestId ?? null, channel: "SMS" });
         setOtpPurpose("signup");
@@ -225,7 +227,9 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS", initia
     }
     setSubmitting(true);
     try {
-      await resendOTP(otpTransaction.mobile, otpTransaction.requestId, otpTransaction.channel);
+      const requestId = await resendOTP(otpTransaction.mobile, otpTransaction.requestId, otpTransaction.channel);
+      setOtpTransaction((current) => current ? { ...current, requestId } : current);
+      setOtp("");
       setCountdown(30);
       toast.success(t('auth.resetSentAgain'));
     } catch (error: unknown) {
