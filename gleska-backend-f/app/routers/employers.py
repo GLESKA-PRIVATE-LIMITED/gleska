@@ -213,7 +213,7 @@ async def select_employer_type(
     request: SelectEmployerTypeSchema,
     user: UserResponse = Depends(require_employer),
 ):
-    """Select employer type and start onboarding."""
+    """Set the employer directory and start onboarding when applicable."""
     valid_types = [
         "REGISTERED_INDUSTRY",
         "REGISTERED_BUSINESS",
@@ -239,47 +239,48 @@ async def select_employer_type(
         if not current_employer:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employer profile not found")
         previous_type = current_employer.get("employer_type")
-        if previous_type == request.employer_type:
+        if previous_type == request.employer_type and request.employer_type != "INDIVIDUAL":
             return EmployerProfileResponse(**current_employer)
 
-        details_response = (
-            supabase.table("employer_onboarding_details")
-            .select("*")
-            .eq("employer_id", current_employer["id"])
-            .execute()
-        )
-        existing_details = details_response.data[0] if details_response.data else {}
-        target_details, directory_data = OnboardingService.switch_directory_details(
-            previous_type, request.employer_type, existing_details
-        )
-        upsert_data = {
-            "employer_id": current_employer["id"],
-            "directory_data": directory_data,
-            **target_details,
-        }
-        details_upsert = supabase.table("employer_onboarding_details").upsert(
-            upsert_data, on_conflict="employer_id"
-        ).execute()
-        if not details_upsert.data:
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to switch employer directory")
+        profile_updates = {"employer_type": request.employer_type}
+        if request.employer_type == "INDIVIDUAL":
+            profile_updates["onboarding_status"] = "COMPLETED"
+        else:
+            profile_updates["onboarding_status"] = "IN_PROGRESS"
+            details_response = (
+                supabase.table("employer_onboarding_details")
+                .select("*")
+                .eq("employer_id", current_employer["id"])
+                .execute()
+            )
+            existing_details = details_response.data[0] if details_response.data else {}
+            target_details, directory_data = OnboardingService.switch_directory_details(
+                previous_type, request.employer_type, existing_details
+            )
+            upsert_data = {
+                "employer_id": current_employer["id"],
+                "directory_data": directory_data,
+                **target_details,
+            }
+            details_upsert = supabase.table("employer_onboarding_details").upsert(
+                upsert_data, on_conflict="employer_id"
+            ).execute()
+            if not details_upsert.data:
+                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to switch employer directory")
 
-        if previous_type:
-            supabase.table("employer_verifications").update({
-                "status": "FAILED",
-                "failure_reason": "Employer directory changed; verification required again",
-                "verified_at": None,
-            }).eq("employer_id", current_employer["id"]).execute()
+            if previous_type:
+                supabase.table("employer_verifications").update({
+                    "status": "FAILED",
+                    "failure_reason": "Employer directory changed; verification required again",
+                    "verified_at": None,
+                }).eq("employer_id", current_employer["id"]).execute()
 
-        next_status = "COMPLETED" if request.employer_type == "INDIVIDUAL" else "IN_PROGRESS"
+            profile_updates["verification_status"] = "PENDING"
 
         # Update employer profile with the selected type and its routing state.
         response = (
             supabase.table("employer_profiles")
-            .update({
-                "employer_type": request.employer_type,
-                "onboarding_status": next_status,
-                "verification_status": "PENDING",
-            })
+            .update(profile_updates)
             .eq("user_id", user.id)
             .execute()
         )

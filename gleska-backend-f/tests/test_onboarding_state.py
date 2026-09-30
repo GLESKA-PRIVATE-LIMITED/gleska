@@ -1,6 +1,13 @@
+from datetime import datetime, timezone
+from types import SimpleNamespace
+
+import pytest
+
+from app.routers import employers
 from app.services import onboarding_service
-from app.services.onboarding_service import OnboardingService
 from app.schemas.auth import UserResponse
+from app.schemas.employer import SelectEmployerTypeSchema
+from app.services.onboarding_service import OnboardingService
 from app.schemas.employer import (
     RegisteredIndustryOnboardingSchema,
     UnregisteredBusinessOnboardingSchema,
@@ -270,6 +277,128 @@ def test_individual_employer_always_routes_to_dashboard(monkeypatch):
     )
 
     assert OnboardingService.determine_next_step(user) == "DASHBOARD"
+
+
+def employer_profile(employer_type=None, onboarding_status="NOT_STARTED"):
+    now = datetime.now(timezone.utc)
+    return {
+        "id": "employer-id",
+        "user_id": "user-id",
+        "employer_type": employer_type,
+        "onboarding_status": onboarding_status,
+        "verification_status": "PENDING",
+        "contact_person_name": "Employer",
+        "created_at": now,
+        "updated_at": now,
+    }
+
+
+class EmployerTypeSelectionSupabase:
+    def __init__(self, profile):
+        self.profile = profile
+        self.table_calls = []
+        self.details_upsert = None
+        self.verification_update = None
+
+    def table(self, name):
+        self.table_calls.append(name)
+        return EmployerTypeSelectionQuery(self, name)
+
+
+class EmployerTypeSelectionQuery:
+    def __init__(self, database, table_name):
+        self.database = database
+        self.table_name = table_name
+        self.update_payload = None
+        self.upsert_payload = None
+
+    def select(self, *_fields):
+        return self
+
+    def eq(self, *_args):
+        return self
+
+    def single(self):
+        return self
+
+    def update(self, payload):
+        self.update_payload = payload
+        return self
+
+    def upsert(self, payload, **_kwargs):
+        self.upsert_payload = payload
+        return self
+
+    def execute(self):
+        if self.table_name == "employer_profiles":
+            if self.update_payload is not None:
+                self.database.profile.update(self.update_payload)
+                return SimpleNamespace(data=[self.database.profile])
+            return SimpleNamespace(data=self.database.profile)
+        if self.table_name == "employer_onboarding_details":
+            if self.upsert_payload is not None:
+                self.database.details_upsert = self.upsert_payload
+                return SimpleNamespace(data=[self.upsert_payload])
+            return SimpleNamespace(data=[])
+        if self.table_name == "employer_verifications":
+            self.database.verification_update = self.update_payload
+            return SimpleNamespace(data=[])
+        raise AssertionError(f"Unexpected table access: {self.table_name}")
+
+
+def employer_user():
+    now = datetime.now(timezone.utc)
+    return UserResponse(
+        id="user-id",
+        name="Employer",
+        role="EMPLOYER",
+        is_mobile_verified=True,
+        is_active=True,
+        created_at=now,
+        updated_at=now,
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("previous_type", [None, "INDIVIDUAL", "REGISTERED_BUSINESS"])
+async def test_individual_type_assignment_skips_onboarding_and_routes_to_dashboard(monkeypatch, previous_type):
+    database = EmployerTypeSelectionSupabase(
+        employer_profile(previous_type, onboarding_status="IN_PROGRESS")
+    )
+    monkeypatch.setattr(employers, "supabase", database)
+    monkeypatch.setattr(onboarding_service, "supabase", database)
+
+    selected = await employers.select_employer_type(
+        SelectEmployerTypeSchema(employer_type="INDIVIDUAL"), employer_user()
+    )
+
+    assert selected.employer_type == "INDIVIDUAL"
+    assert selected.onboarding_status == "COMPLETED"
+    assert "employer_onboarding_details" not in database.table_calls
+    assert "employer_verifications" not in database.table_calls
+    assert database.details_upsert is None
+    assert database.verification_update is None
+    assert OnboardingService.determine_next_step(employer_user()) == "DASHBOARD"
+
+
+@pytest.mark.parametrize(
+    "employer_type",
+    ["REGISTERED_BUSINESS", "REGISTERED_INDUSTRY", "UNREGISTERED_BUSINESS"],
+)
+@pytest.mark.asyncio
+async def test_business_type_assignment_still_persists_directory_snapshot(monkeypatch, employer_type):
+    database = EmployerTypeSelectionSupabase(employer_profile())
+    monkeypatch.setattr(employers, "supabase", database)
+
+    selected = await employers.select_employer_type(
+        SelectEmployerTypeSchema(employer_type=employer_type), employer_user()
+    )
+
+    assert selected.employer_type == employer_type
+    assert selected.onboarding_status == "IN_PROGRESS"
+    assert "employer_onboarding_details" in database.table_calls
+    assert database.details_upsert["employer_id"] == "employer-id"
+    assert employer_type in database.details_upsert["directory_data"]
 
 
 def test_registered_business_completion_requires_location_fields():
