@@ -150,6 +150,18 @@ async def test_logout_without_session_key_does_not_revoke_sessions(monkeypatch):
     assert fake.session_query.update_payload is None
 
 
+@pytest.mark.asyncio
+async def test_logout_clears_goleska_cookie_without_session_row():
+    response = Response()
+
+    result = await auth.logout(response, user=None, session_key=None)
+
+    assert result["success"] is True
+    cookie = response.headers.get("set-cookie", "").lower()
+    assert "goleska_session" in cookie
+    assert "max-age=0" in cookie
+
+
 def test_session_timestamp_migration_preserves_order_and_database_time():
     from pathlib import Path
 

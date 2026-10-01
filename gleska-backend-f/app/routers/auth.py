@@ -215,6 +215,11 @@ async def provision_authenticated_user(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Email not found. Please register first.",
             )
+        if intent == "login" and not existing.get("is_active", False):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User inactive",
+            )
         role = existing.get("role") if existing else request.role
         if not role:
             raise ValueError("ROLE_REQUIRED_FOR_NEW_ACCOUNT")
@@ -539,18 +544,22 @@ async def login_msg91(request: dict, response: Response):
     existing = AuthService.get_user_by_mobile(normalized_mobile)
     if not existing:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No account exists with this mobile number. Please sign up first.")
+    if not existing.get("is_active", False):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User inactive")
 
+    user_response = UserResponse(**existing)
+    next_step = OnboardingService.determine_next_step(user_response)
+    session_token = create_access_token(user_response.id)
     response.set_cookie(
         key="goleska_session",
-        value=create_access_token(existing["id"]),
+        value=session_token,
         httponly=True,
         secure=settings.ENVIRONMENT == "production",
         samesite="none" if settings.ENVIRONMENT == "production" else "lax",
         max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         path="/",
     )
-    user_response = UserResponse(**existing)
-    return {"success": True, "user": user_response, "next_step": OnboardingService.determine_next_step(user_response)}
+    return {"success": True, "user": user_response, "next_step": next_step}
 
 
 @router.get("/me")

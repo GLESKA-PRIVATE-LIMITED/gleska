@@ -5,6 +5,7 @@ import apiClient from "@/lib/api";
 import { supabase } from "@/lib/supabase";
 import { initializeMSG91Widget, otpUserMessage, retryOTP, runWithOtpOperationLock, sendOTP, verifyOTP } from "@/lib/msg91";
 import { registerSession, clearSessionKey, logSecurityActivity, parseDeviceInfo } from "@/lib/security";
+import { classifyOtpVerificationError, toSignupFlowError } from "@/lib/auth-errors";
 
 export interface AuthUser {
   id: string;
@@ -45,9 +46,9 @@ interface AuthContextType {
   nextStep: NextStep | null;
   error: string | null;
   login: (mobile: string, otp: string, name: string, role: "WORKER" | "EMPLOYER" | "ADMIN") => Promise<void>;
-  loginWithMobile: (mobile: string, otp: string) => Promise<AuthUser>;
+  loginWithMobile: (mobile: string, otp: string) => Promise<{ user: AuthUser; nextStep: NextStep | null }>;
   logout: () => Promise<void>;
-  refreshUser: () => Promise<NextStep | null>;
+  refreshUser: (propagateError?: boolean) => Promise<NextStep | null>;
   requestOTP: (mobile: string) => Promise<{ requestId: string | null }>;
   resendOTP: (mobile: string, requestId: string | null, channel: "SMS" | "EMAIL") => Promise<string | null>;
   signInWithEmail: (email: string, password: string, role?: "WORKER" | "EMPLOYER" | "ADMIN") => Promise<AuthUser>;
@@ -71,7 +72,7 @@ export const AuthContext = createContext<AuthContextType>({
   nextStep: null,
   error: null,
   login: async () => {},
-  loginWithMobile: async () => ({} as AuthUser),
+  loginWithMobile: async () => ({ user: {} as AuthUser, nextStep: null }),
   logout: async () => {},
   refreshUser: async () => null,
   requestOTP: async () => ({ requestId: null }),
@@ -216,22 +217,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const result = await sendOTP(mobile);
       return { requestId: result.requestId ?? null };
     } catch (err: any) {
-      const message = otpUserMessage(err, "send");
-      setError(message);
-      throw new Error(message);
+      const signupError = toSignupFlowError(err, "send");
+      setError(signupError.message);
+      throw signupError;
     }
   };
 
   const signupPreflight = async (name: string, email: string, mobile: string, password: string, confirmPassword: string, role: "WORKER" | "EMPLOYER", termsAccepted = true) => {
-    await apiClient.post("/api/v1/auth/signup-preflight", {
-      name: name.trim(),
-      email: email.trim().toLowerCase(),
-      mobile,
-      password,
-      confirm_password: confirmPassword,
-      role,
-      terms_accepted: termsAccepted,
-    });
+    try {
+      await apiClient.post("/api/v1/auth/signup-preflight", {
+        name: name.trim(),
+        email: email.trim().toLowerCase(),
+        mobile,
+        password,
+        confirm_password: confirmPassword,
+        role,
+        terms_accepted: termsAccepted,
+      });
+    } catch (err) {
+      const signupError = toSignupFlowError(err, "preflight");
+      setError(signupError.message);
+      throw signupError;
+    }
   };
 
 const resendOTP = async (mobile: string, requestId: string | null, channel: "SMS" | "EMAIL") => {
@@ -401,9 +408,16 @@ const resendOTP = async (mobile: string, requestId: string | null, channel: "SMS
   const completeEmailSignup = async (email: string, password: string, name: string, mobile: string, otp: string, role: "WORKER" | "EMPLOYER" | "ADMIN", termsAccepted = true, accountType: "BUSINESS" | "INDIVIDUAL" = "BUSINESS") => {
     setError(null);
     setIsLoading(true);
+    let signupStage: "preparation" | "backend-signup" | "auth-sign-in" | "session-registration" | "session-restoration" | "onboarding" = "preparation";
     try {
       clearSessionKey();
-      const msg91Result = await verifyOTP(otp);
+      let msg91Result: Awaited<ReturnType<typeof verifyOTP>>;
+      try {
+        msg91Result = await verifyOTP(otp);
+      } catch (err) {
+        throw classifyOtpVerificationError(err);
+      }
+      signupStage = "backend-signup";
       const normalizedMobile = mobile.replace(/\D/g, "");
       const response = await apiClient.post("/api/v1/auth/signup-mobile-verified", {
         name,
@@ -416,26 +430,34 @@ const resendOTP = async (mobile: string, requestId: string | null, channel: "SMS
         terms_accepted: termsAccepted,
       }, { skipSupabaseAuth: true });
 
+      signupStage = "auth-sign-in";
       const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
         email: email.trim().toLowerCase(),
         password,
       });
       if (signInError) throw signInError;
+      signupStage = "session-registration";
       await registerSession();
       setUser(response.data);
       setClientAuthCookie();
+      signupStage = "session-restoration";
       let state = await apiClient.get("/api/v1/auth/me");
       if (role === "EMPLOYER" && accountType === "INDIVIDUAL" && !state.data?.user?.employer_type) {
+        signupStage = "onboarding";
         await apiClient.post("/api/v1/employers/onboarding/type", { employer_type: "INDIVIDUAL" });
+        signupStage = "session-restoration";
         state = await apiClient.get("/api/v1/auth/me");
       }
       setNextStep(state.data?.next_step || null);
       notifyAuthStateChange();
     } catch (err: any) {
-      const message = otpUserMessage(err, "verify");
-      setError(message);
-      await supabase.auth.signOut();
-      throw new Error(message);
+      const signupError = toSignupFlowError(err, signupStage);
+      setError(signupError.message);
+      try {
+        await supabase.auth.signOut();
+      } catch {
+      }
+      throw signupError;
     } finally {
       setIsLoading(false);
     }
@@ -473,6 +495,7 @@ const resendOTP = async (mobile: string, requestId: string | null, channel: "SMS
   const loginWithMobile = async (mobile: string, otp: string) => {
     setError(null);
     setIsLoading(true);
+    let backendLoginSucceeded = false;
     try {
       await clearBackendSession();
       clearSessionKey();
@@ -482,16 +505,37 @@ const resendOTP = async (mobile: string, requestId: string | null, channel: "SMS
         mobile,
         msg91_access_token: msg91Result.accessToken,
       }, { skipSupabaseAuth: true });
+      backendLoginSucceeded = true;
+      if (!response.data.user?.id) {
+        throw new Error("Backend authentication could not be confirmed.");
+      }
       if (response.data.user?.id) {
         await registerSession();
       }
-      setUser(response.data.user);
-      setNextStep(response.data.next_step);
+      const state = await apiClient.get("/api/v1/auth/me", { withCredentials: true });
+      if (!state.data?.user) {
+        throw new Error("Backend authentication could not be confirmed.");
+      }
+      setUser(state.data.user);
+      setNextStep(state.data.next_step || null);
       setClientAuthCookie();
       notifyAuthStateChange();
-      return response.data.user as AuthUser;
+      return { user: state.data.user as AuthUser, nextStep: state.data.next_step || null };
     } catch (err: any) {
-      const message = otpUserMessage(err, "verify");
+      if (backendLoginSucceeded) {
+        await clearBackendSession();
+        clearSessionKey();
+        try {
+          await supabase.auth.signOut();
+        } catch {}
+        setUser(null);
+        setNextStep(null);
+        clearClientAuthCookie();
+        notifyAuthStateChange();
+      }
+      const message = err.response?.data?.detail === "User inactive"
+        ? "User inactive"
+        : otpUserMessage(err, "verify");
       setError(message);
       throw new Error(message);
     } finally {
@@ -538,7 +582,7 @@ const resendOTP = async (mobile: string, requestId: string | null, channel: "SMS
     }
   };
 
-  const refreshUser = async (): Promise<NextStep | null> => {
+  const refreshUser = async (propagateError = false): Promise<NextStep | null> => {
     try {
       const response = await apiClient.get("/api/v1/auth/me", { withCredentials: true });
       if (response.data?.user) {
@@ -553,6 +597,7 @@ const resendOTP = async (mobile: string, requestId: string | null, channel: "SMS
       setUser(null);
       setNextStep(null);
       clearClientAuthCookie();
+      if (propagateError) throw toSignupFlowError(err, "session-restoration");
     }
     return null;
   };

@@ -638,6 +638,37 @@ async def test_msg91_login_uses_existing_role_without_request_role(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_msg91_login_rejects_inactive_user_before_cookie(monkeypatch):
+    from fastapi import HTTPException
+    from app.routers import auth as auth_router
+
+    existing = application_user("WORKER")
+    existing["is_active"] = False
+    monkeypatch.setattr(AuthService, "get_user_by_mobile", staticmethod(lambda _mobile: existing))
+
+    async def verify_access_token_for_mobile(_self, _token, mobile):
+        return {"type": "success", "message": mobile}
+
+    monkeypatch.setattr(
+        auth_router.MSG91Service,
+        "verify_access_token_for_mobile",
+        verify_access_token_for_mobile,
+    )
+    response = Response()
+
+    with pytest.raises(HTTPException) as error:
+        await auth_router.login_msg91(
+            {"mobile": existing["mobile"], "msg91_access_token": "verified-token"},
+            response,
+        )
+
+    assert error.value.status_code == 401
+    assert error.value.detail == "User inactive"
+    assert response.headers.get("set-cookie") is None
+    assert existing["is_active"] is False
+
+
+@pytest.mark.asyncio
 async def test_complete_msg91_binds_verified_phone_before_provisioning(monkeypatch):
     from app.routers import auth as auth_router
 
@@ -696,7 +727,49 @@ async def test_existing_supabase_identity_provisioning_uses_database_role(monkey
     result = await auth_router.provision_authenticated_user(
         ProvisionUserSchema(name="", mobile=None, role=None),
         SimpleNamespace(credentials="supabase-token"),
+        intent="login",
     )
 
     assert calls["role"] == "EMPLOYER"
     assert result.role == "EMPLOYER"
+    assert existing["is_active"] is True
+
+
+@pytest.mark.asyncio
+async def test_login_provisioning_rejects_inactive_user_without_reactivation(monkeypatch):
+    from fastapi import HTTPException
+    from app.routers import auth as auth_router
+    from app.schemas.auth import ProvisionUserSchema
+
+    existing = application_user("WORKER")
+    existing["is_active"] = False
+    fake_supabase = SimpleNamespace(
+        auth=SimpleNamespace(
+            get_user=lambda _token: SimpleNamespace(
+                user=SimpleNamespace(
+                    id=existing["id"],
+                    email=existing["email"],
+                    phone=existing["mobile"],
+                    user_metadata={},
+                )
+            )
+        )
+    )
+    monkeypatch.setattr(auth_router, "supabase", fake_supabase)
+    monkeypatch.setattr(AuthService, "get_user_by_id", staticmethod(lambda _user_id: existing))
+    monkeypatch.setattr(
+        AuthService,
+        "provision_supabase_user",
+        staticmethod(lambda **_kwargs: pytest.fail("inactive login must not provision")),
+    )
+
+    with pytest.raises(HTTPException) as error:
+        await auth_router.provision_authenticated_user(
+            ProvisionUserSchema(name="", mobile=None, role=None),
+            SimpleNamespace(credentials="supabase-token"),
+            intent="login",
+        )
+
+    assert error.value.status_code == 401
+    assert error.value.detail == "User inactive"
+    assert existing["is_active"] is False

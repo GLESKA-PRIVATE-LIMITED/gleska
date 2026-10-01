@@ -1,4 +1,5 @@
 import { environment, missingMsg91Configuration } from "../config/environment";
+import { SignupFlowError, classifyOtpVerificationError } from "./auth-errors";
 
 type Callback = (value: unknown) => void;
 type Msg91Methods = {
@@ -35,7 +36,7 @@ function beginOtpOperation(
     }
     throw new Error("OTP_OPERATION_IN_PROGRESS");
   }
-  if (verificationCompleted && operation === "verify") throw new Error("OTP_ALREADY_USED");
+  if (verificationCompleted && operation === "verify") throw classifyOtpVerificationError("OTP_ALREADY_USED");
   const operationLock = lock ?? Symbol(operation);
   activeOtpOperation = { operation, lock: operationLock };
   return { lock: operationLock, ownsLock: true };
@@ -58,6 +59,7 @@ export async function runWithOtpOperationLock<T>(
 }
 
 export function otpUserMessage(error: unknown, operation: "send" | "verify" | "resend" | "auth" = "verify"): string {
+  if (error instanceof SignupFlowError) return error.message;
   const errorRecord = typeof error === "object" && error !== null ? error as Record<string, unknown> : null;
   const text = String(errorRecord?.detail ?? errorRecord?.message ?? error ?? "");
   const normalized = text.toLowerCase();
@@ -322,9 +324,11 @@ export async function verifyMsg91Otp(otp: string): Promise<string> {
       if (settled) return;
       settled = true;
       window.clearTimeout(timeout);
-      reject(new Error(otpUserMessage(providerError(error, "The OTP could not be verified."), "verify")));
+      reject(classifyOtpVerificationError(providerError(error, "The OTP could not be verified.")));
     });
     });
+  } catch (error) {
+    throw classifyOtpVerificationError(error);
   } finally {
     if (ownsLock) finishOtpOperation(lock);
   }

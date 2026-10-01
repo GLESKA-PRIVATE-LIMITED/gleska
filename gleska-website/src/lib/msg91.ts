@@ -1,5 +1,7 @@
 "use client";
 
+import { OtpVerificationError, SignupFlowError, classifyOtpVerificationError } from "@/lib/auth-errors";
+
 export type Msg91SdkMethods = {
   sendOtp: (
     mobile: string,
@@ -41,6 +43,7 @@ let activeOtpOperation: { operation: OtpOperation; lock: Msg91OperationLock } | 
 let verificationCompleted = false;
 
 export function otpUserMessage(error: unknown, operation: "send" | "verify" | "resend" | "auth" = "verify"): string {
+  if (error instanceof SignupFlowError) return error.message;
   const errorRecord = asRecord(error);
   const response = asRecord(errorRecord?.response);
   const responseData = asRecord(response?.data);
@@ -123,7 +126,7 @@ function beginOtpOperation(
     throw new Error("OTP_OPERATION_IN_PROGRESS");
   }
   if (operation === "verify" && verificationCompleted) {
-    throw new Error("OTP_ALREADY_USED");
+    throw new OtpVerificationError("OTP_ALREADY_USED");
   }
   const operationLock = lock ?? Symbol(operation);
   activeOtpOperation = { operation, lock: operationLock };
@@ -561,12 +564,14 @@ export async function verifyOTP(otp: string): Promise<{ accessToken: string; [ke
         console.error("[MSG91] verifyOtp failed.");
         if (isAlreadyVerifiedError(error)) {
           verificationCompleted = true;
-          reject(new Error(otpUserMessage(error, "verify")));
+          reject(classifyOtpVerificationError(error));
           return;
         }
-        reject(new Error(otpUserMessage(error, "verify")));
+        reject(classifyOtpVerificationError(error));
       });
     });
+  } catch (error) {
+    throw classifyOtpVerificationError(error);
   } finally {
     if (ownsLock) finishOtpOperation(lock);
   }

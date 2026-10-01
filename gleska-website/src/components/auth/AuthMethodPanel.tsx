@@ -9,9 +9,16 @@ import { useAuth } from "@/context/AuthContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { getRouteForAuthenticatedUser, getRouteForNextStep } from "@/lib/auth-routing";
 import { normalizeIndianMobile, otpUserMessage } from "@/lib/msg91";
+import { SignupFlowError, toSignupFlowError } from "@/lib/auth-errors";
 
 type Role = "WORKER" | "EMPLOYER";
 type OTPTransaction = { name: string; email: string; password: string; mobile: string; termsAccepted: boolean; requestId: string | null; channel: "SMS" | "EMAIL" };
+
+function authUserMessage(error: unknown, operation: "send" | "verify" | "auth" = "auth") {
+  if (error instanceof SignupFlowError) return error.message;
+  if (error instanceof Error && error.message === "User inactive") return "User inactive";
+  return otpUserMessage(error, operation);
+}
 
 export default function AuthMethodPanel({ role, accountType = "BUSINESS", initialMode = "login", hideModeSelector = false, onModeChange, onCreateAccount }: { role?: Role; accountType?: "BUSINESS" | "INDIVIDUAL"; initialMode?: "login" | "signup"; hideModeSelector?: boolean; onModeChange?: (mode: "login" | "signup") => void; onCreateAccount?: () => void }) {
   const router = useRouter();
@@ -164,7 +171,7 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS", initia
         router.replace(getRouteForAuthenticatedUser(authenticatedUser.role, nextStep, new URLSearchParams(window.location.search).get("next")));
       }
     } catch (error: unknown) {
-      toast.error(otpUserMessage(error, mode === "signup" || loginMethod === "mobile" ? "send" : "auth"));
+      toast.error(authUserMessage(error, mode === "signup" || loginMethod === "mobile" ? "send" : "auth"));
     } finally {
       setSubmitting(false);
     }
@@ -203,20 +210,22 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS", initia
           accountType,
         );
       } else {
-        const authenticatedUser = await loginWithMobile(otpTransaction.mobile, otp);
-        const nextStep = await refreshUser();
+        const { user: authenticatedUser, nextStep } = await loginWithMobile(otpTransaction.mobile, otp);
         clearOtpTransaction();
         toast.success(t('auth.welcomeBack'));
         router.replace(getRouteForAuthenticatedUser(authenticatedUser.role, nextStep, new URLSearchParams(window.location.search).get("next")));
         return;
       }
-      const nextStep = await refreshUser();
+      const nextStep = await refreshUser(otpPurpose === "signup");
       clearOtpTransaction();
       toast.success(t('auth.accountCreated'));
       router.replace(getRouteForNextStep(role, nextStep));
     } catch (error: unknown) {
       if (otpPurpose === "signup") setOtp("");
-      toast.error(otpUserMessage(error, "verify"));
+      const signupError = otpPurpose === "signup"
+        ? error instanceof SignupFlowError ? error : toSignupFlowError(error, "session-restoration")
+        : null;
+      toast.error(signupError?.message ?? authUserMessage(error, "verify"));
     } finally {
       setSubmitting(false);
     }

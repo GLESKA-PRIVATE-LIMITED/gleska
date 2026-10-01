@@ -184,7 +184,7 @@ export default function EmployerDashboardPreviewPage() {
       nextStep: "DASHBOARD" as const,
       error: null,
       login: async () => {},
-      loginWithMobile: async () => ({} as AuthUser),
+      loginWithMobile: async () => ({ user: {} as AuthUser, nextStep: "DASHBOARD" as const }),
       logout: async () => {},
       refreshUser: async () => "DASHBOARD" as const,
       requestOTP: async () => ({ requestId: null }),

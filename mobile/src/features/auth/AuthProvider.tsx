@@ -8,6 +8,7 @@ import { ApiError, apiGet, apiPost } from "../../lib/api";
 import { clearSessionKey, registerMobileSession } from "../../lib/session";
 import { getSupabaseClient } from "../../lib/supabase";
 import { normalizeIndianMobile, otpUserMessage, retryMsg91Otp, runWithOtpOperationLock, sendMsg91Otp, verifyMsg91Otp } from "../../lib/msg91";
+import { classifyOtpVerificationError, SignupFlowError, toSignupFlowError } from "../../lib/auth-errors";
 
 type SignupInput = {
   name: string;
@@ -61,7 +62,16 @@ function clearOAuthState() {
 }
 
 export function errorMessage(error: unknown): string {
+  if (error instanceof SignupFlowError) return error.message;
+  const detail = error instanceof ApiError ? error.detail : error instanceof Error ? error.message : undefined;
+  if (detail === "User inactive") return "User inactive";
   return otpUserMessage(error, "auth");
+}
+
+function errorMessageForLogin(error: unknown): string {
+  const detail = error instanceof ApiError ? error.detail : error instanceof Error ? error.message : undefined;
+  if (detail === "User inactive") return "User inactive";
+  return otpUserMessage(error, "verify");
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -218,7 +228,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await getSupabaseClient().auth.signOut();
       setUser(null);
       setNextStep(null);
-      const message = otpUserMessage(authError, "verify");
+      const message = errorMessageForLogin(authError);
       setError(message);
       throw new Error(message);
     } finally {
@@ -241,6 +251,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signInWithMobileOtp = async (mobile: string, otp: string) => {
     setError("");
     setIsLoading(true);
+    let backendLoginSucceeded = false;
     try {
       const msg91AccessToken = await verifyMsg91Otp(otp);
       if (!missingSupabaseConfiguration()) await getSupabaseClient().auth.signOut();
@@ -249,10 +260,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         mobile: normalizeIndianMobile(mobile),
         msg91_access_token: msg91AccessToken,
       }, { skipSupabaseAuth: true });
+      backendLoginSucceeded = true;
       await registerMobileSession();
       return await refreshAuth();
     } catch (authError) {
-      const message = otpUserMessage(authError, "verify");
+      if (backendLoginSucceeded) await logout();
+      const message = errorMessageForLogin(authError);
       setError(message);
       throw new Error(message);
     } finally {
@@ -263,23 +276,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const beginSignup = async (input: SignupInput) => {
     setError("");
     const mobile = normalizeIndianMobile(input.mobile);
-    await apiPost("/api/v1/auth/signup-preflight", {
-      name: input.name.trim(),
-      email: input.email.trim().toLowerCase(),
-      mobile,
-      password: input.password,
-      confirm_password: input.confirmPassword,
-      role: input.role,
-      terms_accepted: true,
-    }, { skipSupabaseAuth: true });
-    return await sendMsg91Otp(mobile);
+    try {
+      await apiPost("/api/v1/auth/signup-preflight", {
+        name: input.name.trim(),
+        email: input.email.trim().toLowerCase(),
+        mobile,
+        password: input.password,
+        confirm_password: input.confirmPassword,
+        role: input.role,
+        terms_accepted: true,
+      }, { skipSupabaseAuth: true });
+    } catch (error) {
+      const signupError = toSignupFlowError(error, "preflight");
+      setError(signupError.message);
+      throw signupError;
+    }
+
+    try {
+      return await sendMsg91Otp(mobile);
+    } catch (error) {
+      const signupError = toSignupFlowError(error, "send");
+      setError(signupError.message);
+      throw signupError;
+    }
   };
 
   const completeSignup = async (input: SignupInput, otp: string) => {
     setError("");
     setIsLoading(true);
+    let signupStage: "backend-signup" | "auth-sign-in" | "session-registration" | "session-restoration" | "onboarding" = "backend-signup";
     try {
-      const msg91AccessToken = await verifyMsg91Otp(otp);
+      let msg91AccessToken: string;
+      try {
+        msg91AccessToken = await verifyMsg91Otp(otp);
+      } catch (error) {
+        throw classifyOtpVerificationError(error);
+      }
       await apiPost("/api/v1/auth/signup-mobile-verified", {
         name: input.name.trim(),
         email: input.email.trim().toLowerCase(),
@@ -291,23 +323,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         terms_accepted: true,
       }, { skipSupabaseAuth: true });
 
+      signupStage = "auth-sign-in";
       const { error: signInError } = await getSupabaseClient().auth.signInWithPassword({
         email: input.email.trim().toLowerCase(),
         password: input.password,
       });
       if (signInError) throw signInError;
+      signupStage = "session-registration";
       await registerMobileSession();
+      signupStage = "session-restoration";
       let state = await refreshAuth();
       if (input.role === "EMPLOYER" && input.accountType === "INDIVIDUAL" && !state.user.employer_type) {
+        signupStage = "onboarding";
         await apiPost("/api/v1/employers/onboarding/type", { employer_type: "INDIVIDUAL" });
+        signupStage = "session-restoration";
         state = await refreshAuth();
       }
       return state;
     } catch (authError) {
-      if (!missingSupabaseConfiguration()) await getSupabaseClient().auth.signOut();
-      const message = errorMessage(authError);
-      setError(message);
-      throw new Error(message);
+      const signupError = toSignupFlowError(authError, signupStage);
+      if (!missingSupabaseConfiguration()) {
+        try {
+          await getSupabaseClient().auth.signOut();
+        } catch {
+        }
+      }
+      setError(signupError.message);
+      throw signupError;
     } finally {
       setIsLoading(false);
     }
