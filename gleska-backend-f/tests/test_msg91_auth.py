@@ -280,12 +280,16 @@ def test_provision_supabase_user_business_employer_inserts_trial_dates(monkeypat
 
 
 def test_msg91_resend_cooldown_blocks_duplicate_requests():
+    from app.services import msg91_service
+    from app.services.msg91_service import OTPResendCooldown
+
     MSG91Service.validate_otp_resend_request("919876543210", "SMS")
 
-    with pytest.raises(ValueError, match="OTP_RESEND_COOLDOWN"):
+    with pytest.raises(OTPResendCooldown, match="OTP_RESEND_COOLDOWN") as error:
         MSG91Service.validate_otp_resend_request("919876543210", "SMS")
 
-    assert "919876543210" in MSG91Service.__dict__.get("_otp_resend_history", {})
+    assert 1 <= error.value.retry_after_seconds <= msg91_service.OTP_RESEND_COOLDOWN_SECONDS
+    assert "919876543210" in msg91_service._otp_resend_history
 
 
 def test_msg91_resend_cooldown_allows_after_timeout(monkeypatch):
@@ -301,6 +305,7 @@ def test_msg91_resend_cooldown_allows_after_timeout(monkeypatch):
 def test_password_reset_service_replaces_existing_active_challenge(monkeypatch):
     from app.services import password_reset_service
 
+    password_reset_service._password_reset_request_times.clear()
     challenge_rows = [{"id": "old-id", "phone": "919876543210", "created_at": "2024-01-01T00:00:00Z", "used_at": None}]
 
     class FakeTable:
@@ -337,7 +342,7 @@ def test_password_reset_service_replaces_existing_active_challenge(monkeypatch):
         def execute(self):
             if self._update_values is not None:
                 for row in self.rows:
-                    if row["phone"] == self._filter[0] and row.get("used_at") is None:
+                    if row["phone"] == self._filter[1] and row.get("used_at") is None:
                         row["used_at"] = "2024-01-01T00:05:00Z"
                 return SimpleNamespace(data=self.rows)
             if self._insert_values is not None:
@@ -359,6 +364,195 @@ def test_password_reset_service_replaces_existing_active_challenge(monkeypatch):
     assert len(challenge_rows) == 2
     assert challenge_rows[0]["used_at"] == "2024-01-01T00:05:00Z"
     assert challenge_rows[1]["phone"] == "919876543210"
+
+
+def test_password_reset_request_rejects_missing_account_without_side_effects(monkeypatch):
+    from app.services import password_reset_service
+
+    password_reset_service._password_reset_request_times.clear()
+
+    class FakeSupabase:
+        def table(self, _table_name):
+            pytest.fail("A missing account must not mutate reset challenges")
+
+    monkeypatch.setattr(password_reset_service, "supabase", FakeSupabase())
+    monkeypatch.setattr(password_reset_service.AuthService, "get_user_by_mobile", lambda _phone: None)
+
+    import asyncio
+
+    with pytest.raises(ValueError, match="MOBILE_NOT_FOUND"):
+        asyncio.run(password_reset_service.PasswordResetService.request_otp("9876543211"))
+
+    assert "919876543211" not in password_reset_service._password_reset_request_times
+
+
+def test_password_reset_request_preserves_cooldown_for_existing_account(monkeypatch):
+    from datetime import timedelta
+    from app.services import password_reset_service
+
+    normalized_phone = "919876543212"
+    password_reset_service._password_reset_request_times.clear()
+    password_reset_service._password_reset_request_times[normalized_phone] = (
+        password_reset_service.PasswordResetService._now()
+        - timedelta(seconds=1)
+    )
+    monkeypatch.setattr(
+        password_reset_service.AuthService,
+        "get_user_by_mobile",
+        lambda _phone: {"id": "existing-user"},
+    )
+
+    class FakeSupabase:
+        def table(self, _table_name):
+            pytest.fail("A cooldown response must not mutate reset challenges")
+
+    monkeypatch.setattr(password_reset_service, "supabase", FakeSupabase())
+
+    import asyncio
+
+    retry_after = asyncio.run(
+        password_reset_service.PasswordResetService.request_otp("9876543212")
+    )
+
+    assert retry_after is not None
+    assert 1 <= retry_after <= password_reset_service.settings.PASSWORD_RESET_RESEND_COOLDOWN_SECONDS
+
+
+@pytest.mark.asyncio
+async def test_password_reset_challenge_can_issue_only_one_authorization(monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    from app.services import password_reset_service
+
+    challenge = {
+        "id": "challenge-1",
+        "phone": "919876543210",
+        "otp_expires_at": (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat(),
+        "attempts": 0,
+        "max_attempts": 5,
+        "verified_at": None,
+        "used_at": None,
+    }
+    calls = {"provider_verify": 0}
+
+    class FakeTable:
+        def __init__(self):
+            self.action = "select"
+            self.filters = {}
+            self.update_values = None
+            self.selected_after_update = False
+
+        def select(self, *_args, **_kwargs):
+            if self.action == "update":
+                self.selected_after_update = True
+            return self
+
+        def eq(self, field, value):
+            self.filters[field] = value
+            return self
+
+        def is_(self, field, _value):
+            self.filters[field] = None
+            return self
+
+        def order(self, *_args, **_kwargs):
+            return self
+
+        def limit(self, *_args, **_kwargs):
+            return self
+
+        def update(self, values):
+            self.action = "update"
+            self.update_values = values
+            return self
+
+        def execute(self):
+            if self.action == "select":
+                matches = self.filters.get("phone") == challenge["phone"] and challenge["used_at"] is None
+                return SimpleNamespace(data=[challenge.copy()] if matches else [])
+            if challenge["verified_at"] is not None or challenge["used_at"] is not None:
+                return SimpleNamespace(data=[])
+            challenge.update(self.update_values or {})
+            return SimpleNamespace(data=[{"id": challenge["id"]}] if self.selected_after_update else [])
+
+    class FakeSupabase:
+        def table(self, table_name):
+            assert table_name == "password_reset_challenges"
+            return FakeTable()
+
+    async def verify_token(_self, _token):
+        calls["provider_verify"] += 1
+        return {"type": "success", "message": challenge["phone"]}
+
+    monkeypatch.setattr(password_reset_service, "supabase", FakeSupabase())
+    monkeypatch.setattr(password_reset_service.MSG91Service, "verify_access_token", verify_token)
+
+    authorization = await password_reset_service.PasswordResetService.verify_provider_token(
+        challenge["phone"], "provider-token"
+    )
+
+    assert authorization
+    with pytest.raises(ValueError, match="OTP_ALREADY_USED"):
+        await password_reset_service.PasswordResetService.verify_provider_token(
+            challenge["phone"], "provider-token"
+        )
+    assert calls["provider_verify"] == 1
+
+
+@pytest.mark.asyncio
+async def test_resend_endpoint_includes_retry_after_seconds(monkeypatch):
+    from fastapi import HTTPException
+    from app.routers import auth as auth_router
+    from app.schemas.auth import ResendOTPSchema
+    from app.services.msg91_service import OTPResendCooldown
+
+    monkeypatch.setattr(
+        MSG91Service,
+        "validate_otp_resend_request",
+        staticmethod(lambda *_args: (_ for _ in ()).throw(OTPResendCooldown(18))),
+    )
+
+    with pytest.raises(HTTPException) as response:
+        await auth_router.resend_otp(ResendOTPSchema(mobile="919876543210", channel="SMS"))
+
+    assert response.value.status_code == 429
+    assert response.value.headers["Retry-After"] == "18"
+
+
+@pytest.mark.asyncio
+async def test_password_reset_request_returns_cooldown_without_new_challenge(monkeypatch):
+    from app.routers import auth as auth_router
+    from app.schemas.auth import PasswordResetRequestSchema
+
+    async def request_otp(_phone):
+        return 23
+
+    monkeypatch.setattr(auth_router.PasswordResetService, "request_otp", request_otp)
+
+    result = await auth_router.request_password_reset_otp(
+        PasswordResetRequestSchema(phone="919876543210")
+    )
+
+    assert result["retry_after_seconds"] == 23
+
+
+@pytest.mark.asyncio
+async def test_password_reset_request_returns_safe_not_found_message(monkeypatch):
+    from fastapi import HTTPException
+    from app.routers import auth as auth_router
+    from app.schemas.auth import PasswordResetRequestSchema
+
+    async def request_otp(_phone):
+        raise ValueError("MOBILE_NOT_FOUND")
+
+    monkeypatch.setattr(auth_router.PasswordResetService, "request_otp", request_otp)
+
+    with pytest.raises(HTTPException) as response:
+        await auth_router.request_password_reset_otp(
+            PasswordResetRequestSchema(phone="919876543210")
+        )
+
+    assert response.value.status_code == 404
+    assert response.value.detail == "Mobile number not found. Please register first."
 
 
 def test_create_user_uses_supabase_auth_parent_id(monkeypatch):

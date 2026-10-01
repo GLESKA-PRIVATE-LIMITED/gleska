@@ -137,6 +137,36 @@ async def test_signup_preflight_endpoint_accepts_valid_terms():
 
 
 @pytest.mark.asyncio
+async def test_signup_preflight_rejects_complete_existing_account(monkeypatch):
+    from app.routers import auth as auth_router
+    from types import SimpleNamespace
+
+    existing_user = {"id": "complete-user-id", "role": "WORKER"}
+    profile_query = MagicMock()
+    profile_query.select.return_value = profile_query
+    profile_query.eq.return_value = profile_query
+    profile_query.limit.return_value = profile_query
+    profile_query.execute.return_value = SimpleNamespace(data=[{"id": "profile-id"}])
+    monkeypatch.setattr(AuthService, "get_user_by_email", staticmethod(lambda _email: existing_user))
+    monkeypatch.setattr(AuthService, "get_user_by_mobile", staticmethod(lambda _mobile: existing_user))
+    monkeypatch.setattr(auth_router.supabase, "table", lambda _table_name: profile_query)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/api/v1/auth/signup-preflight", json={
+            "name": "Existing User",
+            "email": "existing@example.com",
+            "mobile": "9876543210",
+            "password": "Password123!",
+            "confirm_password": "Password123!",
+            "role": "WORKER",
+            "terms_accepted": True,
+        })
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "An account already exists with this email or mobile number. Please login instead."
+
+
+@pytest.mark.asyncio
 async def test_signup_mobile_verified_endpoint_rejects_without_terms():
     """POST /api/v1/auth/signup-mobile-verified must reject missing or false terms_accepted."""
     async with AsyncClient(
@@ -340,6 +370,115 @@ async def test_signup_auth_existing_email_returns_controlled_auth_conflict(monke
 
 
 @pytest.mark.asyncio
+async def test_signup_reuses_matching_auth_identity_before_create(monkeypatch):
+    from app.routers import auth as auth_router
+
+    auth_identity = MagicMock(
+        id="auth-only-id",
+        email="auth-only@example.com",
+        phone=None,
+        user_metadata={"mobile": "919876543210"},
+    )
+    admin = MagicMock()
+    admin.list_users.return_value = [auth_identity]
+    monkeypatch.setattr(auth_router.supabase.auth, "admin", admin)
+    monkeypatch.setattr(
+        auth_router.MSG91Service,
+        "verify_access_token_for_mobile",
+        AsyncMock(return_value={"type": "success", "message": "919876543210"}),
+    )
+    monkeypatch.setattr(AuthService, "get_user_by_email", staticmethod(lambda _email: None))
+    monkeypatch.setattr(AuthService, "get_user_by_mobile", staticmethod(lambda _mobile: None))
+    monkeypatch.setattr(AuthService, "provision_supabase_user", staticmethod(lambda **_kwargs: {
+        "id": "auth-only-id",
+        "name": "Recovered User",
+        "email": "auth-only@example.com",
+        "mobile": "919876543210",
+        "role": "WORKER",
+        "is_mobile_verified": True,
+        "is_active": True,
+        "created_at": "2026-08-29T13:00:00+00:00",
+        "updated_at": "2026-08-29T13:00:00+00:00",
+    }))
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/api/v1/auth/signup-mobile-verified", json={
+            "name": "Recovered User",
+            "email": "auth-only@example.com",
+            "mobile": "9876543210",
+            "password": "Password123!",
+            "confirm_password": "Password123!",
+            "role": "WORKER",
+            "msg91_access_token": "verified-token",
+            "terms_accepted": True,
+        })
+
+    assert response.status_code == 200
+    assert response.json()["id"] == "auth-only-id"
+    admin.create_user.assert_not_called()
+    admin.update_user_by_id.assert_called_once_with("auth-only-id", {"password": "Password123!"})
+    admin.delete_user.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_signup_recovers_incomplete_application_user_without_creating_auth(monkeypatch):
+    from app.routers import auth as auth_router
+    from types import SimpleNamespace
+
+    existing_user = {
+        "id": "partial-user-id",
+        "role": "WORKER",
+        "email": "partial@example.com",
+        "mobile": "919876543210",
+    }
+    auth_identity = MagicMock(id="partial-user-id", email="partial@example.com")
+    admin = MagicMock()
+    admin.get_user_by_id.return_value = auth_identity
+    monkeypatch.setattr(auth_router.supabase.auth, "admin", admin)
+    profile_query = MagicMock()
+    profile_query.select.return_value = profile_query
+    profile_query.eq.return_value = profile_query
+    profile_query.limit.return_value = profile_query
+    profile_query.execute.return_value = SimpleNamespace(data=[])
+    monkeypatch.setattr(auth_router.supabase, "table", lambda _table_name: profile_query)
+    monkeypatch.setattr(
+        auth_router.MSG91Service,
+        "verify_access_token_for_mobile",
+        AsyncMock(return_value={"type": "success", "message": "919876543210"}),
+    )
+    monkeypatch.setattr(AuthService, "get_user_by_email", staticmethod(lambda _email: existing_user))
+    monkeypatch.setattr(AuthService, "get_user_by_mobile", staticmethod(lambda _mobile: existing_user))
+    monkeypatch.setattr(AuthService, "provision_supabase_user", staticmethod(lambda **_kwargs: {
+        "id": "partial-user-id",
+        "name": "Recovered User",
+        "email": "partial@example.com",
+        "mobile": "919876543210",
+        "role": "WORKER",
+        "is_mobile_verified": True,
+        "is_active": True,
+        "created_at": "2026-08-29T13:00:00+00:00",
+        "updated_at": "2026-08-29T13:00:00+00:00",
+    }))
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/api/v1/auth/signup-mobile-verified", json={
+            "name": "Recovered User",
+            "email": "partial@example.com",
+            "mobile": "9876543210",
+            "password": "Password123!",
+            "confirm_password": "Password123!",
+            "role": "WORKER",
+            "msg91_access_token": "verified-token",
+            "terms_accepted": True,
+        })
+
+    assert response.status_code == 200
+    admin.create_user.assert_not_called()
+    admin.update_user_by_id.assert_called_once_with("partial-user-id", {"password": "Password123!"})
+    admin.delete_user.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_signup_database_provisioning_failure_is_not_reported_as_duplicate(monkeypatch):
     from app.routers import auth as auth_router
 
@@ -374,7 +513,67 @@ async def test_signup_database_provisioning_failure_is_not_reported_as_duplicate
 
     assert response.status_code == 500
     assert response.json()["detail"] == "USER_PROVISIONING_FAILED"
-    admin.delete_user.assert_called_once_with("auth-user-id")
+    admin.delete_user.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_signup_retry_reuses_auth_identity_after_provisioning_failure(monkeypatch):
+    from app.routers import auth as auth_router
+
+    auth_identity = MagicMock(
+        id="retry-auth-id",
+        email="retry@example.com",
+        phone=None,
+        user_metadata={"mobile": "919876543210"},
+    )
+    admin = MagicMock()
+    admin.create_user.return_value = MagicMock(user=auth_identity)
+    admin.list_users.side_effect = [[], [auth_identity]]
+    monkeypatch.setattr(auth_router.supabase.auth, "admin", admin)
+    monkeypatch.setattr(
+        auth_router.MSG91Service,
+        "verify_access_token_for_mobile",
+        AsyncMock(return_value={"type": "success", "message": "919876543210"}),
+    )
+    monkeypatch.setattr(AuthService, "get_user_by_email", staticmethod(lambda _email: None))
+    monkeypatch.setattr(AuthService, "get_user_by_mobile", staticmethod(lambda _mobile: None))
+    provision = MagicMock(side_effect=[
+        RuntimeError("temporary database write failure"),
+        {
+            "id": "retry-auth-id",
+            "name": "Retry User",
+            "email": "retry@example.com",
+            "mobile": "919876543210",
+            "role": "WORKER",
+            "is_mobile_verified": True,
+            "is_active": True,
+            "created_at": "2026-08-29T13:00:00+00:00",
+            "updated_at": "2026-08-29T13:00:00+00:00",
+        },
+    ])
+    monkeypatch.setattr(AuthService, "provision_supabase_user", provision)
+    payload = {
+        "name": "Retry User",
+        "email": "retry@example.com",
+        "mobile": "9876543210",
+        "password": "Password123!",
+        "confirm_password": "Password123!",
+        "role": "WORKER",
+        "msg91_access_token": "verified-token",
+        "terms_accepted": True,
+    }
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        first_response = await client.post("/api/v1/auth/signup-mobile-verified", json=payload)
+        retry_response = await client.post("/api/v1/auth/signup-mobile-verified", json=payload)
+
+    assert first_response.status_code == 500
+    assert first_response.json()["detail"] == "USER_PROVISIONING_FAILED"
+    assert retry_response.status_code == 200
+    assert retry_response.json()["id"] == "retry-auth-id"
+    admin.create_user.assert_called_once()
+    admin.update_user_by_id.assert_called_once_with("retry-auth-id", {"password": "Password123!"})
+    admin.delete_user.assert_not_called()
 
 
 @pytest.mark.asyncio

@@ -34,13 +34,116 @@ const SDK_TIMEOUT_MS = 10000;
 const OTP_TIMEOUT_MS = 20000;
 
 let sdkPromise: Promise<void> | null = null;
-let activeOtpOperation: "send" | "verify" | "retry" | null = null;
+type OtpOperation = "send" | "verify" | "retry";
+export type Msg91OperationLock = symbol;
 
-function beginOtpOperation(operation: "send" | "verify" | "retry"): void {
-  if (activeOtpOperation) {
-    throw new Error("An OTP request is already in progress. Please wait and try again.");
+let activeOtpOperation: { operation: OtpOperation; lock: Msg91OperationLock } | null = null;
+let verificationCompleted = false;
+
+export function otpUserMessage(error: unknown, operation: "send" | "verify" | "resend" | "auth" = "verify"): string {
+  const errorRecord = asRecord(error);
+  const response = asRecord(errorRecord?.response);
+  const responseData = asRecord(response?.data);
+  const details = responseData?.detail ?? errorRecord?.detail ?? errorRecord?.message ?? error;
+  const text = typeof details === "string" ? details : String(asRecord(details)?.message ?? "");
+  const normalized = text.toLowerCase();
+  const headers = asRecord(response?.headers);
+  const retryHeader = headers?.["retry-after"] ?? headers?.["Retry-After"];
+  const parsedRetry = typeof retryHeader === "string" ? Number(retryHeader) : Number.NaN;
+  const durationMatch = normalized.match(/(\d+)\s*(?:seconds?|secs?)\b/);
+  const retryAfter = Number.isFinite(parsedRetry) && parsedRetry > 0
+    ? Math.ceil(parsedRetry)
+    : durationMatch ? Number(durationMatch[1]) : 30;
+
+  if (normalized === "email not found. please register first.") {
+    return "Email not found. Please register first.";
   }
-  activeOtpOperation = operation;
+  if (normalized === "mobile number not found. please register first.") {
+    return "Mobile number not found. Please register first.";
+  }
+  if (/otp_resend_cooldown|please wait before requesting/.test(normalized)) {
+    return `Please wait ${retryAfter} seconds before requesting another OTP.`;
+  }
+  if (/already used|already verified|code\s*703|otp_already_used/.test(normalized)) {
+    return "This OTP has already been used. Request a new OTP and try again.";
+  }
+  if (/expired|invalid_or_expired_otp/.test(normalized)) {
+    return "This OTP session has expired. Request a new OTP and try again.";
+  }
+  if (/invalid otp|incorrect otp|wrong otp|otp_invalid/.test(normalized)) {
+    return "The OTP you entered is incorrect. Check the latest OTP and try again.";
+  }
+  if (/request.?id|transaction.*missing|otp session.*expired/.test(normalized)) {
+    return "This OTP session has expired. Request a new OTP and try again.";
+  }
+  if (/invalid login credentials|invalid_credentials/.test(normalized)) {
+    return "The email or password is incorrect. Check your sign-in details and try again.";
+  }
+  if (/no account exists|sign up first/.test(normalized)) {
+    return "No account was found for this mobile number. Sign up to create an account.";
+  }
+  if (/duplicate|already exists|user_already_exists|email_exists|account_identifier_conflict/.test(normalized)) {
+    return "An account already exists with these details. Sign in or use account recovery.";
+  }
+  if (/terms.*accepted|accept the terms/.test(normalized)) {
+    return "Accept the Terms & Conditions before creating your account.";
+  }
+  if (/role_conflict|admin_role_unauthorized/.test(normalized)) {
+    return "This account cannot use the selected account type. Sign in with the correct account.";
+  }
+  if (/ipblocked|invalid_grant|configuration|widget|jwt|provider access token|msg91_service_unavailable|service unavailable/.test(normalized)) {
+    return "OTP service is temporarily unavailable. Please try again later.";
+  }
+  if (/timeout|timed out|network|could not connect|connection/.test(normalized)) {
+    return "We couldn't complete the OTP request. Check your connection and try again.";
+  }
+  if (/user_provisioning_failed|auth_user_creation_failed|session_registration_failed/.test(normalized)) {
+    return "Your verification succeeded, but we couldn't finish setting up your account. Sign in or contact support.";
+  }
+  if (/invalid_msg91_token|msg91_mobile_mismatch|msg91_verified_mobile_missing/.test(normalized)) {
+    return "We couldn't verify this phone number. Request a new OTP for the number you entered.";
+  }
+  if (/enter a valid|passwords do not match|password must|is required|choose an account|enter your email|enter your name/.test(normalized)) {
+    return text;
+  }
+  if (operation === "send") return "We couldn't send the OTP right now. Please try again in a moment.";
+  if (operation === "resend") return "We couldn't resend the OTP right now. Please try again in a moment.";
+  if (operation === "auth") return "We couldn't complete sign-in or account setup. Check your details and try again.";
+  return "We couldn't verify the OTP. Check the latest code or request a new one.";
+}
+
+function beginOtpOperation(
+  operation: OtpOperation,
+  lock?: Msg91OperationLock
+): { lock: Msg91OperationLock; ownsLock: boolean } {
+  if (activeOtpOperation) {
+    if (lock && activeOtpOperation.operation === operation && activeOtpOperation.lock === lock) {
+      return { lock, ownsLock: false };
+    }
+    throw new Error("OTP_OPERATION_IN_PROGRESS");
+  }
+  if (operation === "verify" && verificationCompleted) {
+    throw new Error("OTP_ALREADY_USED");
+  }
+  const operationLock = lock ?? Symbol(operation);
+  activeOtpOperation = { operation, lock: operationLock };
+  return { lock: operationLock, ownsLock: true };
+}
+
+function finishOtpOperation(lock: Msg91OperationLock): void {
+  if (activeOtpOperation?.lock === lock) activeOtpOperation = null;
+}
+
+export async function runWithOtpOperationLock<T>(
+  operation: OtpOperation,
+  action: (lock: Msg91OperationLock) => Promise<T>
+): Promise<T> {
+  const { lock, ownsLock } = beginOtpOperation(operation);
+  try {
+    return await action(lock);
+  } finally {
+    if (ownsLock) finishOtpOperation(lock);
+  }
 }
 
 export function normalizeIndianMobile(mobile: string): string {
@@ -56,6 +159,70 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : null;
+}
+
+function sanitizeDiagnosticText(value: string, sensitiveValues: string[]): string {
+  let sanitized = value;
+  for (const sensitiveValue of sensitiveValues) {
+    if (sensitiveValue) sanitized = sanitized.split(sensitiveValue).join("[redacted]");
+  }
+
+  return sanitized
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[redacted-email]")
+    .replace(/\bBearer\s+[A-Za-z0-9._~+\/-]+=*/gi, "Bearer [redacted]")
+    .replace(/([?&](?:access_token|token|auth|secret|key|password)=)[^&\s]+/gi, "$1[redacted]")
+    .replace(/(?<!\d)\+?\d(?:[\d\s().-]*\d)?(?!\d)/g, (match) =>
+      match.replace(/\D/g, "").length >= 4 ? "[redacted-number]" : match
+    )
+    .replace(/\b[A-Za-z0-9_-]{24,}\b/g, "[redacted-value]")
+    .slice(0, 240);
+}
+
+function logSdkFailure(
+  operation: "sendOtp" | "retryOtp",
+  error: unknown,
+  globalWindow: Msg91Window,
+  channel: "SMS" | "EMAIL" | "unknown",
+  requestId?: string | null,
+  sensitiveValues: string[] = []
+): void {
+  const record = asRecord(error);
+  const nestedRecord = asRecord(record?.error) ?? asRecord(record?.data);
+  const details = nestedRecord ?? record;
+  const rawMessage = error instanceof Error
+    ? error.message
+    : typeof error === "string"
+      ? error
+      : details?.message;
+  const rawType = details?.type ?? details?.category ?? (error instanceof Error ? error.name : details?.name);
+  const rawCode = details?.code ?? record?.code;
+  const secrets = [
+    ...sensitiveValues,
+    process.env.NEXT_PUBLIC_MSG91_WIDGET_ID ?? "",
+    process.env.NEXT_PUBLIC_MSG91_TOKEN ?? "",
+  ];
+  const safeText = (value: unknown): string | undefined => {
+    if (typeof value !== "string" || !value) return undefined;
+    return sanitizeDiagnosticText(value, secrets);
+  };
+  const safeCode = typeof rawCode === "number" ? rawCode : safeText(rawCode);
+  const safeType = safeText(rawType);
+
+  console.error(`[MSG91][TEMP DEBUG] ${operation} failure details.`, {
+    operation,
+    callbackObjectKeys: record
+      ? Object.keys(record).filter((key) => /^[A-Za-z_$][\w$.-]{0,63}$/.test(key)).slice(0, 32)
+      : null,
+    ...(safeCode !== undefined ? { errorCode: safeCode } : {}),
+    ...(safeText(rawMessage) ? { errorMessage: safeText(rawMessage) } : {}),
+    ...(safeType ? { errorType: safeType } : {}),
+    ...(operation === "retryOtp" ? {
+      requestIdExists: Boolean(requestId?.trim()),
+      requestIdLength: requestId?.length ?? 0,
+    } : {}),
+    widgetInitialized: globalWindow.__msg91_widget_initialized__ === true,
+    channel,
+  });
 }
 
 function isAlreadyVerifiedError(value: unknown): boolean {
@@ -268,7 +435,7 @@ export async function initializeMSG91Widget(): Promise<void> {
   }
 }
 
-export async function sendOTP(mobile: string): Promise<{ normalizedMobile: string; requestId: string | null; [key: string]: unknown }> {
+export async function sendOTP(mobile: string, operationLock?: Msg91OperationLock): Promise<{ normalizedMobile: string; requestId: string | null; [key: string]: unknown }> {
   const normalizedMobile = normalizeIndianMobile(mobile);
   if (!normalizedMobile) {
     throw new Error("Invalid mobile number.");
@@ -278,7 +445,7 @@ export async function sendOTP(mobile: string): Promise<{ normalizedMobile: strin
     throw new Error("MSG91 SDK is not available in the server environment.");
   }
 
-  beginOtpOperation("send");
+  const { lock, ownsLock } = beginOtpOperation("send", operationLock);
   try {
     const globalWindow = window as Msg91Window;
     await initializeMSG91Widget();
@@ -300,6 +467,7 @@ export async function sendOTP(mobile: string): Promise<{ normalizedMobile: strin
         settled = true;
         window.clearTimeout(timeoutId);
         const requestId = resolveRequestId(data);
+        verificationCompleted = false;
         console.log(`[MSG91] OTP request ID received: ${requestId ? "present" : "absent"}`);
         console.log("[MSG91] OTP channel: SMS (managed internally by MSG91)");
         console.log("[MSG91] sendOtp succeeded.");
@@ -308,12 +476,12 @@ export async function sendOTP(mobile: string): Promise<{ normalizedMobile: strin
         if (settled) return;
         settled = true;
         window.clearTimeout(timeoutId);
-        console.error("[MSG91] sendOtp failed.");
-        reject(error instanceof Error ? error : new Error("MSG91 OTP send failed."));
+        logSdkFailure("sendOtp", error, globalWindow, "SMS", null, [normalizedMobile]);
+        reject(new Error(otpUserMessage(error, "send")));
       });
     });
   } finally {
-    activeOtpOperation = null;
+    if (ownsLock) finishOtpOperation(lock);
   }
 }
 
@@ -353,7 +521,7 @@ export async function verifyOTP(otp: string): Promise<{ accessToken: string; [ke
     throw new Error("MSG91 SDK is not available in the server environment.");
   }
 
-  beginOtpOperation("verify");
+  const { lock, ownsLock } = beginOtpOperation("verify");
   try {
     const globalWindow = window as Msg91Window;
     await initializeMSG91Widget();
@@ -376,6 +544,7 @@ export async function verifyOTP(otp: string): Promise<{ accessToken: string; [ke
         window.clearTimeout(timeoutId);
         const value = asRecord(data) ?? {};
         const accessToken = extractMsg91AccessToken(data);
+        verificationCompleted = true;
 
         console.log("[MSG91] verifyOtp succeeded.");
 
@@ -391,18 +560,19 @@ export async function verifyOTP(otp: string): Promise<{ accessToken: string; [ke
         window.clearTimeout(timeoutId);
         console.error("[MSG91] verifyOtp failed.");
         if (isAlreadyVerifiedError(error)) {
-          reject(new Error("This OTP has already been used. Request a new OTP and try again."));
+          verificationCompleted = true;
+          reject(new Error(otpUserMessage(error, "verify")));
           return;
         }
-        reject(error instanceof Error ? error : new Error("MSG91 OTP verification failed."));
+        reject(new Error(otpUserMessage(error, "verify")));
       });
     });
   } finally {
-    activeOtpOperation = null;
+    if (ownsLock) finishOtpOperation(lock);
   }
 }
 
-export async function retryOTP(channel: string | null, requestId: string | null): Promise<{ requestId: string | null; [key: string]: unknown }> {
+export async function retryOTP(channel: string | null, requestId: string | null, operationLock?: Msg91OperationLock): Promise<{ requestId: string | null; [key: string]: unknown }> {
   if (typeof window === "undefined") {
     throw new Error("MSG91 SDK is not available in the server environment.");
   }
@@ -423,7 +593,7 @@ export async function retryOTP(channel: string | null, requestId: string | null)
     throw new Error("This OTP channel cannot be resent.");
   }
 
-  beginOtpOperation("retry");
+  const { lock, ownsLock } = beginOtpOperation("retry", operationLock);
   try {
     const globalWindow = window as Msg91Window;
     await initializeMSG91Widget();
@@ -448,6 +618,7 @@ export async function retryOTP(channel: string | null, requestId: string | null)
         settled = true;
         window.clearTimeout(timeoutId);
         const nextRequestId = resolveRequestId(data);
+        verificationCompleted = false;
         if (nextRequestId) {
           console.log("[MSG91] MSG91 retry successful; new request ID received.");
         } else {
@@ -458,16 +629,23 @@ export async function retryOTP(channel: string | null, requestId: string | null)
         if (settled) return;
         settled = true;
         window.clearTimeout(timeoutId);
-        console.error("[MSG91] OTP retry failed.");
+        logSdkFailure(
+          "retryOtp",
+          error,
+          globalWindow,
+          channel === "SMS" || channel === "EMAIL" ? channel : retryChannel === "11" ? "SMS" : retryChannel === "3" ? "EMAIL" : "unknown",
+          requestId,
+          [requestId]
+        );
         if (isConfigError(error)) {
-          reject(new Error("Unable to resend OTP due to a system configuration issue. Please contact support."));
+          reject(new Error(otpUserMessage(error, "resend")));
         } else {
-          reject(error instanceof Error ? error : new Error("MSG91 OTP retry failed."));
+          reject(new Error(otpUserMessage(error, "resend")));
         }
       }, requestId);
     });
   } finally {
-    activeOtpOperation = null;
+    if (ownsLock) finishOtpOperation(lock);
   }
 }
 

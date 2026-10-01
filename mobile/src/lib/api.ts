@@ -11,12 +11,14 @@ export interface ApiRequestOptions extends Omit<RequestInit, "body"> {
 export class ApiError extends Error {
   readonly status: number;
   readonly detail?: unknown;
+  readonly retryAfterSeconds?: number;
 
-  constructor(message: string, status: number, detail?: unknown) {
+  constructor(message: string, status: number, detail?: unknown, retryAfterSeconds?: number) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.detail = detail;
+    this.retryAfterSeconds = retryAfterSeconds;
   }
 }
 
@@ -86,7 +88,8 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
         ? (payload as { detail: unknown }).detail
         : payload;
       const message = messageFromDetail(detail, response.status);
-      throw new ApiError(message, response.status, detail);
+      const retryAfterSeconds = Number(response.headers.get("Retry-After")) || undefined;
+      throw new ApiError(message, response.status, detail, retryAfterSeconds);
     }
     return payload as T;
   } catch (error) {

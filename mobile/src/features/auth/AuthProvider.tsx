@@ -7,7 +7,7 @@ import type { AccountType, AuthStateResponse, AuthUser, NextStep, UserRole } fro
 import { ApiError, apiGet, apiPost } from "../../lib/api";
 import { clearSessionKey, registerMobileSession } from "../../lib/session";
 import { getSupabaseClient } from "../../lib/supabase";
-import { normalizeIndianMobile, retryMsg91Otp, sendMsg91Otp, verifyMsg91Otp } from "../../lib/msg91";
+import { normalizeIndianMobile, otpUserMessage, retryMsg91Otp, runWithOtpOperationLock, sendMsg91Otp, verifyMsg91Otp } from "../../lib/msg91";
 
 type SignupInput = {
   name: string;
@@ -26,7 +26,7 @@ interface AuthContextValue {
   isAuthenticated: boolean;
   error: string;
   refreshAuth: () => Promise<AuthStateResponse>;
-  signInWithEmail: (email: string, password: string) => Promise<AuthStateResponse>;
+  signInWithEmail: (email: string, password: string, role?: Exclude<UserRole, "ADMIN">) => Promise<AuthStateResponse>;
   sendLoginOtp: (mobile: string) => Promise<{ requestId: string | null }>;
   signInWithMobileOtp: (mobile: string, otp: string) => Promise<AuthStateResponse>;
   beginSignup: (input: SignupInput) => Promise<{ requestId: string | null }>;
@@ -61,8 +61,7 @@ function clearOAuthState() {
 }
 
 export function errorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  return "Something went wrong. Please try again.";
+  return otpUserMessage(error, "auth");
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -87,11 +86,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     role?: Exclude<UserRole, "ADMIN">,
     name = "",
     accountType: AccountType = "BUSINESS",
+    intent: "login" | "provision" = "provision",
   ) => {
     const { data: { session } } = await getSupabaseClient().auth.getSession();
     if (!session) throw new Error("Supabase did not establish an authenticated session.");
 
-    await apiPost("/api/v1/auth/provision", {
+    await apiPost(`/api/v1/auth/provision?intent=${intent}`, {
       ...(role ? { role } : {}),
       name,
       mobile: session.user.phone || undefined,
@@ -193,12 +193,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const signInWithEmail = async (email: string, password: string) => {
+  const signInWithEmail = async (email: string, password: string, role?: Exclude<UserRole, "ADMIN">) => {
     setError("");
     if (missingSupabaseConfiguration()) throw new Error("Supabase is not configured for this build.");
     if (missingBackendConfiguration()) throw new Error("The GLESKA API URL is not configured for this build.");
 
     try {
+      await apiPost("/api/v1/auth/login-preflight", { email: email.trim().toLowerCase() }, { skipSupabaseAuth: true });
       try {
         await apiPost("/api/v1/auth/logout", {}, { skipSupabaseAuth: true });
       } catch {
@@ -212,12 +213,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
       if (signInError) throw signInError;
       setIsLoading(true);
-      return await provisionAndRestore();
+      return await provisionAndRestore(role, "", "BUSINESS", "login");
     } catch (authError) {
       await getSupabaseClient().auth.signOut();
       setUser(null);
       setNextStep(null);
-      const message = errorMessage(authError);
+      const message = otpUserMessage(authError, "verify");
       setError(message);
       throw new Error(message);
     } finally {
@@ -227,6 +228,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const sendLoginOtp = async (mobile: string) => {
     setError("");
+    try {
+      await apiPost("/api/v1/auth/login-preflight", { mobile: normalizeIndianMobile(mobile) }, { skipSupabaseAuth: true });
+    } catch (authError) {
+      const message = otpUserMessage(authError, "auth");
+      setError(message);
+      throw authError;
+    }
     return await sendMsg91Otp(mobile);
   };
 
@@ -244,7 +252,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await registerMobileSession();
       return await refreshAuth();
     } catch (authError) {
-      const message = errorMessage(authError);
+      const message = otpUserMessage(authError, "verify");
       setError(message);
       throw new Error(message);
     } finally {
@@ -385,8 +393,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const requestPasswordResetOtp = async (mobile: string) => {
     const normalizedMobile = normalizeIndianMobile(mobile);
-    await apiPost("/api/v1/auth/forgot-password/request-otp", { phone: normalizedMobile }, { skipSupabaseAuth: true });
-    return await sendMsg91Otp(normalizedMobile);
+    return runWithOtpOperationLock("send", async (operationLock) => {
+      const challenge = await apiPost<{ retry_after_seconds?: number }>("/api/v1/auth/forgot-password/request-otp", { phone: normalizedMobile }, { skipSupabaseAuth: true });
+      if (challenge.retry_after_seconds && challenge.retry_after_seconds > 0) {
+        throw new Error(`OTP_RESEND_COOLDOWN ${challenge.retry_after_seconds} seconds`);
+      }
+      return await sendMsg91Otp(normalizedMobile, operationLock);
+    });
   };
 
   const verifyPasswordResetOtp = async (mobile: string, otp: string) => {
@@ -400,16 +413,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const retryPasswordResetOtp = async (mobile: string, requestId: string | null) => {
     const normalizedMobile = normalizeIndianMobile(mobile);
-    await apiPost("/api/v1/auth/resend-otp", { mobile: normalizedMobile, channel: "SMS" }, { skipSupabaseAuth: true });
-    const result = await retryMsg91Otp("SMS", requestId);
-    return result.requestId;
+    return runWithOtpOperationLock("retry", async (operationLock) => {
+      await apiPost("/api/v1/auth/resend-otp", { mobile: normalizedMobile, channel: "SMS" }, { skipSupabaseAuth: true });
+      const result = await retryMsg91Otp("SMS", requestId, operationLock);
+      return result.requestId ?? requestId;
+    });
   };
 
   const retryOtp = async (mobile: string, requestId: string | null) => {
     const normalizedMobile = normalizeIndianMobile(mobile);
-    await apiPost("/api/v1/auth/resend-otp", { mobile: normalizedMobile, channel: "SMS" }, { skipSupabaseAuth: true });
-    const result = await retryMsg91Otp("SMS", requestId);
-    return result.requestId;
+    return runWithOtpOperationLock("retry", async (operationLock) => {
+      await apiPost("/api/v1/auth/resend-otp", { mobile: normalizedMobile, channel: "SMS" }, { skipSupabaseAuth: true });
+      const result = await retryMsg91Otp("SMS", requestId, operationLock);
+      return result.requestId ?? requestId;
+    });
   };
 
   const resetPasswordWithAuthorization = async (authorization: string, password: string, confirmPassword: string) => {

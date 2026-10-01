@@ -189,7 +189,7 @@ function AuthForm({ role, accountType, initialSignup = false }: {
     }
     setBusy(true);
     try {
-      routeAfterAuth(await auth.signInWithEmail(email, password), navigate);
+      routeAfterAuth(await auth.signInWithEmail(email, password, role), navigate);
     } catch (error) {
       setLocalError(errorMessage(error));
     } finally {
@@ -211,6 +211,7 @@ function AuthForm({ role, accountType, initialSignup = false }: {
         : await auth.signInWithMobileOtp(mobile, otp);
       routeAfterAuth(state, navigate);
     } catch (error) {
+      if (otpPurpose === "signup") setOtp("");
       setLocalError(errorMessage(error));
     } finally {
       setBusy(false);
@@ -223,7 +224,7 @@ function AuthForm({ role, accountType, initialSignup = false }: {
     setLocalError("");
     try {
       const nextRequestId = await auth.retryOtp(mobile, requestId);
-      setRequestId(nextRequestId ?? null);
+      setRequestId(nextRequestId ?? requestId);
       setOtp("");
       setCountdown(30);
     } catch (error) {
@@ -355,7 +356,10 @@ export function ForgotPasswordScreen() {
       setStep("otp");
       setCountdown(30);
     } catch (requestError) {
-      setError(errorMessage(requestError));
+      const message = errorMessage(requestError);
+      setError(message);
+      const waitMatch = message.match(/Please wait (\d+) seconds/);
+      if (waitMatch) setCountdown(Number(waitMatch[1]));
     } finally {
       setBusy(false);
     }
@@ -371,6 +375,8 @@ export function ForgotPasswordScreen() {
     setError("");
     try {
       setAuthorization(await auth.verifyPasswordResetOtp(mobile, otp));
+      setRequestId(null);
+      setOtp("");
       setStep("password");
     } catch (verifyError) {
       setError(errorMessage(verifyError));
@@ -409,8 +415,12 @@ export function ForgotPasswordScreen() {
     try {
       await auth.resetPasswordWithAuthorization(authorization, password, confirmPassword);
       setAuthorization("");
+      setRequestId(null);
+      setOtp("");
+      setMobile("");
       setPassword("");
       setConfirmPassword("");
+      setCountdown(0);
       setStep("success");
     } catch (resetError) {
       setError(errorMessage(resetError));
@@ -429,7 +439,7 @@ export function ForgotPasswordScreen() {
       {step === "phone" && <form className="recovery-form" onSubmit={(event) => void requestOtp(event)}>
         <div className="recovery-phone"><span>+91</span><input aria-label={t("auth.mobileLabel")} inputMode="numeric" autoComplete="tel-national" value={mobile} onChange={(event) => setMobile(event.target.value.replace(/\D/g, "").slice(0, 10))} placeholder={t("auth.mobileLabel")} required /></div>
         <InlineError>{error}</InlineError>
-        <button className="recovery-primary" type="submit" disabled={busy || missingBackendConfiguration() || missingMsg91Configuration()}>{busy && <LoaderCircle size={16} className="spin" />}{t("auth.sendOtp")}</button>
+        <button className="recovery-primary" type="submit" disabled={busy || Boolean(countdown) || missingBackendConfiguration() || missingMsg91Configuration()}>{busy && <LoaderCircle size={16} className="spin" />}{countdown ? t("auth.resendIn", { seconds: countdown }) : t("auth.sendOtp")}</button>
       </form>}
       {step === "otp" && <form className="recovery-form" onSubmit={(event) => void verifyOtp(event)}>
         <label className="sr-only" htmlFor="reset-otp">{t("auth.verifyOtp")}</label><input id="reset-otp" className="recovery-input recovery-otp" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={otp} onChange={(event) => setOtp(event.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="000000" />

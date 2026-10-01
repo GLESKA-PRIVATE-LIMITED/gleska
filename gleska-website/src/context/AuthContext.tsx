@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import apiClient from "@/lib/api";
 import { supabase } from "@/lib/supabase";
-import { initializeMSG91Widget, retryOTP, sendOTP, verifyOTP } from "@/lib/msg91";
+import { initializeMSG91Widget, otpUserMessage, retryOTP, runWithOtpOperationLock, sendOTP, verifyOTP } from "@/lib/msg91";
 import { registerSession, clearSessionKey, logSecurityActivity, parseDeviceInfo } from "@/lib/security";
 
 export interface AuthUser {
@@ -52,9 +52,10 @@ interface AuthContextType {
   resendOTP: (mobile: string, requestId: string | null, channel: "SMS" | "EMAIL") => Promise<string | null>;
   signInWithEmail: (email: string, password: string, role?: "WORKER" | "EMPLOYER" | "ADMIN") => Promise<AuthUser>;
   signInWithGoogle: (role?: "WORKER" | "EMPLOYER" | "ADMIN", accountType?: "BUSINESS" | "INDIVIDUAL") => Promise<void>;
-  provisionSession: (role?: "WORKER" | "EMPLOYER" | "ADMIN", name?: string, accountType?: "BUSINESS" | "INDIVIDUAL") => Promise<{ user: AuthUser; nextStep: NextStep | null }>;
+  provisionSession: (role?: "WORKER" | "EMPLOYER" | "ADMIN", name?: string, accountType?: "BUSINESS" | "INDIVIDUAL", intent?: "login" | "provision") => Promise<{ user: AuthUser; nextStep: NextStep | null }>;
+  checkLoginAccount: (identifier: { email: string } | { mobile: string }) => Promise<void>;
   completeEmailSignup: (email: string, password: string, name: string, mobile: string, otp: string, role: "WORKER" | "EMPLOYER" | "ADMIN", termsAccepted?: boolean, accountType?: "BUSINESS" | "INDIVIDUAL") => Promise<void>;
-  requestPasswordReset: (phone: string) => Promise<void>;
+  requestPasswordReset: (phone: string) => Promise<number | null>;
   verifyPasswordResetOTP: (phone: string, msg91AccessToken: string) => Promise<string>;
   completePasswordReset: (resetAuthorization: string, password: string, confirmPassword: string) => Promise<void>;
   signupPreflight: (name: string, email: string, mobile: string, password: string, confirmPassword: string, role: "WORKER" | "EMPLOYER", termsAccepted?: boolean) => Promise<void>;
@@ -78,8 +79,9 @@ export const AuthContext = createContext<AuthContextType>({
   signInWithEmail: async () => ({} as AuthUser),
   signInWithGoogle: async () => {},
   provisionSession: async () => ({ user: {} as AuthUser, nextStep: null }),
+  checkLoginAccount: async () => {},
   completeEmailSignup: async () => {},
-  requestPasswordReset: async () => {},
+  requestPasswordReset: async () => null,
   verifyPasswordResetOTP: async () => "",
   completePasswordReset: async () => {},
   signupPreflight: async () => {},
@@ -190,6 +192,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  const checkLoginAccount = async (identifier: { email: string } | { mobile: string }) => {
+    const payload = "email" in identifier
+      ? { email: identifier.email.trim().toLowerCase() }
+      : identifier;
+    try {
+      await apiClient.post("/api/v1/auth/login-preflight", payload, { skipSupabaseAuth: true });
+    } catch (err: any) {
+      const detail = err.response?.data?.detail;
+      const message = detail === "Email not found. Please register first."
+        || detail === "Mobile number not found. Please register first."
+        ? detail
+        : otpUserMessage(err, "auth");
+      setError(message);
+      throw new Error(message);
+    }
+  };
+
   const requestOTP = async (mobile: string) => {
     try {
       setError(null);
@@ -197,7 +216,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const result = await sendOTP(mobile);
       return { requestId: result.requestId ?? null };
     } catch (err: any) {
-      const message = err.message || "Failed to send OTP";
+      const message = otpUserMessage(err, "send");
       setError(message);
       throw new Error(message);
     }
@@ -216,7 +235,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
 const resendOTP = async (mobile: string, requestId: string | null, channel: "SMS" | "EMAIL") => {
-    try {
+    return runWithOtpOperationLock("retry", async (operationLock) => {
+      try {
       setError(null);
 
       if (!mobile) {
@@ -232,32 +252,35 @@ const resendOTP = async (mobile: string, requestId: string | null, channel: "SMS
         );
       } catch (backendErr: any) {
         const statusCode = backendErr.response?.status;
-        const errorDetail = backendErr.response?.data?.detail || backendErr.message;
-
         if (statusCode === 429) {
-          console.warn("[MSG91] Backend resend authorization: blocked (rate limited)");
-          throw new Error(errorDetail || "Please wait before requesting another OTP");
+          const retryAfter = backendErr.response?.headers?.["retry-after"];
+          throw new Error(otpUserMessage({
+            response: {
+              data: { detail: backendErr.response?.data?.detail },
+              headers: { "retry-after": retryAfter },
+            },
+          }, "resend"));
         }
 
-        console.warn("[MSG91] Backend resend authorization: blocked (error)", errorDetail);
-        throw new Error(errorDetail || "Failed to authorize resend request");
+        throw new Error(otpUserMessage(backendErr, "resend"));
       }
 
       // Only if backend approved, call MSG91 retry
       await initializeMSG91Widget();
-      const result = await retryOTP(channel, requestId);
+      const result = await retryOTP(channel, requestId, operationLock);
       return result.requestId;
-    } catch (err: any) {
-      const message = err.message || "Failed to resend OTP";
-      setError(message);
-      throw new Error(message);
-    }
+      } catch (err: any) {
+        const message = otpUserMessage(err, "resend");
+        setError(message);
+        throw new Error(message);
+      }
+    });
   };
 
-  const provisionSession = async (role?: "WORKER" | "EMPLOYER" | "ADMIN", name = "", accountType: "BUSINESS" | "INDIVIDUAL" = "BUSINESS") => {
+  const provisionSession = async (role?: "WORKER" | "EMPLOYER" | "ADMIN", name = "", accountType: "BUSINESS" | "INDIVIDUAL" = "BUSINESS", intent: "login" | "provision" = "provision") => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) throw new Error("Authentication session was not created");
-    await apiClient.post("/api/v1/auth/provision", {
+    await apiClient.post(`/api/v1/auth/provision?intent=${intent}`, {
       ...(role ? { role } : {}),
       name,
       mobile: session.user.phone || undefined,
@@ -282,6 +305,7 @@ const resendOTP = async (mobile: string, requestId: string | null, channel: "SMS
     setError(null);
     setIsLoading(true);
     try {
+      await checkLoginAccount({ email });
       await clearBackendSession();
       clearSessionKey();
       const { error: signInError } = await supabase.auth.signInWithPassword({
@@ -290,7 +314,7 @@ const resendOTP = async (mobile: string, requestId: string | null, channel: "SMS
       });
       if (signInError) throw signInError;
       // provisionSession already calls registerSession internally
-      const provisioned = await provisionSession(role);
+      const provisioned = await provisionSession(role, "", "BUSINESS", "login");
       return provisioned.user;
     } catch (err: any) {
       let message = err.message || "Email login failed";
@@ -346,15 +370,24 @@ const resendOTP = async (mobile: string, requestId: string | null, channel: "SMS
   };
 
   const requestPasswordReset = async (phone: string) => {
-    await apiClient.post("/api/v1/auth/forgot-password/request-otp", { phone: phone.trim() }, { skipSupabaseAuth: true });
+    try {
+      const response = await apiClient.post("/api/v1/auth/forgot-password/request-otp", { phone: phone.trim() }, { skipSupabaseAuth: true });
+      return Number(response.data?.retry_after_seconds) || null;
+    } catch (err) {
+      throw new Error(otpUserMessage(err, "send"));
+    }
   };
 
   const verifyPasswordResetOTP = async (phone: string, msg91AccessToken: string) => {
-    const response = await apiClient.post("/api/v1/auth/forgot-password/verify-otp", {
-      phone: phone.trim(),
-      msg91_access_token: msg91AccessToken,
-    }, { skipSupabaseAuth: true });
-    return response.data.reset_authorization as string;
+    try {
+      const response = await apiClient.post("/api/v1/auth/forgot-password/verify-otp", {
+        phone: phone.trim(),
+        msg91_access_token: msg91AccessToken,
+      }, { skipSupabaseAuth: true });
+      return response.data.reset_authorization as string;
+    } catch (err) {
+      throw new Error(otpUserMessage(err, "verify"));
+    }
   };
 
   const completePasswordReset = async (resetAuthorization: string, password: string, confirmPassword: string) => {
@@ -399,7 +432,7 @@ const resendOTP = async (mobile: string, requestId: string | null, channel: "SMS
       setNextStep(state.data?.next_step || null);
       notifyAuthStateChange();
     } catch (err: any) {
-      const message = err.response?.data?.detail || err.message || "Signup failed";
+      const message = otpUserMessage(err, "verify");
       setError(message);
       await supabase.auth.signOut();
       throw new Error(message);
@@ -429,7 +462,7 @@ const resendOTP = async (mobile: string, requestId: string | null, channel: "SMS
         notifyAuthStateChange();
       }
     } catch (err: any) {
-      const message = err.response?.data?.detail || err.message || "Authentication failed";
+      const message = otpUserMessage(err, "verify");
       setError(message);
       throw new Error(message);
     } finally {
@@ -458,7 +491,7 @@ const resendOTP = async (mobile: string, requestId: string | null, channel: "SMS
       notifyAuthStateChange();
       return response.data.user as AuthUser;
     } catch (err: any) {
-      const message = err.response?.data?.detail || err.message || "Mobile login failed";
+      const message = otpUserMessage(err, "verify");
       setError(message);
       throw new Error(message);
     } finally {
@@ -553,6 +586,7 @@ const resendOTP = async (mobile: string, requestId: string | null, channel: "SMS
         signInWithEmail,
         signInWithGoogle,
         provisionSession,
+        checkLoginAccount,
         completeEmailSignup,
         requestPasswordReset,
         verifyPasswordResetOTP,

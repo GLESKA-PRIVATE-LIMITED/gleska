@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Mail, Loader2, X, Shield, FileText, CheckCircle2, ExternalLink } from "lucide-react";
@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { getRouteForAuthenticatedUser, getRouteForNextStep } from "@/lib/auth-routing";
-import { normalizeIndianMobile } from "@/lib/msg91";
+import { normalizeIndianMobile, otpUserMessage } from "@/lib/msg91";
 
 type Role = "WORKER" | "EMPLOYER";
 type OTPTransaction = { name: string; email: string; password: string; mobile: string; termsAccepted: boolean; requestId: string | null; channel: "SMS" | "EMAIL" };
@@ -16,7 +16,7 @@ type OTPTransaction = { name: string; email: string; password: string; mobile: s
 export default function AuthMethodPanel({ role, accountType = "BUSINESS", initialMode = "login", hideModeSelector = false, onModeChange, onCreateAccount }: { role?: Role; accountType?: "BUSINESS" | "INDIVIDUAL"; initialMode?: "login" | "signup"; hideModeSelector?: boolean; onModeChange?: (mode: "login" | "signup") => void; onCreateAccount?: () => void }) {
   const router = useRouter();
   const { t } = useLanguage();
-  const { signInWithEmail, signInWithGoogle, signupPreflight, requestOTP, resendOTP, completeEmailSignup, loginWithMobile, refreshUser, isLoading: authLoading } = useAuth();
+  const { signInWithEmail, signInWithGoogle, signupPreflight, checkLoginAccount, requestOTP, resendOTP, completeEmailSignup, loginWithMobile, refreshUser, isLoading: authLoading } = useAuth();
   const [mode, setMode] = useState<"login" | "signup">(initialMode);
   const [loginMethod, setLoginMethod] = useState<"email" | "mobile">("email");
   const [email, setEmail] = useState("");
@@ -83,6 +83,7 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS", initia
       setSubmitting(true);
       try {
         clearOtpTransaction();
+        await checkLoginAccount({ mobile: canonicalMobile });
         const otpResult = await requestOTP(canonicalMobile);
         setOtpTransaction({ name: "", email: "", password: "", mobile: canonicalMobile, termsAccepted: false, requestId: otpResult?.requestId ?? null, channel: "SMS" });
         setOtpPurpose("login");
@@ -90,7 +91,7 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS", initia
         setCountdown(30);
         setOtpOpen(true);
       } catch (error: unknown) {
-        toast.error(error instanceof Error ? error.message : t('auth.resetOtpFailure'));
+        toast.error(otpUserMessage(error, "send"));
       } finally {
         setSubmitting(false);
       }
@@ -157,13 +158,13 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS", initia
         setOtpOpen(true);
         toast.success(t('auth.otpSent'));
       } else {
-        const authenticatedUser = await signInWithEmail(email, password);
+        const authenticatedUser = await signInWithEmail(email, password, role);
         const nextStep = await refreshUser();
         toast.success(t('auth.welcomeBack'));
         router.replace(getRouteForAuthenticatedUser(authenticatedUser.role, nextStep, new URLSearchParams(window.location.search).get("next")));
       }
     } catch (error: unknown) {
-      toast.error(error instanceof Error ? error.message : t('auth.googleError'));
+      toast.error(otpUserMessage(error, mode === "signup" || loginMethod === "mobile" ? "send" : "auth"));
     } finally {
       setSubmitting(false);
     }
@@ -214,7 +215,8 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS", initia
       toast.success(t('auth.accountCreated'));
       router.replace(getRouteForNextStep(role, nextStep));
     } catch (error: unknown) {
-      toast.error(error instanceof Error ? error.message : t('auth.invalidOtp'));
+      if (otpPurpose === "signup") setOtp("");
+      toast.error(otpUserMessage(error, "verify"));
     } finally {
       setSubmitting(false);
     }
@@ -227,13 +229,13 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS", initia
     }
     setSubmitting(true);
     try {
-      const requestId = await resendOTP(otpTransaction.mobile, otpTransaction.requestId, otpTransaction.channel);
-      setOtpTransaction((current) => current ? { ...current, requestId } : current);
+      const replacementRequestId = await resendOTP(otpTransaction.mobile, otpTransaction.requestId, otpTransaction.channel);
+      setOtpTransaction((current) => current ? { ...current, requestId: replacementRequestId ?? current.requestId } : current);
       setOtp("");
       setCountdown(30);
       toast.success(t('auth.resetSentAgain'));
     } catch (error: unknown) {
-      toast.error(error instanceof Error ? error.message : t('auth.resendFailure'));
+      toast.error(otpUserMessage(error, "resend"));
     } finally {
       setSubmitting(false);
     }

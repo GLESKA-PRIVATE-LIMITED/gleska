@@ -206,6 +206,36 @@ class AuthService:
         return response.data[0] if response.data else None
 
     @staticmethod
+    def get_auth_user_by_registration_identity(email: str, mobile: str):
+        normalized_email = email.strip().lower()
+        normalized_mobile = AuthService.normalize_mobile(mobile)
+        page = 1
+        page_size = 100
+
+        while True:
+            auth_users = supabase.auth.admin.list_users(page=page, per_page=page_size)
+            for auth_user in auth_users:
+                if (auth_user.email or "").strip().lower() != normalized_email:
+                    continue
+
+                metadata = auth_user.user_metadata or {}
+                recorded_mobiles = [metadata.get("mobile"), auth_user.phone]
+                try:
+                    matches = [
+                        AuthService.normalize_mobile(value)
+                        for value in recorded_mobiles
+                        if value
+                    ]
+                except ValueError:
+                    continue
+                if matches and all(value == normalized_mobile for value in matches):
+                    return auth_user
+
+            if len(auth_users) < page_size:
+                return None
+            page += 1
+
+    @staticmethod
     def provision_supabase_user(
         user_id: str,
         name: str,

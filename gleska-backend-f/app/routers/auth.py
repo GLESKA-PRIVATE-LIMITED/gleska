@@ -1,8 +1,9 @@
 """Authentication endpoints."""
 
 from datetime import datetime, timezone
+from typing import Literal
 
-from fastapi import APIRouter, Header, HTTPException, Response, status, Depends, Request
+from fastapi import APIRouter, Header, HTTPException, Response, status, Depends, Request, Query
 import logging
 
 from app.core.config import settings
@@ -10,9 +11,9 @@ from app.core.security import create_access_token, get_current_user, get_optiona
 from app.core.supabase import supabase
 from app.services.auth_service import AuthService
 from app.services.entitlements import employer_state, worker_state
-from app.services.msg91_service import MSG91Service
+from app.services.msg91_service import MSG91Service, OTPResendCooldown
 from app.services.onboarding_service import OnboardingService
-from app.schemas.auth import UserResponse, ProvisionUserSchema, RegisterSessionSchema, SignupPreflightSchema, MobileVerifiedSignupSchema, PasswordResetRequestSchema, PasswordResetVerifySchema, PasswordResetCompleteSchema, ResendOTPSchema
+from app.schemas.auth import UserResponse, ProvisionUserSchema, RegisterSessionSchema, SignupPreflightSchema, LoginPreflightSchema, MobileVerifiedSignupSchema, PasswordResetRequestSchema, PasswordResetVerifySchema, PasswordResetCompleteSchema, ResendOTPSchema
 from app.services.password_reset_service import PasswordResetService
 from app.services.profile_photo_service import get_signed_profile_photo_url
 
@@ -23,7 +24,7 @@ logger = logging.getLogger(__name__)
 def _is_auth_account_exists_error(exc: Exception) -> bool:
     code = str(getattr(exc, "code", "")).lower()
     message = str(getattr(exc, "message", "") or exc).lower()
-    if code in {"user_already_exists", "email_exists", "user_exists"}:
+    if code in {"user_already_exists", "email_exists", "user_exists", "phone_exists", "identity_already_exists"}:
         return True
     return any(
         phrase in message
@@ -33,6 +34,8 @@ def _is_auth_account_exists_error(exc: Exception) -> bool:
             "user already exists",
             "email already exists",
             "email already in use",
+            "phone already exists",
+            "phone already in use",
             "email_exists",
             "user_already_exists",
             "user_exists",
@@ -53,12 +56,38 @@ def _is_public_identity_conflict(exc: Exception) -> bool:
     )
 
 
+def _recoverable_incomplete_signup_user(
+    existing_email: dict | None,
+    existing_mobile: dict | None,
+    requested_role: str,
+) -> dict | None:
+    if (
+        not existing_email
+        or not existing_mobile
+        or existing_email.get("id") != existing_mobile.get("id")
+        or existing_email.get("role") != requested_role
+    ):
+        return None
+
+    profile_table = "worker_profiles" if requested_role == "WORKER" else "employer_profiles"
+    profile = (
+        supabase.table(profile_table)
+        .select("id")
+        .eq("user_id", existing_email["id"])
+        .limit(1)
+        .execute()
+    )
+    return None if profile.data else existing_email
+
+
 def _log_sanitized_signup_failure(stage: str, exc: Exception) -> None:
     status_code = getattr(exc, "status_code", None)
+    error_code = str(getattr(exc, "code", "") or "unavailable")[:80]
     logger.error(
-        "Mobile-verified signup failed: stage=%s error_type=%s status=%s",
+        "Mobile-verified signup failed: stage=%s error_type=%s code=%s status=%s",
         stage,
         type(exc).__name__,
+        error_code,
         status_code if isinstance(status_code, int) else "unavailable",
     )
 
@@ -73,9 +102,19 @@ def _cleanup_new_auth_user(user_id: str) -> None:
 @router.post("/forgot-password/request-otp")
 async def request_password_reset_otp(request: PasswordResetRequestSchema):
     try:
-        await PasswordResetService.request_otp(request.phone)
-    except ValueError:
+        retry_after_seconds = await PasswordResetService.request_otp(request.phone)
+    except ValueError as exc:
+        if str(exc) == "MOBILE_NOT_FOUND":
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Mobile number not found. Please register first.",
+            ) from exc
         pass
+    else:
+        return {
+            "message": "If an account exists for this phone number, we have sent a verification code.",
+            "retry_after_seconds": retry_after_seconds,
+        }
     return {"message": "If an account exists for this phone number, we have sent a verification code."}
 
 
@@ -113,7 +152,11 @@ async def signup_preflight(request: SignupPreflightSchema):
 
     existing_email = AuthService.get_user_by_email(str(request.email).lower())
     existing_mobile = AuthService.get_user_by_mobile(normalized_mobile)
-    if existing_email or existing_mobile:
+    if (existing_email or existing_mobile) and not _recoverable_incomplete_signup_user(
+        existing_email,
+        existing_mobile,
+        request.role,
+    ):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="An account already exists with this email or mobile number. Please login instead.",
@@ -121,10 +164,40 @@ async def signup_preflight(request: SignupPreflightSchema):
     return {"available": True}
 
 
+@router.post("/login-preflight")
+async def login_preflight(request: LoginPreflightSchema):
+    """Check for an application account before starting a login flow."""
+    if request.email:
+        existing = AuthService.get_user_by_email(str(request.email).strip().lower())
+        if not existing:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Email not found. Please register first.",
+            )
+        return {"exists": True}
+
+    try:
+        normalized_mobile = AuthService.normalize_mobile(request.mobile or "")
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Enter a valid Indian mobile number",
+        ) from exc
+
+    existing = AuthService.get_user_by_mobile(normalized_mobile)
+    if not existing:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Mobile number not found. Please register first.",
+        )
+    return {"exists": True}
+
+
 @router.post("/provision", response_model=UserResponse)
 async def provision_authenticated_user(
     request: ProvisionUserSchema,
     credentials=Depends(security),
+    intent: Literal["login", "provision"] = Query(default="provision"),
 ):
     """Reconcile a Supabase Auth session with the application profile tables."""
     if not credentials or not credentials.credentials:
@@ -137,6 +210,11 @@ async def provision_authenticated_user(
                 request.mobile or auth_user.phone or "",
             )
         existing = AuthService.get_user_by_id(str(auth_user.id))
+        if intent == "login" and not existing:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Email not found. Please register first.",
+            )
         role = existing.get("role") if existing else request.role
         if not role:
             raise ValueError("ROLE_REQUIRED_FOR_NEW_ACCOUNT")
@@ -232,33 +310,70 @@ async def signup_mobile_verified(request: MobileVerifiedSignupSchema):
     try:
         existing_email = AuthService.get_user_by_email(str(request.email).lower())
         existing_mobile = AuthService.get_user_by_mobile(normalized_mobile)
+        incomplete_signup_user = _recoverable_incomplete_signup_user(
+            existing_email,
+            existing_mobile,
+            request.role,
+        )
     except Exception as exc:
         _log_sanitized_signup_failure("public_user_lookup", exc)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="USER_LOOKUP_FAILED",
         ) from exc
-    if existing_email or existing_mobile:
+    if (existing_email or existing_mobile) and not incomplete_signup_user:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="An account already exists with this email or mobile number. Please login instead.")
 
     auth_user_id = None
+    auth_user_created = False
     auth_stage = "auth_user_creation"
     try:
         from datetime import datetime, timezone
         now_iso = datetime.now(timezone.utc).isoformat()
-        auth_response = supabase.auth.admin.create_user({
-            "email": str(request.email).lower(),
-            "password": request.password,
-            "email_confirm": True,
-            "user_metadata": {
-                "name": request.name.strip(),
-                "role": request.role,
-                "mobile": normalized_mobile,
-                "terms_accepted": True,
-                "terms_accepted_at": now_iso,
-            },
-        })
-        auth_user_id = str(auth_response.user.id)
+        if incomplete_signup_user:
+            auth_user = supabase.auth.admin.get_user_by_id(incomplete_signup_user["id"])
+            if (auth_user.email or "").strip().lower() != str(request.email).strip().lower():
+                raise ValueError("ACCOUNT_IDENTIFIER_CONFLICT")
+            auth_user_id = str(auth_user.id)
+            auth_stage = "auth_user_recovery"
+            supabase.auth.admin.update_user_by_id(auth_user_id, {"password": request.password})
+        else:
+            auth_user = AuthService.get_auth_user_by_registration_identity(
+                str(request.email), normalized_mobile
+            )
+            if auth_user:
+                auth_user_id = str(auth_user.id)
+                auth_stage = "auth_user_recovery"
+                supabase.auth.admin.update_user_by_id(auth_user_id, {"password": request.password})
+            else:
+                try:
+                    auth_response = supabase.auth.admin.create_user({
+                        "email": str(request.email).lower(),
+                        "password": request.password,
+                        "email_confirm": True,
+                        "user_metadata": {
+                            "name": request.name.strip(),
+                            "role": request.role,
+                            "mobile": normalized_mobile,
+                            "terms_accepted": True,
+                            "terms_accepted_at": now_iso,
+                        },
+                    })
+                except Exception as create_exc:
+                    if not _is_auth_account_exists_error(create_exc):
+                        raise
+                    auth_user = AuthService.get_auth_user_by_registration_identity(
+                        str(request.email), normalized_mobile
+                    )
+                    if not auth_user:
+                        raise create_exc
+                    auth_user_id = str(auth_user.id)
+                    auth_stage = "auth_user_recovery"
+                    supabase.auth.admin.update_user_by_id(auth_user_id, {"password": request.password})
+                else:
+                    auth_user_id = str(auth_response.user.id)
+                    auth_user_created = True
+
         auth_stage = "application_provisioning"
         user = AuthService.provision_supabase_user(
             user_id=auth_user_id,
@@ -272,18 +387,18 @@ async def signup_mobile_verified(request: MobileVerifiedSignupSchema):
         return UserResponse(**user)
     except ValueError as exc:
         if str(exc) == "ACCOUNT_IDENTIFIER_CONFLICT":
-            if auth_user_id:
+            if auth_user_created and auth_user_id:
                 _cleanup_new_auth_user(auth_user_id)
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="An account already exists with this email or mobile number. Please login instead.",
             ) from exc
-        if auth_user_id:
+        if auth_user_created and auth_user_id:
             _cleanup_new_auth_user(auth_user_id)
         _log_sanitized_signup_failure(auth_stage, exc)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="USER_PROVISIONING_FAILED",
+            detail="USER_PROVISIONING_FAILED" if auth_stage == "application_provisioning" else "AUTH_USER_CREATION_FAILED",
         ) from exc
     except Exception as exc:
         if auth_stage == "auth_user_creation" and _is_auth_account_exists_error(exc):
@@ -292,18 +407,16 @@ async def signup_mobile_verified(request: MobileVerifiedSignupSchema):
                 detail="An authentication account already exists for this email. Sign in to restore your GLESKA profile.",
             ) from exc
         if auth_stage == "application_provisioning" and _is_public_identity_conflict(exc):
-            if auth_user_id:
+            if auth_user_created and auth_user_id:
                 _cleanup_new_auth_user(auth_user_id)
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="An account already exists with this email or mobile number. Please login instead.",
             ) from exc
-        if auth_user_id:
-            _cleanup_new_auth_user(auth_user_id)
         _log_sanitized_signup_failure(auth_stage, exc)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="AUTH_USER_CREATION_FAILED" if auth_stage == "auth_user_creation" else "USER_PROVISIONING_FAILED",
+            detail="USER_PROVISIONING_FAILED" if auth_stage == "application_provisioning" else "AUTH_USER_CREATION_FAILED",
         ) from exc
 
 
@@ -497,13 +610,14 @@ async def resend_otp(request: ResendOTPSchema):
 
     try:
         MSG91Service.validate_otp_resend_request(normalized_mobile, request.channel)
+    except OTPResendCooldown as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="OTP_RESEND_COOLDOWN",
+            headers={"Retry-After": str(exc.retry_after_seconds)},
+        ) from exc
     except ValueError as exc:
         code = str(exc)
-        if code == "OTP_RESEND_COOLDOWN":
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail="Please wait before requesting another OTP",
-            ) from exc
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=code) from exc
 
     logger.info(

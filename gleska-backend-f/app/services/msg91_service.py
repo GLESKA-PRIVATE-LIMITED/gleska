@@ -17,7 +17,13 @@ logger = logging.getLogger(__name__)
 # In-memory rate limiting for OTP resend attempts
 # Format: {mobile: [(timestamp, channel), ...]}
 _otp_resend_history: dict[str, list[tuple[datetime, str]]] = defaultdict(list)
-OTP_RESEND_COOLDOWN_SECONDS = 30  # Minimum seconds between resend attempts
+OTP_RESEND_COOLDOWN_SECONDS = settings.PASSWORD_RESET_RESEND_COOLDOWN_SECONDS
+
+
+class OTPResendCooldown(ValueError):
+    def __init__(self, retry_after_seconds: int):
+        super().__init__("OTP_RESEND_COOLDOWN")
+        self.retry_after_seconds = retry_after_seconds
 
 
 class MSG91Service:
@@ -68,10 +74,8 @@ class MSG91Service:
             "Content-Type": "application/json",
         }
 
-        logger.info("MSG91 verify URL=%s", verify_url)
         logger.info("MSG91 verify method=POST")
-        logger.info("MSG91 token present=%s", bool(token))
-        logger.info("MSG91 token length=%s", len(token))
+        logger.info("MSG91 provider access-token verification started")
 
         try:
             async with httpx.AsyncClient(timeout=settings.MSG91_TIMEOUT_SECONDS) as client:
@@ -81,7 +85,10 @@ class MSG91Service:
                     json={"access-token": token},
                 )
         except httpx.RequestError as exc:
-            logger.error("MSG91 verification request error: %s", exc)
+            logger.error(
+                "MSG91 verification request failed: provider=MSG91 category=network error_type=%s",
+                type(exc).__name__,
+            )
             raise ValueError("MSG91_SERVICE_UNAVAILABLE") from exc
 
         response_text = response.text or ""
@@ -155,7 +162,8 @@ class MSG91Service:
                     last_channel,
                     int(seconds_since_last),
                 )
-                raise ValueError("OTP_RESEND_COOLDOWN")
+                retry_after = max(1, int(OTP_RESEND_COOLDOWN_SECONDS - seconds_since_last + 0.999))
+                raise OTPResendCooldown(retry_after)
         
         # Record this resend attempt
         logger.info(

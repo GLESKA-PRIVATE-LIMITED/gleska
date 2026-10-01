@@ -109,6 +109,17 @@ class SignupPreflightSchema(BaseModel):
         return self
 
 
+class LoginPreflightSchema(BaseModel):
+    email: Optional[EmailStr] = None
+    mobile: Optional[str] = Field(default=None, min_length=10, max_length=32)
+
+    @model_validator(mode="after")
+    def validate_identifier(self):
+        if bool(self.email) == bool(self.mobile):
+            raise ValueError("Provide either an email address or mobile number.")
+        return self
+
+
 class MobileVerifiedSignupSchema(SignupPreflightSchema):
     msg91_access_token: str = Field(..., min_length=1)
 
