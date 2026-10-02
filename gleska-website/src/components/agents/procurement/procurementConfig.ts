@@ -1,0 +1,58 @@
+import {
+  Home,
+  LayoutDashboard,
+  FileText,
+  Activity,
+  Building2,
+  ShoppingCart,
+  Boxes,
+  Store,
+  Settings,
+  Package,
+} from "lucide-react";
+import { AgentConfig } from "@/components/agent-dashboard/types";
+
+export const procurementConfig: AgentConfig = {
+  agentId: "procurement",
+  agentName: "PROCUREMENT AGENT",
+  badgeText: "SUPPLY CHAIN & VENDOR AI",
+  title: "MANAGE PROCUREMENT",
+  variant: "compact-centered",
+  accentColor: "purple",
+  sidebarItems: [
+    { id: "home", label: "Home", icon: Home, href: "/#services" },
+    { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, isTab: true },
+    { id: "details", label: "Procurement Details", icon: FileText, isTab: true },
+    { id: "status", label: "Current Status", icon: Activity, isTab: true },
+    { id: "companies-out", label: "Procurement to Companies", icon: Building2, isTab: true },
+    { id: "get-procurement", label: "Get Procurement", icon: ShoppingCart, isTab: true },
+    { id: "material-details", label: "Material Requirement Detail", icon: Boxes, isTab: true },
+    { id: "companies", label: "Procurement Companies", icon: Store, isTab: true },
+    { id: "settings", label: "Settings", icon: Settings, isTab: true },
+  ],
+  actionOptions: [
+    {
+      id: "provide",
+      optionNumber: "OPTION 01",
+      title: "Provide Procurement",
+      description: "Supply raw materials, industrial inventory, and vendor equipment.",
+      icon: Package,
+      badgeColor: "text-purple-600 dark:text-purple-400",
+      iconBg: "bg-purple-50 text-purple-600 border-purple-100 dark:bg-purple-950/60 dark:text-purple-400 dark:border-purple-800",
+      topBorderColor: "border-t-purple-500",
+    },
+    {
+      id: "get",
+      optionNumber: "OPTION 02",
+      title: "Get Procurement",
+      description: "Request material sourcing, price quotes, and bulk purchase order fulfillment.",
+      icon: ShoppingCart,
+      badgeColor: "text-indigo-600 dark:text-indigo-400",
+      iconBg: "bg-indigo-50 text-indigo-600 border-indigo-100 dark:bg-indigo-950/60 dark:text-indigo-400 dark:border-indigo-800",
+      topBorderColor: "border-t-indigo-500",
+    },
+  ],
+  searchTitle: "Quick Procurement & Vendor Search",
+  searchSubtitle: "Search across material requirements, purchase orders, vendor catalogs, and procurement dispatches.",
+  searchPlaceholder: "Search purchase orders, materials, vendor IDs, or procurement requests...",
+};
