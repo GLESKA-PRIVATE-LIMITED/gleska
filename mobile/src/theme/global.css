@@ -710,6 +710,67 @@ button:disabled {
   line-height: 1.55;
 }
 
+.password-field {
+  gap: var(--space-2);
+}
+
+.password-field-control {
+  position: relative;
+  display: block;
+  min-width: 0;
+}
+
+.password-field-control .auth-input,
+.password-field-control .recovery-input {
+  padding-right: 3.25rem;
+}
+
+.password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 0.5rem;
+  display: grid;
+  width: 2.25rem;
+  min-height: 2.25rem;
+  place-items: center;
+  transform: translateY(-50%);
+  border: 0;
+  border-radius: 0.5rem;
+  background: transparent;
+  color: var(--color-text-secondary);
+}
+
+.password-toggle:hover {
+  background: #f1f5f9;
+  color: var(--color-text-primary);
+}
+
+.password-strength-row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  color: var(--color-text-secondary);
+  font-size: 0.6875rem;
+  font-weight: 500;
+}
+
+.password-strength-bars {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.25rem;
+}
+
+.password-strength-bars > span {
+  height: 0.25rem;
+  border-radius: 999px;
+  background: #e2e8f0;
+}
+
+.password-strength-bars .strength-weak { background: #e11d48; }
+.password-strength-bars .strength-fair { background: #d97706; }
+.password-strength-bars .strength-good,
+.password-strength-bars .strength-strong { background: #059669; }
+
 .auth-otp-backdrop {
   position: fixed;
   z-index: 30;
@@ -723,9 +784,9 @@ button:disabled {
 
 .auth-otp-dialog {
   width: 100%;
-  max-width: 24rem;
+  max-width: 28rem;
   border: 1px solid var(--color-border);
-  border-radius: 1.5rem;
+  border-radius: var(--radius-card);
   background: var(--color-surface);
   padding: 1.5rem;
   box-shadow: 0 24px 50px rgb(2 6 23 / 24%);
@@ -847,11 +908,11 @@ button:disabled {
 .recovery-card {
   width: 100%;
   max-width: 28rem;
-  border: 1px solid rgb(226 232 240 / 90%);
-  border-radius: 1.75rem;
-  background: rgb(255 255 255 / 90%);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
   padding: clamp(1.25rem, 5vw, 2rem);
-  box-shadow: 0 20px 40px rgb(15 23 42 / 7%);
+  box-shadow: var(--shadow-card);
 }
 
 .recovery-back {

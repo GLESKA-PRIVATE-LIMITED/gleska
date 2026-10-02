@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent, useState, type FormEvent } from "react";
-import { ArrowLeft, LoaderCircle, Mail, Phone } from "lucide-react";
+import { ArrowLeft, Eye, EyeOff, LoaderCircle, Mail, Phone } from "lucide-react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { missingBackendConfiguration, missingMsg91Configuration, missingSupabaseConfiguration } from "../../config/environment";
 import { useAuth, errorMessage } from "./AuthProvider";
@@ -57,6 +57,36 @@ export function WelcomeScreen() {
 
 function InlineError({ children }: { children: string }) {
   return children ? <p className="auth-error" role="alert">{children}</p> : null;
+}
+
+function AuthPasswordField({ label, value, onChange, autoComplete, inputClassName = "auth-input", strength = false, minLength, maxLength }: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  autoComplete: string;
+  inputClassName?: string;
+  strength?: boolean;
+  minLength?: number;
+  maxLength?: number;
+}) {
+  const [visible, setVisible] = useState(false);
+  const characterGroups = [/[a-z]/.test(value), /[A-Z]/.test(value), /\d/.test(value), /[^a-zA-Z\d]/.test(value)].filter(Boolean).length;
+  const score = value ? Number(value.length >= 8) + Number(value.length >= 12) + Number(characterGroups >= 2) + Number(characterGroups >= 3) : 0;
+  const strengthLabel = score < 2 ? "Weak" : score < 3 ? "Fair" : score < 4 ? "Good" : "Strong";
+
+  return <label className="auth-field password-field">
+    <span>{label}</span>
+    <span className="password-field-control">
+      <input className={inputClassName} type={visible ? "text" : "password"} autoComplete={autoComplete} value={value} onChange={(event) => onChange(event.target.value)} minLength={minLength} maxLength={maxLength} required />
+      <button className="password-toggle" type="button" onClick={() => setVisible((current) => !current)} aria-label={visible ? "Hide password" : "Show password"} title={visible ? "Hide password" : "Show password"}>
+        {visible ? <EyeOff size={18} /> : <Eye size={18} />}
+      </button>
+    </span>
+    {strength && <>
+      <span className="password-strength-row"><span>8+ characters; longer and varied is stronger.</span><span role="status">Strength{value ? `: ${strengthLabel}` : ""}</span></span>
+      <span className="password-strength-bars" aria-hidden="true">{[1, 2, 3, 4].map((step) => <span key={step} className={score >= step ? `filled strength-${strengthLabel.toLowerCase()}` : ""} />)}</span>
+    </>}
+  </label>;
 }
 
 function ConfigurationNotice({ needsSupabase = true, needsMsg91 = false }: { needsSupabase?: boolean; needsMsg91?: boolean }) {
@@ -288,10 +318,10 @@ function AuthForm({ role, accountType, initialSignup = false }: {
         {signup && <input className="auth-input" aria-label={t("auth.fullNameLabel")} placeholder={t("auth.fullNameLabel")} autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} required minLength={2} maxLength={120} />}
         {signup && <span className="auth-input-with-icon"><Mail size={17} /><input className="auth-input" type="email" aria-label={t("auth.emailLabel")} placeholder={t("auth.emailLabel")} autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></span>}
         {!signup && loginMethod === "email" && <label className="auth-field"><span>{t("auth.emailLabel")}</span><span className="auth-input-with-icon"><Mail size={17} /><input className="auth-input" type="email" placeholder={t("auth.emailLabel")} autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></span></label>}
-        {!signup && loginMethod === "email" && <label className="auth-field"><span>{t("auth.passwordLabel")}</span><input className="auth-input" type="password" placeholder={t("auth.passwordLabel")} autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required minLength={8} maxLength={128} /></label>}
+        {!signup && loginMethod === "email" && <AuthPasswordField label={t("auth.passwordLabel")} value={password} onChange={setPassword} autoComplete="current-password" minLength={8} maxLength={128} />}
         {!signup && loginMethod === "mobile" && <label className="auth-field"><span>{t("auth.mobileLabel")}</span><span className="auth-input-with-icon"><Phone size={17} /><span className="phone-prefix">+91</span><input className="auth-input" placeholder={t("auth.mobileLabel")} inputMode="numeric" autoComplete="tel-national" value={mobile} onChange={(event) => setMobile(event.target.value.replace(/\D/g, "").slice(0, 10))} required /></span></label>}
-        {signup && <input className="auth-input" type="password" aria-label={t("auth.passwordLabel")} placeholder={t("auth.passwordLabel")} autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} required minLength={8} maxLength={128} />}
-        {signup && <input className="auth-input" type="password" aria-label={t("auth.confirmPasswordLabel")} placeholder={t("auth.confirmPasswordLabel")} autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} required minLength={8} maxLength={128} />}
+        {signup && <AuthPasswordField label={t("auth.passwordLabel")} value={password} onChange={setPassword} autoComplete="new-password" strength minLength={8} maxLength={128} />}
+        {signup && <AuthPasswordField label={t("auth.confirmPasswordLabel")} value={confirmPassword} onChange={setConfirmPassword} autoComplete="new-password" minLength={8} maxLength={128} />}
         {signup && <span className="auth-input-with-icon"><span className="phone-prefix">+91</span><input className="auth-input" aria-label={t("auth.mobileLabel")} placeholder={t("auth.mobileLabel")} inputMode="numeric" autoComplete="tel-national" value={mobile} onChange={(event) => setMobile(event.target.value.replace(/\D/g, "").slice(0, 10))} required /></span>}
         {signup && <label className="terms-check"><input type="checkbox" checked={termsAccepted} onChange={(event) => setTermsAccepted(event.target.checked)} /><span>{t("auth.termsAccepted")} <a href="https://www.goleska.in/terms" target="_blank" rel="noreferrer">Terms & Conditions</a></span></label>}
         <InlineError>{visibleError}</InlineError>
@@ -448,8 +478,8 @@ export function ForgotPasswordScreen() {
         <div className="recovery-actions"><button type="button" onClick={() => { setStep("phone"); setOtp(""); setError(""); }}>{t("auth.changePhone")}</button><button type="button" disabled={busy || Boolean(countdown)} onClick={() => void resend()}>{countdown ? t("auth.resendIn", { seconds: countdown }) : t("auth.resendOtp")}</button></div>
       </form>}
       {step === "password" && <form className="recovery-form" onSubmit={(event) => void reset(event)}>
-        <label className="recovery-field"><span>{t("auth.newPassword")}</span><input className="recovery-input" type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} minLength={8} maxLength={128} required /></label>
-        <label className="recovery-field"><span>{t("auth.confirmPasswordLabel")}</span><input className="recovery-input" type="password" autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} minLength={8} maxLength={128} required /></label>
+        <AuthPasswordField label={t("auth.newPassword")} value={password} onChange={setPassword} autoComplete="new-password" inputClassName="recovery-input" strength minLength={8} maxLength={128} />
+        <AuthPasswordField label={t("auth.confirmPasswordLabel")} value={confirmPassword} onChange={setConfirmPassword} autoComplete="new-password" inputClassName="recovery-input" minLength={8} maxLength={128} />
         <InlineError>{error}</InlineError>
         <button className="recovery-primary" type="submit" disabled={busy || password.length < 8 || password !== confirmPassword}>{busy && <LoaderCircle size={16} className="spin" />}{t("auth.resetPassword")}</button>
       </form>}
@@ -516,8 +546,8 @@ export function ResetPasswordScreen() {
   return <AuthLayout><main className="auth-content"><section className="auth-card">
     <p className="auth-eyebrow">GLESKA</p><h1>{t("auth.resetPassword")}</h1>
     {ready ? <form className="auth-form" onSubmit={(event) => void submit(event)}>
-      <label className="auth-field"><span>{t("auth.newPassword")}</span><input className="auth-input" type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} minLength={8} required /></label>
-      <label className="auth-field"><span>{t("auth.confirmPasswordLabel")}</span><input className="auth-input" type="password" autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} minLength={8} required /></label>
+      <AuthPasswordField label={t("auth.newPassword")} value={password} onChange={setPassword} autoComplete="new-password" strength minLength={8} />
+      <AuthPasswordField label={t("auth.confirmPasswordLabel")} value={confirmPassword} onChange={setConfirmPassword} autoComplete="new-password" minLength={8} />
       <InlineError>{error}</InlineError>
       <button className="auth-primary" type="submit" disabled={busy || password.length < 8 || password !== confirmPassword}>{busy && <LoaderCircle size={17} className="spin" />}{t("auth.resetPassword")}</button>
     </form> : <><InlineError>{error || "Open the password recovery link from your GLESKA email to continue."}</InlineError><Link className="text-link auth-back-link" to="/auth/signin">{t("auth.back")}</Link></>}

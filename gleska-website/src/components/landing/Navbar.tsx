@@ -9,7 +9,7 @@ import { useAuth } from "@/context/AuthContext";
 import { getRouteForNextStep } from "@/lib/auth-routing";
 import { useLanguage } from "@/context/LanguageContext";
 
-export default function Navbar() {
+export default function Navbar({ variant = "default" }: { variant?: "default" | "auth" }) {
   const pathname = usePathname();
   const { user, nextStep } = useAuth();
   const { t } = useLanguage();
@@ -19,6 +19,22 @@ export default function Navbar() {
     pathname.startsWith("/employer") ||
     pathname.startsWith("/worker") ||
     pathname === dashboardHref;
+
+  if (variant === "auth") {
+    return (
+      <header className="sticky top-0 z-50 w-full border-b border-slate-200 bg-white/95 backdrop-blur-md dark:border-slate-800 dark:bg-slate-900/95">
+        <nav className="mx-auto flex w-full max-w-7xl items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
+          <Link href="/" className="flex items-center gap-2 sm:gap-3">
+            <img src="/favicon.ico" alt="GO LESKA AI" className="h-8 w-8 rounded-lg object-contain sm:h-9 sm:w-9" />
+            <span className="font-[var(--font-anton)] text-xl uppercase tracking-wider bg-[linear-gradient(180deg,#E86100_0%,#FFF5EA_48%,#128807_100%)] bg-clip-text text-transparent select-none whitespace-nowrap sm:text-2xl">
+              GO LESKA AI
+            </span>
+          </Link>
+          <LanguageSelector />
+        </nav>
+      </header>
+    );
+  }
 
   return (
     <div className="sticky top-4 z-50 px-4 sm:px-8">

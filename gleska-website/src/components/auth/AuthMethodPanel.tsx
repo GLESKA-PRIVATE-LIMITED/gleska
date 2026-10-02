@@ -10,6 +10,7 @@ import { useLanguage } from "@/context/LanguageContext";
 import { getRouteForAuthenticatedUser, getRouteForNextStep } from "@/lib/auth-routing";
 import { normalizeIndianMobile, otpUserMessage } from "@/lib/msg91";
 import { SignupFlowError, toSignupFlowError } from "@/lib/auth-errors";
+import AuthPasswordField from "@/components/auth/AuthPasswordField";
 
 type Role = "WORKER" | "EMPLOYER";
 type OTPTransaction = { name: string; email: string; password: string; mobile: string; termsAccepted: boolean; requestId: string | null; channel: "SMS" | "EMAIL" };
@@ -362,21 +363,23 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS", initia
           </div>
         )}
         {!(mode === "login" && loginMethod === "mobile") && (
-          <input
-            type="password"
+          <AuthPasswordField
+            id="auth-password"
+            label={t('auth.passwordLabel')}
             value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            placeholder={t('auth.passwordLabel')}
-            className="w-full rounded-xl border border-slate-200 bg-white/90 px-4 py-3 text-sm font-medium text-slate-900 placeholder:text-slate-400 outline-none transition focus:border-indigo-400 focus:bg-white focus:ring-2 focus:ring-indigo-100 dark:border-slate-700/80 dark:bg-slate-800/90 dark:text-white dark:placeholder:text-slate-500 dark:focus:border-indigo-500 dark:focus:ring-indigo-900/40"
+            onChange={setPassword}
+            autoComplete={mode === "signup" ? "new-password" : "current-password"}
+            strengthLabel={mode === "signup" ? "Password strength" : undefined}
+            requirementsText={mode === "signup" ? t('shared.passwordRequirements') : undefined}
           />
         )}
         {mode === "signup" && (
-          <input
-            type="password"
+          <AuthPasswordField
+            id="auth-confirm-password"
+            label={t('auth.confirmPasswordLabel')}
             value={confirmPassword}
-            onChange={(event) => setConfirmPassword(event.target.value)}
-            placeholder={t('auth.confirmPasswordLabel')}
-            className="w-full rounded-xl border border-slate-200 bg-white/90 px-4 py-3 text-sm font-medium text-slate-900 placeholder:text-slate-400 outline-none transition focus:border-indigo-400 focus:bg-white focus:ring-2 focus:ring-indigo-100 dark:border-slate-700/80 dark:bg-slate-800/90 dark:text-white dark:placeholder:text-slate-500 dark:focus:border-indigo-500 dark:focus:ring-indigo-900/40"
+            onChange={setConfirmPassword}
+            autoComplete="new-password"
           />
         )}
         {mode === "signup" && (
