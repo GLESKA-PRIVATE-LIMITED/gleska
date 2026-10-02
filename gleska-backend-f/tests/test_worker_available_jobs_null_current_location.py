@@ -8,6 +8,11 @@ from app.routers import workers
 USER = SimpleNamespace(id="user-id", role="WORKER")
 
 
+@pytest.fixture(autouse=True)
+def active_subscription(monkeypatch):
+    monkeypatch.setattr(workers, "worker_state", lambda _worker: {"subscription_active": True})
+
+
 def _profile_row(**overrides):
     row = {
         "id": "profile-id",
@@ -61,21 +66,16 @@ class FakeSupabase:
 
 
 @pytest.mark.asyncio
-async def test_available_jobs_no_live_row_falls_back_to_profile(monkeypatch):
+async def test_available_jobs_without_live_location_rejects_profile_coordinates(monkeypatch):
     fake_supabase = FakeSupabase({
         "worker_profiles": [_profile_row()],
         "worker_current_locations": [],
     })
     monkeypatch.setattr(workers, "supabase", fake_supabase)
-    monkeypatch.setattr(
-        workers,
-        "MatchingService",
-        SimpleNamespace(available_jobs=lambda *args, **kwargs: [{"job_id": "job-123"}]),
-    )
-
-    result = await workers.get_available_jobs(USER)
-
-    assert result == {"jobs": [{"job_id": "job-123"}]}
+    with pytest.raises(workers.HTTPException) as exc:
+        await workers.get_available_jobs(USER)
+    assert exc.value.status_code == 400
+    assert exc.value.detail == "CURRENT_LOCATION_REQUIRED"
 
 
 @pytest.mark.asyncio
@@ -103,7 +103,7 @@ async def test_available_jobs_fresh_live_location_used(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_available_jobs_stale_live_location_falls_back_to_profile(monkeypatch):
+async def test_available_jobs_stale_live_location_rejects_profile_coordinates(monkeypatch):
     fake_supabase = FakeSupabase({
         "worker_profiles": [_profile_row()],
         "worker_current_locations": [{
@@ -115,19 +115,14 @@ async def test_available_jobs_stale_live_location_falls_back_to_profile(monkeypa
         }],
     })
     monkeypatch.setattr(workers, "supabase", fake_supabase)
-    monkeypatch.setattr(
-        workers,
-        "MatchingService",
-        SimpleNamespace(available_jobs=lambda *args, **kwargs: [{"job_id": "job-profile"}]),
-    )
-
-    result = await workers.get_available_jobs(USER)
-
-    assert result == {"jobs": [{"job_id": "job-profile"}]}
+    with pytest.raises(workers.HTTPException) as exc:
+        await workers.get_available_jobs(USER)
+    assert exc.value.status_code == 400
+    assert exc.value.detail == "CURRENT_LOCATION_REQUIRED"
 
 
 @pytest.mark.asyncio
-async def test_available_jobs_inaccurate_live_location_falls_back_to_profile(monkeypatch):
+async def test_available_jobs_inaccurate_live_location_rejects_profile_coordinates(monkeypatch):
     fake_supabase = FakeSupabase({
         "worker_profiles": [_profile_row()],
         "worker_current_locations": [{
@@ -139,15 +134,10 @@ async def test_available_jobs_inaccurate_live_location_falls_back_to_profile(mon
         }],
     })
     monkeypatch.setattr(workers, "supabase", fake_supabase)
-    monkeypatch.setattr(
-        workers,
-        "MatchingService",
-        SimpleNamespace(available_jobs=lambda *args, **kwargs: [{"job_id": "job-profile"}]),
-    )
-
-    result = await workers.get_available_jobs(USER)
-
-    assert result == {"jobs": [{"job_id": "job-profile"}]}
+    with pytest.raises(workers.HTTPException) as exc:
+        await workers.get_available_jobs(USER)
+    assert exc.value.status_code == 400
+    assert exc.value.detail == "CURRENT_LOCATION_REQUIRED"
 
 
 @pytest.mark.asyncio

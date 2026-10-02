@@ -10,6 +10,8 @@ import { useLanguage } from "@/context/LanguageContext";
 import { getRouteForAuthenticatedUser, getRouteForNextStep } from "@/lib/auth-routing";
 import { normalizeIndianMobile, otpUserMessage } from "@/lib/msg91";
 import { SignupFlowError, toSignupFlowError } from "@/lib/auth-errors";
+import { isValidSignupMobile, isValidSignupName, isValidSignupPassword, passwordsMatch, sanitizeSignupName } from "@/lib/signup-validation";
+import AuthPasswordField from "@/components/auth/AuthPasswordField";
 
 type Role = "WORKER" | "EMPLOYER";
 type OTPTransaction = { name: string; email: string; password: string; mobile: string; termsAccepted: boolean; requestId: string | null; channel: "SMS" | "EMAIL" };
@@ -28,9 +30,12 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS", initia
   const [loginMethod, setLoginMethod] = useState<"email" | "mobile">("email");
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
+  const [nameInputRejected, setNameInputRejected] = useState(false);
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [mobile, setMobile] = useState("");
+  const [mobileTouched, setMobileTouched] = useState(false);
+  const [mobileInputRejected, setMobileInputRejected] = useState(false);
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [termsModalOpen, setTermsModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -39,6 +44,7 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS", initia
   const [otpOpen, setOtpOpen] = useState(false);
   const [countdown, setCountdown] = useState(0);
   const [otpPurpose, setOtpPurpose] = useState<"signup" | "login">("signup");
+  const isIndividualSignup = mode === "signup" && accountType === "INDIVIDUAL";
 
   useEffect(() => {
     onModeChange?.(mode);
@@ -110,6 +116,10 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS", initia
         toast.error(t('auth.fillName'));
         return;
       }
+      if (isIndividualSignup && (nameInputRejected || !isValidSignupName(name.trim()))) {
+        toast.error(t('auth.nameLettersOnly'));
+        return;
+      }
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!email.trim() || !emailRegex.test(email.trim())) {
         toast.error(t('auth.validEmail'));
@@ -119,21 +129,23 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS", initia
         toast.error(t('auth.enterPassword'));
         return;
       }
-      if (password.length < 8) {
-        toast.error(t('auth.passwordMin'));
+      if (isIndividualSignup ? !isValidSignupPassword(password) : password.length < 8) {
+        toast.error(isIndividualSignup ? t('auth.passwordPolicyIncomplete') : t('auth.passwordMin'));
         return;
       }
       if (!confirmPassword) {
         toast.error(t('auth.confirmPasswordRequired'));
         return;
       }
-      if (password !== confirmPassword) {
-        toast.error(t('auth.passwordMismatch'));
+      if (!passwordsMatch(password, confirmPassword)) {
+        toast.error(isIndividualSignup ? t('auth.signupPasswordMismatch') : t('auth.passwordMismatch'));
         return;
       }
       const rawMobileDigits = mobile.replace(/\D/g, "");
-      if (!rawMobileDigits || rawMobileDigits.length !== 10) {
-        toast.error(t('auth.validMobile'));
+      if (isIndividualSignup
+        ? mobileInputRejected || !isValidSignupMobile(mobile)
+        : !rawMobileDigits || rawMobileDigits.length !== 10) {
+        toast.error(isIndividualSignup ? t('auth.signupValidMobile') : t('auth.validMobile'));
         return;
       }
       if (!termsAccepted) {
@@ -141,7 +153,7 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS", initia
         return;
       }
     } else {
-      if (!email.trim() || password.length < 8) {
+      if (!email.trim() || !password) {
         toast.error(t('auth.loginValid'));
         return;
       }
@@ -261,12 +273,12 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS", initia
   ];
 
   const isManualSignupComplete = Boolean(
-    name.trim() &&
+    (isIndividualSignup ? isValidSignupName(name.trim()) && !nameInputRejected : name.trim()) &&
     email.trim() &&
-    password.length >= 8 &&
+    (isIndividualSignup ? isValidSignupPassword(password) : password.length >= 8) &&
     confirmPassword &&
-    confirmPassword === password &&
-    mobile.replace(/\D/g, "").length === 10 &&
+    passwordsMatch(confirmPassword, password) &&
+    (isIndividualSignup ? isValidSignupMobile(mobile) && !mobileInputRejected : mobile.replace(/\D/g, "").length === 10) &&
     termsAccepted
   );
 
@@ -333,11 +345,21 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS", initia
         {mode === "signup" && (
           <input
             value={name}
-            onChange={(event) => setName(event.target.value)}
+            onChange={(event) => {
+              const rawName = event.target.value;
+              setName(isIndividualSignup ? sanitizeSignupName(rawName) : rawName);
+              setNameInputRejected(isIndividualSignup && (!/^[A-Za-z ]*$/.test(rawName) || rawName.startsWith(" ")));
+            }}
+            onBlur={() => {
+              if (isIndividualSignup) setName((current) => current.trim());
+            }}
+            aria-invalid={nameInputRejected}
+            aria-describedby={nameInputRejected ? "auth-name-error" : undefined}
             placeholder={t('auth.fullNameLabel')}
             className="w-full rounded-xl border border-slate-200 bg-white/90 px-4 py-3 text-sm font-medium text-slate-900 placeholder:text-slate-400 outline-none transition focus:border-indigo-400 focus:bg-white focus:ring-2 focus:ring-indigo-100 dark:border-slate-700/80 dark:bg-slate-800/90 dark:text-white dark:placeholder:text-slate-500 dark:focus:border-indigo-500 dark:focus:ring-indigo-900/40"
           />
         )}
+        {isIndividualSignup && nameInputRejected && <p id="auth-name-error" className="text-xs font-medium text-rose-600 dark:text-rose-400" role="alert">{t('auth.nameLettersOnly')}</p>}
         {mode === "login" && loginMethod === "mobile" && (
           <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white/90 px-4 transition focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-100 dark:border-slate-700/80 dark:bg-slate-800/90 dark:focus-within:border-indigo-500 dark:focus-within:ring-indigo-900/40">
             <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">+91</span>
@@ -362,21 +384,33 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS", initia
           </div>
         )}
         {!(mode === "login" && loginMethod === "mobile") && (
-          <input
-            type="password"
+          <AuthPasswordField
+            id="auth-password"
+            label={mode === "signup" ? t('auth.passwordLabel') : t('auth.loginPasswordLabel')}
             value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            placeholder={t('auth.passwordLabel')}
-            className="w-full rounded-xl border border-slate-200 bg-white/90 px-4 py-3 text-sm font-medium text-slate-900 placeholder:text-slate-400 outline-none transition focus:border-indigo-400 focus:bg-white focus:ring-2 focus:ring-indigo-100 dark:border-slate-700/80 dark:bg-slate-800/90 dark:text-white dark:placeholder:text-slate-500 dark:focus:border-indigo-500 dark:focus:ring-indigo-900/40"
+            onChange={setPassword}
+            autoComplete={mode === "signup" ? "new-password" : "current-password"}
+            strengthLabel={mode === "signup" ? "Password strength" : undefined}
+            requirementsText={mode === "signup" && !isIndividualSignup ? t('shared.passwordRequirements') : undefined}
+            maxLength={isIndividualSignup ? 128 : undefined}
+            passwordRequirementLabels={isIndividualSignup ? {
+              title: t('auth.passwordRequirementsTitle'),
+              minimumLength: t('auth.passwordMinimumLength'),
+              containsLetter: t('auth.passwordContainsLetter'),
+              containsNumber: t('auth.passwordContainsNumber'),
+              containsSpecialCharacter: t('auth.passwordContainsSpecialCharacter'),
+            } : undefined}
           />
         )}
         {mode === "signup" && (
-          <input
-            type="password"
+          <AuthPasswordField
+            id="auth-confirm-password"
+            label={t('auth.confirmPasswordLabel')}
             value={confirmPassword}
-            onChange={(event) => setConfirmPassword(event.target.value)}
-            placeholder={t('auth.confirmPasswordLabel')}
-            className="w-full rounded-xl border border-slate-200 bg-white/90 px-4 py-3 text-sm font-medium text-slate-900 placeholder:text-slate-400 outline-none transition focus:border-indigo-400 focus:bg-white focus:ring-2 focus:ring-indigo-100 dark:border-slate-700/80 dark:bg-slate-800/90 dark:text-white dark:placeholder:text-slate-500 dark:focus:border-indigo-500 dark:focus:ring-indigo-900/40"
+            onChange={setConfirmPassword}
+            autoComplete="new-password"
+            maxLength={isIndividualSignup ? 128 : undefined}
+            validationMessage={isIndividualSignup && confirmPassword && !passwordsMatch(password, confirmPassword) ? t('auth.signupPasswordMismatch') : undefined}
           />
         )}
         {mode === "signup" && (
@@ -384,12 +418,28 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS", initia
             <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">+91</span>
             <input
               value={mobile}
-              onChange={(event) => setMobile(event.target.value.replace(/\D/g, "").slice(0, 10))}
+              onChange={(event) => {
+                const value = event.target.value;
+                if (!isIndividualSignup) {
+                  setMobile(value.replace(/\D/g, "").slice(0, 10));
+                } else if (/^\d{0,10}$/.test(value)) {
+                  setMobileTouched(true);
+                  setMobile(value);
+                  setMobileInputRejected(false);
+                } else {
+                  setMobileTouched(true);
+                  setMobileInputRejected(true);
+                }
+              }}
+              inputMode={isIndividualSignup ? "numeric" : undefined}
+              aria-invalid={isIndividualSignup && (mobileInputRejected || (mobileTouched && !isValidSignupMobile(mobile)))}
+              aria-describedby={isIndividualSignup && (mobileInputRejected || (mobileTouched && !isValidSignupMobile(mobile))) ? "auth-mobile-error" : undefined}
               placeholder={t('auth.mobileLabel')}
               className="min-w-0 flex-1 bg-transparent py-3 text-sm font-medium text-slate-900 placeholder:text-slate-400 outline-none dark:text-white dark:placeholder:text-slate-500"
             />
           </div>
         )}
+        {isIndividualSignup && (mobileInputRejected || (mobileTouched && !isValidSignupMobile(mobile))) && <p id="auth-mobile-error" className="text-xs font-medium text-rose-600 dark:text-rose-400" role="alert">{t('auth.signupValidMobile')}</p>}
         
         {mode === "signup" && (
           <div className="flex items-start gap-3 pt-1">

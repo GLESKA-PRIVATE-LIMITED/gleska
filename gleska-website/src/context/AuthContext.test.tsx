@@ -265,6 +265,94 @@ describe("website email signup error boundaries", () => {
     fireEvent.click(screen.getByRole("button", { name: "auth.signupButton" }));
   }
 
+  async function fillIndividualSignupForm(password = "abcdefgh1@", confirmPassword = password) {
+    render(
+      <AuthProvider>
+        <AuthMethodPanel role="EMPLOYER" accountType="INDIVIDUAL" initialMode="signup" hideModeSelector />
+      </AuthProvider>,
+    );
+    fireEvent.change(screen.getByPlaceholderText("auth.fullNameLabel"), { target: { value: "Samiksha Lone" } });
+    fireEvent.change(screen.getByPlaceholderText("auth.emailLabel"), { target: { value: "individual@example.com" } });
+    fireEvent.change(screen.getByPlaceholderText("auth.passwordLabel"), { target: { value: password } });
+    fireEvent.change(screen.getByPlaceholderText("auth.confirmPasswordLabel"), { target: { value: confirmPassword } });
+    fireEvent.change(screen.getByPlaceholderText("auth.mobileLabel"), { target: { value: "9876543210" } });
+    fireEvent.click(screen.getByRole("checkbox"));
+  }
+
+  it("does not start preflight or OTP for an incomplete password", async () => {
+    await fillIndividualSignupForm("abcdefgh");
+
+    const signupButton = screen.getByRole("button", { name: "auth.signupButton" });
+    expect(signupButton.hasAttribute("disabled")).toBe(true);
+    expect(screen.getByText("auth.passwordContainsNumber")).toBeTruthy();
+    expect(screen.getByText("auth.passwordContainsSpecialCharacter")).toBeTruthy();
+    expect(mocks.apiPost).not.toHaveBeenCalledWith("/api/v1/auth/signup-preflight", expect.anything(), expect.anything());
+    expect(mocks.sendOTP).not.toHaveBeenCalled();
+  });
+
+  it("continues to the existing OTP flow for a valid Individual Employer signup", async () => {
+    await fillIndividualSignupForm();
+    fireEvent.click(screen.getByRole("button", { name: "auth.signupButton" }));
+
+    await waitFor(() => expect(screen.getByRole("dialog")).toBeTruthy());
+    expect(mocks.apiPost).toHaveBeenCalledWith("/api/v1/auth/signup-preflight", expect.anything());
+    expect(mocks.sendOTP).toHaveBeenCalledWith("919876543210");
+  });
+
+  it("shows a mismatch message and disables signup until passwords match", async () => {
+    await fillIndividualSignupForm("abcdefgh1@", "abcdefgh1");
+
+    expect(screen.getByText("auth.signupPasswordMismatch")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "auth.signupButton" }).hasAttribute("disabled")).toBe(true);
+    expect(mocks.sendOTP).not.toHaveBeenCalled();
+  });
+
+  it("renders only active inline errors and removes them as fields are corrected", async () => {
+    await fillIndividualSignupForm();
+
+    expect(screen.queryByText("auth.nameLettersOnly")).toBeNull();
+    expect(screen.queryByText("auth.signupValidMobile")).toBeNull();
+    expect(screen.queryByText("auth.signupPasswordMismatch")).toBeNull();
+    expect(document.getElementById("auth-name-error")).toBeNull();
+    expect(document.getElementById("auth-mobile-error")).toBeNull();
+    expect(document.getElementById("auth-confirm-password-error")).toBeNull();
+
+    const nameInput = screen.getByPlaceholderText("auth.fullNameLabel");
+    fireEvent.change(nameInput, { target: { value: "Samiksha123" } });
+    expect(screen.getByText("auth.nameLettersOnly")).toBeTruthy();
+    fireEvent.change(nameInput, { target: { value: "Samiksha Lone" } });
+    expect(screen.queryByText("auth.nameLettersOnly")).toBeNull();
+
+    const mobileInput = screen.getByPlaceholderText("auth.mobileLabel");
+    fireEvent.change(mobileInput, { target: { value: "+919876543210" } });
+    expect(screen.getByText("auth.signupValidMobile")).toBeTruthy();
+    fireEvent.change(mobileInput, { target: { value: "9876543211" } });
+    expect(screen.queryByText("auth.signupValidMobile")).toBeNull();
+
+    const confirmInput = screen.getByPlaceholderText("auth.confirmPasswordLabel");
+    fireEvent.change(confirmInput, { target: { value: "mismatched" } });
+    expect(screen.getByText("auth.signupPasswordMismatch")).toBeTruthy();
+    fireEvent.change(confirmInput, { target: { value: "abcdefgh1@" } });
+    expect(screen.queryByText("auth.signupPasswordMismatch")).toBeNull();
+  });
+
+  it("shows name and mobile validation errors for rejected input", async () => {
+    render(
+      <AuthProvider>
+        <AuthMethodPanel role="EMPLOYER" accountType="INDIVIDUAL" initialMode="signup" hideModeSelector />
+      </AuthProvider>,
+    );
+    fireEvent.change(screen.getByPlaceholderText("auth.fullNameLabel"), { target: { value: "Samiksha123" } });
+    fireEvent.change(screen.getByPlaceholderText("auth.mobileLabel"), { target: { value: "+919876543210" } });
+
+    expect(screen.getByText("auth.nameLettersOnly")).toBeTruthy();
+    expect(screen.getByText("auth.signupValidMobile")).toBeTruthy();
+    expect(screen.getByPlaceholderText<HTMLInputElement>("auth.fullNameLabel").value).toBe("Samiksha");
+    expect(screen.getByPlaceholderText<HTMLInputElement>("auth.mobileLabel").value).toBe("");
+    expect(screen.getByRole("button", { name: "auth.signupButton" }).hasAttribute("disabled")).toBe(true);
+    expect(mocks.sendOTP).not.toHaveBeenCalled();
+  });
+
   async function openSignupOtpDialog() {
     await submitSignupForm();
     await waitFor(() => expect(screen.getByRole("dialog")).toBeTruthy());

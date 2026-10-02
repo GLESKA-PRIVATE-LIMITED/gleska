@@ -19,7 +19,7 @@ import { toast } from "sonner";
 import apiClient from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import LocationPicker, { LocationSelection } from "@/components/LocationPicker";
-import { getBrowserLocation } from "@/lib/location";
+import { getBrowserLocation, getLocationErrorMessage } from "@/lib/location";
 import { useWorkerProfilePhoto } from "@/lib/useWorkerProfilePhoto";
 import AccountManagementShell from "@/components/AccountManagementShell";
 import { WorkerErrorState, WorkerPageFrame, WorkerPageHeader } from "@/components/worker/WorkspaceUI";
@@ -54,7 +54,8 @@ export default function WorkerProfilePage() {
   const [loading, setLoading] = useState(true);
   const [profileLoadError, setProfileLoadError] = useState("");
   const [saving, setSaving] = useState(false);
-  const [detectedLocation, setDetectedLocation] = useState<LocationSelection | null>(null);
+  const [isPopulatingPermanentAddress, setIsPopulatingPermanentAddress] = useState(false);
+  const [permanentAddressLocationError, setPermanentAddressLocationError] = useState("");
 
   const [maritalStatus, setMaritalStatus] = useState("");
   const [bloodGroup, setBloodGroup] = useState("");
@@ -118,73 +119,30 @@ export default function WorkerProfilePage() {
     }));
   };
 
-  const detectCurrentLocation = async () => {
+  const populatePermanentAddressFromCurrentLocation = async () => {
+    setIsPopulatingPermanentAddress(true);
+    setPermanentAddressLocationError("");
     try {
       const coordinates = await getBrowserLocation();
-      const response = await apiClient.get("/api/v1/locations/reverse", {
+      const response = await apiClient.get<{ address: string }>("/api/v1/locations/reverse", {
         params: { latitude: coordinates.latitude, longitude: coordinates.longitude },
       });
-      const location = {
-        ...response.data,
-        accuracy_m: coordinates.accuracy,
-        city: response.data.city || null,
-        state: response.data.state || null,
-        pincode: response.data.pincode || null,
-        location_source: "GPS" as const,
-      };
-      setDetectedLocation(location);
-      return location;
-    } catch (error) {
-      // Handle different error types
-      if (error instanceof Error) {
-        if ("code" in error && error.code === "INACCURATE") {
-          // Accuracy > 1000m
-          const accuracy = (error as Error & { accuracy?: number }).accuracy ?? 0;
-          toast.error(`Location accuracy is too low (${Math.round(accuracy / 1000)}km). Enable device location services or try from a device with GPS.`);
-        } else if ("code" in error && typeof error.code === "number") {
-          // GeolocationPositionError
-          const code = error.code as number;
-          if (code === 1) {
-            toast.error("Location permission was denied. Please enable location access and try again.");
-          } else if (code === 2) {
-            toast.error("Your location could not be determined. Please try again.");
-          } else if (code === 3) {
-            toast.error("Location request timed out. Please try again.");
-          } else {
-            toast.error("Unable to detect current location");
-          }
-        } else if (error.message === "Location unavailable") {
-          toast.error("Location services are not available on this device.");
-        } else {
-          // Likely network/reverse-geocoding error
-          toast.error("Could not determine your address. Please try again.");
-        }
-      } else {
-        toast.error("Unable to detect current location");
-      }
-      return null;
-    }
-  };
-
-  const confirmDetectedLocation = async () => {
-    if (!detectedLocation) return;
-    try {
-      const response = await apiClient.put("/api/v1/workers/me/location", {
-        latitude: detectedLocation.latitude,
-        longitude: detectedLocation.longitude,
-        accuracy_m: detectedLocation.accuracy_m,
-      });
-      const profileResponse = await apiClient.put("/api/v1/workers/me", {
-        address: detectedLocation.address,
-        latitude: detectedLocation.latitude,
-        longitude: detectedLocation.longitude,
+      setProfile((current) => ({
+        ...current,
+        address: response.data.address,
+        latitude: coordinates.latitude,
+        longitude: coordinates.longitude,
         location_source: "GPS",
-      });
-      setProfile((current) => ({ ...current, ...profileResponse.data, address: response.data.address || profileResponse.data.address }));
-      setDetectedLocation(null);
-      toast.success("GPS Location updated");
-    } catch {
-      toast.error("Failed to update location");
+      }));
+      toast.success("Address filled. Save Changes to update your permanent address.");
+    } catch (error) {
+      setPermanentAddressLocationError(
+        error instanceof Error && "code" in error
+          ? getLocationErrorMessage(error)
+          : "Could not determine your address. Please try again.",
+      );
+    } finally {
+      setIsPopulatingPermanentAddress(false);
     }
   };
 
@@ -527,17 +485,9 @@ export default function WorkerProfilePage() {
                       <MapPin size={20} />
                     </div>
                     <h2 className="text-lg font-bold text-slate-900 dark:text-white">
-                      Addresses
+                      Location
                     </h2>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setIsEditingAddress(!isEditingAddress)}
-                    className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/40 transition cursor-pointer"
-                  >
-                    <Plus size={14} />
-                    {isEditingAddress ? "Done" : "Add / Edit"}
-                  </button>
                 </div>
 
                 <div className="space-y-4">
@@ -555,6 +505,9 @@ export default function WorkerProfilePage() {
                           <p className="mt-1 text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
                             {profile.address || (profile.city ? `${profile.city}, ${profile.state || ""}` : "Not configured yet")}
                           </p>
+                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                            Where you normally live
+                          </p>
                           {profile.pincode && (
                             <p className="text-xs text-slate-400 dark:text-slate-500 font-medium">
                               PIN: {profile.pincode}
@@ -564,87 +517,48 @@ export default function WorkerProfilePage() {
                       </div>
                       <button
                         type="button"
-                        onClick={() => setIsEditingAddress(true)}
+                        onClick={() => setIsEditingAddress((current) => !current)}
                         className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline shrink-0"
                       >
-                        Edit &gt;
+                        {isEditingAddress ? "Done" : "Edit address"}
                       </button>
                     </div>
                   </div>
 
-                  {/* Temporary / Current GPS Address */}
-                  <div className="rounded-xl bg-slate-50 p-4 border border-slate-100 dark:bg-slate-800/50 dark:border-slate-800">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-start gap-3">
-                        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-100 text-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-400 shrink-0">
-                          <MapPin size={18} />
-                        </div>
-                        <div>
-                          <p className="text-sm font-bold text-slate-900 dark:text-white">
-                            Current GPS Location
-                          </p>
-                          <p className="mt-1 text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-                            {detectedLocation?.address || (profile.latitude && profile.longitude ? `Coordinates: ${profile.latitude.toFixed(4)}, ${profile.longitude.toFixed(4)}` : "Location not detected yet")}
-                          </p>
-                          {profile.location_source && (
-                            <span className="inline-block mt-1 rounded-md bg-blue-100 px-2 py-0.5 text-[10px] font-bold uppercase text-blue-700 dark:bg-blue-950 dark:text-blue-300">
-                              Source: {profile.location_source}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => void detectCurrentLocation()}
-                        className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline shrink-0"
-                      >
-                        Detect GPS &gt;
-                      </button>
-                    </div>
-
-                    {detectedLocation && (
-                      <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs dark:border-blue-900 dark:bg-blue-950/40">
-                        <p className="font-semibold text-blue-900 dark:text-blue-200">
-                          Detected current location:
-                        </p>
-                        <p className="mt-1 text-slate-700 dark:text-slate-300">{detectedLocation.address}</p>
-                        <div className="mt-2 flex gap-2">
-                          <button
-                            type="button"
-                            onClick={() => void confirmDetectedLocation()}
-                            className="rounded-md bg-blue-600 px-2.5 py-1 font-bold text-white"
-                          >
-                            Confirm GPS Location
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setDetectedLocation(null)}
-                            className="rounded-md border border-slate-300 px-2.5 py-1 font-semibold dark:border-slate-700"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* LocationPicker Form when editing */}
                   {isEditingAddress && (
-                    <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-800 space-y-3">
-                      <p className="text-xs font-bold uppercase text-slate-500">Search Address Location</p>
+                    <div className="space-y-4 rounded-xl border border-slate-200 p-4 dark:border-slate-800">
                       <LocationPicker
+                        key={profile.address || ""}
+                        label="Search Address Location"
                         value={profile.address || ""}
                         onSelect={selectLocation}
-                        onUseCurrentLocation={detectCurrentLocation}
                       />
-                      <div className="grid grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        onClick={() => void populatePermanentAddressFromCurrentLocation()}
+                        disabled={isPopulatingPermanentAddress}
+                        className="inline-flex items-center gap-2 text-sm font-semibold text-blue-700 disabled:cursor-wait disabled:opacity-60 dark:text-blue-300"
+                      >
+                        {isPopulatingPermanentAddress ? (
+                          <Loader2 size={16} className="animate-spin" />
+                        ) : (
+                          <MapPin size={16} />
+                        )}
+                        {isPopulatingPermanentAddress ? "Getting location..." : "Use my current location"}
+                      </button>
+                      {permanentAddressLocationError && (
+                        <p role="alert" className="text-sm text-rose-600 dark:text-rose-400">
+                          {permanentAddressLocationError}
+                        </p>
+                      )}
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <div>
                           <label className="text-xs font-bold text-slate-600 dark:text-slate-400">City</label>
                           <input
                             type="text"
                             value={profile.city || ""}
                             onChange={(e) => setProfile({ ...profile, city: e.target.value })}
-                            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold dark:border-slate-700 dark:bg-slate-800"
+                            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold dark:border-slate-700 dark:bg-slate-800"
                           />
                         </div>
                         <div>
@@ -653,7 +567,7 @@ export default function WorkerProfilePage() {
                             type="text"
                             value={profile.state || ""}
                             onChange={(e) => setProfile({ ...profile, state: e.target.value })}
-                            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold dark:border-slate-700 dark:bg-slate-800"
+                            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold dark:border-slate-700 dark:bg-slate-800"
                           />
                         </div>
                         <div>
@@ -662,13 +576,14 @@ export default function WorkerProfilePage() {
                             type="text"
                             value={profile.pincode || ""}
                             onChange={(e) => setProfile({ ...profile, pincode: e.target.value })}
-                            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold dark:border-slate-700 dark:bg-slate-800"
+                            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold dark:border-slate-700 dark:bg-slate-800"
                             placeholder="6-digit postal code"
                           />
                         </div>
                       </div>
                     </div>
                   )}
+
                 </div>
               </section>
 

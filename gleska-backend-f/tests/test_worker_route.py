@@ -22,8 +22,9 @@ def _profile_row(**overrides):
 
 
 class FakeQuery:
-    def __init__(self, rows):
+    def __init__(self, rows, upsert_payloads):
         self.rows = rows
+        self.upsert_payloads = upsert_payloads
         self._table = None
 
     def select(self, _fields):
@@ -45,6 +46,7 @@ class FakeQuery:
 
     def upsert(self, payload, on_conflict=None):
         self.payload = payload
+        self.upsert_payloads.append(payload)
         return self
 
     def execute(self):
@@ -63,9 +65,10 @@ class FakeQuery:
 class FakeSupabase:
     def __init__(self, rows_by_table):
         self.rows_by_table = rows_by_table
+        self.upsert_payloads = []
 
     def table(self, name):
-        return FakeQuery(self.rows_by_table.get(name, []))
+        return FakeQuery(self.rows_by_table.get(name, []), self.upsert_payloads)
 
 
 @pytest.mark.asyncio
@@ -132,6 +135,8 @@ async def test_worker_location_upserts_gps_and_provider_address(monkeypatch):
     assert result.longitude == 77.321
     assert result.accuracy_m == 15.2
     assert result.address == "Nanded, Maharashtra, India"
+    assert "location_source" not in fake_supabase.upsert_payloads[0]
+    assert result.location_source == "GPS"
 
 
 @pytest.mark.asyncio
@@ -155,6 +160,30 @@ async def test_worker_location_saves_gps_when_geocoding_fails(monkeypatch):
     assert result.longitude == 77.321
     assert result.accuracy_m == 15.2
     assert result.address is None
+
+
+@pytest.mark.asyncio
+async def test_worker_location_selects_profile_coordinates_without_database_source_column(monkeypatch):
+    fake_supabase = FakeSupabase({
+        "worker_profiles": [_profile_row()],
+        "worker_current_locations": [],
+    })
+    monkeypatch.setattr(workers, "supabase", fake_supabase)
+
+    async def save_address(*_args):
+        return "Nanded, Maharashtra, India"
+
+    monkeypatch.setattr(workers.GeocodingService, "reverse_geocode", staticmethod(save_address))
+    result = await workers.update_worker_location(
+        workers.WorkerLocationUpdate(location_source="PROFILE"),
+        USER,
+    )
+
+    assert result.latitude == 18.5514
+    assert result.longitude == 73.8219
+    assert result.accuracy_m == 1000
+    assert result.location_source == "PROFILE"
+    assert "location_source" not in fake_supabase.upsert_payloads[0]
 
 
 def test_worker_location_rejects_zero_coordinates():

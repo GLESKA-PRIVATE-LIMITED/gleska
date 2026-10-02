@@ -14,7 +14,14 @@ class SupabaseManager:
     def get_client(cls) -> Client:
         """Get or create Supabase client."""
         if cls._client is None:
-            key = settings.SUPABASE_SERVICE_ROLE_KEY or settings.SUPABASE_ANON_KEY
+            service_role_key = settings.SUPABASE_SERVICE_ROLE_KEY
+            if (
+                (settings.ENVIRONMENT or "").strip().lower() == "production"
+                and not service_role_key.strip()
+            ):
+                raise ValueError("SUPABASE_SERVICE_ROLE_KEY is required in production")
+
+            key = service_role_key or settings.SUPABASE_ANON_KEY
             if not settings.SUPABASE_URL or not key:
                 raise ValueError("Missing Supabase configuration")
             cls._client = create_client(

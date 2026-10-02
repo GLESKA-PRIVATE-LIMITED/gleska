@@ -11,9 +11,15 @@ interface AgentProfileProps {
 export default function AgentProfile({ isCollapsed = false }: AgentProfileProps) {
   const { user } = useAuth();
 
+<<<<<<< HEAD
   const userName = user?.name || (user as any)?.full_name || "Guest User";
   const userInitial = userName ? userName.charAt(0).toUpperCase() : null;
   const userContact = user?.email || user?.mobile || (user as any)?.phone || "Agent Operator";
+=======
+  const userInitial = user?.name
+    ? user.name.charAt(0).toUpperCase()
+    : null;
+>>>>>>> 6e2705d81f220cc4c6df87cf7e1d1156c1acc557
 
   return (
     <div className="border-t border-slate-100 pt-5 dark:border-slate-800">
@@ -26,7 +32,11 @@ export default function AgentProfile({ isCollapsed = false }: AgentProfileProps)
         className={`flex items-center gap-3 rounded-2xl border border-slate-200/80 bg-slate-50/80 p-3 shadow-xs dark:border-slate-800 dark:bg-slate-800/80 ${
           isCollapsed ? "justify-center p-2.5" : ""
         }`}
+<<<<<<< HEAD
         title={userName}
+=======
+        title={user?.name || user?.email || "Guest User"}
+>>>>>>> 6e2705d81f220cc4c6df87cf7e1d1156c1acc557
       >
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-100 text-indigo-700 font-bold dark:bg-indigo-900/60 dark:text-indigo-300">
           {userInitial ? userInitial : <User size={20} />}
@@ -34,10 +44,17 @@ export default function AgentProfile({ isCollapsed = false }: AgentProfileProps)
         {!isCollapsed && (
           <div className="min-w-0 flex-1">
             <p className="truncate text-xs font-bold text-slate-900 dark:text-white">
+<<<<<<< HEAD
               {userName}
             </p>
             <p className="truncate text-[11px] font-medium text-slate-500 dark:text-slate-400">
               {userContact}
+=======
+              {user?.name || "Guest User"}
+            </p>
+            <p className="truncate text-[11px] font-medium text-slate-500 dark:text-slate-400">
+              {user?.email || user?.mobile || "Agent Operator"}
+>>>>>>> 6e2705d81f220cc4c6df87cf7e1d1156c1acc557
             </p>
           </div>
         )}

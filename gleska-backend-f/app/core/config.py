@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parents[2]
@@ -51,6 +51,14 @@ class Settings(BaseSettings):
     JWT_SECRET_KEY: str = Field(default="change-me-in-production", validation_alias=AliasChoices("JWT_SECRET_KEY", "jwt_secret_key"))
     JWT_ALGORITHM: str = Field(default="HS256", validation_alias=AliasChoices("JWT_ALGORITHM", "jwt_algorithm"))
     ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=60, validation_alias=AliasChoices("ACCESS_TOKEN_EXPIRE_MINUTES", "access_token_expire_minutes"))
+
+    @model_validator(mode="after")
+    def validate_jwt_secret_for_runtime(self):
+        env_name = (self.ENVIRONMENT or "").strip().lower()
+        secret = self.JWT_SECRET_KEY or ""
+        if env_name == "production" and (not secret or secret.strip() == "change-me-in-production"):
+            raise ValueError("JWT_SECRET_KEY must be configured in production and must not use the default placeholder value")
+        return self
 
     # Verification provider configuration. Credentials are server-side only.
     EMPLOYER_VERIFICATION_PROVIDER: str = Field(
