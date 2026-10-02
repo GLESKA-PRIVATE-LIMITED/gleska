@@ -153,7 +153,7 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS", initia
         return;
       }
     } else {
-      if (!email.trim() || password.length < 8) {
+      if (!email.trim() || !password) {
         toast.error(t('auth.loginValid'));
         return;
       }
@@ -386,7 +386,7 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS", initia
         {!(mode === "login" && loginMethod === "mobile") && (
           <AuthPasswordField
             id="auth-password"
-            label={t('auth.passwordLabel')}
+            label={mode === "signup" ? t('auth.passwordLabel') : t('auth.loginPasswordLabel')}
             value={password}
             onChange={setPassword}
             autoComplete={mode === "signup" ? "new-password" : "current-password"}

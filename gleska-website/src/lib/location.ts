@@ -91,6 +91,23 @@ export function normalizeCoordinates(latitude: number, longitude: number, accura
   return { latitude, longitude, accuracy, altitude: null, altitudeAccuracy: null, heading: null, speed: null };
 }
 
+export function retainAccurateLocationSnapshot(
+  current: LiveLocationSnapshot | null,
+  latitude: number,
+  longitude: number,
+  accuracy: number,
+  updatedAt: number,
+): LiveLocationSnapshot | null {
+  const normalized = normalizeCoordinates(latitude, longitude, accuracy);
+  if (!normalized) return current;
+  return {
+    latitude: normalized.latitude,
+    longitude: normalized.longitude,
+    accuracy_m: normalized.accuracy,
+    updated_at: updatedAt,
+  };
+}
+
 export function shouldSendLiveLocationUpdate(current: LiveLocationSnapshot | null, next: LiveLocationSnapshot, now = Date.now()): boolean {
   if (!current) return true;
 
@@ -110,14 +127,20 @@ export function shouldSendLiveLocationUpdate(current: LiveLocationSnapshot | nul
 export async function getBrowserLocation(): Promise<NormalizedLocation> {
   if (!navigator.geolocation) throw new Error("Location unavailable");
 
+  const retryOptions: PositionOptions = { enableHighAccuracy: true, maximumAge: 0, timeout: 45000 };
   let position: GeolocationPosition;
+  let hasRetried = false;
   try {
-    position = await getBrowserPosition({ enableHighAccuracy: false, maximumAge: 300000, timeout: 30000 });
+    position = await getBrowserPosition({ enableHighAccuracy: true, maximumAge: 0, timeout: 30000 });
   } catch (error) {
     const code = typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
     if (code !== 2 && code !== 3) throw error;
-    // Retry with higher accuracy for position unavailable or timeout
-    position = await getBrowserPosition({ enableHighAccuracy: true, maximumAge: 0, timeout: 45000 });
+    position = await getBrowserPosition(retryOptions);
+    hasRetried = true;
+  }
+
+  if (!hasRetried && position.coords.accuracy > MAX_LOCATION_ACCURACY_METERS) {
+    position = await getBrowserPosition(retryOptions);
   }
 
   const { latitude, longitude, accuracy } = position.coords;

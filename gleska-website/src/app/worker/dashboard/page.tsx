@@ -9,7 +9,7 @@ import { toast } from "sonner";
 import AccountManagementShell from "@/components/AccountManagementShell";
 import { useAuth } from "@/context/AuthContext";
 import apiClient from "@/lib/api";
-import { getLocationErrorMessage, normalizeCoordinates, shouldSendLiveLocationUpdate, type LiveLocationSnapshot } from "@/lib/location";
+import { getLocationErrorMessage, retainAccurateLocationSnapshot, shouldSendLiveLocationUpdate, type LiveLocationSnapshot } from "@/lib/location";
 import { formatSubscriptionExpiry } from "@/lib/subscription";
 
 type WorkerProfile = {
@@ -160,8 +160,15 @@ export default function WorkerDashboard() {
     if (!user || user.role !== "WORKER" || typeof navigator === "undefined" || !navigator.geolocation || watcherIdRef.current !== null) return;
 
     const onPosition = (position: GeolocationPosition) => {
-      const normalized = normalizeCoordinates(position.coords.latitude, position.coords.longitude, position.coords.accuracy);
-      if (!normalized) {
+      const current = lastLiveLocationRef.current;
+      const next = retainAccurateLocationSnapshot(
+        current,
+        position.coords.latitude,
+        position.coords.longitude,
+        position.coords.accuracy,
+        Date.now(),
+      );
+      if (!next || next === current) {
         const now = Date.now();
         if (now - lastLocationWarningAtRef.current >= 30000) {
           lastLocationWarningAtRef.current = now;
@@ -170,7 +177,6 @@ export default function WorkerDashboard() {
         return;
       }
 
-      const next: LiveLocationSnapshot = { latitude: normalized.latitude, longitude: normalized.longitude, accuracy_m: normalized.accuracy, updated_at: Date.now() };
       if (!shouldSendLiveLocationUpdate(lastLiveLocationRef.current, next)) return;
       lastLiveLocationRef.current = next;
       apiClient.put<{ address?: string | null }>("/api/v1/workers/me/location", {
@@ -198,7 +204,7 @@ export default function WorkerDashboard() {
 
     watcherIdRef.current = navigator.geolocation.watchPosition(onPosition, onError, {
       enableHighAccuracy: true,
-      maximumAge: 300000,
+      maximumAge: 0,
       timeout: 30000,
     });
 
