@@ -80,6 +80,13 @@ function AgentCardsGrid({ agentCards }: { agentCards: AgentCard[] }) {
               >
                 {t('services.dashboard')} <ArrowRight size={16} />
               </Link>
+            ) : agent.id === "06" ? (
+              <Link
+                href="/tender-tracking"
+                className={`inline-flex items-center gap-1.5 font-bold transition-colors ${agent.ctaColor}`}
+              >
+                {t('services.dashboard')} <ArrowRight size={16} />
+              </Link>
             ) : (
               <span className={`inline-flex items-center gap-1.5 font-bold ${agent.ctaColor}`}>
                 {t('services.comingSoonText')}

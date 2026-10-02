@@ -12,18 +12,21 @@ interface AgentHeaderProps {
 export default function AgentHeader({ config }: AgentHeaderProps) {
   if (config.variant === "compact-centered") {
     const isEmerald = config.accentColor === "emerald";
+    const isCyan = config.accentColor === "cyan";
 
-    const badgeStyle = isEmerald
-      ? "border-emerald-200/90 bg-emerald-50 text-emerald-700 dark:border-emerald-800/80 dark:bg-emerald-950/70 dark:text-emerald-300"
-      : "border-purple-200/90 bg-purple-50 text-purple-700 dark:border-purple-800/80 dark:bg-purple-950/70 dark:text-purple-300";
+    let badgeStyle = "border-purple-200/90 bg-purple-50 text-purple-700 dark:border-purple-800/80 dark:bg-purple-950/70 dark:text-purple-300";
+    let badgeIconStyle = "text-purple-600 dark:text-purple-400";
+    let activeOptionStyle = "bg-purple-600 text-white font-bold shadow-xs dark:bg-purple-600";
 
-    const badgeIconStyle = isEmerald
-      ? "text-emerald-600 dark:text-emerald-400"
-      : "text-purple-600 dark:text-purple-400";
-
-    const activeOptionStyle = isEmerald
-      ? "bg-emerald-600 text-white font-bold shadow-xs dark:bg-emerald-600"
-      : "bg-purple-600 text-white font-bold shadow-xs dark:bg-purple-600";
+    if (isEmerald) {
+      badgeStyle = "border-emerald-200/90 bg-emerald-50 text-emerald-700 dark:border-emerald-800/80 dark:bg-emerald-950/70 dark:text-emerald-300";
+      badgeIconStyle = "text-emerald-600 dark:text-emerald-400";
+      activeOptionStyle = "bg-emerald-600 text-white font-bold shadow-xs dark:bg-emerald-600";
+    } else if (isCyan) {
+      badgeStyle = "border-cyan-200/90 bg-cyan-50 text-cyan-700 dark:border-cyan-800/80 dark:bg-cyan-950/70 dark:text-cyan-300";
+      badgeIconStyle = "text-cyan-600 dark:text-cyan-400";
+      activeOptionStyle = "bg-cyan-600 text-white font-bold shadow-xs dark:bg-cyan-600";
+    }
 
     return (
       <div className="flex flex-col items-center text-center space-y-6 pt-2">

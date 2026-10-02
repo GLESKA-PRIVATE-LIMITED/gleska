@@ -30,5 +30,5 @@ export interface AgentConfig {
   searchSubtitle: string;
   searchPlaceholder: string;
   variant?: "default" | "compact-centered";
-  accentColor?: "emerald" | "purple" | "indigo" | "blue";
+  accentColor?: "emerald" | "purple" | "indigo" | "blue" | "cyan" | "amber";
 }

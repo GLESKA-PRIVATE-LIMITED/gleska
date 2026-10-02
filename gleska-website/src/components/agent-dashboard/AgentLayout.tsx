@@ -10,12 +10,23 @@ import AgentSearchBar from "./AgentSearchBar";
 
 interface AgentLayoutProps {
   config: AgentConfig;
+  children?: React.ReactNode;
+  activeTab?: string;
+  setActiveTab?: (tabId: string) => void;
 }
 
-export default function AgentLayout({ config }: AgentLayoutProps) {
-  const [activeTab, setActiveTab] = useState<string>("dashboard");
+export default function AgentLayout({
+  config,
+  children,
+  activeTab: externalActiveTab,
+  setActiveTab: externalSetActiveTab,
+}: AgentLayoutProps) {
+  const [internalActiveTab, setInternalActiveTab] = useState<string>("dashboard");
   const [isCollapsed, setIsCollapsed] = useState<boolean>(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState<boolean>(false);
+
+  const activeTab = externalActiveTab !== undefined ? externalActiveTab : internalActiveTab;
+  const setActiveTab = externalSetActiveTab || setInternalActiveTab;
 
   return (
     <div className="min-h-screen bg-[#eef1fb] font-sans text-slate-900 dark:bg-slate-950 dark:text-slate-100 flex">
@@ -54,16 +65,22 @@ export default function AgentLayout({ config }: AgentLayoutProps) {
         }`}
       >
         <div className="mx-auto max-w-5xl space-y-10">
-          {/* Main Header & Action Options */}
-          <AgentHeader config={config} />
+          {children ? (
+            children
+          ) : (
+            <>
+              {/* Main Header & Action Options */}
+              <AgentHeader config={config} />
 
-          {/* Lower-Middle Search Bar */}
-          <AgentSearchBar
-            title={config.searchTitle}
-            subtitle={config.searchSubtitle}
-            placeholder={config.searchPlaceholder}
-            variant={config.variant}
-          />
+              {/* Lower-Middle Search Bar */}
+              <AgentSearchBar
+                title={config.searchTitle}
+                subtitle={config.searchSubtitle}
+                placeholder={config.searchPlaceholder}
+                variant={config.variant}
+              />
+            </>
+          )}
         </div>
       </main>
     </div>
