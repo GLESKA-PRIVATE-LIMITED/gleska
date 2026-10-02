@@ -90,3 +90,30 @@ def test_current_location_migration_uses_live_location_for_available_jobs():
     assert "current_location.accuracy_m <= 1000" in sql
     assert "profile.latitude" not in sql
     assert "profile.longitude" not in sql
+
+
+def test_latest_matching_functions_require_fresh_current_location_without_profile_fallback():
+    migration = (
+        Path(__file__).resolve().parents[2]
+        / "gleska-website"
+        / "supabase"
+        / "migrations"
+        / "067_worker_matching_requires_fresh_location.sql"
+    ).read_text(encoding="utf-8")
+
+    for name in (
+        "worker_matches_job",
+        "reconcile_job_candidate_pool",
+        "reconcile_worker_candidate_pools",
+        "find_available_jobs_for_worker",
+    ):
+        start = migration.index(f"CREATE OR REPLACE FUNCTION public.{name}")
+        end = migration.index("$$;", start)
+        sql = migration[start:end]
+        assert "worker_current_locations" in sql
+        assert "current_location.accuracy_m <= 1000" in sql
+        assert "current_location.updated_at >= NOW() - INTERVAL '10 minutes'" in sql
+        assert "ELSE profile.latitude" not in sql
+        assert "ELSE profile.longitude" not in sql
+        assert "ELSE worker.latitude" not in sql
+        assert "ELSE worker.longitude" not in sql

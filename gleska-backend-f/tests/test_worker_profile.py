@@ -66,8 +66,10 @@ class FakeQuery:
 class FakeCurrentLocationQuery:
     def __init__(self, row):
         self.row = row
+        self.selected_fields = None
 
-    def select(self, _fields):
+    def select(self, fields):
+        self.selected_fields = fields
         return self
 
     def eq(self, _field, _value):
@@ -131,6 +133,7 @@ async def test_worker_profile_returns_fresh_current_location(monkeypatch):
 
     assert loaded.current_location is not None
     assert loaded.current_location.address == "Current GPS address"
+    assert fake_supabase.current_location_query.selected_fields == "latitude, longitude, accuracy_m, address, updated_at"
 
 
 @pytest.mark.asyncio

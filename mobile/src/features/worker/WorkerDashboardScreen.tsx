@@ -248,13 +248,36 @@ export default function WorkerDashboardScreen() {
       return;
     }
 
+    let locationCallbackNumber = 0;
     const onPosition = (position: GeolocationPosition) => {
+      const callback = ++locationCallbackNumber;
+      const { latitude, longitude, accuracy } = position.coords;
+      const timestamp = position.timestamp;
+      const ageMs = Date.now() - timestamp;
+      const traceCallback = (status: "ACCEPTED" | "REJECTED", reason: string) => {
+        console.debug("[Location Trace][Frontend]", {
+          callback,
+          lat: latitude,
+          lng: longitude,
+          accuracy_m: accuracy,
+          timestamp,
+          age_ms: ageMs,
+          status,
+          reason,
+        });
+      };
       const normalized = normalizeCoordinates(
-        position.coords.latitude,
-        position.coords.longitude,
-        position.coords.accuracy,
+        latitude,
+        longitude,
+        accuracy,
       );
-      if (!normalized) return;
+      if (!normalized) {
+        const reason = accuracy > MAX_LOCATION_ACCURACY_METERS
+          ? "accuracy_above_threshold"
+          : "invalid_coordinates_or_accuracy";
+        traceCallback("REJECTED", reason);
+        return;
+      }
 
       const next: LiveLocationSnapshot = {
         latitude: normalized.latitude,
@@ -262,22 +285,59 @@ export default function WorkerDashboardScreen() {
         accuracy_m: normalized.accuracy,
         updated_at: Date.now(),
       };
-      if (!shouldSendLiveLocationUpdate(lastLiveLocationRef.current, next)) return;
+      if (!shouldSendLiveLocationUpdate(lastLiveLocationRef.current, next)) {
+        traceCallback("REJECTED", "movement_or_heartbeat_update_not_due");
+        return;
+      }
       lastLiveLocationRef.current = next;
 
-      apiPut<{ address?: string | null }>("/api/v1/workers/me/location", {
+      traceCallback("ACCEPTED", "eligible_for_upload");
+      console.debug("[Location Trace][HTTP OUT]", {
+        lat: next.latitude,
+        lng: next.longitude,
+        accuracy_m: next.accuracy_m,
+        source_context: "capacitor_worker_dashboard",
+        timestamp,
+      });
+      apiPut<{
+        address?: string | null;
+        latitude?: number;
+        longitude?: number;
+        accuracy_m?: number;
+        location_source?: string;
+        updated_at?: string;
+      }>("/api/v1/workers/me/location", {
         latitude: next.latitude,
         longitude: next.longitude,
         accuracy_m: next.accuracy_m,
       })
         .then((response) => {
+          console.debug("[Location Trace][HTTP IN]", {
+            status: 200,
+            latitude: response?.latitude ?? null,
+            longitude: response?.longitude ?? null,
+            accuracy_m: response?.accuracy_m ?? null,
+            location_source: response?.location_source ?? null,
+            timestamp: response?.updated_at ?? null,
+            server_message: null,
+          });
           if (response?.address) setCurrentLocationAddress(response.address);
           if (!jobsRefreshedAfterLiveLocationRef.current) {
             jobsRefreshedAfterLiveLocationRef.current = true;
             void loadAvailableJobs();
           }
         })
-        .catch(() => {
+        .catch((error: unknown) => {
+          const apiError = error instanceof ApiError ? error : null;
+          console.debug("[Location Trace][HTTP IN]", {
+            status: apiError?.status ?? null,
+            latitude: null,
+            longitude: null,
+            accuracy_m: null,
+            location_source: null,
+            timestamp: null,
+            server_message: apiError?.detail ?? null,
+          });
           // Authoritative backend; next valid position will retry update.
         });
     };

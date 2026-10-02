@@ -548,11 +548,26 @@ async def update_worker_location(
     location: WorkerLocationUpdate,
     user: UserResponse = Depends(require_worker),
 ):
-    """Reverse geocode and upsert the browser-provided current location."""
+    """Save a fresh GPS fix or explicitly selected saved profile location."""
+    request_timestamp = datetime.now(timezone.utc).isoformat()
+    logger.debug(
+        "[Location Trace][Backend IN] worker_id=%s lat=%s lng=%s accuracy_m=%s request_timestamp=%s",
+        user.id,
+        location.latitude,
+        location.longitude,
+        location.accuracy_m,
+        request_timestamp,
+    )
+    logger.debug(
+        "[Location Trace][Backend VALIDATED] lat=%s lng=%s accuracy_m=%s validation_result=PASSED rejection_reason=None",
+        location.latitude,
+        location.longitude,
+        location.accuracy_m,
+    )
     try:
         profile_response = (
             supabase.table("worker_profiles")
-            .select("id")
+            .select("id, latitude, longitude")
             .eq("user_id", user.id)
             .single()
             .execute()
@@ -562,41 +577,92 @@ async def update_worker_location(
             profile = profile[0] if profile else {}
         if not profile.get("id"):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Worker profile not found")
-        previous_location = (
+        if location.location_source == "PROFILE":
+            latitude = profile.get("latitude")
+            longitude = profile.get("longitude")
+            if (
+                latitude is None
+                or longitude is None
+                or isinstance(latitude, bool)
+                or isinstance(longitude, bool)
+            ):
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="PROFILE_LOCATION_UNAVAILABLE")
+            latitude = float(latitude)
+            longitude = float(longitude)
+            if (
+                not math.isfinite(latitude)
+                or not math.isfinite(longitude)
+                or not -90 <= latitude <= 90
+                or not -180 <= longitude <= 180
+                or (latitude == 0 and longitude == 0)
+            ):
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="PROFILE_LOCATION_UNAVAILABLE")
+            accuracy_m = 1000
+        else:
+            latitude = location.latitude
+            longitude = location.longitude
+            accuracy_m = location.accuracy_m
+        previous_location_response = (
             supabase.table("worker_current_locations")
             .select("latitude, longitude")
             .eq("worker_profile_id", profile["id"])
             .maybe_single()
             .execute()
-            .data
-            or {}
         )
+        previous_location = (
+            previous_location_response.data
+            if previous_location_response
+            else None
+        ) or {}
         try:
-            address = await GeocodingService.reverse_geocode(location.latitude, location.longitude)
+            address = await GeocodingService.reverse_geocode(latitude, longitude)
         except GeocodingError:
             address = None
+        logger.debug(
+            "[Location Trace][DB WRITE] worker_profile_id=%s lat=%s lng=%s accuracy_m=%s address=%s source=%s timestamp=%s",
+            profile["id"],
+            latitude,
+            longitude,
+            accuracy_m,
+            address,
+            location.location_source,
+            datetime.now(timezone.utc).isoformat(),
+        )
         response = (
             supabase.table("worker_current_locations")
             .upsert({
                 "worker_profile_id": profile["id"],
-                "latitude": location.latitude,
-                "longitude": location.longitude,
-                "accuracy_m": location.accuracy_m,
+                "latitude": latitude,
+                "longitude": longitude,
+                "accuracy_m": accuracy_m,
                 "address": address,
             }, on_conflict="worker_profile_id")
             .execute()
         )
         if not response.data:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Worker profile not found")
+        saved_location = response.data[0]
+        logger.debug(
+            "[Location Trace][DB WRITE SUCCESS] record_id=%s worker_profile_id=%s lat=%s lng=%s accuracy_m=%s timestamp=%s",
+            saved_location.get("id"),
+            saved_location.get("worker_profile_id"),
+            saved_location.get("latitude"),
+            saved_location.get("longitude"),
+            saved_location.get("accuracy_m"),
+            saved_location.get("updated_at"),
+        )
         if (
-            previous_location.get("latitude") != location.latitude
-            or previous_location.get("longitude") != location.longitude
+            previous_location.get("latitude") != latitude
+            or previous_location.get("longitude") != longitude
         ):
             try:
                 MatchingService.reconcile_worker(str(profile["id"]), "WORKER_LOCATION_UPDATED")
             except MatchingError:
                 logger.exception("Worker location reconciliation failed: worker_profile_id=%s", profile.get("id"))
-        return WorkerCurrentLocationResponse(**response.data[0])
+        return WorkerCurrentLocationResponse(**{
+            **response.data[0],
+            "location_source": location.location_source,
+        })
     except GeocodingError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
     except HTTPException:
@@ -615,7 +681,7 @@ async def get_available_jobs(
     try:
         worker_response = (
             supabase.table("worker_profiles")
-            .select("id, profile_completed, availability_status, latitude, longitude, subscription_valid_until, trial_ends_at")
+            .select("id, profile_completed, availability_status, subscription_valid_until, trial_ends_at")
             .eq("user_id", user.id)
             .single()
             .execute()
@@ -647,7 +713,16 @@ async def get_available_jobs(
             and current_data.get("accuracy_m", 0) <= 1000
             and _is_current_location_fresh(current_data.get("updated_at"))
         )
-        if not has_current and (worker.get("latitude") is None or worker.get("longitude") is None):
+        logger.debug(
+            "[Location Trace][MATCHING] location_source=%s latitude=%s longitude=%s accuracy_m=%s location_timestamp=%s stale_or_fresh=%s",
+            "worker_current_locations" if current_data else "none",
+            current_data.get("latitude"),
+            current_data.get("longitude"),
+            current_data.get("accuracy_m"),
+            current_data.get("updated_at"),
+            "fresh" if has_current else "stale_or_invalid",
+        )
+        if not has_current:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="CURRENT_LOCATION_REQUIRED")
         jobs = MatchingService.available_jobs(str(worker["id"]), max_radius)
     except HTTPException:
