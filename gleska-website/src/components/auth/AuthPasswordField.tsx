@@ -1,7 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { Eye, EyeOff } from "lucide-react";
+import { Check, Eye, EyeOff, X } from "lucide-react";
+import { getSignupPasswordRequirements } from "@/lib/signup-validation";
+
+type PasswordRequirementLabels = {
+  title: string;
+  minimumLength: string;
+  containsLetter: string;
+  containsNumber: string;
+  containsSpecialCharacter: string;
+};
 
 type AuthPasswordFieldProps = {
   id: string;
@@ -13,6 +22,8 @@ type AuthPasswordFieldProps = {
   requirementsText?: string;
   minLength?: number;
   maxLength?: number;
+  passwordRequirementLabels?: PasswordRequirementLabels;
+  validationMessage?: string;
 };
 
 export default function AuthPasswordField({
@@ -25,8 +36,11 @@ export default function AuthPasswordField({
   requirementsText,
   minLength,
   maxLength,
+  passwordRequirementLabels,
+  validationMessage,
 }: AuthPasswordFieldProps) {
   const [visible, setVisible] = useState(false);
+  const passwordRequirements = getSignupPasswordRequirements(value);
   const characterGroups = [/[a-z]/.test(value), /[A-Z]/.test(value), /\d/.test(value), /[^a-zA-Z\d]/.test(value)].filter(Boolean).length;
   const score = value ? Number(value.length >= 8) + Number(value.length >= 12) + Number(characterGroups >= 2) + Number(characterGroups >= 3) : 0;
   const strength = score < 2 ? "Weak" : score < 3 ? "Fair" : score < 4 ? "Good" : "Strong";
@@ -44,6 +58,8 @@ export default function AuthPasswordField({
           autoComplete={autoComplete}
           minLength={minLength}
           maxLength={maxLength}
+          aria-invalid={Boolean(validationMessage)}
+          aria-describedby={validationMessage ? `${id}-error` : undefined}
           placeholder={label}
           className="min-h-12 w-full min-w-0 rounded-xl border border-slate-200 bg-white px-4 py-3 pr-12 text-sm font-medium text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:focus:ring-blue-950"
         />
@@ -64,6 +80,24 @@ export default function AuthPasswordField({
       {strengthLabel && <span className="grid grid-cols-4 gap-1" aria-hidden="true">
         {[1, 2, 3, 4].map((step) => <span key={step} className={`h-1 rounded-full ${score >= step ? strengthColor : "bg-slate-200 dark:bg-slate-700"}`} />)}
       </span>}
+      {passwordRequirementLabels && <div className="grid gap-1 pt-1" aria-live="polite">
+        <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">{passwordRequirementLabels.title}</span>
+        {([
+          ["minimumLength", passwordRequirementLabels.minimumLength],
+          ["containsLetter", passwordRequirementLabels.containsLetter],
+          ["containsNumber", passwordRequirementLabels.containsNumber],
+          ["containsSpecialCharacter", passwordRequirementLabels.containsSpecialCharacter],
+        ] as const).map(([requirement, text]) => {
+          const satisfied = passwordRequirements[requirement];
+          return (
+            <span key={requirement} className={`flex items-center gap-1.5 text-xs font-medium ${satisfied ? "text-emerald-700 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
+              {satisfied ? <Check size={14} aria-hidden="true" /> : <X size={14} aria-hidden="true" />}
+              {text}
+            </span>
+          );
+        })}
+      </div>}
+      {validationMessage && <span id={`${id}-error`} className="text-xs font-medium text-rose-600 dark:text-rose-400" role="alert">{validationMessage}</span>}
     </label>
   );
 }
