@@ -30,6 +30,8 @@ import {
   Eye,
   Sparkles,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
@@ -426,6 +428,10 @@ export default function EmployerDashboard() {
   const [newSkillInput, setNewSkillInput] = React.useState<string>("");
   const [formErrors, setFormErrors] = React.useState<Record<string, string>>({});
   const [touchedFields, setTouchedFields] = React.useState<Record<string, boolean>>({});
+
+  // Create Job section active tab ("ai" | "manual")
+  const [createJobTab, setCreateJobTab] = React.useState<"ai" | "manual">("ai");
+  const [isSummaryExpandedMobile, setIsSummaryExpandedMobile] = React.useState(true);
 
   const assistantCopy = ASSISTANT_COPY[selectedAssistantLanguage];
 
@@ -1980,166 +1986,386 @@ export default function EmployerDashboard() {
           </div>
 
 
-          {/* CONVERSATIONAL AI JOB ASSISTANT & LIVE STRUCTURED PREVIEW */}
-          <div id="job-assistant" className="mx-auto max-w-5xl my-8 sm:my-10 w-full space-y-6">
-            {/* Work Site selector */}
-            <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-6 w-full">
-              {/* Work Site Pill Button */}
-              <button
-                type="button"
-                onClick={handleOpenJobSiteSelector}
-                className="group flex items-center justify-between gap-3 sm:gap-4 rounded-full bg-blue-600 px-4 sm:px-5 py-2.5 text-white shadow-md hover:bg-blue-700 active:scale-95 transition cursor-pointer w-full sm:w-auto sm:min-w-[210px] max-w-full"
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-blue-600 shrink-0 shadow-xs">
-                    <MapPin size={18} />
-                  </div>
-                  <div className="text-left min-w-0">
-                    <p className="text-sm font-bold text-white leading-tight truncate max-w-[130px] sm:max-w-[150px]">
-                      {selectedJobSite?.name || "Job site"}
-                    </p>
-                    <p className="text-[11px] font-medium text-blue-100 opacity-90 truncate max-w-[130px] sm:max-w-[150px]">
-                      {selectedJobSite?.address || "Select a saved site"}
-                    </p>
-                  </div>
-                </div>
-                <ChevronRight size={18} className="text-white opacity-80 group-hover:translate-x-0.5 transition-transform shrink-0" />
-              </button>
-            </div>
+          {/* CREATE JOB — UNIFIED TABBED CARD */}
+          <div id="job-assistant" className="my-8 sm:my-10 w-full">
+            <div className="rounded-3xl border border-slate-200 bg-white shadow-lg dark:border-slate-800 dark:bg-slate-900">
 
-            {/* Conversational Assistant & Live Structured Preview Layout */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-              {/* Left Column: Conversational Assistant */}
-              <div className="lg:col-span-5 flex flex-col rounded-3xl border border-slate-200 bg-white p-5 shadow-lg dark:border-slate-800 dark:bg-slate-900 min-h-[440px]">
-                {/* Header */}
-                <div className="flex items-center justify-between border-b border-slate-100 pb-3 dark:border-slate-800">
+              {/* ── Card Header ───────────────────────────────────────────── */}
+              <div className="flex flex-col gap-4 border-b border-slate-100 px-5 pt-5 pb-4 sm:px-6 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between">
+
+                {/* Left: title + tabs */}
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-5">
                   <div className="flex items-center gap-2.5">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400">
-                      <Sparkles size={20} />
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400">
+                      <Briefcase size={20} />
                     </div>
-                    <div>
-                      <h3 className="font-bold text-slate-900 dark:text-white text-base">{assistantCopy.heading}</h3>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">{assistantCopy.subtitle}</p>
-                    </div>
+                    <h2 className="font-bold text-slate-900 dark:text-white">{assistantCopy.createJobTitle}</h2>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <select
-                      value={selectedAssistantLanguage}
-                      onChange={(e) => handleAssistantLanguageChange(e.target.value as AssistantLanguage)}
-                      className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
-                    >
-                      {LANGUAGE_OPTIONS.map(([code, opt]) => (
-                        <option key={code} value={code}>{opt.label}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
 
-                {/* Messages Thread */}
-                <div className="my-4 flex-1 max-h-72 overflow-y-auto space-y-3 pr-2 flex flex-col">
-                  {assistantMessages.map((msg) => (
-                    <div
-                      key={msg.id}
-                      className={`flex flex-col ${msg.sender === "user" ? "items-end" : "items-start"}`}
-                    >
-                      <div
-                        className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
-                          msg.sender === "user"
-                            ? "bg-blue-600 text-white rounded-br-xs shadow-xs"
-                            : "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 rounded-bl-xs border border-slate-200/50 dark:border-slate-700/50"
-                        }`}
-                      >
-                        {msg.text}
-                      </div>
-                      <span className="text-[10px] text-slate-400 mt-1 px-1">{msg.timestamp}</span>
-                    </div>
-                  ))}
-                  {isAssistantSending && (
-                    <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/40 p-2.5 rounded-xl w-fit">
-                      <Loader2 size={14} className="animate-spin text-blue-500" />
-                      <span>{assistantCopy.thinking}</span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Input Bar */}
-                <div className="mt-auto pt-2">
-                  {voiceError && <p className="mb-2 text-xs text-rose-500">{voiceError}</p>}
-                  <div className="relative flex items-center rounded-full border border-blue-500/80 bg-slate-50/50 p-1.5 shadow-sm dark:border-blue-500 dark:bg-slate-800/50 focus-within:ring-3 focus-within:ring-blue-500/20 transition-all">
-                    {/* Voice Mic Button */}
+                  {/* Tabs */}
+                  <div role="tablist" className="flex rounded-xl border border-slate-200 bg-slate-50 p-1 dark:border-slate-700 dark:bg-slate-800">
                     <button
+                      role="tab"
                       type="button"
-                      onClick={handleVoiceInput}
-                      title={isListening ? assistantCopy.listening : assistantCopy.speak}
-                      className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-all cursor-pointer ml-0.5 ${
-                        isListening
-                          ? "text-purple-700 dark:text-purple-200 bg-purple-100 dark:bg-purple-950/50"
-                          : "text-slate-500 hover:bg-slate-200/70 dark:text-slate-400 dark:hover:bg-slate-700"
+                      aria-selected={createJobTab === "ai"}
+                      onClick={() => setCreateJobTab("ai")}
+                      className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all cursor-pointer ${
+                        createJobTab === "ai"
+                          ? "bg-white text-blue-700 shadow-sm dark:bg-slate-700 dark:text-blue-300"
+                          : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
                       }`}
                     >
-                      <VoiceMicIcon className="w-5 h-5" />
+                      <Sparkles size={13} />
+                      {assistantCopy.heading}
                     </button>
-
-                    {/* Text Input */}
-                    <input
-                      type="text"
-                      value={assistantInput}
-                      onChange={(e) => setAssistantInput(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          void handleSendAssistantMessage();
-                        }
-                      }}
-                      placeholder={assistantCopy.placeholder}
-                      className="w-full min-w-0 bg-transparent px-3 py-1.5 text-sm font-medium text-slate-900 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-slate-500"
-                    />
-
-                    {/* Send Arrow Button */}
                     <button
+                      role="tab"
                       type="button"
-                      onClick={() => void handleSendAssistantMessage()}
-                      disabled={isAssistantSending || !assistantInput.trim()}
-                      className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-600 text-white shadow-sm hover:bg-blue-700 active:scale-95 transition disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shrink-0 mr-0.5"
+                      aria-selected={createJobTab === "manual"}
+                      onClick={() => setCreateJobTab("manual")}
+                      className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all cursor-pointer ${
+                        createJobTab === "manual"
+                          ? "bg-white text-blue-700 shadow-sm dark:bg-slate-700 dark:text-blue-300"
+                          : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                      }`}
                     >
-                      {isAssistantSending ? <Loader2 size={16} className="animate-spin" /> : <ArrowRight size={16} />}
+                      <Briefcase size={13} />
+                      Manual Form
                     </button>
                   </div>
+                </div>
+
+                {/* Right: job-site selector + status badge */}
+                <div className="flex flex-wrap items-center gap-3">
+                  {/* Status badge — shown only on manual tab */}
+                  {createJobTab === "manual" && (
+                    <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border ${
+                      isFormReady
+                        ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800"
+                        : "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800"
+                    }`}>
+                      {isFormReady ? assistantCopy.ready : `${assistantCopy.incomplete} (${Object.keys(currentFormErrors).length})`}
+                    </span>
+                  )}
+
+                  {/* Job Site pill */}
+                  <button
+                    type="button"
+                    onClick={handleOpenJobSiteSelector}
+                    className="group flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-blue-700 transition hover:bg-blue-100 active:scale-95 cursor-pointer dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300 dark:hover:bg-blue-950/60"
+                  >
+                    <MapPin size={14} className="shrink-0" />
+                    <span className="max-w-[140px] truncate text-xs font-semibold">
+                      {selectedJobSite?.name || "Select job site"}
+                    </span>
+                    <ChevronRight size={13} className="shrink-0 opacity-60 group-hover:translate-x-0.5 transition-transform" />
+                  </button>
                 </div>
               </div>
 
-              {/* Right Column: Manual Job Creation Form */}
-              <div className="lg:col-span-7 flex flex-col rounded-3xl border border-slate-200 bg-white p-6 shadow-lg dark:border-slate-800 dark:bg-slate-900 min-h-[440px]">
-                {/* Form Header */}
-                <div className="flex items-center justify-between border-b border-slate-100 pb-4 dark:border-slate-800">
-                  <div className="flex items-center gap-2.5">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400">
-                      <Briefcase size={20} />
+              {/* ── Tab Panels ────────────────────────────────────────────── */}
+
+              {/* AI Assistant tab — Responsive Two-Panel Layout */}
+              <div
+                role="tabpanel"
+                hidden={createJobTab !== "ai"}
+                className="p-4 sm:p-6"
+              >
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+
+                  {/* Left Column: Conversational AI Chat (Desktop: 7 cols) */}
+                  <div className="lg:col-span-7 flex flex-col rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900 min-h-[460px]">
+                    {/* Header */}
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-3 dark:border-slate-800">
+                      <div className="flex items-center gap-2.5">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400">
+                          <Sparkles size={18} />
+                        </div>
+                        <div>
+                          <h3 className="font-bold text-slate-900 dark:text-white text-sm">{assistantCopy.heading}</h3>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">{assistantCopy.subtitle}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <select
+                          value={selectedAssistantLanguage}
+                          onChange={(e) => handleAssistantLanguageChange(e.target.value as AssistantLanguage)}
+                          className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                        >
+                          {LANGUAGE_OPTIONS.map(([code, opt]) => (
+                            <option key={code} value={code}>{opt.label}</option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
-                    <div>
-                      <h3 className="font-bold text-slate-900 dark:text-white text-base">{assistantCopy.createJobTitle}</h3>
+
+                    {/* Messages Thread */}
+                    <div className="my-4 flex-1 h-[280px] sm:h-[320px] overflow-y-auto space-y-3 pr-2 flex flex-col">
+                      {assistantMessages.map((msg) => (
+                        <div
+                          key={msg.id}
+                          className={`flex flex-col ${msg.sender === "user" ? "items-end" : "items-start"}`}
+                        >
+                          <div
+                            className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
+                              msg.sender === "user"
+                                ? "bg-blue-600 text-white rounded-br-xs shadow-xs"
+                                : "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 rounded-bl-xs border border-slate-200/50 dark:border-slate-700/50"
+                            }`}
+                          >
+                            {msg.text}
+                          </div>
+                          <span className="text-[10px] text-slate-400 mt-1 px-1">{msg.timestamp}</span>
+                        </div>
+                      ))}
+                      {isAssistantSending && (
+                        <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/40 p-2.5 rounded-xl w-fit">
+                          <Loader2 size={14} className="animate-spin text-blue-500" />
+                          <span>{assistantCopy.thinking}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Input Bar */}
+                    <div className="mt-auto pt-2">
+                      {voiceError && <p className="mb-2 text-xs text-rose-500">{voiceError}</p>}
+                      <div className="relative flex items-center rounded-full border border-blue-500/80 bg-slate-50/50 p-1.5 shadow-sm transition-all focus-within:ring-3 focus-within:ring-blue-500/20 dark:border-blue-500 dark:bg-slate-800/50">
+                        <button
+                          type="button"
+                          onClick={handleVoiceInput}
+                          title={isListening ? assistantCopy.listening : assistantCopy.speak}
+                          className={`relative ml-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-all cursor-pointer ${
+                            isListening
+                              ? "bg-purple-100 text-purple-700 dark:bg-purple-950/50 dark:text-purple-200"
+                              : "text-slate-500 hover:bg-slate-200/70 dark:text-slate-400 dark:hover:bg-slate-700"
+                          }`}
+                        >
+                          <VoiceMicIcon className="w-5 h-5" />
+                        </button>
+
+                        <input
+                          type="text"
+                          value={assistantInput}
+                          onChange={(e) => setAssistantInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              void handleSendAssistantMessage();
+                            }
+                          }}
+                          placeholder={assistantCopy.placeholder}
+                          className="w-full min-w-0 bg-transparent px-3 py-1.5 text-sm font-medium text-slate-900 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-slate-500"
+                        />
+
+                        <button
+                          type="button"
+                          onClick={() => void handleSendAssistantMessage()}
+                          disabled={isAssistantSending || !assistantInput.trim()}
+                          className="mr-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white shadow-sm transition hover:bg-blue-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+                        >
+                          {isAssistantSending ? <Loader2 size={16} className="animate-spin" /> : <ArrowRight size={16} />}
+                        </button>
+                      </div>
                     </div>
                   </div>
-                  <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border ${
-                    isFormReady
-                      ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800"
-                      : "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800"
-                  }`}>
-                    {isFormReady ? assistantCopy.ready : `${assistantCopy.incomplete} (${Object.keys(currentFormErrors).length} remaining)`}
-                  </span>
-                </div>
 
-                {/* Form Fields */}
-                <form onSubmit={(e) => { e.preventDefault(); void handleCreateJobManual(); }} className="my-5 flex-1 space-y-6">
-                  {/* SECTION 1: JOB DETAILS */}
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 border-b border-slate-100 pb-2 dark:border-slate-800">
-                      <span>1. {assistantCopy.jobDetailsTitle}</span>
+                  {/* Right Column: Compact Read-Only Live Extracted Job Details Summary (Desktop: 5 cols) */}
+                  <div className="lg:col-span-5 flex flex-col rounded-2xl border border-slate-200 bg-slate-50/70 p-4 sm:p-5 dark:border-slate-800 dark:bg-slate-900/60">
+                    {/* Header */}
+                    <div className="flex items-center justify-between pb-3 border-b border-slate-200/80 dark:border-slate-800">
+                      <div className="flex items-center gap-2">
+                        <Briefcase size={16} className="text-blue-600 dark:text-blue-400" />
+                        <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                          {assistantCopy.preview}
+                        </h3>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-[11px] font-semibold px-2.5 py-0.5 rounded-full border ${
+                          isFormReady
+                            ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800"
+                            : "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800"
+                        }`}>
+                          {isFormReady ? assistantCopy.ready : `${Object.keys(currentFormErrors).length} remaining`}
+                        </span>
+                        {/* Mobile Toggle Button */}
+                        <button
+                          type="button"
+                          onClick={() => setIsSummaryExpandedMobile((prev) => !prev)}
+                          className="lg:hidden p-1 text-slate-500 hover:text-slate-700 dark:text-slate-400 cursor-pointer"
+                          aria-label="Toggle details summary"
+                        >
+                          {isSummaryExpandedMobile ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                        </button>
+                      </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Extracted Details List */}
+                    <div className={`mt-3 space-y-2.5 text-xs ${isSummaryExpandedMobile ? "block" : "hidden lg:block"}`}>
+                      <div className="space-y-2 divide-y divide-slate-200/70 dark:divide-slate-800/70">
+                        {/* Job Title */}
+                        <div className="flex items-center justify-between pt-1">
+                          <span className="text-slate-500 dark:text-slate-400 font-medium">{assistantCopy.role}</span>
+                          <span className={`font-semibold text-right truncate max-w-[60%] ${assistantState.title ? "text-slate-900 dark:text-white" : "text-slate-400 italic"}`}>
+                            {assistantState.title || assistantCopy.notProvided}
+                          </span>
+                        </div>
+
+                        {/* Workers Needed */}
+                        <div className="flex items-center justify-between pt-2">
+                          <span className="text-slate-500 dark:text-slate-400 font-medium">{assistantCopy.workers}</span>
+                          <span className={`font-semibold text-right ${assistantState.headcount_required ? "text-slate-900 dark:text-white" : "text-slate-400 italic"}`}>
+                            {assistantState.headcount_required ? `${assistantState.headcount_required} workers` : assistantCopy.notProvided}
+                          </span>
+                        </div>
+
+                        {/* Daily Wage */}
+                        <div className="flex items-center justify-between pt-2">
+                          <span className="text-slate-500 dark:text-slate-400 font-medium">{assistantCopy.wage}</span>
+                          <span className={`font-semibold text-right ${assistantState.max_daily_salary ? "text-slate-900 dark:text-white" : "text-slate-400 italic"}`}>
+                            {assistantState.max_daily_salary ? `₹${Number(assistantState.max_daily_salary).toLocaleString("en-IN")}/day` : assistantCopy.notProvided}
+                          </span>
+                        </div>
+
+                        {/* Work Duration */}
+                        <div className="flex items-center justify-between pt-2">
+                          <span className="text-slate-500 dark:text-slate-400 font-medium">{assistantCopy.duration}</span>
+                          <span className={`font-semibold text-right ${assistantState.work_duration_days ? "text-slate-900 dark:text-white" : "text-slate-400 italic"}`}>
+                            {assistantState.work_duration_days ? `${assistantState.work_duration_days} days` : assistantCopy.notProvided}
+                          </span>
+                        </div>
+
+                        {/* Daily Timing */}
+                        <div className="flex items-center justify-between pt-2">
+                          <span className="text-slate-500 dark:text-slate-400 font-medium">{assistantCopy.timing}</span>
+                          <span className={`font-semibold text-right truncate max-w-[60%] ${assistantState.work_timing ? "text-slate-900 dark:text-white" : "text-slate-400 italic"}`}>
+                            {assistantState.work_timing || assistantCopy.notProvided}
+                          </span>
+                        </div>
+
+                        {/* Min Experience */}
+                        <div className="flex items-center justify-between pt-2">
+                          <span className="text-slate-500 dark:text-slate-400 font-medium">{assistantCopy.experience}</span>
+                          <span className={`font-semibold text-right ${assistantState.min_experience !== null && assistantState.min_experience !== undefined ? "text-slate-900 dark:text-white" : "text-slate-400 italic"}`}>
+                            {assistantState.min_experience === 0
+                              ? assistantCopy.noExperience
+                              : assistantState.min_experience
+                                ? `${assistantState.min_experience} ${assistantState.min_experience === 1 ? assistantCopy.year : assistantCopy.years}`
+                                : assistantCopy.notProvided}
+                          </span>
+                        </div>
+
+                        {/* Work Site */}
+                        <div className="flex items-center justify-between pt-2">
+                          <span className="text-slate-500 dark:text-slate-400 font-medium">{assistantCopy.site}</span>
+                          <div className="text-right truncate max-w-[60%]">
+                            {(assistantState.job_site_name || selectedJobSite?.name) ? (
+                              <span className="font-semibold text-slate-900 dark:text-white">
+                                {assistantState.job_site_name || selectedJobSite?.name}
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={handleOpenJobSiteSelector}
+                                className="text-xs font-semibold text-blue-600 hover:underline dark:text-blue-400 cursor-pointer"
+                              >
+                                {assistantCopy.selectSite}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Skills */}
+                        <div className="flex items-start justify-between pt-2">
+                          <span className="text-slate-500 dark:text-slate-400 font-medium">{assistantCopy.skills}</span>
+                          <div className="text-right max-w-[65%] flex flex-wrap justify-end gap-1">
+                            {assistantState.required_skills && assistantState.required_skills.length > 0 ? (
+                              assistantState.required_skills.map((skill) => (
+                                <span
+                                  key={skill}
+                                  className="inline-block rounded-md bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
+                                >
+                                  {skill}
+                                </span>
+                              ))
+                            ) : (
+                              <span className="text-slate-400 italic">None specified</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Status Indicator */}
+                      <div className="pt-2">
+                        {isFormReady ? (
+                          <div className="flex items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
+                            <CheckCircle2 size={16} className="shrink-0 text-emerald-600 dark:text-emerald-400" />
+                            <span>All required details complete. Ready to create!</span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2 rounded-xl bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                            <Clock size={16} className="shrink-0 text-amber-600 dark:text-amber-400" />
+                            <span className="truncate">
+                              {Object.keys(currentFormErrors).length > 0
+                                ? `${assistantCopy.pleaseComplete} ${Object.values(currentFormErrors)[0]}`
+                                : assistantCopy.complete}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Actions */}
+                      <div className="pt-3 space-y-2 border-t border-slate-200/80 dark:border-slate-800">
+                        <button
+                          type="button"
+                          onClick={() => void handleCreateJobManual()}
+                          disabled={isJobSaving}
+                          className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white shadow-md transition hover:bg-blue-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+                        >
+                          {isJobSaving ? (
+                            <>
+                              <Loader2 size={16} className="animate-spin" />
+                              <span>{assistantCopy.creating}</span>
+                            </>
+                          ) : (
+                            <>
+                              <Plus size={16} />
+                              <span>{assistantCopy.createJobBtn}</span>
+                            </>
+                          )}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setCreateJobTab("manual")}
+                          className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 cursor-pointer"
+                        >
+                          <span>Edit Details in Manual Form</span>
+                          <ArrowRight size={13} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+
+              {/* Manual Form tab */}
+              <div
+                role="tabpanel"
+                hidden={createJobTab !== "manual"}
+                className="px-5 pb-6 pt-5 sm:px-6"
+              >
+                <form onSubmit={(e) => { e.preventDefault(); void handleCreateJobManual(); }} className="space-y-6">
+
+                  {/* SECTION 1: JOB DETAILS */}
+                  <div className="space-y-4">
+                    <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 border-b border-slate-100 pb-2 dark:border-slate-800">
+                      1. {assistantCopy.jobDetailsTitle}
+                    </p>
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+
                       {/* Job Title */}
-                      <div className="md:col-span-2 space-y-1">
+                      <div className="sm:col-span-2 space-y-1">
                         <label htmlFor="field-title" className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
                           {assistantCopy.role} <span className="text-rose-500">*</span>
                         </label>
@@ -2157,7 +2383,7 @@ export default function EmployerDashboard() {
                           }}
                           onBlur={() => handleFieldBlur("title")}
                           placeholder={assistantCopy.rolePlaceholder}
-                          className={`w-full rounded-xl border bg-slate-50/50 px-3.5 py-2 text-sm font-medium text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white dark:bg-slate-800/50 dark:text-white dark:focus:bg-slate-800 ${
+                          className={`w-full rounded-xl border bg-slate-50/50 px-3.5 py-2.5 text-sm font-medium text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white dark:bg-slate-800/50 dark:text-white dark:focus:bg-slate-800 ${
                             touchedFields.title && currentFormErrors.title
                               ? "border-rose-300 bg-rose-50/30 dark:border-rose-800 dark:bg-rose-950/20"
                               : "border-slate-200 dark:border-slate-700"
@@ -2189,7 +2415,7 @@ export default function EmployerDashboard() {
                           }}
                           onBlur={() => handleFieldBlur("headcount_required")}
                           placeholder={assistantCopy.workersPlaceholder}
-                          className={`w-full rounded-xl border bg-slate-50/50 px-3.5 py-2 text-sm font-medium text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white dark:bg-slate-800/50 dark:text-white dark:focus:bg-slate-800 ${
+                          className={`w-full rounded-xl border bg-slate-50/50 px-3.5 py-2.5 text-sm font-medium text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white dark:bg-slate-800/50 dark:text-white dark:focus:bg-slate-800 ${
                             touchedFields.headcount_required && currentFormErrors.headcount_required
                               ? "border-rose-300 bg-rose-50/30 dark:border-rose-800 dark:bg-rose-950/20"
                               : "border-slate-200 dark:border-slate-700"
@@ -2223,7 +2449,7 @@ export default function EmployerDashboard() {
                             }}
                             onBlur={() => handleFieldBlur("max_daily_salary")}
                             placeholder={assistantCopy.wagePlaceholder}
-                            className={`w-full rounded-xl border bg-slate-50/50 pl-7 pr-14 py-2 text-sm font-medium text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white dark:bg-slate-800/50 dark:text-white dark:focus:bg-slate-800 ${
+                            className={`w-full rounded-xl border bg-slate-50/50 pl-7 pr-14 py-2.5 text-sm font-medium text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white dark:bg-slate-800/50 dark:text-white dark:focus:bg-slate-800 ${
                               touchedFields.max_daily_salary && currentFormErrors.max_daily_salary
                                 ? "border-rose-300 bg-rose-50/30 dark:border-rose-800 dark:bg-rose-950/20"
                                 : "border-slate-200 dark:border-slate-700"
@@ -2239,13 +2465,13 @@ export default function EmployerDashboard() {
                   </div>
 
                   {/* SECTION 2: WORK DETAILS */}
-                  <div className="space-y-4 pt-2">
-                    <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 border-b border-slate-100 pb-2 dark:border-slate-800">
-                      <span>2. {assistantCopy.workDetailsTitle}</span>
-                    </div>
+                  <div className="space-y-4">
+                    <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 border-b border-slate-100 pb-2 dark:border-slate-800">
+                      2. {assistantCopy.workDetailsTitle}
+                    </p>
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {/* Work Duration with Unit Selector */}
+                      {/* Work Duration */}
                       <div className="space-y-1">
                         <label htmlFor="field-work_duration_days" className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
                           {assistantCopy.duration} <span className="text-rose-500">*</span>
@@ -2259,7 +2485,7 @@ export default function EmployerDashboard() {
                             onChange={(e) => handleDurationChange(e.target.value, durationUnit)}
                             onBlur={() => handleFieldBlur("work_duration_days")}
                             placeholder={assistantCopy.durationPlaceholder}
-                            className={`flex-1 rounded-xl border bg-slate-50/50 px-3.5 py-2 text-sm font-medium text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white dark:bg-slate-800/50 dark:text-white dark:focus:bg-slate-800 ${
+                            className={`flex-1 rounded-xl border bg-slate-50/50 px-3.5 py-2.5 text-sm font-medium text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white dark:bg-slate-800/50 dark:text-white dark:focus:bg-slate-800 ${
                               touchedFields.work_duration_days && currentFormErrors.work_duration_days
                                 ? "border-rose-300 bg-rose-50/30 dark:border-rose-800 dark:bg-rose-950/20"
                                 : "border-slate-200 dark:border-slate-700"
@@ -2272,7 +2498,7 @@ export default function EmployerDashboard() {
                               setDurationUnit(nextUnit);
                               handleDurationChange(durationInputValue, nextUnit);
                             }}
-                            className="rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2 text-sm font-semibold text-slate-700 outline-none transition focus:border-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 cursor-pointer"
+                            className="rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2.5 text-sm font-semibold text-slate-700 outline-none transition focus:border-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 cursor-pointer"
                           >
                             <option value="days">{assistantCopy.unitDays}</option>
                             <option value="months">{assistantCopy.unitMonths}</option>
@@ -2303,7 +2529,7 @@ export default function EmployerDashboard() {
                           }}
                           onBlur={() => handleFieldBlur("work_timing")}
                           placeholder={assistantCopy.timingPlaceholder}
-                          className={`w-full rounded-xl border bg-slate-50/50 px-3.5 py-2 text-sm font-medium text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white dark:bg-slate-800/50 dark:text-white dark:focus:bg-slate-800 ${
+                          className={`w-full rounded-xl border bg-slate-50/50 px-3.5 py-2.5 text-sm font-medium text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white dark:bg-slate-800/50 dark:text-white dark:focus:bg-slate-800 ${
                             touchedFields.work_timing && currentFormErrors.work_timing
                               ? "border-rose-300 bg-rose-50/30 dark:border-rose-800 dark:bg-rose-950/20"
                               : "border-slate-200 dark:border-slate-700"
@@ -2314,7 +2540,7 @@ export default function EmployerDashboard() {
                         )}
                       </div>
 
-                      {/* Minimum Experience with Unit Selector & Fresher button */}
+                      {/* Min Experience */}
                       <div className="space-y-1">
                         <div className="flex items-center justify-between">
                           <label htmlFor="field-min_experience" className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
@@ -2338,7 +2564,7 @@ export default function EmployerDashboard() {
                             onChange={(e) => handleExperienceChange(e.target.value, experienceUnit)}
                             onBlur={() => handleFieldBlur("min_experience")}
                             placeholder={assistantCopy.experiencePlaceholder}
-                            className={`flex-1 rounded-xl border bg-slate-50/50 px-3.5 py-2 text-sm font-medium text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white dark:bg-slate-800/50 dark:text-white dark:focus:bg-slate-800 ${
+                            className={`flex-1 rounded-xl border bg-slate-50/50 px-3.5 py-2.5 text-sm font-medium text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white dark:bg-slate-800/50 dark:text-white dark:focus:bg-slate-800 ${
                               touchedFields.min_experience && currentFormErrors.min_experience
                                 ? "border-rose-300 bg-rose-50/30 dark:border-rose-800 dark:bg-rose-950/20"
                                 : "border-slate-200 dark:border-slate-700"
@@ -2351,7 +2577,7 @@ export default function EmployerDashboard() {
                               setExperienceUnit(nextUnit);
                               handleExperienceChange(experienceInputValue, nextUnit);
                             }}
-                            className="rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2 text-sm font-semibold text-slate-700 outline-none transition focus:border-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 cursor-pointer"
+                            className="rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2.5 text-sm font-semibold text-slate-700 outline-none transition focus:border-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 cursor-pointer"
                           >
                             <option value="years">{assistantCopy.unitYears}</option>
                             <option value="months">{assistantCopy.unitMonths}</option>
@@ -2362,7 +2588,7 @@ export default function EmployerDashboard() {
                         )}
                       </div>
 
-                      {/* Work Site Card & Selector */}
+                      {/* Work Site */}
                       <div className="space-y-1">
                         <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
                           {assistantCopy.site} <span className="text-rose-500">*</span>
@@ -2410,23 +2636,23 @@ export default function EmployerDashboard() {
                         )}
                       </div>
 
-                      {/* Required Skills (Full width) */}
-                      <div className="md:col-span-2 space-y-2">
+                      {/* Required Skills */}
+                      <div className="sm:col-span-2 space-y-2">
                         <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
                           {assistantCopy.skills} <span className="text-xs font-normal text-slate-400">({assistantCopy.optional})</span>
                         </label>
-                        <div className="flex flex-wrap gap-1.5 min-h-[36px] p-2 rounded-xl border border-slate-200 bg-slate-50/50 dark:border-slate-700 dark:bg-slate-800/50">
+                        <div className="flex flex-wrap gap-1.5 min-h-[36px] rounded-xl border border-slate-200 bg-slate-50/50 p-2 dark:border-slate-700 dark:bg-slate-800/50">
                           {(assistantState.required_skills && assistantState.required_skills.length > 0) ? (
                             assistantState.required_skills.map((skill) => (
                               <span
                                 key={skill}
-                                className="inline-flex items-center gap-1.5 rounded-lg bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 border border-blue-200 dark:bg-blue-950/50 dark:text-blue-300 dark:border-blue-800"
+                                className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 dark:border-blue-800 dark:bg-blue-950/50 dark:text-blue-300"
                               >
                                 {skill}
                                 <button
                                   type="button"
                                   onClick={() => handleRemoveSkill(skill)}
-                                  className="hover:text-rose-600 text-blue-400 cursor-pointer font-bold leading-none"
+                                  className="cursor-pointer font-bold leading-none text-blue-400 hover:text-rose-600"
                                   title={assistantCopy.removeSkill}
                                 >
                                   ×
@@ -2434,7 +2660,7 @@ export default function EmployerDashboard() {
                               </span>
                             ))
                           ) : (
-                            <span className="text-xs text-slate-400 italic py-0.5">{assistantCopy.noSkillsAdded}</span>
+                            <span className="py-0.5 text-xs italic text-slate-400">{assistantCopy.noSkillsAdded}</span>
                           )}
                         </div>
                         <div className="flex items-center gap-2">
@@ -2449,12 +2675,12 @@ export default function EmployerDashboard() {
                               }
                             }}
                             placeholder={assistantCopy.skillsPlaceholder}
-                            className="flex-1 rounded-xl border border-slate-200 bg-slate-50/50 px-3.5 py-2 text-sm font-medium text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white dark:border-slate-700 dark:bg-slate-800/50 dark:text-white dark:focus:bg-slate-800"
+                            className="flex-1 rounded-xl border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm font-medium text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white dark:border-slate-700 dark:bg-slate-800/50 dark:text-white dark:focus:bg-slate-800"
                           />
                           <button
                             type="button"
                             onClick={() => handleAddSkill()}
-                            className="shrink-0 rounded-xl bg-slate-100 hover:bg-slate-200 px-4 py-2 text-xs font-bold text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-200 transition cursor-pointer"
+                            className="shrink-0 cursor-pointer rounded-xl bg-slate-100 px-4 py-2.5 text-xs font-bold text-slate-700 transition hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
                           >
                             {assistantCopy.addSkill}
                           </button>
@@ -2463,12 +2689,12 @@ export default function EmployerDashboard() {
                     </div>
                   </div>
 
-                  {/* SUBMIT BUTTON */}
-                  <div className="pt-4 border-t border-slate-100 dark:border-slate-800">
+                  {/* Submit */}
+                  <div className="border-t border-slate-100 pt-4 dark:border-slate-800">
                     <button
                       type="submit"
                       disabled={isJobSaving}
-                      className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 py-3 text-sm font-bold text-white shadow-md hover:bg-blue-700 active:scale-95 transition disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+                      className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 py-3 text-sm font-bold text-white shadow-md transition hover:bg-blue-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
                     >
                       {isJobSaving ? (
                         <>
@@ -2483,7 +2709,7 @@ export default function EmployerDashboard() {
                       )}
                     </button>
                     {!isFormReady && (
-                      <p className="mt-2 text-center text-xs text-amber-600 dark:text-amber-400 font-medium">
+                      <p className="mt-2 text-center text-xs font-medium text-amber-600 dark:text-amber-400">
                         {Object.keys(currentFormErrors).length > 0
                           ? `${assistantCopy.pleaseComplete} ${Object.values(currentFormErrors)[0]}`
                           : assistantCopy.complete}
@@ -2492,6 +2718,7 @@ export default function EmployerDashboard() {
                   </div>
                 </form>
               </div>
+
             </div>
           </div>
 
@@ -2517,24 +2744,30 @@ export default function EmployerDashboard() {
                     : `${jobStatusLabel(job.status)} · ${acceptedCount} / ${job.headcount_required} selected · ${remainingCount} remaining · ${matchCount === 0
                       ? acceptedCount > 0 ? "No additional suitable workers found" : "No suitable workers found yet"
                       : `${matchCount} suitable worker${matchCount === 1 ? "" : "s"} found`}`;
-                return <div key={job.id} className="flex items-center justify-between gap-4 py-4">
-                <div>
-                  <p className="font-semibold text-slate-900 dark:text-white">{job.title}</p>
-                  <p className="text-sm text-slate-500 dark:text-slate-400">{job.headcount_required} worker{job.headcount_required === 1 ? "" : "s"} needed · {jobStatusLabel(job.status)}</p>
-                  <p className={`mt-1 text-sm font-semibold ${jobMatchSummaryState === "ERROR" ? "text-rose-600 dark:text-rose-400" : "text-slate-700 dark:text-slate-300"}`}>{summaryText}</p>
-                </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  {job.status !== "COMPLETED" && job.status !== "CANCELLED" && jobMatchSummaryState === "FOUND" && (matchCount > 0 || acceptedCount > 0) && <button type="button" onClick={() => void handleViewJobWorkers(job.id)} className="inline-flex items-center gap-2 rounded-lg border border-blue-200 px-3 py-2 text-sm font-semibold text-blue-600 hover:border-blue-300 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-400 dark:hover:bg-slate-800">
-                    <Users size={16} /> View Workers
-                  </button>}
-                  {job.status === "SEARCHING" && <button type="button" onClick={() => void handleCancelJob(job.id)} disabled={lifecycleUpdatingJobId === job.id} className="inline-flex items-center gap-2 rounded-lg border border-rose-200 px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-800 dark:text-rose-300 dark:hover:bg-rose-950/30">
-                    {lifecycleUpdatingJobId === job.id ? <Loader2 size={16} className="animate-spin" /> : <X size={16} />} Stop Searching
-                  </button>}
-                  <button type="button" onClick={() => void handleViewJobDetails(job.id)} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-blue-600 hover:border-blue-300 hover:bg-blue-50 dark:border-slate-700 dark:text-blue-400 dark:hover:bg-slate-800">
-                    <Eye size={16} /> View Details
-                  </button>
-                </div>
-              </div>;
+                return (
+                  <div key={job.id} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 py-4">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold text-slate-900 dark:text-white">{job.title}</p>
+                      <p className="text-sm text-slate-500 dark:text-slate-400">{job.headcount_required} worker{job.headcount_required === 1 ? "" : "s"} needed · {jobStatusLabel(job.status)}</p>
+                      <p className={`mt-1 text-sm font-semibold ${jobMatchSummaryState === "ERROR" ? "text-rose-600 dark:text-rose-400" : "text-slate-700 dark:text-slate-300"}`}>{summaryText}</p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 shrink-0">
+                      {job.status !== "COMPLETED" && job.status !== "CANCELLED" && jobMatchSummaryState === "FOUND" && (matchCount > 0 || acceptedCount > 0) && (
+                        <button type="button" onClick={() => void handleViewJobWorkers(job.id)} className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 px-3 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-blue-600 hover:border-blue-300 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-400 dark:hover:bg-slate-800 cursor-pointer">
+                          <Users size={15} /> View Workers
+                        </button>
+                      )}
+                      {job.status === "SEARCHING" && (
+                        <button type="button" onClick={() => void handleCancelJob(job.id)} disabled={lifecycleUpdatingJobId === job.id} className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 px-3 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-800 dark:text-rose-300 dark:hover:bg-rose-950/30 cursor-pointer">
+                          {lifecycleUpdatingJobId === job.id ? <Loader2 size={15} className="animate-spin" /> : <X size={15} />} Stop Searching
+                        </button>
+                      )}
+                      <button type="button" onClick={() => void handleViewJobDetails(job.id)} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-blue-600 hover:border-blue-300 hover:bg-blue-50 dark:border-slate-700 dark:text-blue-400 dark:hover:bg-slate-800 cursor-pointer">
+                        <Eye size={15} /> View Details
+                      </button>
+                    </div>
+                  </div>
+                );
               })}
             </div>}
           </section>
