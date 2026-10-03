@@ -52,6 +52,34 @@ async def test_nominatim_reverse_geocode_sends_policy_headers(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_nominatim_reverse_geocode_details_returns_address_components(monkeypatch):
+    response = SimpleNamespace(
+        json=lambda: {
+            "display_name": "Anand Nagar, Nanded, Maharashtra, India",
+            "address": {
+                "suburb": "Anand Nagar",
+                "city": "Nanded",
+                "state": "Maharashtra",
+                "postcode": "431601",
+            },
+        },
+        raise_for_status=lambda: None,
+    )
+    client = FakeClient(response)
+    monkeypatch.setattr(geocoding_service.httpx, "AsyncClient", lambda **_kwargs: client)
+
+    result = await GeocodingService.reverse_geocode_details(19.123, 73.456)
+
+    assert result == {
+        "address": "Anand Nagar, Nanded, Maharashtra, India",
+        "locality": "Anand Nagar",
+        "city": "Nanded",
+        "state": "Maharashtra",
+        "pincode": "431601",
+    }
+
+
+@pytest.mark.asyncio
 async def test_nominatim_reverse_geocode_rejects_invalid_coordinates():
     with pytest.raises(geocoding_service.GeocodingError, match="INVALID_COORDINATES"):
         await GeocodingService.reverse_geocode(91, 73.456)

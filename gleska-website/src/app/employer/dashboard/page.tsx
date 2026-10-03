@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import {
@@ -34,7 +35,7 @@ import { toast } from "sonner";
 import Link from "next/link";
 import apiClient from "@/lib/api";
 import { formatSubscriptionExpiry, isSubscriptionActive } from "@/lib/subscription";
-import { getBrowserLocation, getLocationErrorMessage } from "@/lib/location";
+import { getLocationErrorMessage, watchBrowserLocation } from "@/lib/location";
 
 import LocationPicker, { LocationSelection } from "@/components/LocationPicker";
 import VoiceMicIcon from "@/components/ui/VoiceMicIcon";
@@ -357,8 +358,10 @@ export default function EmployerDashboard() {
   const [jobSites, setJobSites] = React.useState<JobSite[]>([]);
   const [siteForm, setSiteForm] = React.useState({ name: "", address: "", city: "", state: "", pincode: "", latitude: "", longitude: "" });
   const [siteError, setSiteError] = React.useState("");
+  const [siteLocationNotice, setSiteLocationNotice] = React.useState("");
   const [isSiteLoading, setIsSiteLoading] = React.useState(false);
   const [isSiteSaving, setIsSiteSaving] = React.useState(false);
+  const siteLocationAcquisitionRef = React.useRef<AbortController | null>(null);
   const [jobs, setJobs] = React.useState<Job[]>([]);
   const [availableWorkerCount, setAvailableWorkerCount] = React.useState(0);
   const [activeWorkerCount, setActiveWorkerCount] = React.useState(0);
@@ -394,7 +397,6 @@ export default function EmployerDashboard() {
   const [selectedJobSiteId, setSelectedJobSiteId] = React.useState("");
   const [selectedJobSite, setSelectedJobSite] = React.useState<JobSite | null>(null);
   const [selectedSiteLocation, setSelectedSiteLocation] = React.useState<LocationSelection | null>(null);
-  const [isSiteLocationConfirmed, setIsSiteLocationConfirmed] = React.useState(false);
   const [selectedJob, setSelectedJob] = React.useState<JobDetails | null>(null);
   const [selectedJobId, setSelectedJobId] = React.useState<string | null>(null);
   const [isJobDetailsLoading, setIsJobDetailsLoading] = React.useState(false);
@@ -702,8 +704,30 @@ export default function EmployerDashboard() {
 
   const openWorkSiteModal = (mode: Exclude<WorkSiteModalMode, null>) => {
     setSiteError("");
+    setSiteLocationNotice("");
     setWorkSiteModalMode(mode);
     setIsWorkSiteModalOpen(true);
+  };
+
+  const resetWorkSiteForm = () => {
+    siteLocationAcquisitionRef.current?.abort();
+    siteLocationAcquisitionRef.current = null;
+    setSiteForm({ name: "", address: "", city: "", state: "", pincode: "", latitude: "", longitude: "" });
+    setSelectedSiteLocation(null);
+    setSiteError("");
+    setSiteLocationNotice("");
+  };
+
+  const closeWorkSiteModal = () => {
+    if (isSiteSaving) return;
+    if (workSiteModalMode === "create") resetWorkSiteForm();
+    setIsWorkSiteModalOpen(false);
+    setWorkSiteModalMode(null);
+  };
+
+  const startCreateWorkSite = () => {
+    resetWorkSiteForm();
+    setWorkSiteModalMode("create");
   };
 
   const handleOpenJobSiteSelector = () => openWorkSiteModal("site");
@@ -998,33 +1022,36 @@ export default function EmployerDashboard() {
     return null;
   }
 
+  const isSiteCoordinatesValid = Boolean(
+    selectedSiteLocation
+    && selectedSiteLocation.address.trim().length > 0
+    && Number.isFinite(selectedSiteLocation.latitude)
+    && Number.isFinite(selectedSiteLocation.longitude)
+    && selectedSiteLocation.latitude >= -90
+    && selectedSiteLocation.latitude <= 90
+    && selectedSiteLocation.longitude >= -180
+    && selectedSiteLocation.longitude <= 180
+    && !(selectedSiteLocation.latitude === 0 && selectedSiteLocation.longitude === 0),
+  );
+  const canSubmitSite = siteForm.name.trim().length > 0 && isSiteCoordinatesValid;
+
   const handleSiteSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const latitude = Number(siteForm.latitude);
-    const longitude = Number(siteForm.longitude);
-    const hasValidCoordinates =
-      Number.isFinite(latitude) &&
-      Number.isFinite(longitude) &&
-      latitude >= -90 &&
-      latitude <= 90 &&
-      longitude >= -180 &&
-      longitude <= 180 &&
-      !(latitude === 0 && longitude === 0);
-
-    if (!selectedSiteLocation || !hasValidCoordinates || !isSiteLocationConfirmed) {
-      const message = !isSiteLocationConfirmed
-        ? "Confirm the selected location before adding a work site."
-        : "Select a valid location search result before adding a work site.";
+    if (!siteForm.name.trim() || !selectedSiteLocation || !isSiteCoordinatesValid) {
+      const message = !siteForm.name.trim()
+        ? "Enter a site name before adding a work site."
+        : "Select a valid location before adding a work site.";
       setSiteError(message);
       toast.error(message);
       return;
     }
+    const { latitude, longitude } = selectedSiteLocation;
 
     setIsSiteSaving(true);
     setSiteError("");
     try {
       const response = await apiClient.post<JobSite>("/api/v1/job-sites/", {
-        name: siteForm.name,
+        name: siteForm.name.trim(),
         address: siteForm.address,
         city: siteForm.city || null,
         state: siteForm.state || null,
@@ -1041,7 +1068,7 @@ export default function EmployerDashboard() {
       setAssistantConfirmationToken(null);
       setSiteForm({ name: "", address: "", city: "", state: "", pincode: "", latitude: "", longitude: "" });
       setSelectedSiteLocation(null);
-      setIsSiteLocationConfirmed(false);
+      setSiteLocationNotice("");
       setIsWorkSiteModalOpen(false);
       setWorkSiteModalMode(null);
       toast.success("Work site added");
@@ -1056,7 +1083,8 @@ export default function EmployerDashboard() {
 
   const selectSiteLocation = (location: LocationSelection) => {
     setSelectedSiteLocation(location);
-    setIsSiteLocationConfirmed(false);
+    setSiteError("");
+    setSiteLocationNotice("");
     setSiteForm((current) => ({
       ...current,
       address: location.address,
@@ -1084,40 +1112,65 @@ export default function EmployerDashboard() {
   };
 
   const useCurrentSiteLocation = async (): Promise<LocationSelection> => {
+    const controller = new AbortController();
+    siteLocationAcquisitionRef.current?.abort();
+    siteLocationAcquisitionRef.current = controller;
     try {
-      const coordinates = await getBrowserLocation();
-      const response = await apiClient.get("/api/v1/locations/reverse", {
-        params: { latitude: coordinates.latitude, longitude: coordinates.longitude },
-      });
-      const location: LocationSelection = {
-        address: response.data.address,
-        city: response.data.city || null,
-        state: response.data.state || null,
-        pincode: response.data.pincode || null,
+      const coordinates = await watchBrowserLocation({ policy: "ADDRESS", signal: controller.signal });
+      let reverseGeocodeFailed = false;
+      let location: LocationSelection = {
+        address: "",
         latitude: coordinates.latitude,
         longitude: coordinates.longitude,
         accuracy_m: coordinates.accuracy,
         location_source: "GPS",
       };
+      try {
+        const response = await apiClient.get<{
+          address: string;
+          locality?: string | null;
+          city?: string | null;
+          state?: string | null;
+          pincode?: string | null;
+        }>("/api/v1/locations/reverse", {
+          params: { latitude: coordinates.latitude, longitude: coordinates.longitude },
+          signal: controller.signal,
+        });
+        if (controller.signal.aborted) throw new DOMException("Location request cancelled", "AbortError");
+        if (!response.data.address?.trim()) throw new Error("Reverse geocoding returned no address.");
+        location = {
+          ...location,
+          address: response.data.address.trim(),
+          locality: response.data.locality || null,
+          city: response.data.city || null,
+          state: response.data.state || null,
+          pincode: response.data.pincode || null,
+        };
+      } catch (error) {
+        if (controller.signal.aborted) throw error;
+        reverseGeocodeFailed = true;
+      }
+      if (controller.signal.aborted) throw new DOMException("Location request cancelled", "AbortError");
       selectSiteLocation(location);
+      if (reverseGeocodeFailed) {
+        setSiteLocationNotice("Coordinates were obtained, but the address could not be looked up. Enter the site address below.");
+      }
       setSiteError("");
       return location;
-    } catch (error) {
-      const message = getLocationErrorMessage(error);
-      setSiteError(message);
-      toast.error(message);
-      throw error;
+    } finally {
+      if (siteLocationAcquisitionRef.current === controller) siteLocationAcquisitionRef.current = null;
     }
   };
 
   const invalidateSiteLocation = () => {
     setSelectedSiteLocation(null);
-    setIsSiteLocationConfirmed(false);
+    setSiteLocationNotice("");
     setSiteForm((current) => ({ ...current, city: "", state: "", pincode: "", latitude: "", longitude: "" }));
   };
 
   const handleSiteLocationQueryChange = (query: string) => {
     invalidateSiteLocation();
+    setSiteError("");
     setSiteForm((current) => ({ ...current, address: query }));
   };
 
@@ -1817,90 +1870,113 @@ export default function EmployerDashboard() {
       <div className="flex-1 min-w-0">
         <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-12">
           {/* Welcome Card */}
-          <div className="mb-8 rounded-3xl bg-linear-to-br from-blue-50 to-indigo-50 p-5 sm:p-8 dark:from-blue-950/20 dark:to-indigo-950/20 border border-blue-200 dark:border-blue-800">
-            <div className="flex flex-col-reverse sm:flex-row items-start sm:items-center justify-between gap-4 sm:gap-6">
+          <section className="mb-8 rounded-3xl bg-linear-to-br from-blue-50 to-indigo-50 p-5 sm:p-8 dark:from-blue-950/20 dark:to-indigo-950/20 border border-blue-200 dark:border-blue-800">
+            <div className="flex flex-col-reverse sm:flex-row items-start sm:items-center justify-between gap-5">
               <div>
-                <p className="text-xs sm:text-sm font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300">
+                <p className="text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300">
                   Welcome back
                 </p>
-                <h1 className="font-(--font-anton) text-2xl sm:text-4xl uppercase text-slate-900 dark:text-white">
+                <h1 className="mt-1 font-(--font-anton) text-2xl sm:text-4xl uppercase text-slate-900 dark:text-white">
                   {employerProfile?.contact_person_name || user.name}
                 </h1>
-                <p className="mt-1 sm:mt-2 text-base sm:text-lg text-blue-700 dark:text-blue-300">
+                <p className="mt-2 text-sm sm:text-base text-blue-700 dark:text-blue-300">
                   {formatEmployerType(employerProfile?.employer_type)}
                 </p>
               </div>
+              <Link
+                href="/employer/company-profile"
+                className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-blue-600 text-white shadow-lg"
+                title="View profile"
+              >
+                {(user.profile_photo_url || employerProfile?.logo_url) ? (
+                  <Image
+                    src={user.profile_photo_url || employerProfile?.logo_url || ""}
+                    alt="Profile"
+                    width={64}
+                    height={64}
+                    className="h-full w-full object-cover"
+                    unoptimized
+                  />
+                ) : (
+                  <User size={32} />
+                )}
+              </Link>
             </div>
-          </div>
+          </section>
 
-          <div className="mb-8 rounded-2xl border border-slate-200 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900">
-            <p className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Subscription</p>
-            {employerProfile?.employer_type === "INDIVIDUAL" ? (
-              <>
-                <p className="mt-2 text-xl font-bold text-slate-900 dark:text-white">
-                  {employerProfile.commission_required_for_next_worker ? "Commission required for next worker" : "Free-worker entitlement available"}
-                </p>
-                <p className="mt-1 text-sm text-slate-500">
-                  {employerProfile.free_workers_used} of {employerProfile.free_worker_limit} free unique workers used
-                </p>
-                <p className="mt-1 text-sm text-slate-500">
-                  {employerProfile.free_workers_remaining > 0
-                    ? `${employerProfile.free_workers_remaining} free workers remaining`
-                    : `₹${employerProfile.commission_amount} per additional unique worker`}
-                </p>
-              </>
-            ) : (
-              <>
-                <p className="mt-2 text-xl font-bold text-slate-900 dark:text-white">
-                  {employerProfile?.trial_active ? "FREE TRIAL ACTIVE" : employerProfile?.subscription_active ? "Active" : employerProfile?.payment_required ? "Payment Required" : "Not Active"}
-                </p>
-                {formatSubscriptionExpiry(employerProfile?.subscription_valid_until) || formatSubscriptionExpiry(employerProfile?.trial_ends_at) ? (
-                  <p className="mt-1 text-sm text-slate-500">Active until {formatSubscriptionExpiry(employerProfile?.subscription_valid_until) || formatSubscriptionExpiry(employerProfile?.trial_ends_at)}</p>
-                ) : null}
-                <p className="mt-1 text-sm text-slate-500">Business subscription · ₹2,000 / 30 days</p>
-              </>
-            )}
-          </div>
+          {/* Summary Cards */}
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {/* Subscription */}
+            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+              <div className="flex items-center justify-between">
+                <h2 className="font-bold">Subscription</h2>
+                <CheckCircle2
+                  size={20}
+                  className={
+                    (employerProfile?.employer_type === "INDIVIDUAL"
+                      ? !employerProfile.commission_required_for_next_worker
+                      : Boolean(employerProfile?.trial_active || employerProfile?.subscription_active))
+                      ? "text-emerald-600"
+                      : "text-amber-600"
+                  }
+                />
+              </div>
+              {employerProfile?.employer_type === "INDIVIDUAL" ? (
+                <>
+                  <p className="mt-5 text-xl font-bold text-slate-900 dark:text-white">
+                    {employerProfile.commission_required_for_next_worker ? "Commission required for next worker" : "Free-worker entitlement available"}
+                  </p>
+                  <p className="mt-1 text-sm text-slate-500">
+                    {employerProfile.free_workers_used} of {employerProfile.free_worker_limit} free unique workers used
+                  </p>
+                  <p className="mt-1 text-sm text-slate-500">
+                    {employerProfile.free_workers_remaining > 0
+                      ? `${employerProfile.free_workers_remaining} free workers remaining`
+                      : `₹${employerProfile.commission_amount} per additional unique worker`}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="mt-5 text-xl font-bold text-slate-900 dark:text-white">
+                    {employerProfile?.trial_active ? "FREE TRIAL ACTIVE" : employerProfile?.subscription_active ? "Active" : employerProfile?.payment_required ? "Payment Required" : "Not Active"}
+                  </p>
+                  {formatSubscriptionExpiry(employerProfile?.subscription_valid_until) || formatSubscriptionExpiry(employerProfile?.trial_ends_at) ? (
+                    <p className="mt-1 text-sm text-slate-500">Active until {formatSubscriptionExpiry(employerProfile?.subscription_valid_until) || formatSubscriptionExpiry(employerProfile?.trial_ends_at)}</p>
+                  ) : null}
+                  <p className="mt-1 text-sm text-slate-500">Business subscription · ₹2,000 / 30 days</p>
+                </>
+              )}
+            </section>
 
-          {/* Grid */}
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
             {/* Active Jobs Card */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900">
-              <div className="mb-4 flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50 dark:bg-blue-950">
-                  <Briefcase size={20} className="text-blue-600 dark:text-blue-400" />
-                </div>
-                <h3 className="text-sm font-bold uppercase text-slate-600 dark:text-slate-400">
-                  Active Jobs
-                </h3>
+            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+              <div className="flex items-center justify-between">
+                <h2 className="font-bold">Active Jobs</h2>
+                <Briefcase size={20} className="text-blue-600" />
               </div>
-              <div className="space-y-2">
-                <p className="text-3xl font-bold text-slate-900 dark:text-white">{jobs.filter((job) => !["CANCELLED", "COMPLETED"].includes(job.status)).length}</p>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  {jobs.length === 0 ? "Post a job to get started" : "Active employer jobs"}
-                </p>
-              </div>
-            </div>
+              <p className="mt-5 text-2xl font-bold text-slate-900 dark:text-white">
+                {jobs.filter((job) => !["CANCELLED", "COMPLETED"].includes(job.status)).length}
+              </p>
+              <p className="mt-1 text-sm text-slate-500">
+                {jobs.length === 0 ? "Post a job to get started" : "Active employer jobs"}
+              </p>
+            </section>
 
-            {/* Employer-eligible match candidates */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900">
-              <div className="mb-4 flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-50 dark:bg-indigo-950">
-                  <Users size={20} className="text-indigo-600 dark:text-indigo-400" />
-                </div>
-                <h3 className="text-sm font-bold uppercase text-slate-600 dark:text-slate-400">
-                  Available matches
-                </h3>
+            {/* Available Matches Card */}
+            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+              <div className="flex items-center justify-between">
+                <h2 className="font-bold">Available matches</h2>
+                <Users size={20} className="text-indigo-600" />
               </div>
-              <div className="space-y-2">
-                <p className="text-3xl font-bold text-slate-900 dark:text-white">{availableWorkerCount}</p>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  {jobs.length === 0
-                    ? "Post a job to see eligible workers"
-                    : "Eligible, unselected workers across current jobs"}
-                </p>
-              </div>
-            </div>
+              <p className="mt-5 text-2xl font-bold text-slate-900 dark:text-white">
+                {availableWorkerCount}
+              </p>
+              <p className="mt-1 text-sm text-slate-500">
+                {jobs.length === 0
+                  ? "Post a job to see eligible workers"
+                  : "Eligible, unselected workers across current jobs"}
+              </p>
+            </section>
           </div>
 
 
@@ -2471,9 +2547,9 @@ export default function EmployerDashboard() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div
             className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs transition-opacity"
-            onClick={() => setIsWorkSiteModalOpen(false)}
+            onClick={closeWorkSiteModal}
           />
-          <div className="relative w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900 z-10">
+          <div className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900 z-10">
             <div className="mb-4 flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
               <div className="flex items-center gap-2">
                 <MapPin size={22} className="text-blue-600 dark:text-blue-400" />
@@ -2483,7 +2559,7 @@ export default function EmployerDashboard() {
               </div>
               <button
                 type="button"
-                onClick={() => setIsWorkSiteModalOpen(false)}
+                onClick={closeWorkSiteModal}
                 className="rounded-xl p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white transition"
                 title="Close"
               >
@@ -2491,34 +2567,142 @@ export default function EmployerDashboard() {
               </button>
             </div>
 
-            {workSiteModalMode === "create" && <form onSubmit={handleSiteSubmit} className="grid gap-3 md:grid-cols-2 lg:grid-cols-5">
-              <input required maxLength={160} value={siteForm.name} onChange={(event) => setSiteForm({ ...siteForm, name: event.target.value })} placeholder="Site name" className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-hidden focus:border-blue-500 dark:border-slate-700 dark:bg-slate-800" />
-              <div className="md:col-span-2 lg:col-span-5"><LocationPicker label="Work Site Location" value={siteForm.address} onSelect={selectSiteLocation} onQueryChange={handleSiteLocationQueryChange} onUseCurrentLocation={useCurrentSiteLocation} getCurrentLocationErrorMessage={getLocationErrorMessage} placeholder="Search area, locality, city or pincode" /></div>
-              <input required maxLength={500} value={siteForm.address} readOnly={Boolean(selectedSiteLocation)} onChange={(event) => { invalidateSiteLocation(); setSiteForm((current) => ({ ...current, address: event.target.value })); }} placeholder="Selected address" className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-hidden focus:border-blue-500 read-only:cursor-not-allowed read-only:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:read-only:bg-slate-800/70" />
-              {selectedSiteLocation && <div className="md:col-span-2 lg:col-span-5 space-y-2"><div className="flex items-center gap-2 text-sm font-semibold text-emerald-700 dark:text-emerald-300"><Check size={16} /> Location selected from {selectedSiteLocation.location_source}. {selectedSiteLocation.accuracy_m ? `Accuracy: ${Math.round(selectedSiteLocation.accuracy_m)}m.` : ""}</div><div className="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700"><iframe title="Selected work site location" className="h-48 w-full border-0" src={`https://www.openstreetmap.org/export/embed.html?bbox=${selectedSiteLocation.longitude - 0.005}%2C${selectedSiteLocation.latitude - 0.005}%2C${selectedSiteLocation.longitude + 0.005}%2C${selectedSiteLocation.latitude + 0.005}&layer=mapnik&marker=${selectedSiteLocation.latitude}%2C${selectedSiteLocation.longitude}`} /></div><button type="button" onClick={() => setIsSiteLocationConfirmed(true)} disabled={isSiteLocationConfirmed} className="inline-flex items-center gap-2 rounded-lg border border-emerald-300 px-3 py-2 text-sm font-bold text-emerald-700 disabled:cursor-default disabled:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-300 dark:disabled:bg-emerald-950/30"><Check size={16} /> {isSiteLocationConfirmed ? "Location confirmed" : "Confirm Location"}</button></div>}
-              <button type="submit" disabled={isSiteSaving} className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60">
-                {isSiteSaving ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
-                Add site
-              </button>
+            {workSiteModalMode === "create" && <form onSubmit={handleSiteSubmit} className="space-y-5">
+              <div className="space-y-2">
+                <label htmlFor="work-site-name" className="block text-sm font-bold text-slate-800 dark:text-slate-100">Site Name <span className="text-rose-600">*</span></label>
+                <input id="work-site-name" required maxLength={160} value={siteForm.name} onChange={(event) => setSiteForm((current) => ({ ...current, name: event.target.value }))} placeholder="Enter work site name" className="w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm outline-hidden focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-800" />
+              </div>
+              <section className="space-y-3" aria-labelledby="work-site-location-label">
+                <h3 id="work-site-location-label" className="text-sm font-bold text-slate-800 dark:text-slate-100">Work Site Location <span className="text-rose-600">*</span></h3>
+                <LocationPicker
+                  label="Search location"
+                  value={siteForm.address}
+                  onSelect={selectSiteLocation}
+                  onQueryChange={handleSiteLocationQueryChange}
+                  onUseCurrentLocation={useCurrentSiteLocation}
+                  getCurrentLocationErrorMessage={getLocationErrorMessage}
+                  currentLocationLoadingLabel="Getting your current location..."
+                  showCurrentLocationSeparator
+                  clearQueryOnSelect
+                  placeholder="Search for an address..."
+                />
+                {selectedSiteLocation && (
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3 dark:border-emerald-900 dark:bg-emerald-950/20">
+                    <p className="text-xs font-bold uppercase tracking-wide text-emerald-800 dark:text-emerald-300">Selected location</p>
+                    {selectedSiteLocation.address
+                      ? <p className="mt-1 text-sm text-slate-800 dark:text-slate-100">{selectedSiteLocation.address}</p>
+                      : <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">Address not available</p>}
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{[selectedSiteLocation.city, selectedSiteLocation.state, selectedSiteLocation.pincode].filter(Boolean).join(", ")}</p>
+                    {!selectedSiteLocation.address && (
+                      <div className="mt-3">
+                        <label htmlFor="work-site-address" className="block text-xs font-bold text-slate-700 dark:text-slate-300">Site address</label>
+                        <input
+                          id="work-site-address"
+                          value={siteForm.address}
+                          onChange={(event) => {
+                            const address = event.target.value;
+                            setSiteForm((current) => ({ ...current, address }));
+                            setSelectedSiteLocation((current) => current ? { ...current, address } : current);
+                          }}
+                          className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
+                          placeholder="Enter the site address"
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+                {siteLocationNotice && <p role="status" className="text-sm text-amber-700 dark:text-amber-300">{siteLocationNotice}</p>}
+              </section>
+              {siteError && <p role="alert" className="text-sm text-rose-600 dark:text-rose-400">{siteError}</p>}
+              <div className="flex justify-end gap-3 border-t border-slate-100 pt-4 dark:border-slate-800">
+                <button type="button" onClick={closeWorkSiteModal} disabled={isSiteSaving} className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">Cancel</button>
+                <button type="submit" disabled={isSiteSaving || !canSubmitSite} className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">
+                  {isSiteSaving ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
+                  Add site
+                </button>
+              </div>
             </form>}
 
-            {siteError && <p className="mt-3 text-sm text-rose-600 dark:text-rose-400">{siteError}</p>}
-            {(workSiteModalMode === "site" || workSiteModalMode === "create") && <div className="mt-6 divide-y divide-slate-100 dark:divide-slate-800 max-h-60 overflow-y-auto pr-1">
-              {isSiteLoading ? (
-                <div className="flex items-center gap-2 py-4 text-sm text-slate-500"><Loader2 size={16} className="animate-spin" /> Loading sites...</div>
-              ) : jobSites.length === 0 ? (
-                <p className="py-4 text-sm text-slate-500 dark:text-slate-400">No work sites saved yet.</p>
-              ) : jobSites.map((site) => (
-                <div key={site.id} className="flex items-center justify-between gap-4 py-4">
-                  <div className="min-w-0">
-                    <p className="font-semibold text-slate-900 dark:text-white">{site.name}</p>
-                    <p className="truncate text-sm text-slate-500 dark:text-slate-400">{site.address || "Location selected"}</p>
-                  </div>
-                  {workSiteModalMode === "site" ? <button type="button" onClick={() => selectJobSite(site)} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-bold text-white"><Check size={16} /> Select</button> : <button type="button" title={`Remove ${site.name}`} aria-label={`Remove ${site.name}`} onClick={() => handleSiteDelete(site.id)} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:border-rose-200 hover:text-rose-600 dark:border-slate-700 dark:text-slate-400 dark:hover:border-rose-800 dark:hover:text-rose-400"><Trash2 size={16} /></button>}
+            {workSiteModalMode === "site" && siteError && <p className="mt-3 text-sm text-rose-600 dark:text-rose-400">{siteError}</p>}
+
+            {/* In create mode: display created sites below form with clear section heading */}
+            {workSiteModalMode === "create" && jobSites.length > 0 && (
+              <div className="mt-6 border-t border-slate-200 dark:border-slate-800 pt-5">
+                <div className="mb-3 flex items-center justify-between">
+                  <h3 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                    Your Created Sites
+                  </h3>
+                  <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                    {jobSites.length}
+                  </span>
                 </div>
-              ))}
-            </div>}
-            {workSiteModalMode === "site" && <button type="button" onClick={() => { setSiteForm({ name: "", address: "", city: "", state: "", pincode: "", latitude: "", longitude: "" }); setSelectedSiteLocation(null); setIsSiteLocationConfirmed(false); setWorkSiteModalMode("create"); }} className="mt-4 inline-flex items-center gap-2 rounded-lg border border-blue-200 px-3 py-2 text-sm font-bold text-blue-700 dark:border-blue-800 dark:text-blue-300"><Plus size={16} /> Create New Work Site</button>}
+                <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-52 overflow-y-auto pr-1">
+                  {jobSites.map((site) => (
+                    <div key={site.id} className="flex items-center justify-between gap-4 py-3">
+                      <div className="min-w-0">
+                        <p className="font-semibold text-slate-900 dark:text-white">{site.name}</p>
+                        <p className="truncate text-sm text-slate-500 dark:text-slate-400">{site.address || "Location selected"}</p>
+                      </div>
+                      <button
+                        type="button"
+                        title={`Remove ${site.name}`}
+                        aria-label={`Remove ${site.name}`}
+                        onClick={() => handleSiteDelete(site.id)}
+                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:border-rose-200 hover:text-rose-600 dark:border-slate-700 dark:text-slate-400 dark:hover:border-rose-800 dark:hover:text-rose-400"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* In site select mode: display list of created sites with heading and select action */}
+            {workSiteModalMode === "site" && (
+              <div className="mt-4">
+                <div className="mb-3 flex items-center justify-between">
+                  <h3 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                    Your Created Sites
+                  </h3>
+                  {jobSites.length > 0 && (
+                    <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                      {jobSites.length}
+                    </span>
+                  )}
+                </div>
+                <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-60 overflow-y-auto pr-1">
+                  {isSiteLoading ? (
+                    <div className="flex items-center gap-2 py-4 text-sm text-slate-500"><Loader2 size={16} className="animate-spin" /> Loading sites...</div>
+                  ) : jobSites.length === 0 ? (
+                    <p className="py-4 text-sm text-slate-500 dark:text-slate-400">No work sites saved yet.</p>
+                  ) : (
+                    jobSites.map((site) => (
+                      <div key={site.id} className="flex items-center justify-between gap-4 py-3.5">
+                        <div className="min-w-0">
+                          <p className="font-semibold text-slate-900 dark:text-white">{site.name}</p>
+                          <p className="truncate text-sm text-slate-500 dark:text-slate-400">{site.address || "Location selected"}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => selectJobSite(site)}
+                          className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-bold text-white hover:bg-blue-700 transition"
+                        >
+                          <Check size={16} /> Select
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={startCreateWorkSite}
+                  className="mt-4 inline-flex items-center gap-2 rounded-lg border border-blue-200 px-3 py-2 text-sm font-bold text-blue-700 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-300 dark:hover:bg-blue-950/40"
+                >
+                  <Plus size={16} /> Create New Work Site
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

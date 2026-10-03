@@ -30,7 +30,7 @@ async def reverse_location(
     """Preview a browser location without persisting it."""
     del user
     try:
-        address = await GeocodingService.reverse_geocode(latitude, longitude)
+        location = await GeocodingService.reverse_geocode_details(latitude, longitude)
     except GeocodingError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="LOCATION_REVERSE_FAILED") from exc
-    return {"address": address, "latitude": latitude, "longitude": longitude}
+    return {**location, "latitude": latitude, "longitude": longitude}

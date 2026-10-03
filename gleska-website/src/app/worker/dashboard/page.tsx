@@ -10,7 +10,11 @@ import AccountManagementShell from "@/components/AccountManagementShell";
 import { useAuth } from "@/context/AuthContext";
 import axios from "axios";
 import apiClient from "@/lib/api";
-import { MAX_LOCATION_ACCURACY_METERS, retainAccurateLocationSnapshot, shouldSendLiveLocationUpdate, type LiveLocationSnapshot } from "@/lib/location";
+import {
+  getLocationErrorCategory,
+  InaccurateLocationError,
+  watchBrowserLocation,
+} from "@/lib/location";
 import { formatSubscriptionExpiry } from "@/lib/subscription";
 
 type WorkerProfile = {
@@ -66,11 +70,11 @@ type JobDetails = {
   target_lng?: number | null;
 };
 
-const CURRENT_LOCATION_REQUIRED = "Select a current location to find nearby work.";
+const MATCHING_LOCATION_REQUIRED = "A sufficiently accurate current location (within 1 km) is required to find nearby work. Try again with device location enabled or use a device with GPS.";
 
-function SectionState({ loading, error, retry, errorAction, children }: { loading: boolean; error: string; retry: () => void; errorAction?: React.ReactNode; children: React.ReactNode }) {
+function SectionState({ loading, error, retry, errorAction, children }: { loading: boolean; error: string; retry?: () => void; errorAction?: React.ReactNode; children: React.ReactNode }) {
   if (loading) return <div className="flex items-center gap-2 py-8 text-sm text-slate-500"><Loader2 size={18} className="animate-spin" /> Loading...</div>;
-  if (error) return <div className="rounded-xl bg-rose-50 p-4 text-sm text-rose-700 dark:bg-rose-950/20 dark:text-rose-300"><p>{error}</p>{errorAction}<button type="button" onClick={retry} className="mt-3 block font-bold underline">Try again</button></div>;
+  if (error) return <div className="rounded-xl bg-rose-50 p-4 text-sm text-rose-700 dark:bg-rose-950/20 dark:text-rose-300"><p>{error}</p>{errorAction}{retry && <button type="button" onClick={retry} className="mt-3 block font-bold underline">Try again</button>}</div>;
   return <>{children}</>;
 }
 
@@ -85,17 +89,15 @@ export default function WorkerDashboard() {
   const [jobDetailsLoading, setJobDetailsLoading] = React.useState(false);
   const [jobDetailsError, setJobDetailsError] = React.useState("");
   const [currentLocationAddress, setCurrentLocationAddress] = React.useState("");
-  const [currentLocationSource, setCurrentLocationSource] = React.useState<"GPS" | "PROFILE" | null>(null);
+  const [displayLocation, setDisplayLocation] = React.useState<{ accuracy: number; receivedAt: number } | null>(null);
+  const [addressLookupUnavailable, setAddressLookupUnavailable] = React.useState(false);
   const [locationStatus, setLocationStatus] = React.useState<"acquiring" | "ready" | "error">("acquiring");
-  const [selectingProfileLocation, setSelectingProfileLocation] = React.useState(false);
+  const [matchingReady, setMatchingReady] = React.useState(false);
   const [loading, setLoading] = React.useState({ profile: true, jobs: true });
   const [errors, setErrors] = React.useState({ profile: "", jobs: "" });
-  const watcherIdRef = React.useRef<number | null>(null);
-  const locationTimeoutRef = React.useRef<number | null>(null);
-  const lastLiveLocationRef = React.useRef<LiveLocationSnapshot | null>(null);
-  const locationUpdatePendingRef = React.useRef(false);
-  const locationWriteVersionRef = React.useRef(0);
-  const currentLocationSourceRef = React.useRef<"GPS" | "PROFILE" | null>(null);
+  const matchingReadyRef = React.useRef(false);
+  const displayAccuracyRef = React.useRef<number | null>(null);
+  const reverseGeocodeRequestRef = React.useRef(0);
 
   React.useEffect(() => {
     if (!isLoading && !user) router.replace("/worker/auth");
@@ -103,6 +105,7 @@ export default function WorkerDashboard() {
   }, [isLoading, nextStep, router, user]);
 
   const loadAvailableJobs = React.useCallback(async () => {
+    if (!matchingReadyRef.current) return;
     setLoading((current) => ({ ...current, jobs: true }));
     setErrors((current) => ({ ...current, jobs: "" }));
     try {
@@ -114,7 +117,12 @@ export default function WorkerDashboard() {
       if (status === 402 || detail === "SUBSCRIPTION_REQUIRED") {
         setErrors((current) => ({ ...current, jobs: "Your worker subscription is inactive. Subscribe for ₹200/month to access nearby jobs." }));
       } else if (detail === "CURRENT_LOCATION_REQUIRED") {
-        setErrors((current) => ({ ...current, jobs: CURRENT_LOCATION_REQUIRED }));
+        setErrors((current) => ({
+          ...current,
+          jobs: matchingReadyRef.current
+            ? "Your current location no longer meets the accuracy or freshness requirements for nearby work. Wait for a new accurate location, then try again."
+            : MATCHING_LOCATION_REQUIRED,
+        }));
       } else {
         setErrors((current) => ({ ...current, jobs: "Nearby work could not be loaded." }));
       }
@@ -126,23 +134,15 @@ export default function WorkerDashboard() {
   const loadProfile = React.useCallback(async () => {
     setLoading((current) => ({ ...current, profile: true }));
     setErrors((current) => ({ ...current, profile: "" }));
-    const locationWriteVersion = locationWriteVersionRef.current;
     try {
       const response = await apiClient.get<WorkerProfile>("/api/v1/workers/me");
       setProfile(response.data);
-      if (response.data.current_location && locationWriteVersion === locationWriteVersionRef.current) {
-        setCurrentLocationAddress(response.data.current_location.address || "");
-        setCurrentLocationSource(response.data.current_location.location_source);
-        currentLocationSourceRef.current = response.data.current_location.location_source;
-        setLocationStatus("ready");
-        void loadAvailableJobs();
-      }
     } catch {
       setErrors((current) => ({ ...current, profile: "Unable to load your profile summary." }));
     } finally {
       setLoading((current) => ({ ...current, profile: false }));
     }
-  }, [loadAvailableJobs]);
+  }, []);
 
   const loadJobDetails = React.useCallback(async (job: AvailableJob) => {
     setSelectedJobId(job.job_id);
@@ -181,229 +181,82 @@ export default function WorkerDashboard() {
 
   React.useEffect(() => {
     if (!user || user.role !== "WORKER" || isLoading || nextStep !== "DASHBOARD") return;
-
     let active = true;
-    let permissionStatus: PermissionStatus | null = null;
-
-    const clearLocationAcquisition = () => {
-      active = false;
-      if (locationTimeoutRef.current !== null) window.clearTimeout(locationTimeoutRef.current);
-      locationTimeoutRef.current = null;
-      if (watcherIdRef.current !== null && typeof navigator !== "undefined" && navigator.geolocation) {
-        navigator.geolocation.clearWatch(watcherIdRef.current);
-      }
-      watcherIdRef.current = null;
-      if (permissionStatus) permissionStatus.onchange = null;
-    };
-
-    const setAcquisitionError = () => {
-      clearLocationAcquisition();
-      locationUpdatePendingRef.current = false;
-      setLocationStatus("error");
-      if (!currentLocationSourceRef.current) {
-        setErrors((current) => ({ ...current, jobs: CURRENT_LOCATION_REQUIRED }));
-      }
-      setLoading((current) => ({ ...current, jobs: false }));
-    };
-
-    if (typeof navigator === "undefined" || !navigator.geolocation) {
-      setAcquisitionError();
-      return;
-    }
-
-    let lastInaccurateReading: number | null = null;
-    let locationCallbackNumber = 0;
-
-    const onPosition = (position: GeolocationPosition) => {
-      if (!active) return;
-      const callback = ++locationCallbackNumber;
-      const { latitude, longitude, accuracy } = position.coords;
-      const timestamp = position.timestamp;
-      const ageMs = Date.now() - timestamp;
-      const traceCallback = (status: "ACCEPTED" | "REJECTED", reason: string) => {
-        console.debug("[Location Trace][Frontend]", {
-          callback,
-          lat: latitude,
-          lng: longitude,
-          accuracy_m: accuracy,
-          timestamp,
-          age_ms: ageMs,
-          status,
-          reason,
-        });
-      };
-      const current = lastLiveLocationRef.current;
-      if (accuracy > MAX_LOCATION_ACCURACY_METERS) {
-        lastInaccurateReading = accuracy;
-        setLocationStatus("acquiring");
-        traceCallback("REJECTED", "accuracy_above_threshold");
-        return;
-      }
-      const next = retainAccurateLocationSnapshot(
-        current,
-        latitude,
-        longitude,
-        accuracy,
-        Date.now(),
-      );
-      if (!next) {
-        traceCallback("REJECTED", "invalid_coordinates_or_accuracy");
-        return;
-      }
-      if (next === current) {
-        traceCallback("REJECTED", "unchanged_location_snapshot");
-        return;
-      }
-      if (!shouldSendLiveLocationUpdate(current, next)) {
-        traceCallback("REJECTED", "movement_or_heartbeat_update_not_due");
-        return;
-      }
-      if (locationUpdatePendingRef.current) {
-        traceCallback("REJECTED", "location_request_already_pending");
-        return;
-      }
-      if (locationTimeoutRef.current !== null) window.clearTimeout(locationTimeoutRef.current);
-      locationTimeoutRef.current = null;
+    const controller = new AbortController();
+    const onPosition = (location: { latitude: number; longitude: number; accuracy: number }) => {
+      if (!active || (displayAccuracyRef.current !== null && location.accuracy >= displayAccuracyRef.current)) return;
+      displayAccuracyRef.current = location.accuracy;
+      setDisplayLocation({ accuracy: location.accuracy, receivedAt: Date.now() });
       setCurrentLocationAddress("");
-      locationUpdatePendingRef.current = true;
-      locationWriteVersionRef.current += 1;
-      traceCallback("ACCEPTED", "eligible_for_upload");
-      console.debug("[Location Trace][HTTP OUT]", {
-        lat: next.latitude,
-        lng: next.longitude,
-        accuracy_m: next.accuracy_m,
-        source_context: "website_worker_dashboard",
-        timestamp,
-      });
-      apiClient.put<NonNullable<WorkerProfile["current_location"]>>("/api/v1/workers/me/location", {
-        latitude: next.latitude,
-        longitude: next.longitude,
-        accuracy_m: next.accuracy_m,
-        location_source: "GPS",
+      setAddressLookupUnavailable(false);
+      const requestId = ++reverseGeocodeRequestRef.current;
+      void apiClient.get<{ address: string }>("/api/v1/locations/reverse", {
+        params: { latitude: location.latitude, longitude: location.longitude },
       }).then((response) => {
-        if (!active) return;
-        console.debug("[Location Trace][HTTP IN]", {
-          status: response.status,
-          latitude: response.data.latitude,
-          longitude: response.data.longitude,
-          accuracy_m: response.data.accuracy_m,
-          location_source: response.data.location_source,
-          timestamp: response.data.updated_at,
-          server_message: null,
-        });
-        locationUpdatePendingRef.current = false;
-        lastLiveLocationRef.current = next;
-        if (response.data.address) setCurrentLocationAddress(response.data.address);
-        setCurrentLocationSource("GPS");
-        currentLocationSourceRef.current = "GPS";
-        setLocationStatus("ready");
-        clearLocationAcquisition();
-        void loadAvailableJobs();
-      }).catch((error: unknown) => {
-        if (!active) return;
-        const response = axios.isAxiosError(error) ? error.response : undefined;
-        const responseBody = response?.data as Record<string, unknown> | undefined;
-        console.debug("[Location Trace][HTTP IN]", {
-          status: response?.status ?? null,
-          latitude: responseBody?.latitude ?? null,
-          longitude: responseBody?.longitude ?? null,
-          accuracy_m: responseBody?.accuracy_m ?? null,
-          location_source: responseBody?.location_source ?? null,
-          timestamp: responseBody?.updated_at ?? null,
-          server_message: responseBody?.detail ?? null,
-        });
-        setAcquisitionError();
+        if (active && reverseGeocodeRequestRef.current === requestId) {
+          setCurrentLocationAddress(response.data.address || "");
+          setAddressLookupUnavailable(!response.data.address);
+        }
+      }).catch(() => {
+        if (active && reverseGeocodeRequestRef.current === requestId) {
+          setAddressLookupUnavailable(true);
+        }
       });
     };
 
-    const onError = (error: GeolocationPositionError) => {
+    void watchBrowserLocation({ policy: "MATCHING", signal: controller.signal, onPosition }).then((location) => {
       if (!active) return;
-      if (error.code === error.PERMISSION_DENIED) {
-        setAcquisitionError();
+      setLoading((current) => ({ ...current, jobs: true }));
+      return apiClient.put<NonNullable<WorkerProfile["current_location"]>>("/api/v1/workers/me/location", {
+        latitude: location.latitude,
+        longitude: location.longitude,
+        accuracy_m: location.accuracy,
+        location_source: "GPS",
+      });
+    }).then((response) => {
+      if (!active || !response) return;
+      setLocationStatus("ready");
+      matchingReadyRef.current = true;
+      setMatchingReady(true);
+      if (response.data.address) setCurrentLocationAddress(response.data.address);
+      void loadAvailableJobs();
+    }).catch((error: unknown) => {
+      if (!active || controller.signal.aborted) return;
+      setLocationStatus("error");
+      setLoading((current) => ({ ...current, jobs: false }));
+      if (axios.isAxiosError(error)) {
+        const detail = error.response?.data?.detail;
+        setErrors((current) => ({
+          ...current,
+          jobs: typeof detail === "string" && detail.length > 0
+            ? `Unable to save your current location: ${detail}`
+            : "Unable to save your current location. Nearby work could not be loaded.",
+        }));
         return;
       }
-      setLocationStatus("error");
-    };
 
-    const watchOptions: PositionOptions = {
-      enableHighAccuracy: true,
-      maximumAge: 0,
-      timeout: 30000,
-    };
-
-    const startLocationWatch = () => {
-      if (!active || watcherIdRef.current !== null) return;
-      locationTimeoutRef.current = window.setTimeout(() => {
-        setAcquisitionError();
-      }, 60000);
-      watcherIdRef.current = navigator.geolocation.watchPosition(onPosition, onError, watchOptions);
-    };
-
-    if (typeof navigator.permissions?.query === "function") {
-      void navigator.permissions.query({ name: "geolocation" }).then((permission) => {
-        if (!active) return;
-        permissionStatus = permission;
-        permissionStatus.onchange = () => {
-          if (!active || permissionStatus?.state !== "denied") return;
-          setAcquisitionError();
-        };
-        if (permission.state === "denied") {
-          setAcquisitionError();
-          return;
-        }
-        startLocationWatch();
-      }).catch(() => {
-        startLocationWatch();
-      });
-    } else {
-      startLocationWatch();
-    }
+      const category = getLocationErrorCategory(error);
+      const message = category === "INACCURATE_LOCATION" && error instanceof InaccurateLocationError
+        ? `${MATCHING_LOCATION_REQUIRED} The latest reported accuracy was ${Math.round(error.accuracy)} m.`
+        : category === "PERMISSION_DENIED"
+          ? "Location permission was denied. Enable location access to find nearby work."
+          : category === "LOCATION_UNAVAILABLE"
+            ? "Location services are unsupported or unavailable on this device."
+            : category === "POSITION_UNAVAILABLE"
+              ? "Your device could not determine a location. Try again or use a device with GPS."
+              : category === "INVALID_COORDINATES"
+                ? "The browser returned invalid coordinates. Nearby work requires a valid current location."
+                : `Timed out waiting for a sufficiently accurate location. Accuracy within 1 km is required for nearby work.`;
+      setErrors((current) => ({ ...current, jobs: message }));
+    });
 
     return () => {
-      clearLocationAcquisition();
-      lastLiveLocationRef.current = null;
-      locationUpdatePendingRef.current = false;
+      active = false;
+      controller.abort();
+      displayAccuracyRef.current = null;
+      reverseGeocodeRequestRef.current += 1;
     };
   }, [isLoading, loadAvailableJobs, nextStep, user]);
-
-  const useProfileLocation = React.useCallback(async () => {
-    if (
-      profile?.latitude == null
-      || profile.longitude == null
-      || !Number.isFinite(profile.latitude)
-      || !Number.isFinite(profile.longitude)
-      || profile.latitude < -90
-      || profile.latitude > 90
-      || profile.longitude < -180
-      || profile.longitude > 180
-      || (profile.latitude === 0 && profile.longitude === 0)
-      || locationUpdatePendingRef.current
-    ) return;
-
-    setSelectingProfileLocation(true);
-    locationUpdatePendingRef.current = true;
-    setErrors((current) => ({ ...current, jobs: "" }));
-    setLoading((current) => ({ ...current, jobs: true }));
-    locationWriteVersionRef.current += 1;
-    try {
-      const response = await apiClient.put<NonNullable<WorkerProfile["current_location"]>>(
-        "/api/v1/workers/me/location",
-        { location_source: "PROFILE" },
-      );
-      setCurrentLocationAddress(response.data.address || "");
-      setCurrentLocationSource("PROFILE");
-      currentLocationSourceRef.current = "PROFILE";
-      setLocationStatus("ready");
-      await loadAvailableJobs();
-    } catch {
-      setLocationStatus("error");
-      setErrors((current) => ({ ...current, jobs: CURRENT_LOCATION_REQUIRED }));
-      setLoading((current) => ({ ...current, jobs: false }));
-    } finally {
-      locationUpdatePendingRef.current = false;
-      setSelectingProfileLocation(false);
-    }
-  }, [loadAvailableJobs, profile]);
 
   if (isLoading || !user) return <div className="flex min-h-screen items-center justify-center bg-[#eef1fb] dark:bg-slate-950"><Loader2 size={40} className="animate-spin text-blue-600" /></div>;
 
@@ -420,16 +273,12 @@ export default function WorkerDashboard() {
     .map((part) => part?.trim())
     .filter((part): part is string => Boolean(part))
     .join(", ");
-  const hasProfileCoordinates = profile?.latitude != null
-    && profile.longitude != null
-    && Number.isFinite(profile.latitude)
-    && Number.isFinite(profile.longitude)
-    && !(profile.latitude === 0 && profile.longitude === 0);
-  const showProfileLocationAction = hasProfileCoordinates
-    && currentLocationSource !== "PROFILE"
-    && (currentLocationSource === null || locationStatus === "error");
-  const hasSelectedCurrentLocation = currentLocationSource === "PROFILE"
-    || (currentLocationSource === "GPS" && locationStatus === "ready");
+  const hasLiveGpsLocation = displayLocation !== null;
+  const displayAccuracyLabel = displayLocation
+    ? displayLocation.accuracy >= 1000
+      ? `${(displayLocation.accuracy / 1000).toFixed(1)} km`
+      : `${Math.round(displayLocation.accuracy)} m`
+    : "";
   const subscriptionActive = profile?.subscription_active === true;
   const trialActive = profile?.trial_active === true;
   const subscriptionExpiry =
@@ -452,32 +301,29 @@ export default function WorkerDashboard() {
           <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"><div className="flex items-center justify-between"><h2 className="font-bold">Availability</h2><CheckCircle2 size={20} className="text-emerald-600" /></div><SectionState loading={loading.profile} error={errors.profile} retry={loadProfile}><p className="mt-5 text-2xl font-bold">{profile?.availability_status || "-"}</p></SectionState></section>
           <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"><div className="flex items-center justify-between"><h2 className="font-bold">Subscription</h2><CheckCircle2 size={20} className={subscriptionActive ? "text-emerald-600" : "text-amber-600"} /></div><SectionState loading={loading.profile} error={errors.profile} retry={loadProfile}><p className="mt-5 text-2xl font-bold">{subscriptionActive ? (trialActive ? "FREE TRIAL ACTIVE" : "Active") : profile?.subscription_valid_until || profile?.trial_ends_at ? "Not Active" : "Not Active"}</p>{subscriptionActive ? <p className="mt-1 text-sm text-slate-500">{trialActive ? "1 Month Free Trial" : "Worker / Employee · ₹200 / month"}</p> : <p className="mt-1 text-sm text-slate-500">Worker / Employee · ₹200 / month</p>}{subscriptionExpiry && <p className="mt-1 text-sm text-slate-500">{trialActive ? "Active until " : "Expires "}{subscriptionExpiry}</p>}{!subscriptionActive && <Link href="/worker/subscription" className="mt-3 inline-block text-sm font-bold text-blue-700">Renew Subscription</Link>}</SectionState></section>
           <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-            <div className="flex items-center justify-between gap-3"><h2 className="font-bold">{hasSelectedCurrentLocation ? "Current location" : "Your address"}</h2><MapPin size={20} className="text-blue-600" /></div>
-            {hasSelectedCurrentLocation && <p className="mt-1 text-xs text-slate-500">Used to find nearby work</p>}
+            <div className="flex items-center justify-between gap-3"><h2 className="font-bold">{hasLiveGpsLocation ? "Current location" : "Your address"}</h2><MapPin size={20} className="text-blue-600" /></div>
+            {hasLiveGpsLocation && <p className="mt-1 text-xs text-slate-500">
+              {matchingReady
+                ? "Used to find nearby work"
+                : displayLocation.accuracy > 1000
+                  ? "Display location only; matching requires accuracy within 1 km"
+                  : "Checking this location for nearby-work matching"}
+            </p>}
             <p className="mt-4 wrap-break-word text-sm font-semibold leading-6" role="status">
-              {currentLocationSource === "GPS" && locationStatus === "ready"
-                ? currentLocationAddress || "Current location updated"
-                : currentLocationSource === "PROFILE"
-                  ? currentLocationAddress || savedProfileAddress || "Saved profile location"
-                  : savedProfileAddress || "Add a permanent address to your profile."}
+              {hasLiveGpsLocation
+                ? currentLocationAddress || (addressLookupUnavailable ? "Current location detected; address lookup unavailable." : "Current location detected.")
+                : savedProfileAddress || "Add a permanent address to your profile."}
             </p>
-            {profile?.pincode && !hasSelectedCurrentLocation && <p className="mt-1 text-xs text-slate-500">PIN: {profile.pincode}</p>}
-            {currentLocationSource === "PROFILE" && <p className="mt-2 text-xs font-medium text-emerald-700">Current location selected</p>}
-            {currentLocationSource === "GPS" && locationStatus === "ready" && <p className="mt-2 text-xs text-slate-500">Updated just now</p>}
-            {showProfileLocationAction && <button type="button" onClick={() => void useProfileLocation()} disabled={selectingProfileLocation || locationUpdatePendingRef.current} className="mt-4 inline-flex items-center gap-2 rounded-lg bg-blue-700 px-4 py-2 text-sm font-bold text-white transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-60">
-              {selectingProfileLocation ? <><Loader2 size={16} className="animate-spin" /> Selecting location...</> : "Use this location as current"}
-            </button>}
-            {!hasProfileCoordinates && !currentLocationSource && savedProfileAddress && <p className="mt-3 text-xs text-slate-500">Add location coordinates to your profile to use this address as current.</p>}
+            {profile?.pincode && !hasLiveGpsLocation && <p className="mt-1 text-xs text-slate-500">PIN: {profile.pincode}</p>}
+            {hasLiveGpsLocation && <p className="mt-2 text-xs text-slate-500">Browser accuracy: about {displayAccuracyLabel} · received just now</p>}
           </section>
         </div>
 
         <section>
           <div className="flex items-end justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-wide text-blue-700">Matching</p><h2 className="mt-1 text-xl font-bold">Nearby work</h2></div><span className="text-sm text-slate-500">Showing up to 3</span></div>
-          {errors.jobs === CURRENT_LOCATION_REQUIRED
-            ? <p className="mt-5 text-sm text-slate-500">{CURRENT_LOCATION_REQUIRED}</p>
-            : <SectionState loading={loading.jobs} error={errors.jobs} retry={loadAvailableJobs} errorAction={errors.jobs.includes("subscription") ? <Link href="/worker/subscription" className="mt-4 inline-flex items-center gap-1 rounded-xl bg-amber-500 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-amber-600 transition">Subscribe / Renew (₹200/mo)</Link> : undefined}>
+          <SectionState loading={loading.jobs} error={errors.jobs} retry={matchingReady ? loadAvailableJobs : undefined} errorAction={errors.jobs.includes("subscription") ? <Link href="/worker/subscription" className="mt-4 inline-flex items-center gap-1 rounded-xl bg-amber-500 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-amber-600 transition">Subscribe / Renew (₹200/mo)</Link> : undefined}>
               {availableJobs.length ? <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">{availableJobs.map((job) => <article key={job.job_id} className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"><div className="flex items-start justify-between gap-3"><div><h3 className="font-bold">{job.title}</h3><p className="mt-1 text-sm text-slate-500">{job.employer_name}</p></div><MapPin size={18} className="shrink-0 text-blue-600" /></div><div className="mt-4 flex flex-wrap gap-4 text-sm"><span>{job.salary > 0 ? `₹${job.salary}/day` : "Daily wage not specified"}</span><span>{job.distance_km == null ? "Distance unavailable" : `${job.distance_km} km`}</span></div><button type="button" onClick={() => void loadJobDetails(job)} className="mt-5 inline-flex text-sm font-bold text-blue-700 hover:text-blue-800">View Details</button></article>)}</div> : <div className="mt-5 rounded-xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">No suitable nearby jobs found</div>}
-            </SectionState>}
+            </SectionState>
         </section>
       </main>
       {selectedJobId && <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/50 p-0 sm:items-center sm:p-6" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelectedJobId(null); }}><section role="dialog" aria-modal="true" aria-labelledby="worker-job-details-title" className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-t-3xl bg-white p-6 shadow-2xl dark:bg-slate-900 sm:rounded-3xl"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-wide text-blue-700">Job details</p><h2 id="worker-job-details-title" className="mt-1 text-2xl font-bold">{selectedJob?.title || "Loading job details"}</h2></div><button type="button" onClick={() => setSelectedJobId(null)} aria-label="Close job details" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"><X size={20} /></button></div>{jobDetailsLoading ? <div className="flex items-center gap-2 py-12 text-sm text-slate-500"><Loader2 size={20} className="animate-spin" /> Loading job details...</div> : jobDetailsError ? <div className="rounded-xl bg-rose-50 p-4 text-sm text-rose-700"><p>{jobDetailsError}</p><button type="button" onClick={() => { const job = availableJobs.find((item) => item.job_id === selectedJobId); if (job) void loadJobDetails(job); }} className="mt-3 inline-flex items-center gap-2 font-bold underline"><RefreshCw size={16} /> Try again</button></div> : selectedJob ? <div className="mt-6 space-y-6 text-sm"><div className="rounded-2xl bg-amber-50 p-4 dark:bg-amber-950/20"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-bold">{selectedJob.title}</p><p className="mt-1 text-slate-600 dark:text-slate-300">{selectedJob.employer_name || "Employer unavailable"}</p></div><span className="rounded-full bg-white px-3 py-1 text-xs font-bold uppercase text-slate-700 dark:bg-slate-900 dark:text-slate-200">{selectedJob.status}</span></div></div><div><h3 className="font-bold">Work site</h3><p className="mt-2 font-semibold">{selectedJob.site_name || "Site unavailable"}</p><p className="mt-1 wrap-break-word text-slate-500">{[selectedJob.address, selectedJob.city, selectedJob.state].filter(Boolean).join(", ") || "Address unavailable"}</p><p className="mt-2 flex items-center gap-2 text-slate-500"><MapPin size={16} />{selectedJob.target_lat != null && selectedJob.target_lng != null ? "Location available" : "Location unavailable"}</p></div><div><h3 className="font-bold">Requirements</h3><dl className="mt-3 grid gap-3 sm:grid-cols-2"><div><dt className="text-slate-500">Workers needed</dt><dd className="font-semibold">{selectedJob.headcount}</dd></div><div><dt className="text-slate-500">Workers remaining</dt><dd className="font-semibold">Not available from current response</dd></div><div><dt className="text-slate-500">Minimum experience</dt><dd className="font-semibold">{selectedJob.min_experience != null ? `${selectedJob.min_experience} years` : "Not specified"}</dd></div><div><dt className="text-slate-500">Daily wage</dt><dd className="font-semibold">{selectedJob.salary > 0 ? `₹${selectedJob.salary}/day` : "Not specified"}</dd></div></dl>{selectedJob.required_skills?.length ? <div className="mt-4"><p className="font-semibold">Required skills</p><ul className="mt-2 list-disc space-y-1 pl-5 text-slate-600 dark:text-slate-300">{selectedJob.required_skills.map((skill) => <li key={skill}>{skill}</li>)}</ul></div> : <p className="mt-4 text-slate-500">Required skills: Not specified</p>}</div><div><h3 className="font-bold">Work details</h3><dl className="mt-3 grid gap-3 sm:grid-cols-2"><div><dt className="text-slate-500">Work duration</dt><dd className="font-semibold">{selectedJob.work_duration_days != null ? `${selectedJob.work_duration_days} days` : "Not specified"}</dd></div><div><dt className="text-slate-500">Daily timing</dt><dd className="font-semibold">{selectedJob.work_timing || "Not specified"}</dd></div></dl></div><div><h3 className="font-bold">Distance</h3><p className="mt-2 font-semibold">{selectedJobDistance == null ? "Distance unavailable" : `${selectedJobDistance} km away`}</p></div></div> : null}</section></div>}

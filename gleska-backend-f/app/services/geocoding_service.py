@@ -23,7 +23,7 @@ class GeocodingService:
     """Resolve GPS coordinates through the public Nominatim reverse API."""
 
     @staticmethod
-    async def reverse_geocode(latitude: float, longitude: float) -> str:
+    async def _reverse_geocode_payload(latitude: float, longitude: float) -> dict:
         if not (-90 <= latitude <= 90 and -180 <= longitude <= 180):
             raise GeocodingError("INVALID_COORDINATES")
 
@@ -44,10 +44,34 @@ class GeocodingService:
         except (httpx.HTTPError, ValueError) as exc:
             raise GeocodingError("GEOCODING_FAILED") from exc
 
+        if not isinstance(payload, dict):
+            raise GeocodingError("GEOCODING_FAILED")
+        return payload
+
+    @staticmethod
+    async def reverse_geocode(latitude: float, longitude: float) -> str:
+        payload = await GeocodingService._reverse_geocode_payload(latitude, longitude)
         address = payload.get("display_name")
         if not address or not address.strip():
             raise GeocodingError("ADDRESS_NOT_FOUND")
         return address.strip()
+
+    @staticmethod
+    async def reverse_geocode_details(latitude: float, longitude: float) -> dict[str, str | None]:
+        payload = await GeocodingService._reverse_geocode_payload(latitude, longitude)
+        address = payload.get("display_name")
+        if not isinstance(address, str) or not address.strip():
+            raise GeocodingError("ADDRESS_NOT_FOUND")
+        parts = payload.get("address") or {}
+        if not isinstance(parts, dict):
+            parts = {}
+        return {
+            "address": address.strip(),
+            "locality": parts.get("neighbourhood") or parts.get("suburb") or parts.get("quarter") or parts.get("hamlet") or parts.get("residential"),
+            "city": parts.get("city") or parts.get("town") or parts.get("village") or parts.get("municipality") or parts.get("county"),
+            "state": parts.get("state"),
+            "pincode": parts.get("postcode"),
+        }
 
     @staticmethod
     async def search(query: str) -> list[dict[str, str | None]]:

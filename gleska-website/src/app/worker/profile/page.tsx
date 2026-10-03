@@ -19,7 +19,7 @@ import { toast } from "sonner";
 import apiClient from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import LocationPicker, { LocationSelection } from "@/components/LocationPicker";
-import { getBrowserLocation, getLocationErrorMessage } from "@/lib/location";
+import { getLocationErrorMessage, watchBrowserLocation } from "@/lib/location";
 import { useWorkerProfilePhoto } from "@/lib/useWorkerProfilePhoto";
 import AccountManagementShell from "@/components/AccountManagementShell";
 import { WorkerErrorState, WorkerPageFrame, WorkerPageHeader } from "@/components/worker/WorkspaceUI";
@@ -123,24 +123,42 @@ export default function WorkerProfilePage() {
     setIsPopulatingPermanentAddress(true);
     setPermanentAddressLocationError("");
     try {
-      const coordinates = await getBrowserLocation();
-      const response = await apiClient.get<{ address: string }>("/api/v1/locations/reverse", {
-        params: { latitude: coordinates.latitude, longitude: coordinates.longitude },
-      });
+      const coordinates = await watchBrowserLocation({ policy: "ADDRESS" });
       setProfile((current) => ({
         ...current,
-        address: response.data.address,
+        address: "",
+        city: "",
+        state: "",
+        pincode: "",
         latitude: coordinates.latitude,
         longitude: coordinates.longitude,
         location_source: "GPS",
       }));
-      toast.success("Address filled. Save Changes to update your permanent address.");
+      try {
+        const response = await apiClient.get<{
+          address: string;
+          city?: string | null;
+          state?: string | null;
+          pincode?: string | null;
+        }>("/api/v1/locations/reverse", {
+          params: { latitude: coordinates.latitude, longitude: coordinates.longitude },
+        });
+        if (!response.data.address?.trim()) throw new Error("Reverse geocoding returned no address.");
+        setProfile((current) => ({
+          ...current,
+          address: response.data.address.trim(),
+          city: response.data.city ?? "",
+          state: response.data.state ?? "",
+          pincode: response.data.pincode ?? "",
+        }));
+        toast.success("Address filled. Save Changes to update your permanent address.");
+      } catch {
+        setPermanentAddressLocationError(
+          "Your coordinates were found, but the address could not be looked up. Enter or edit the address manually.",
+        );
+      }
     } catch (error) {
-      setPermanentAddressLocationError(
-        error instanceof Error && "code" in error
-          ? getLocationErrorMessage(error)
-          : "Could not determine your address. Please try again.",
-      );
+      setPermanentAddressLocationError(getLocationErrorMessage(error));
     } finally {
       setIsPopulatingPermanentAddress(false);
     }
@@ -551,6 +569,17 @@ export default function WorkerProfilePage() {
                           {permanentAddressLocationError}
                         </p>
                       )}
+                      <div>
+                        <label htmlFor="worker-permanent-address" className="text-xs font-bold text-slate-600 dark:text-slate-400">Address</label>
+                        <input
+                          id="worker-permanent-address"
+                          type="text"
+                          value={profile.address || ""}
+                          onChange={(event) => setProfile({ ...profile, address: event.target.value })}
+                          className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold dark:border-slate-700 dark:bg-slate-800"
+                          placeholder="Enter your address"
+                        />
+                      </div>
                       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <div>
                           <label className="text-xs font-bold text-slate-600 dark:text-slate-400">City</label>

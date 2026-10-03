@@ -1,8 +1,19 @@
 export const MAX_LOCATION_ACCURACY_METERS = 1000;
+// Address selection is neighborhood-scale; broader uncertainty can point to another town.
+export const MAX_ADDRESS_ACCURACY_METERS = 1000;
 export const LIVE_LOCATION_UPDATE_INTERVAL_MS = 15000;
 export const MIN_LOCATION_UPDATE_INTERVAL_MS = LIVE_LOCATION_UPDATE_INTERVAL_MS;
 export const MIN_LOCATION_MOVEMENT_METERS = 25;
 export const LOCATION_HEARTBEAT_MS = 60000;
+export const LOCATION_ACQUISITION_TIMEOUT_MS = 60000;
+
+const BROWSER_LOCATION_OPTIONS: PositionOptions = {
+  enableHighAccuracy: true,
+  maximumAge: 0,
+  timeout: 30000,
+};
+
+export type LocationAccuracyPolicy = "ADDRESS" | "MATCHING";
 
 export type LiveLocationSnapshot = {
   latitude: number;
@@ -35,8 +46,16 @@ export class InaccurateLocationError extends Error {
 
   constructor(accuracy: number) {
     const accuracyLabel = accuracy >= 10000 ? `${Math.round(accuracy / 1000)}km` : `${Math.round(accuracy)}m`;
-    super(`Location accuracy is too low (${accuracyLabel}). Please enable device location services or try from a device with GPS.`);
+    super(`Your device couldn't determine your precise current location (${accuracyLabel}). Please enable device location/GPS and try again, or search for your location manually.`);
     this.accuracy = accuracy;
+  }
+}
+
+export class LocationUnavailableError extends Error {
+  code = "LOCATION_UNAVAILABLE";
+
+  constructor() {
+    super("Location services are not available on this device.");
   }
 }
 
@@ -55,6 +74,7 @@ export function getLocationErrorCategory(error: unknown): LocationErrorCategory 
   const code = typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
   if (code === "INVALID_COORDINATES") return "INVALID_COORDINATES";
   if (code === "INACCURATE") return "INACCURATE_LOCATION";
+  if (code === "LOCATION_UNAVAILABLE") return "LOCATION_UNAVAILABLE";
   if (code === 1) return "PERMISSION_DENIED";
   if (code === 2) return "POSITION_UNAVAILABLE";
   if (code === 3) return "TIMEOUT";
@@ -67,9 +87,10 @@ export function getLocationErrorMessage(error: unknown): string {
   if (typeof error === "object" && error !== null && "code" in error && error.code === "INACCURATE" && "accuracy" in error && typeof error.accuracy === "number") {
     return new InaccurateLocationError(error.accuracy).message;
   }
-  if (error instanceof Error && error.message === "Location unavailable") {
+  if (error instanceof LocationUnavailableError || (error instanceof Error && error.message === "Location unavailable")) {
     return "Location services are not available on this device. You can continue with your saved or manual location.";
   }
+  if (error instanceof InvalidCoordinatesError) return error.message;
 
   const code = typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
   if (code === 1) return "Location permission was denied. You can continue with your saved or manual location.";
@@ -78,16 +99,139 @@ export function getLocationErrorMessage(error: unknown): string {
   return "Unable to determine your current location. You can continue with your saved or manual location.";
 }
 
-function getBrowserPosition(options: PositionOptions): Promise<GeolocationPosition> {
+export function startBrowserLocationWatch(
+  onPosition: PositionCallback,
+  onError: PositionErrorCallback,
+): number {
+  if (typeof navigator === "undefined" || !navigator.geolocation) throw new LocationUnavailableError();
+  return navigator.geolocation.watchPosition(onPosition, onError, BROWSER_LOCATION_OPTIONS);
+}
+
+export type WatchBrowserLocationOptions = {
+  policy: LocationAccuracyPolicy;
+  signal?: AbortSignal;
+  onPosition?: (location: NormalizedLocation) => void;
+};
+
+export function watchBrowserLocation({ policy, signal, onPosition: onLocation }: WatchBrowserLocationOptions): Promise<NormalizedLocation> {
+  if (typeof navigator === "undefined" || !navigator.geolocation) return Promise.reject(new LocationUnavailableError());
+  if (signal?.aborted) return Promise.reject(new DOMException("Location request cancelled", "AbortError"));
+
   return new Promise((resolve, reject) => {
-    navigator.geolocation.getCurrentPosition(resolve, reject, options);
+    const acquisitionTimeoutMs = LOCATION_ACQUISITION_TIMEOUT_MS;
+    let watcherId: number | null = null;
+    let settled = false;
+    let lastInaccurateAccuracy: number | null = null;
+    let lastPositionError: GeolocationPositionError | null = null;
+
+    const clearAcquisition = () => {
+      window.clearTimeout(timeoutId);
+      if (watcherId !== null) navigator.geolocation.clearWatch(watcherId);
+      signal?.removeEventListener("abort", onAbort);
+    };
+    const finish = (complete: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearAcquisition();
+      complete();
+    };
+    const timeoutId = window.setTimeout(() => {
+      finish(() => {
+        if (lastInaccurateAccuracy !== null) {
+          reject(new InaccurateLocationError(lastInaccurateAccuracy));
+        } else if (lastPositionError) {
+          reject(lastPositionError);
+        } else {
+          reject({ code: 3, message: "Location acquisition timed out" });
+        }
+      });
+    }, acquisitionTimeoutMs);
+    const onAbort = () => finish(() => reject(new DOMException("Location request cancelled", "AbortError")));
+
+    const onPosition: PositionCallback = (position) => {
+      if (settled) return;
+      const { latitude, longitude, accuracy } = position.coords;
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+        finish(() => reject(new InvalidCoordinatesError()));
+        return;
+      }
+      if (!Number.isFinite(accuracy) || accuracy <= 0) {
+        finish(() => reject(new InvalidCoordinatesError()));
+        return;
+      }
+
+      const addressLocation = normalizeCoordinates(latitude, longitude, accuracy, "ADDRESS");
+      const matchingLocation = normalizeCoordinates(latitude, longitude, accuracy, "MATCHING");
+
+      if (policy === "ADDRESS" && !addressLocation) {
+        lastInaccurateAccuracy = accuracy;
+        return;
+      }
+      if (policy === "MATCHING" && !matchingLocation) {
+        lastInaccurateAccuracy = accuracy;
+        return;
+      }
+
+      const acceptedLocation = policy === "ADDRESS" ? addressLocation! : matchingLocation!;
+      try {
+        onLocation?.(acceptedLocation);
+      } catch (error) {
+        finish(() => reject(error));
+        return;
+      }
+      finish(() => resolve(acceptedLocation));
+    };
+    const onError: PositionErrorCallback = (error) => {
+      if (settled) return;
+      if (error.code === error.PERMISSION_DENIED) {
+        finish(() => reject(error));
+        return;
+      }
+      lastPositionError = error;
+    };
+
+    try {
+      signal?.addEventListener("abort", onAbort, { once: true });
+      const startWatch = () => {
+        if (settled) return;
+        try {
+          watcherId = startBrowserLocationWatch(onPosition, onError);
+          if (settled && watcherId !== null) navigator.geolocation.clearWatch(watcherId);
+        } catch (error) {
+          finish(() => reject(error));
+        }
+      };
+      if (typeof navigator.permissions?.query === "function") {
+        void navigator.permissions.query({ name: "geolocation" }).then((permission) => {
+          if (settled) return;
+          if (permission.state === "denied") {
+            finish(() => reject({ code: 1, message: "Location permission was denied" }));
+            return;
+          }
+          startWatch();
+        }).catch(startWatch);
+      } else {
+        startWatch();
+      }
+    } catch (error) {
+      finish(() => reject(error));
+    }
   });
 }
 
-export function normalizeCoordinates(latitude: number, longitude: number, accuracy: number): NormalizedLocation | null {
+export function normalizeCoordinates(
+  latitude: number,
+  longitude: number,
+  accuracy: number,
+  policy: LocationAccuracyPolicy = "MATCHING",
+): NormalizedLocation | null {
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || !Number.isFinite(accuracy)) return null;
-  if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return null;
-  if (accuracy <= 0 || accuracy > MAX_LOCATION_ACCURACY_METERS) return null;
+  if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180 || (latitude === 0 && longitude === 0)) return null;
+  if (
+    accuracy <= 0
+    || (policy === "MATCHING" && accuracy > MAX_LOCATION_ACCURACY_METERS)
+    || (policy === "ADDRESS" && accuracy > MAX_ADDRESS_ACCURACY_METERS)
+  ) return null;
   return { latitude, longitude, accuracy, altitude: null, altitudeAccuracy: null, heading: null, speed: null };
 }
 
@@ -98,7 +242,7 @@ export function retainAccurateLocationSnapshot(
   accuracy: number,
   updatedAt: number,
 ): LiveLocationSnapshot | null {
-  const normalized = normalizeCoordinates(latitude, longitude, accuracy);
+  const normalized = normalizeCoordinates(latitude, longitude, accuracy, "MATCHING");
   if (!normalized) return current;
   return {
     latitude: normalized.latitude,
@@ -124,33 +268,6 @@ export function shouldSendLiveLocationUpdate(current: LiveLocationSnapshot | nul
   return hasHeartbeat || movementMeters >= MIN_LOCATION_MOVEMENT_METERS;
 }
 
-export async function getBrowserLocation(): Promise<NormalizedLocation> {
-  if (!navigator.geolocation) throw new Error("Location unavailable");
-
-  const retryOptions: PositionOptions = { enableHighAccuracy: true, maximumAge: 0, timeout: 45000 };
-  let position: GeolocationPosition;
-  let hasRetried = false;
-  try {
-    position = await getBrowserPosition({ enableHighAccuracy: true, maximumAge: 0, timeout: 30000 });
-  } catch (error) {
-    const code = typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
-    if (code !== 2 && code !== 3) throw error;
-    position = await getBrowserPosition(retryOptions);
-    hasRetried = true;
-  }
-
-  if (!hasRetried && position.coords.accuracy > MAX_LOCATION_ACCURACY_METERS) {
-    position = await getBrowserPosition(retryOptions);
-  }
-
-  const { latitude, longitude, accuracy } = position.coords;
-  if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
-    throw new InvalidCoordinatesError();
-  }
-  const validated = normalizeCoordinates(latitude, longitude, accuracy);
-  if (!validated) {
-    // Return raw accuracy for better error message
-    throw new InaccurateLocationError(accuracy);
-  }
-  return validated;
+export function getBrowserLocation(policy: LocationAccuracyPolicy = "MATCHING"): Promise<NormalizedLocation> {
+  return watchBrowserLocation({ policy });
 }

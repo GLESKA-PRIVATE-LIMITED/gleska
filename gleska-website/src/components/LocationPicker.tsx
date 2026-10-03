@@ -24,10 +24,13 @@ type LocationPickerProps = {
   placeholder?: string;
   onUseCurrentLocation?: () => Promise<LocationSelection>;
   getCurrentLocationErrorMessage?: (error: unknown) => string;
+  currentLocationLoadingLabel?: string;
+  showCurrentLocationSeparator?: boolean;
+  clearQueryOnSelect?: boolean;
   error?: string;
 };
 
-export default function LocationPicker({ value = "", onSelect, onQueryChange, label, placeholder = "Search your area, city or pincode", onUseCurrentLocation, getCurrentLocationErrorMessage, error }: LocationPickerProps) {
+export default function LocationPicker({ value = "", onSelect, onQueryChange, label, placeholder = "Search your area, city or pincode", onUseCurrentLocation, getCurrentLocationErrorMessage, currentLocationLoadingLabel = "Getting location...", showCurrentLocationSeparator = false, clearQueryOnSelect = false, error }: LocationPickerProps) {
   const [query, setQuery] = useState(value);
   const [results, setResults] = useState<LocationSelection[]>([]);
   const [searching, setSearching] = useState(false);
@@ -72,7 +75,7 @@ export default function LocationPicker({ value = "", onSelect, onQueryChange, la
     setMessage("");
     try {
       const location = await onUseCurrentLocation();
-      setQuery(location.address);
+      setQuery(clearQueryOnSelect ? "" : location.address);
     } catch (error) {
       setMessage(getCurrentLocationErrorMessage?.(error) || "Couldn't determine your current location. You can search for your location instead.");
     } finally {
@@ -94,15 +97,18 @@ export default function LocationPicker({ value = "", onSelect, onQueryChange, la
         </button>
       </div>
       {onUseCurrentLocation && (
-        <button type="button" onClick={() => void handleUseCurrentLocation()} disabled={usingCurrent} className="inline-flex items-center gap-2 text-sm font-semibold text-blue-700 dark:text-blue-300">
-          {usingCurrent ? <Loader2 size={16} className="animate-spin" /> : <MapPin size={16} />} Use my current location
-        </button>
+        <div className={showCurrentLocationSeparator ? "space-y-2" : undefined}>
+          {showCurrentLocationSeparator && <div className="flex items-center gap-3 py-1 text-xs font-medium text-slate-400"><span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" /><span>or</span><span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" /></div>}
+          <button type="button" onClick={() => void handleUseCurrentLocation()} disabled={usingCurrent} className="inline-flex items-center gap-2 text-sm font-semibold text-blue-700 disabled:cursor-wait disabled:opacity-60 dark:text-blue-300">
+            {usingCurrent ? <Loader2 size={16} className="animate-spin" /> : <MapPin size={16} />} {usingCurrent ? currentLocationLoadingLabel : "Use my current location"}
+          </button>
+        </div>
       )}
       {searching && <div className="flex items-center gap-2 text-sm text-slate-500"><Loader2 size={15} className="animate-spin" /> Searching locations...</div>}
       {!searching && results.length > 0 && (
         <div className="max-h-56 space-y-1 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-sm dark:border-slate-700 dark:bg-slate-900">
           {results.map((location) => (
-            <button type="button" key={`${location.latitude}-${location.longitude}-${location.address}`} onClick={() => { onSelect(location); setQuery(location.address); setResults([]); }} className="flex w-full items-start gap-3 rounded-lg p-3 text-left text-sm transition hover:bg-blue-50 focus:bg-blue-50 focus:outline-none dark:hover:bg-slate-800 dark:focus:bg-slate-800">
+            <button type="button" key={`${location.latitude}-${location.longitude}-${location.address}`} onClick={() => { onSelect(location); setQuery(clearQueryOnSelect ? "" : location.address); setResults([]); }} className="flex w-full items-start gap-3 rounded-lg p-3 text-left text-sm transition hover:bg-blue-50 focus:bg-blue-50 focus:outline-none dark:hover:bg-slate-800 dark:focus:bg-slate-800">
               <MapPin size={17} className="mt-0.5 shrink-0 text-blue-600 dark:text-blue-400" />
               <span className="min-w-0"><span className="block font-semibold text-slate-900 dark:text-white">{location.locality || location.city || location.state || location.address}</span><span className="mt-1 block text-slate-500 dark:text-slate-400">{[location.city, location.state, location.pincode].filter(Boolean).join(", ") || location.address}</span><span className="mt-1 block truncate text-xs text-slate-400 dark:text-slate-500">{location.address}</span></span>
             </button>
