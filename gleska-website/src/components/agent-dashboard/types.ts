@@ -19,6 +19,14 @@ export interface ActionOption {
   topBorderColor: string;
 }
 
+export interface HeaderAction {
+  id: string;
+  label: string;
+  icon?: LucideIcon;
+  href?: string;
+  onClick?: () => void;
+}
+
 export interface AgentConfig {
   agentId: string;
   agentName: string;
@@ -31,4 +39,5 @@ export interface AgentConfig {
   searchPlaceholder: string;
   variant?: "default" | "compact-centered";
   accentColor?: "emerald" | "purple" | "indigo" | "blue" | "cyan" | "amber";
+  headerAction?: HeaderAction;
 }
