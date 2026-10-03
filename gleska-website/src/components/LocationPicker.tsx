@@ -72,7 +72,7 @@ export default function LocationPicker({ value = "", onSelect, onQueryChange, la
     setMessage("");
     try {
       const location = await onUseCurrentLocation();
-      void location;
+      setQuery(location.address);
     } catch (error) {
       setMessage(getCurrentLocationErrorMessage?.(error) || "Couldn't determine your current location. You can search for your location instead.");
     } finally {

@@ -71,27 +71,51 @@ class EmployerWorkerService:
         if city:
             query = query.ilike("worker_profiles.city", city)
 
-        order_column = {
-            "experience_desc": "experience_years",
-            "wage_asc": "expected_daily_wage",
-            "wage_desc": "expected_daily_wage",
-        }.get(sort)
-        if order_column:
-            query = query.order(order_column, foreign_table="worker_profiles", desc=sort.endswith("desc"), nullsfirst=False)
-        else:
-            query = query.order("name", foreign_table="worker_profiles.users", desc=sort == "name_desc")
         if worker_id:
-            query = query.limit(100)
-        else:
-            offset = (page - 1) * limit
-            query = query.range(offset, offset + limit - 1)
-        response = query.execute()
-        rows = response.data or []
-        if worker_id:
+            response = query.limit(100).execute()
+            rows = response.data or []
             return cls._item(rows[0]) if rows else None
 
+        if sort in {"name_asc", "name_desc"}:
+            rows = []
+            total = None
+            offset = 0
+            while total is None or offset < total:
+                response = query.range(offset, offset + cls.MAX_LIMIT - 1).execute()
+                batch = response.data or []
+                rows.extend(batch)
+                count = getattr(response, "count", None)
+                if count is not None:
+                    total = int(count)
+                if not batch or (count is None and len(batch) < cls.MAX_LIMIT):
+                    break
+                offset += len(batch)
+
+            total = len(rows) if total is None else total
+            rows.sort(
+                key=lambda row: ((row.get("worker_profiles") or {}).get("users") or {}).get("name") or "Worker",
+                reverse=sort == "name_desc",
+            )
+            offset = (page - 1) * limit
+            rows = rows[offset:offset + limit]
+        else:
+            order_column = {
+                "experience_desc": "experience_years",
+                "wage_asc": "expected_daily_wage",
+                "wage_desc": "expected_daily_wage",
+            }[sort]
+            query = query.order(
+                order_column,
+                foreign_table="worker_profiles",
+                desc=sort.endswith("desc"),
+                nullsfirst=False,
+            )
+            offset = (page - 1) * limit
+            response = query.range(offset, offset + limit - 1).execute()
+            rows = response.data or []
+            total = int(getattr(response, "count", None) or 0)
+
         items = [cls._item(row) for row in rows]
-        total = int(getattr(response, "count", None) or 0)
         return EmployerWorkerListResponse(
             items=items,
             page=page,

@@ -40,6 +40,7 @@ class FakeQuery:
         self.count = count
         self.filters = []
         self.select_args = []
+        self.execution_ranges = []
 
     def select(self, *_args, **_kwargs):
         self.select_args.extend(_args)
@@ -53,7 +54,13 @@ class FakeQuery:
         return self
 
     def execute(self):
-        return SimpleNamespace(data=self.data, count=self.count)
+        bounds = next((item[1:3] for item in reversed(self.filters) if item[0] == "range"), None)
+        if bounds:
+            self.execution_ranges.append(bounds)
+            data = self.data[bounds[0]:bounds[1] + 1]
+        else:
+            data = self.data
+        return SimpleNamespace(data=data, count=self.count)
 
     def __getattr__(self, name):
         def chain(*args, **kwargs):
@@ -75,7 +82,7 @@ class FakeSupabase:
         raise AssertionError(f"Unexpected table: {name}")
 
 
-def history_row(job_id, title, attendance=None):
+def history_row(job_id, title, attendance=None, name="Worker A"):
     return {
         "id": f"match-{job_id}",
         "status": "ACCEPTED",
@@ -93,7 +100,7 @@ def history_row(job_id, title, attendance=None):
             "state": "Maharashtra",
             "profile_completed": True,
             "is_verified": True,
-            "users": {"name": "Worker A", "profile_photo_path": None},
+            "users": {"name": name, "profile_photo_path": None},
         },
         "jobs": {
             "id": job_id,
@@ -166,3 +173,66 @@ def test_match_without_attendance_is_returned(monkeypatch):
 
     assert len(result.items) == 1
     assert result.items[0].attendance == []
+
+
+@pytest.mark.parametrize(
+    ("sort", "expected_names"),
+    [
+        ("name_asc", [f"Worker {index:03}" for index in range(12, 24)]),
+        ("name_desc", [f"Worker {index:03}" for index in range(92, 80, -1)]),
+    ],
+)
+def test_name_sort_sorts_all_filtered_rows_before_pagination(monkeypatch, sort, expected_names):
+    matches = [
+        history_row(f"job-{index}", "Installation", name=f"Worker {index:03}")
+        for index in reversed(range(105))
+    ]
+    fake = FakeSupabase(matches)
+    monkeypatch.setattr(employer_worker_service, "supabase", fake)
+
+    result = employer_worker_service.EmployerWorkerService.list_workers(
+        user_id="employer-user-a", page=2, limit=12, sort=sort,
+        trade="Electrician", skill="Wiring", min_experience=2, max_experience=8,
+        min_wage=500, max_wage=1000, availability="ON_JOB", city="Pune",
+        search="Worker",
+    )
+
+    assert [item.name for item in result.items] == expected_names
+    assert result.total == 105
+    assert fake.match_query.execution_ranges == [(0, 99), (100, 199)]
+    assert not any(
+        entry[0] == "order" and entry[2].get("foreign_table") == "worker_profiles.users"
+        for entry in fake.match_query.filters
+    )
+    assert ("eq", "jobs.employer_id", "employer-a") in fake.match_query.filters
+    assert ("ilike", "worker_profiles.trade_id", "Electrician", {}) in fake.match_query.filters
+    assert ("contains", "worker_profiles.skills", ["Wiring"], {}) in fake.match_query.filters
+    assert ("gte", "worker_profiles.experience_years", 2, {}) in fake.match_query.filters
+    assert ("lte", "worker_profiles.experience_years", 8, {}) in fake.match_query.filters
+    assert ("gte", "worker_profiles.expected_daily_wage", 500, {}) in fake.match_query.filters
+    assert ("lte", "worker_profiles.expected_daily_wage", 1000, {}) in fake.match_query.filters
+    assert ("eq", "worker_profiles.availability_status", "ON_JOB") in fake.match_query.filters
+    assert ("ilike", "worker_profiles.city", "Pune", {}) in fake.match_query.filters
+    assert any(entry[0] == "or_" for entry in fake.match_query.filters)
+
+
+@pytest.mark.parametrize(
+    ("sort", "column", "descending"),
+    [
+        ("experience_desc", "experience_years", True),
+        ("wage_asc", "expected_daily_wage", False),
+        ("wage_desc", "expected_daily_wage", True),
+    ],
+)
+def test_non_name_sorts_keep_database_order_and_requested_page(monkeypatch, sort, column, descending):
+    fake = FakeSupabase([history_row("job-a", "Installation")])
+    monkeypatch.setattr(employer_worker_service, "supabase", fake)
+
+    employer_worker_service.EmployerWorkerService.list_workers(
+        user_id="employer-user-a", page=3, limit=12, sort=sort,
+    )
+
+    assert (
+        "order", column, {"foreign_table": "worker_profiles", "desc": descending, "nullsfirst": False}
+    ) in fake.match_query.filters
+    assert fake.match_query.execution_ranges == [(24, 35)]
