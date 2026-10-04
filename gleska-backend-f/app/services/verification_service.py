@@ -1,10 +1,14 @@
 """Employer verification state, policy, and provider boundary."""
 
 from typing import Any
+import base64
 import httpx
 import logging
+import time
 from datetime import datetime, timezone
 from uuid import uuid4
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
 from app.core.config import settings
 from app.core.supabase import supabase
@@ -16,6 +20,10 @@ logger = logging.getLogger(__name__)
 
 class VerificationProviderNotConfigured(Exception):
     """Raised when a real external verification provider is unavailable."""
+
+
+class CashfreeSecureIDConfigurationError(Exception):
+    """Raised when Secure ID Public Key signature configuration is invalid."""
 
 
 class VerificationService:
@@ -33,6 +41,7 @@ class VerificationService:
     CASHFREE_TIMEOUT = "CASHFREE_TIMEOUT"
     CASHFREE_UNAVAILABLE = "CASHFREE_UNAVAILABLE"
     CASHFREE_MALFORMED_RESPONSE = "CASHFREE_MALFORMED_RESPONSE"
+    CASHFREE_CONFIGURATION_ERROR = "CASHFREE_CONFIGURATION_ERROR"
     IDENTITY_FIELDS = {
         "business_name",
         "cin_number",
@@ -224,6 +233,41 @@ class VerificationService:
         return "production" if configured == "production" else "sandbox"
 
     @staticmethod
+    def _cashfree_secure_id_signature(client_id: str, timestamp: int | None = None) -> str:
+        public_key_pem = VerificationService._clean_setting(settings.CASHFREE_SECURE_ID_PUBLIC_KEY)
+        if not public_key_pem:
+            raise CashfreeSecureIDConfigurationError(
+                "CASHFREE_SECURE_ID_PUBLIC_KEY is required for Cashfree Secure ID Public Key 2FA"
+            )
+        try:
+            public_key = serialization.load_pem_public_key(public_key_pem.encode("utf-8"))
+        except (TypeError, ValueError):
+            raise CashfreeSecureIDConfigurationError(
+                "CASHFREE_SECURE_ID_PUBLIC_KEY must contain a valid PEM public key"
+            ) from None
+        if not isinstance(public_key, rsa.RSAPublicKey):
+            raise CashfreeSecureIDConfigurationError(
+                "CASHFREE_SECURE_ID_PUBLIC_KEY must contain an RSA public key"
+            )
+
+        signed_at = int(time.time()) if timestamp is None else timestamp
+        message = f"{client_id}.{signed_at}".encode("utf-8")
+        try:
+            encrypted = public_key.encrypt(
+                message,
+                padding.OAEP(
+                    mgf=padding.MGF1(algorithm=hashes.SHA1()),
+                    algorithm=hashes.SHA1(),
+                    label=None,
+                ),
+            )
+        except ValueError:
+            raise CashfreeSecureIDConfigurationError(
+                "CASHFREE_SECURE_ID_PUBLIC_KEY cannot encrypt the Secure ID signature payload"
+            ) from None
+        return base64.b64encode(encrypted).decode("ascii")
+
+    @staticmethod
     def _cashfree_configured() -> bool:
         return settings.EMPLOYER_VERIFICATION_PROVIDER.lower() == "cashfree" and bool(
             VerificationService._clean_setting(settings.CASHFREE_CLIENT_ID)
@@ -267,8 +311,12 @@ class VerificationService:
         }
         try:
             async with httpx.AsyncClient(timeout=settings.EMPLOYER_VERIFICATION_TIMEOUT_SECONDS) as client:
+                headers["x-cf-signature"] = VerificationService._cashfree_secure_id_signature(client_id)
                 response = await client.post(f"{endpoint}/gstin", json=payload, headers=headers)
             body = response.json() if response.content else {}
+        except CashfreeSecureIDConfigurationError as exc:
+            logger.error("Cashfree Secure ID signature configuration error: %s", exc)
+            return "FAILED", VerificationService.CASHFREE_CONFIGURATION_ERROR, None, None
         except httpx.TimeoutException:
             return "FAILED", "CASHFREE_TIMEOUT", None, None
         except (httpx.HTTPError, ValueError):
@@ -443,8 +491,14 @@ class VerificationService:
                 sorted(payload.keys()),
             )
             async with httpx.AsyncClient(timeout=settings.EMPLOYER_VERIFICATION_TIMEOUT_SECONDS) as client:
+                headers["x-cf-signature"] = VerificationService._cashfree_secure_id_signature(
+                    headers["x-client-id"]
+                )
                 response = await client.post(f"{base_url}/{endpoint}", json=payload, headers=headers)
             body = response.json() if response.content else {}
+        except CashfreeSecureIDConfigurationError as exc:
+            logger.error("Cashfree Secure ID signature configuration error: %s", exc)
+            return "FAILED", VerificationService.CASHFREE_CONFIGURATION_ERROR, None, None
         except httpx.TimeoutException:
             return "PENDING", VerificationService.CASHFREE_TIMEOUT, None, None
         except httpx.HTTPError:
@@ -559,8 +613,14 @@ class VerificationService:
         }
         try:
             async with httpx.AsyncClient(timeout=settings.EMPLOYER_VERIFICATION_TIMEOUT_SECONDS) as client:
+                headers["x-cf-signature"] = VerificationService._cashfree_secure_id_signature(
+                    headers["x-client-id"]
+                )
                 response = await client.post(endpoint, json={"otp": otp, "ref_id": ref_id}, headers=headers)
             body = response.json() if response.content else {}
+        except CashfreeSecureIDConfigurationError as exc:
+            logger.error("Cashfree Secure ID signature configuration error: %s", exc)
+            return "FAILED", VerificationService.CASHFREE_CONFIGURATION_ERROR, None
         except httpx.TimeoutException:
             return "PENDING", VerificationService.CASHFREE_TIMEOUT, None
         except (httpx.HTTPError, ValueError):

@@ -105,6 +105,7 @@ class Settings(BaseSettings):
     )
     CASHFREE_CLIENT_ID: str = Field(default="", validation_alias=AliasChoices("CASHFREE_CLIENT_ID", "cashfree_client_id"))
     CASHFREE_CLIENT_SECRET: str = Field(default="", validation_alias=AliasChoices("CASHFREE_CLIENT_SECRET", "cashfree_client_secret"))
+    CASHFREE_SECURE_ID_PUBLIC_KEY: str = Field(default="", validation_alias=AliasChoices("CASHFREE_SECURE_ID_PUBLIC_KEY", "cashfree_secure_id_public_key"))
     CASHFREE_ENV: str = Field(default="SANDBOX", validation_alias=AliasChoices("CASHFREE_ENV", "cashfree_env"))
     CASHFREE_API_VERSION: str = Field(default="2022-09-01", validation_alias=AliasChoices("CASHFREE_API_VERSION", "cashfree_api_version"))
 

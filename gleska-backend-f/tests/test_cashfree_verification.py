@@ -1,11 +1,111 @@
+import base64
 from types import SimpleNamespace
 
 import pytest
 import httpx
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
 from app.core.config import settings
 from app.services import verification_service
-from app.services.verification_service import VerificationService
+from app.services.verification_service import (
+    CashfreeSecureIDConfigurationError,
+    VerificationService,
+)
+
+
+@pytest.fixture(scope="module")
+def secure_id_test_keys():
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    public_key_pem = private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,
+    ).decode("ascii")
+    return private_key, public_key_pem
+
+
+@pytest.fixture(autouse=True)
+def configured_secure_id_test_key(monkeypatch, secure_id_test_keys):
+    monkeypatch.setattr(settings, "CASHFREE_SECURE_ID_PUBLIC_KEY", secure_id_test_keys[1])
+
+
+def decrypt_secure_id_signature(private_key, signature):
+    encrypted = base64.b64decode(signature, validate=True)
+    return private_key.decrypt(
+        encrypted,
+        padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA1()),
+            algorithm=hashes.SHA1(),
+            label=None,
+        ),
+    ).decode("utf-8")
+
+
+def test_cashfree_secure_id_signature_uses_documented_rsa_oaep_and_sha1(
+    monkeypatch,
+    secure_id_test_keys,
+):
+    private_key, public_key_pem = secure_id_test_keys
+    monkeypatch.setattr(settings, "CASHFREE_SECURE_ID_PUBLIC_KEY", public_key_pem)
+
+    signature = VerificationService._cashfree_secure_id_signature("test-client", timestamp=1_750_000_000)
+
+    assert base64.b64decode(signature, validate=True)
+    assert decrypt_secure_id_signature(private_key, signature) == "test-client.1750000000"
+
+
+def test_cashfree_secure_id_signature_changes_with_timestamp(monkeypatch, secure_id_test_keys):
+    private_key, public_key_pem = secure_id_test_keys
+    monkeypatch.setattr(settings, "CASHFREE_SECURE_ID_PUBLIC_KEY", public_key_pem)
+
+    first = VerificationService._cashfree_secure_id_signature("test-client", timestamp=1_750_000_000)
+    second = VerificationService._cashfree_secure_id_signature("test-client", timestamp=1_750_000_001)
+
+    assert first != second
+    assert decrypt_secure_id_signature(private_key, first) == "test-client.1750000000"
+    assert decrypt_secure_id_signature(private_key, second) == "test-client.1750000001"
+
+
+@pytest.mark.parametrize(
+    ("public_key", "message"),
+    [
+        ("", "CASHFREE_SECURE_ID_PUBLIC_KEY is required"),
+        ("not a PEM key", "CASHFREE_SECURE_ID_PUBLIC_KEY must contain a valid PEM public key"),
+    ],
+)
+def test_cashfree_secure_id_signature_rejects_missing_or_invalid_key(monkeypatch, public_key, message):
+    monkeypatch.setattr(settings, "CASHFREE_SECURE_ID_PUBLIC_KEY", public_key)
+
+    with pytest.raises(CashfreeSecureIDConfigurationError, match=message):
+        VerificationService._cashfree_secure_id_signature("test-client", timestamp=1_750_000_000)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("public_key", ["", "not a PEM key"])
+async def test_cashfree_secure_id_missing_or_invalid_key_fails_without_sending_request(
+    monkeypatch,
+    public_key,
+):
+    monkeypatch.setattr(settings, "EMPLOYER_VERIFICATION_PROVIDER", "cashfree")
+    monkeypatch.setattr(settings, "CASHFREE_CLIENT_ID", "client")
+    monkeypatch.setattr(settings, "CASHFREE_CLIENT_SECRET", "secret")
+    monkeypatch.setattr(settings, "CASHFREE_SECURE_ID_PUBLIC_KEY", public_key)
+    calls = []
+    response = SimpleNamespace(status_code=200, content=b"{}", json=lambda: {})
+    monkeypatch.setattr(
+        verification_service.httpx,
+        "AsyncClient",
+        lambda **kwargs: FakeClient(response, calls),
+    )
+
+    result = await VerificationService._verify_cashfree_identifier(
+        "CIN",
+        "U12345678901234567890",
+        {},
+    )
+
+    assert result[:2] == ("FAILED", VerificationService.CASHFREE_CONFIGURATION_ERROR)
+    assert calls == []
 
 
 class FakeClient:
@@ -52,16 +152,24 @@ async def test_cashfree_gstin_requires_valid_and_active_response(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_cashfree_aadhaar_otp_initiation_is_pending_and_preserves_ref_id(monkeypatch):
+async def test_cashfree_aadhaar_otp_initiation_is_pending_and_preserves_ref_id(
+    monkeypatch,
+    secure_id_test_keys,
+):
     monkeypatch.setattr(settings, "EMPLOYER_VERIFICATION_PROVIDER", "cashfree")
     monkeypatch.setattr(settings, "CASHFREE_CLIENT_ID", "client")
     monkeypatch.setattr(settings, "CASHFREE_CLIENT_SECRET", "secret")
+    calls = []
     response = SimpleNamespace(
         status_code=200,
         content=b"{}",
         json=lambda: {"status": "SUCCESS", "message": "OTP sent successfully", "ref_id": 85506865},
     )
-    monkeypatch.setattr(verification_service.httpx, "AsyncClient", lambda **kwargs: FakeClient(response))
+    monkeypatch.setattr(
+        verification_service.httpx,
+        "AsyncClient",
+        lambda **kwargs: FakeClient(response, calls),
+    )
 
     status, reason, metadata, provider_reference = await VerificationService._verify_cashfree_identifier(
         "AADHAAR", "123456789012", {"director_name": "Authorized Signatory"}
@@ -69,10 +177,65 @@ async def test_cashfree_aadhaar_otp_initiation_is_pending_and_preserves_ref_id(m
 
     assert (status, reason, provider_reference) == ("PENDING", "OTP_SENT", None)
     assert metadata["cashfree_ref_id"] == "85506865"
+    headers = calls[0][1]["headers"]
+    assert headers["x-client-id"] == "client"
+    assert headers["x-client-secret"] == "secret"
+    assert decrypt_secure_id_signature(secure_id_test_keys[0], headers["x-cf-signature"]).startswith(
+        "client."
+    )
 
 
 @pytest.mark.asyncio
-async def test_cashfree_aadhaar_otp_final_verification_uses_ref_id(monkeypatch):
+@pytest.mark.parametrize(
+    ("verification_type", "reference", "payload_field"),
+    [
+        ("PAN", "ABCDE1234F", "pan"),
+        ("UDYAM", "UDYAM-MH-12-1234567", "udyam"),
+    ],
+)
+async def test_other_cashfree_identifiers_send_signature_and_preserve_payload(
+    monkeypatch,
+    secure_id_test_keys,
+    verification_type,
+    reference,
+    payload_field,
+):
+    monkeypatch.setattr(settings, "EMPLOYER_VERIFICATION_PROVIDER", "cashfree")
+    monkeypatch.setattr(settings, "CASHFREE_CLIENT_ID", "client")
+    monkeypatch.setattr(settings, "CASHFREE_CLIENT_SECRET", "secret")
+    calls = []
+    response = SimpleNamespace(
+        status_code=200,
+        content=b"{}",
+        json=lambda: {"valid": False, "message": "Invalid identifier"},
+    )
+    monkeypatch.setattr(
+        verification_service.httpx,
+        "AsyncClient",
+        lambda **kwargs: FakeClient(response, calls),
+    )
+
+    await VerificationService._verify_cashfree_identifier(
+        verification_type,
+        reference,
+        {},
+    )
+
+    headers = calls[0][1]["headers"]
+    assert headers["x-client-id"] == "client"
+    assert headers["x-client-secret"] == "secret"
+    assert decrypt_secure_id_signature(secure_id_test_keys[0], headers["x-cf-signature"]).startswith(
+        "client."
+    )
+    assert calls[0][1]["json"][payload_field] == reference
+    assert set(calls[0][1]["json"]) == {payload_field, "verification_id"}
+
+
+@pytest.mark.asyncio
+async def test_cashfree_aadhaar_otp_final_verification_uses_ref_id(
+    monkeypatch,
+    secure_id_test_keys,
+):
     monkeypatch.setattr(settings, "CASHFREE_ENV", "sandbox")
     monkeypatch.setattr(settings, "EMPLOYER_VERIFICATION_API_BASE_URL", "https://sandbox.cashfree.com/verification")
     calls = []
@@ -90,6 +253,12 @@ async def test_cashfree_aadhaar_otp_final_verification_uses_ref_id(monkeypatch):
     assert (status, reason) == ("VERIFIED", None)
     assert calls[0][0][0] == "https://sandbox.cashfree.com/verification/offline-aadhaar/verify"
     assert calls[0][1]["json"] == {"otp": "123456", "ref_id": "85506865"}
+    headers = calls[0][1]["headers"]
+    assert headers["x-client-id"] == settings.CASHFREE_CLIENT_ID
+    assert headers["x-client-secret"] == settings.CASHFREE_CLIENT_SECRET
+    assert decrypt_secure_id_signature(
+        secure_id_test_keys[0], headers["x-cf-signature"]
+    ).startswith(f"{settings.CASHFREE_CLIENT_ID}.")
 
 
 @pytest.mark.asyncio
@@ -125,7 +294,10 @@ async def test_cashfree_aadhaar_otp_provider_rejection_is_failed(monkeypatch):
     assert (status, reason) == ("FAILED", "Invalid OTP")
 
 @pytest.mark.asyncio
-async def test_cashfree_gstin_sends_production_vrs_request_with_normalized_credentials(monkeypatch):
+async def test_cashfree_gstin_sends_production_vrs_request_with_normalized_credentials(
+    monkeypatch,
+    secure_id_test_keys,
+):
     monkeypatch.setattr(settings, "EMPLOYER_VERIFICATION_PROVIDER", "cashfree")
     monkeypatch.setattr(settings, "CASHFREE_ENV", " production ")
     monkeypatch.setattr(settings, "EMPLOYER_VERIFICATION_API_BASE_URL", " https://api.cashfree.com/verification ")
@@ -144,12 +316,14 @@ async def test_cashfree_gstin_sends_production_vrs_request_with_normalized_crede
 
     args, kwargs = calls[0]
     assert args[0] == "https://api.cashfree.com/verification/gstin"
-    assert kwargs["headers"] == {
-        "x-client-id": "client",
-        "x-client-secret": "secret",
-        "x-api-version": "2022-09-01",
-        "content-type": "application/json",
-    }
+    headers = kwargs["headers"]
+    assert headers["x-client-id"] == "client"
+    assert headers["x-client-secret"] == "secret"
+    assert headers["x-api-version"] == "2022-09-01"
+    assert headers["content-type"] == "application/json"
+    assert decrypt_secure_id_signature(
+        secure_id_test_keys[0], headers["x-cf-signature"]
+    ).startswith("client.")
     assert kwargs["json"] == {"GSTIN": "22ABCDE1234F1Z5", "business_name": "Example Industries"}
 
 
@@ -219,7 +393,10 @@ async def test_cashfree_auth_error_is_failed(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_cashfree_cin_requires_matching_identifier_and_company_name(monkeypatch):
+async def test_cashfree_cin_requires_matching_identifier_and_company_name(
+    monkeypatch,
+    secure_id_test_keys,
+):
     monkeypatch.setattr(settings, "EMPLOYER_VERIFICATION_PROVIDER", "cashfree")
     monkeypatch.setattr(settings, "CASHFREE_ENV", "sandbox")
     monkeypatch.setattr(settings, "EMPLOYER_VERIFICATION_API_BASE_URL", "https://sandbox.cashfree.com/verification")
@@ -247,7 +424,13 @@ async def test_cashfree_cin_requires_matching_identifier_and_company_name(monkey
     assert result[0] == "VERIFIED"
     assert calls[0][0][0] == "https://sandbox.cashfree.com/verification/cin"
     assert "x-api-version" not in calls[0][1]["headers"]
+    assert calls[0][1]["headers"]["x-client-id"] == "client"
+    assert calls[0][1]["headers"]["x-client-secret"] == "secret"
+    assert decrypt_secure_id_signature(
+        secure_id_test_keys[0], calls[0][1]["headers"]["x-cf-signature"]
+    ).startswith("client.")
     assert calls[0][1]["json"]["cin"] == "U12345678901234567890"
+    assert set(calls[0][1]["json"]) == {"cin", "verification_id"}
 
 
 def test_registered_industry_does_not_require_empty_gstin(monkeypatch):
