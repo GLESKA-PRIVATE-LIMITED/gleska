@@ -2,13 +2,14 @@
 
 import React, { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Briefcase, UserCheck, ArrowRight, UserRound } from "lucide-react";
+import { Briefcase, UserCheck, ArrowRight, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useLanguage } from "@/context/LanguageContext";
 import { useAuth } from "@/context/AuthContext";
 import { getRouteForNextStep } from "@/lib/auth-routing";
 import AuthMethodPanel from "@/components/auth/AuthMethodPanel";
 import AuthPageFrame from "@/components/auth/AuthPageFrame";
+import BackLink from "@/components/auth/BackLink";
 
 export default function SignInSelectionPage() {
   const { t } = useLanguage();
@@ -26,24 +27,29 @@ export default function SignInSelectionPage() {
     <AuthPageFrame contentClassName="items-center">
       {/* Unified login and role-specific registration chooser */}
       <div className="w-full">
-        <div className={`mx-auto w-full ${showCreateAccount ? "max-w-4xl space-y-8 text-center" : "max-w-lg"}`}>
+        <div className={`mx-auto w-full ${showCreateAccount ? "max-w-4xl space-y-6 text-center" : "max-w-md"}`}>
           {showCreateAccount && (
-            <div className="space-y-3">
-              <div className="inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-4 py-1 text-xs font-semibold uppercase tracking-wider text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-300">
-                {t("nav.signup")}
+            <>
+              <div className="mb-5 text-left">
+                <BackLink href="/auth/signin" label="Back to Sign In" />
               </div>
-              <h1 className="font-[var(--font-anton)] text-4xl sm:text-5xl uppercase leading-tight tracking-wide text-slate-900 dark:text-white">
-                {t("signin.selectRole")}
-              </h1>
-              <p className="mx-auto max-w-md text-base font-medium text-slate-600 dark:text-slate-300">
-                {t("signin.roleDescription")}
-              </p>
-            </div>
+              <div className="space-y-3">
+                <div className="inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-4 py-1 text-xs font-semibold uppercase tracking-wider text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-300">
+                  {t("nav.signup")}
+                </div>
+                <h1 className="font-[var(--font-anton)] text-4xl sm:text-5xl uppercase leading-tight tracking-wide text-slate-900 dark:text-white">
+                  {t("signin.selectRole")}
+                </h1>
+                <p className="mx-auto max-w-md text-base font-medium text-slate-600 dark:text-slate-300">
+                  {t("signin.roleDescription")}
+                </p>
+              </div>
+            </>
           )}
 
           {!showCreateAccount ? (
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-8">
-              <div className="mb-8 space-y-2 text-left">
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6">
+              <div className="mb-5 space-y-1.5 text-left">
                 <h1 className="font-[var(--font-anton)] text-xl uppercase leading-tight text-slate-900 dark:text-white sm:text-2xl md:text-[1.7rem]">
                   {t("nav.signIn")}
                 </h1>
@@ -51,7 +57,7 @@ export default function SignInSelectionPage() {
                   {t("auth.securityText")}
                 </p>
               </div>
-              <AuthMethodPanel onCreateAccount={() => setShowCreateAccount(true)} />
+              <AuthMethodPanel compact onCreateAccount={() => setShowCreateAccount(true)} />
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-6 text-left md:grid-cols-3">
@@ -113,7 +119,6 @@ export default function SignInSelectionPage() {
             </Link>
             </div>
           )}
-          {showCreateAccount && <button type="button" onClick={() => setShowCreateAccount(false)} className="mx-auto inline-flex items-center gap-2 text-sm font-bold text-slate-600 hover:text-indigo-600 dark:text-slate-300 dark:hover:text-indigo-400"><ArrowLeft size={16} /> Back to Sign In</button>}
         </div>
       </div>
     </AuthPageFrame>

@@ -220,7 +220,15 @@ export default function AuthCallbackPage() {
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-[#040d1e] px-6 text-white">
-      <div className="text-center">
+      <div className="flex flex-col items-center text-center">
+        {/* Minimal GLESKA branding */}
+        <div className="mb-6 flex items-center gap-2.5">
+          <img src="/favicon.ico" alt="GO LESKA AI" className="h-9 w-9 rounded-lg object-contain" />
+          <span className="font-[var(--font-anton)] text-2xl uppercase tracking-wider bg-[linear-gradient(180deg,#E86100_0%,#FFF5EA_48%,#128807_100%)] bg-clip-text text-transparent select-none whitespace-nowrap">
+            GO LESKA AI
+          </span>
+        </div>
+
         {error ? (
           <>
             <p className="mb-5 text-sm text-red-300">{error}</p>

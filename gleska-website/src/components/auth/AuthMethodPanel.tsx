@@ -22,7 +22,7 @@ function authUserMessage(error: unknown, operation: "send" | "verify" | "auth" =
   return otpUserMessage(error, operation);
 }
 
-export default function AuthMethodPanel({ role, accountType = "BUSINESS", initialMode = "login", hideModeSelector = false, onModeChange, onCreateAccount }: { role?: Role; accountType?: "BUSINESS" | "INDIVIDUAL"; initialMode?: "login" | "signup"; hideModeSelector?: boolean; onModeChange?: (mode: "login" | "signup") => void; onCreateAccount?: () => void }) {
+export default function AuthMethodPanel({ role, accountType = "BUSINESS", initialMode = "login", hideModeSelector = false, compact = false, onModeChange, onCreateAccount }: { role?: Role; accountType?: "BUSINESS" | "INDIVIDUAL"; initialMode?: "login" | "signup"; hideModeSelector?: boolean; compact?: boolean; onModeChange?: (mode: "login" | "signup") => void; onCreateAccount?: () => void }) {
   const router = useRouter();
   const { t } = useLanguage();
   const { signInWithEmail, signInWithGoogle, signupPreflight, checkLoginAccount, requestOTP, resendOTP, completeEmailSignup, loginWithMobile, refreshUser, isLoading: authLoading } = useAuth();
@@ -129,8 +129,8 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS", initia
         toast.error(t('auth.enterPassword'));
         return;
       }
-      if (isIndividualSignup ? !isValidSignupPassword(password) : password.length < 8) {
-        toast.error(isIndividualSignup ? t('auth.passwordPolicyIncomplete') : t('auth.passwordMin'));
+      if (!isValidSignupPassword(password)) {
+        toast.error(t('auth.passwordPolicyIncomplete'));
         return;
       }
       if (!confirmPassword) {
@@ -275,7 +275,7 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS", initia
   const isManualSignupComplete = Boolean(
     (isIndividualSignup ? isValidSignupName(name.trim()) && !nameInputRejected : name.trim()) &&
     email.trim() &&
-    (isIndividualSignup ? isValidSignupPassword(password) : password.length >= 8) &&
+    isValidSignupPassword(password) &&
     confirmPassword &&
     passwordsMatch(confirmPassword, password) &&
     (isIndividualSignup ? isValidSignupMobile(mobile) && !mobileInputRejected : mobile.replace(/\D/g, "").length === 10) &&
@@ -283,12 +283,12 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS", initia
   );
 
   return (
-    <div className="mb-6 space-y-4 border-b border-slate-200/80 pb-6 dark:border-slate-800">
+    <div className={`${compact ? "mb-4 space-y-3 pb-4" : "mb-6 space-y-4 pb-6"} border-b border-slate-200/80 dark:border-slate-800`}>
       {!hideModeSelector && <div className="flex gap-2 text-xs font-bold uppercase tracking-wider">
         <button
           type="button"
           onClick={() => { clearOtpTransaction(); setMode("login"); }}
-          className={`rounded-xl px-4 py-2.5 transition-all ${
+          className={`rounded-xl px-4 ${compact ? "py-2" : "py-2.5"} transition-all ${
             mode === "login"
               ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-indigo-500/20"
               : "bg-slate-100/90 text-slate-600 hover:bg-slate-200 dark:bg-slate-800/80 dark:text-slate-400 dark:hover:bg-slate-800"
@@ -306,7 +306,7 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS", initia
             }
             setMode("signup");
           }}
-          className={`rounded-xl px-4 py-2.5 transition-all ${
+          className={`rounded-xl px-4 ${compact ? "py-2" : "py-2.5"} transition-all ${
             mode === "signup"
               ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-indigo-500/20"
               : "bg-slate-100/90 text-slate-600 hover:bg-slate-200 dark:bg-slate-800/80 dark:text-slate-400 dark:hover:bg-slate-800"
@@ -341,7 +341,7 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS", initia
           </button>
         </div>
       )}
-      <form onSubmit={submitEmail} className="space-y-3">
+      <form onSubmit={submitEmail} className={compact ? "space-y-2.5" : "space-y-3"}>
         {mode === "signup" && (
           <input
             value={name}
@@ -367,7 +367,7 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS", initia
               value={mobile}
               onChange={(event) => setMobile(event.target.value.replace(/\D/g, "").slice(0, 10))}
               placeholder={t('auth.mobileLabel')}
-              className="min-w-0 flex-1 bg-transparent py-3 text-sm font-medium text-slate-900 placeholder:text-slate-400 outline-none dark:text-white dark:placeholder:text-slate-500"
+              className={`min-w-0 flex-1 bg-transparent ${compact ? "py-2.5" : "py-3"} text-sm font-medium text-slate-900 placeholder:text-slate-400 outline-none dark:text-white dark:placeholder:text-slate-500`}
             />
           </div>
         )}
@@ -379,7 +379,7 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS", initia
               value={email}
               onChange={(event) => setEmail(event.target.value)}
               placeholder={t('auth.emailLabel')}
-              className="min-w-0 flex-1 bg-transparent py-3 text-sm font-medium text-slate-900 placeholder:text-slate-400 outline-none dark:text-white dark:placeholder:text-slate-500"
+              className={`min-w-0 flex-1 bg-transparent ${compact ? "py-2.5" : "py-3"} text-sm font-medium text-slate-900 placeholder:text-slate-400 outline-none dark:text-white dark:placeholder:text-slate-500`}
             />
           </div>
         )}
@@ -391,9 +391,8 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS", initia
             onChange={setPassword}
             autoComplete={mode === "signup" ? "new-password" : "current-password"}
             strengthLabel={mode === "signup" ? "Password strength" : undefined}
-            requirementsText={mode === "signup" && !isIndividualSignup ? t('shared.passwordRequirements') : undefined}
-            maxLength={isIndividualSignup ? 128 : undefined}
-            passwordRequirementLabels={isIndividualSignup ? {
+            maxLength={mode === "signup" ? 128 : undefined}
+            passwordRequirementLabels={mode === "signup" ? {
               title: t('auth.passwordRequirementsTitle'),
               minimumLength: t('auth.passwordMinimumLength'),
               containsLetter: t('auth.passwordContainsLetter'),
@@ -409,8 +408,8 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS", initia
             value={confirmPassword}
             onChange={setConfirmPassword}
             autoComplete="new-password"
-            maxLength={isIndividualSignup ? 128 : undefined}
-            validationMessage={isIndividualSignup && confirmPassword && !passwordsMatch(password, confirmPassword) ? t('auth.signupPasswordMismatch') : undefined}
+            maxLength={mode === "signup" ? 128 : undefined}
+            validationMessage={mode === "signup" && confirmPassword && !passwordsMatch(password, confirmPassword) ? t('auth.signupPasswordMismatch') : undefined}
           />
         )}
         {mode === "signup" && (
@@ -470,7 +469,7 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS", initia
         <button
           type="submit"
           disabled={submitting || (mode === "signup" && !isManualSignupComplete)}
-          className="flex w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-blue-600 via-indigo-600 to-emerald-600 py-3.5 text-sm font-bold text-white shadow-lg shadow-indigo-500/25 transition hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed"
+          className={`flex w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-blue-600 via-indigo-600 to-emerald-600 ${compact ? "py-3" : "py-3.5"} text-sm font-bold text-white shadow-lg shadow-indigo-500/25 transition hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed`}
         >
           {submitting && <Loader2 size={16} className="animate-spin" />}
           {mode === "signup" ? t('auth.signupButton') : loginMethod === "mobile" ? t('auth.sendMobileOtpButton') : t('auth.loginButton')}
@@ -486,7 +485,7 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS", initia
           <a href="/auth/forgot-password" className="block text-center text-xs font-semibold text-indigo-600 transition hover:text-indigo-500 dark:text-indigo-400 dark:hover:text-indigo-300">
             {t('auth.forgotPassword')}
           </a>
-          <div className="relative flex items-center justify-center pt-2">
+          <div className={`relative flex items-center justify-center ${compact ? "pt-1" : "pt-2"}`}>
             <div className="border-t border-slate-200 w-full dark:border-slate-800" />
             <span className="bg-white/80 px-3 text-xs uppercase text-slate-400 font-semibold dark:bg-slate-900">{t('nav.or')}</span>
             <div className="border-t border-slate-200 w-full dark:border-slate-800" />
@@ -495,7 +494,7 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS", initia
             type="button"
             disabled={submitting}
             onClick={handleGoogleAuth}
-            className="flex w-full items-center justify-center gap-2 rounded-full border border-slate-200/90 bg-white/95 py-3.5 text-sm font-bold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed dark:border-slate-700 dark:bg-slate-800/90 dark:text-slate-200 dark:hover:bg-slate-800"
+            className={`flex w-full items-center justify-center gap-2 rounded-full border border-slate-200/90 bg-white/95 ${compact ? "py-3" : "py-3.5"} text-sm font-bold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed dark:border-slate-700 dark:bg-slate-800/90 dark:text-slate-200 dark:hover:bg-slate-800`}
           >
             <svg className="h-4 w-4" viewBox="0 0 24 24">
               <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -505,7 +504,7 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS", initia
             </svg>
             {t('auth.googleButton')}
           </button>
-          <p className="text-center text-xs text-slate-500 dark:text-slate-400">{t('auth.securityText')}</p>
+          {!compact && <p className="text-center text-xs text-slate-500 dark:text-slate-400">{t('auth.securityText')}</p>}
         </>
       )}
 

@@ -2,12 +2,12 @@
 
 import React, { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { useLanguage } from "@/context/LanguageContext";
-import { CheckCircle2, Zap } from "lucide-react";
+import { CheckCircle2 } from "lucide-react";
 import AuthMethodPanel from "@/components/auth/AuthMethodPanel";
 import AuthPageFrame from "@/components/auth/AuthPageFrame";
+import BackLink from "@/components/auth/BackLink";
 import { getRouteForNextStep } from "@/lib/auth-routing";
 
 function EmployerAuthContent() {
@@ -28,6 +28,12 @@ function EmployerAuthContent() {
   return (
     <AuthPageFrame>
         <div className="w-full max-w-lg">
+          <div className="mb-5">
+            <BackLink
+              href="/auth/signin"
+              label="Back to Sign In"
+            />
+          </div>
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-8">
             <div className="mb-8 space-y-2">
               <h1 className="font-[var(--font-anton)] text-xl sm:text-2xl md:text-[1.7rem] uppercase leading-tight text-slate-900 dark:text-white sm:whitespace-nowrap">
@@ -39,11 +45,6 @@ function EmployerAuthContent() {
             </div>
 
             <AuthMethodPanel role="EMPLOYER" accountType={accountType} initialMode={registrationMode ? "signup" : "login"} hideModeSelector={registrationMode} onModeChange={setAuthMode} />
-            {registrationMode && (
-              <Link href="/auth/signin" className="mt-4 block text-center text-sm font-semibold text-indigo-600 hover:text-indigo-500 dark:text-indigo-400 dark:hover:text-indigo-300">
-                Back to Sign In
-              </Link>
-            )}
           </div>
 
           <div className="mt-4 space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-5">

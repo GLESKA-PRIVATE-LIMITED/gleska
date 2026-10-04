@@ -6,6 +6,8 @@ import { ArrowLeft, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import AuthPageFrame from "@/components/auth/AuthPageFrame";
 import AuthPasswordField from "@/components/auth/AuthPasswordField";
+import { isValidSignupPassword } from "@/lib/signup-validation";
+import BackLink from "@/components/auth/BackLink";
 import { useAuth } from "@/context/AuthContext";
 import { useLanguage } from "@/context/LanguageContext";
 import apiClient from "@/lib/api";
@@ -116,8 +118,8 @@ export default function ForgotPasswordPage() {
 
   const reset = async (event: FormEvent) => {
     event.preventDefault();
-    if (password.length < 8) {
-      toast.error(t('auth.passwordMin'));
+    if (!isValidSignupPassword(password)) {
+      toast.error(t('auth.passwordPolicyIncomplete'));
       return;
     }
     if (password !== confirmPassword) {
@@ -151,13 +153,9 @@ export default function ForgotPasswordPage() {
       <div className="w-full max-w-lg">
         {/* Back button — sits above the card as a page-level nav element, never inside the card */}
         {step !== "success" && (
-          <Link
-            href="/auth/signin"
-            className="mb-5 inline-flex items-center gap-2 text-sm font-semibold text-slate-500 transition hover:text-indigo-600 dark:text-slate-400 dark:hover:text-indigo-300"
-          >
-            <ArrowLeft size={16} />
-            {t('shared.back')}
-          </Link>
+          <div className="mb-5">
+            <BackLink href="/auth/signin" label={t('shared.back')} />
+          </div>
         )}
 
         <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-8">
@@ -315,7 +313,7 @@ export default function ForgotPasswordPage() {
                     validationMessage={confirmPassword && password !== confirmPassword ? t('auth.passwordMismatch') : undefined}
                   />
                   <button
-                    disabled={submitting || password.length < 8 || password !== confirmPassword}
+                    disabled={submitting || !isValidSignupPassword(password) || password !== confirmPassword}
                     className="flex min-h-14 w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-blue-600 via-indigo-600 to-emerald-600 px-4 font-bold text-white shadow-lg shadow-indigo-500/20 transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {submitting && <Loader2 size={16} className="animate-spin" />}

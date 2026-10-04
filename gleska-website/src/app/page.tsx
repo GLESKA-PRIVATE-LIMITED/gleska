@@ -188,7 +188,7 @@ export default function LandingPage() {
                   </Link>
                 </li>
                 <li>
-                  <Link href="/terms" className="transition-colors hover:text-white hover:underline">
+                  <Link href="#" className="transition-colors hover:text-white hover:underline">
                     {t('footer.privacy')}
                   </Link>
                 </li>

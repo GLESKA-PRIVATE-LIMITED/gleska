@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowRight, ArrowLeft, Loader2, ShieldCheck, Mail, Lock, Eye, EyeOff } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import Navbar from "@/components/landing/Navbar";
 
 export default function AdminLoginPage() {
   const router = useRouter();
@@ -63,24 +64,18 @@ export default function AdminLoginPage() {
       <div className="pointer-events-none absolute -top-40 -left-40 h-96 w-96 rounded-full bg-blue-500/10 blur-3xl dark:bg-blue-600/10" />
       <div className="pointer-events-none absolute -bottom-40 -right-40 h-96 w-96 rounded-full bg-indigo-500/10 blur-3xl dark:bg-indigo-600/10" />
 
-      {/* Top Navigation */}
-      <header className="sticky top-0 z-50 w-full border-b border-slate-200/80 bg-white/95 backdrop-blur-md dark:border-slate-800 dark:bg-slate-900/95">
-        <nav className="mx-auto flex w-full max-w-7xl items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
-          <Link href="/" className="flex items-center gap-2.5">
-            <img src="/favicon.ico" alt="GO LESKA AI" className="h-8 w-8 rounded-lg object-contain" />
-            <span className="font-[var(--font-anton)] text-xl sm:text-2xl uppercase tracking-wider bg-[linear-gradient(180deg,#E86100_0%,#FFF5EA_48%,#128807_100%)] bg-clip-text text-transparent select-none whitespace-nowrap">
-              GO LESKA AI
-            </span>
-          </Link>
+      {/* Top Navigation reusing shared auth Navbar */}
+      <Navbar
+        rightAction={
           <Link
             href="/"
-            className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-bold text-slate-600 hover:border-slate-300 hover:text-slate-900 shadow-2xs transition dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:text-white"
+            className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-full border border-slate-200 bg-white px-3.5 py-1.5 text-sm font-semibold text-slate-700 transition hover:border-indigo-300 hover:text-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:border-indigo-500 dark:hover:text-indigo-400 dark:focus-visible:ring-offset-slate-900"
           >
             <ArrowLeft size={13} />
             <span>Back to home</span>
           </Link>
-        </nav>
-      </header>
+        }
+      />
 
       {/* Center Sign In Card */}
       <main className="relative z-10 flex flex-1 items-center justify-center px-4 py-10 sm:px-6">

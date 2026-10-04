@@ -2,6 +2,7 @@ export type LanguageCode = 'EN' | 'HI' | 'MR' | 'TA';
 
 export const TRANSLATIONS: Record<LanguageCode, Record<string, string>> = {
   EN: {
+    'nav.home': 'Home',
     'nav.services': 'Services',
     'nav.getHired': 'Get Hired',
     'nav.contact': 'Contact',
@@ -9,6 +10,7 @@ export const TRANSLATIONS: Record<LanguageCode, Record<string, string>> = {
     'nav.terms': 'Terms',
     'nav.signIn': 'Sign In',
     'nav.dashboard': 'Dashboard',
+    'nav.logout': 'Logout',
     'nav.followUs': 'Follow Us',
     'nav.backHome': 'Back to home',
     'nav.continue': 'Continue',
@@ -362,6 +364,7 @@ export const TRANSLATIONS: Record<LanguageCode, Record<string, string>> = {
     'terms.required': 'Privacy Policy',
   },
   HI: {
+    'nav.home': 'होम',
     'nav.services': 'सेवाएं',
     'nav.getHired': 'काम पाएं',
     'nav.contact': 'संपर्क',
@@ -369,6 +372,7 @@ export const TRANSLATIONS: Record<LanguageCode, Record<string, string>> = {
     'nav.terms': 'शर्तें',
     'nav.signIn': 'साइन इन',
     'nav.dashboard': 'डैशबोर्ड',
+    'nav.logout': 'लॉगआउट',
     'nav.followUs': 'हमें फॉलो करें',
     'nav.backHome': 'होम पर वापस',
     'nav.continue': 'जारी रखें',
@@ -692,6 +696,7 @@ export const TRANSLATIONS: Record<LanguageCode, Record<string, string>> = {
     'terms.required': 'गोपनीयता नीति',
   },
   MR: {
+    'nav.home': 'होम',
     'nav.services': 'सेवा',
     'nav.getHired': 'कामावर घ्या',
     'nav.contact': 'संपर्क',
@@ -699,6 +704,7 @@ export const TRANSLATIONS: Record<LanguageCode, Record<string, string>> = {
     'nav.terms': 'अटी',
     'nav.signIn': 'साइन इन',
     'nav.dashboard': 'डॅशबोर्ड',
+    'nav.logout': 'लॉगआउट',
     'nav.followUs': 'आमच्याबद्दल Follow',
     'nav.backHome': 'मुख्यपृष्ठावर परत',
     'nav.continue': 'पुढे',
@@ -1022,6 +1028,7 @@ export const TRANSLATIONS: Record<LanguageCode, Record<string, string>> = {
     'terms.required': 'गोपनीयता धोरण',
   },
   TA: {
+    'nav.home': 'முகப்பு',
     'nav.services': 'சேவைகள்',
     'nav.getHired': 'வேலை பெற',
     'nav.contact': 'தொடர்பு',
@@ -1029,6 +1036,7 @@ export const TRANSLATIONS: Record<LanguageCode, Record<string, string>> = {
     'nav.terms': 'விதிமுறைகள்',
     'nav.signIn': 'சைன் இன்',
     'nav.dashboard': 'டாஷ்போர்டு',
+    'nav.logout': 'வெளியேறு',
     'nav.followUs': 'எங்களைப் பின்தொடருங்கள்',
     'nav.backHome': 'முகப்புக்குச் செல்லவும்',
     'nav.continue': 'தொடர்க',
