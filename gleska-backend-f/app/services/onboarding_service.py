@@ -12,24 +12,33 @@ class OnboardingService:
     COMMON_ONBOARDING_FIELDS = {
         "business_name", "business_category", "website_url", "annual_revenue", "description",
         "company_email", "company_phone", "work_location", "latitude", "longitude",
-        "address", "city", "state", "pincode", "hiring_mode", "bank_account_holder_name", "bank_ifsc",
-        "bank_account_number", "business_document_url",
+        "address", "city", "state", "pincode", "hiring_mode", "services_required",
+        "bank_account_holder_name", "bank_ifsc", "bank_account_number", "business_document_url",
     }
     REGISTERED_ONBOARDING_FIELDS = {
-        "business_type", "registered_address", "gstin", "registration_number", "cin_number",
+        "business_type", "industry_category", "registered_address", "gstin", "registration_number", "cin_number",
         "pan_number", "udyam_number", "tan_number", "director_name", "director_phone",
-        "director_email", "director_address", "director_aadhaar",
+        "director_email", "director_address", "director_aadhaar", "director_data",
     }
     INDUSTRY_ONBOARDING_FIELDS = {
         "industry_category", "industry_type", "nature_of_business", "services_required", "director_data",
     }
     UNREGISTERED_ONBOARDING_FIELDS = {
-        "address", "number_of_proprietors", "proprietor_names", "proprietor_name", "proprietor_aadhaar",
+        "business_type", "industry_category", "address", "number_of_proprietors",
+        "proprietor_names", "proprietor_name", "proprietor_aadhaar", "udyam_number",
+        "nature_of_business",
+    }
+    INDIVIDUAL_PROFILE_FIELDS = {
+        "address", "city", "state", "pincode", "work_location", "latitude", "longitude",
+        "company_email", "company_phone", "website_url", "annual_revenue", "description",
     }
     DETAIL_METADATA_FIELDS = {"id", "employer_id", "created_at", "updated_at"}
 
     @classmethod
     def fields_for_type(cls, employer_type: str) -> set[str]:
+        if employer_type == "INDIVIDUAL":
+            return set(cls.INDIVIDUAL_PROFILE_FIELDS)
+
         fields = set(cls.COMMON_ONBOARDING_FIELDS)
         if employer_type in {"REGISTERED_BUSINESS", "REGISTERED_INDUSTRY"}:
             fields.update(cls.REGISTERED_ONBOARDING_FIELDS)
@@ -261,23 +270,6 @@ class OnboardingService:
                     return False, "proprietor_names must match number_of_proprietors"
                 elif any(not str(name).strip() for name in proprietor_names):
                     return False, "Every proprietor name is required"
-
-        elif employer_type == "INDIVIDUAL":
-            required_fields = [
-                "address",
-                "company_email",
-                "company_phone",
-                "city",
-                "state",
-                "pincode",
-                "work_location",
-            ]
-            if OnboardingService._missing_required_value(data.get("address")):
-                return False, "address is required for individual employer"
-            if require_all_fields:
-                for field in required_fields[1:]:
-                    if OnboardingService._missing_required_value(data.get(field)):
-                        return False, f"{field} is required for individual employer"
 
         pincode = str(data.get("pincode", "")).strip()
         if pincode and not re.fullmatch(r"[0-9]{6}", pincode):

@@ -291,8 +291,8 @@ export default function WorkerDashboard() {
         <section className="rounded-3xl bg-linear-to-br from-amber-50 to-yellow-50 p-5 sm:p-8 dark:from-amber-950/20 dark:to-yellow-950/20">
           <div className="flex flex-col-reverse items-start justify-between gap-5 sm:flex-row sm:items-center">
             <div><p className="text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300">Welcome back</p><h1 className="mt-1 font-(--font-anton) text-3xl uppercase text-slate-900 dark:text-white">{user.name}</h1><p className="mt-2 text-sm text-amber-700 dark:text-amber-300">Here is your work overview.</p>{profile?.profile_completed === false && <p className="mt-3 text-xs font-semibold text-slate-500">Profile completion in progress</p>}</div>
-            <Link href="/worker/profile" className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl bg-amber-400 text-white shadow-lg" title="View profile">
-              {user.profile_photo_url ? <Image src={user.profile_photo_url} alt="Profile" width={64} height={64} className="h-full w-full object-cover" unoptimized /> : <User size={32} />}
+            <Link href="/worker/profile" className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-full bg-amber-400 text-white shadow-lg" title="View profile">
+              {user.profile_photo_url ? <Image src={user.profile_photo_url} alt="Profile" width={80} height={80} className="h-full w-full object-cover" unoptimized /> : <User size={40} />}
             </Link>
           </div>
         </section>

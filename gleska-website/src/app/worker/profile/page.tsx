@@ -13,7 +13,9 @@ import {
   Briefcase,
   Save,
   Camera,
+  Trash2,
   Home,
+  Calendar,
 } from "lucide-react";
 import { toast } from "sonner";
 import apiClient from "@/lib/api";
@@ -65,7 +67,7 @@ export default function WorkerProfilePage() {
 
   // Editing UI states
   const profilePhotoInputRef = useRef<HTMLInputElement>(null);
-  const { isUploading: isProfilePhotoUploading, uploadPhoto } = useWorkerProfilePhoto();
+  const { isUploading: isProfilePhotoUploading, uploadPhoto, removePhoto } = useWorkerProfilePhoto();
 
   const [isEditingPersonal, setIsEditingPersonal] = useState(false);
   const [isEditingAddress, setIsEditingAddress] = useState(false);
@@ -236,6 +238,16 @@ export default function WorkerProfilePage() {
     }
   };
 
+  const handleProfilePhotoDelete = async () => {
+    if (!window.confirm("Remove your profile photo?")) return;
+    try {
+      await removePhoto(refreshUser);
+      toast.success("Profile photo removed");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to remove profile photo");
+    }
+  };
+
   // Calculate Profile Strength percentage
   const calculateProfileStrength = () => {
     const checks = [
@@ -266,6 +278,60 @@ export default function WorkerProfilePage() {
       ? "On a job"
       : "Offline";
 
+  const rawCreatedAt = user?.created_at;
+  const memberSinceFormatted = rawCreatedAt
+    ? new Date(rawCreatedAt).toLocaleDateString("en-GB", {
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      })
+    : "Recently Joined";
+
+  const accountSummaryCard = (
+    <div className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900 space-y-4">
+      <h3 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider pb-3 border-b border-slate-100 dark:border-slate-800">
+        Account Summary
+      </h3>
+
+      <div className="flex items-center gap-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950 dark:text-blue-400">
+          <Calendar size={18} />
+        </div>
+        <div className="min-w-0">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">MEMBER SINCE</p>
+          <p className="truncate text-sm font-bold text-slate-800 dark:text-slate-200">{memberSinceFormatted}</p>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-400">
+          <Briefcase size={18} />
+        </div>
+        <div className="min-w-0">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">ACCOUNT TYPE</p>
+          <p className="truncate text-sm font-bold text-slate-800 dark:text-slate-200">
+            {user?.is_mobile_verified ? "Verified Worker" : "Worker Account"}
+          </p>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400">
+          <CheckCircle2 size={18} />
+        </div>
+        <div className="min-w-0">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">STATUS</p>
+          <div className="flex items-center gap-1.5">
+            <span className={`h-2 w-2 rounded-full ${user?.is_mobile_verified ? "bg-emerald-500" : "bg-blue-500"}`} />
+            <p className="truncate text-sm font-bold text-slate-800 dark:text-slate-200">
+              {user?.is_mobile_verified ? "Verified" : "Active"}
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
   if (isLoading || loading || !user) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#eef1fb] dark:bg-slate-950">
@@ -292,15 +358,12 @@ export default function WorkerProfilePage() {
 
   return (
     <AccountManagementShell kind="worker" name={user.name || "Worker"} accountLabel="Worker" profileHref="/worker/profile" onLogout={() => void handleLogout()}>
-    <div className="flex flex-col md:flex-row min-h-screen bg-[#eef1fb] font-sans text-slate-900 dark:bg-slate-950 dark:text-slate-100">
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 min-h-screen overflow-y-auto">
-        <main className="flex-1 mx-auto w-full max-w-7xl px-4 sm:px-6 py-6 sm:py-8 space-y-6 pb-12">
-          {/* Top Banner Card matching Figma */}
-          <div className="relative overflow-hidden rounded-3xl bg-linear-to-r from-blue-600 via-indigo-600 to-purple-600 p-5 sm:p-6 text-white shadow-xl">
-            {/* Ambient Background Accents */}
-            <div className="pointer-events-none absolute -top-24 -right-24 h-72 w-72 rounded-full bg-white/10 blur-3xl" />
-            <div className="pointer-events-none absolute -bottom-24 -left-24 h-72 w-72 rounded-full bg-purple-400/20 blur-3xl" />
+      <main className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-4 pb-12">
+        {/* Top Banner Card matching Figma */}
+        <div className="relative overflow-hidden rounded-3xl bg-linear-to-r from-blue-600 via-indigo-600 to-purple-600 p-5 sm:p-6 text-white shadow-xl">
+          {/* Ambient Background Accents */}
+          <div className="pointer-events-none absolute -top-24 -right-24 h-72 w-72 rounded-full bg-white/10 blur-3xl" />
+          <div className="pointer-events-none absolute -bottom-24 -left-24 h-72 w-72 rounded-full bg-purple-400/20 blur-3xl" />
 
             <div className="relative z-10 grid min-w-0 gap-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
               <div className="min-w-0 max-w-lg">
@@ -336,7 +399,7 @@ export default function WorkerProfilePage() {
                   </div>
                 </div>
 
-                <div className="relative shrink-0">
+                <div className="flex shrink-0 flex-col items-center gap-2">
                   <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-full border-4 border-white/30 bg-blue-500 text-2xl font-extrabold text-white shadow-xl backdrop-blur-md sm:h-20 sm:w-20">
                     {user.profile_photo_url ? (
                       <img src={user.profile_photo_url} alt="Profile" className="h-full w-full object-cover" />
@@ -345,18 +408,38 @@ export default function WorkerProfilePage() {
                     )}
                   </div>
                   <input ref={profilePhotoInputRef} type="file" accept="image/jpeg,image/png,image/webp" onChange={handleProfilePhotoChange} className="hidden" />
-                  <button
-                    type="button"
-                    title="Change profile photo"
-                    onClick={() => profilePhotoInputRef.current?.click()}
-                    disabled={isProfilePhotoUploading}
-                    className="absolute bottom-0 right-0 flex h-8 w-8 items-center justify-center rounded-full bg-white text-blue-600 shadow-md transition hover:scale-110"
-                  >
-                    <Camera size={16} />
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      title="Edit profile photo"
+                      onClick={() => profilePhotoInputRef.current?.click()}
+                      disabled={isProfilePhotoUploading}
+                      className="inline-flex min-h-8 items-center gap-1 rounded-full bg-white/95 px-2.5 text-xs font-semibold text-blue-700 shadow-sm transition hover:bg-white disabled:opacity-50"
+                    >
+                      {isProfilePhotoUploading ? <Loader2 size={13} className="animate-spin" /> : <Camera size={13} />}
+                      Edit
+                    </button>
+                    {user.profile_photo_url && (
+                      <button
+                        type="button"
+                        title="Delete profile photo"
+                        onClick={() => void handleProfilePhotoDelete()}
+                        disabled={isProfilePhotoUploading}
+                        className="inline-flex min-h-8 items-center gap-1 rounded-full bg-white/95 px-2.5 text-xs font-semibold text-red-700 shadow-sm transition hover:bg-white disabled:opacity-50"
+                      >
+                        <Trash2 size={13} />
+                        Delete
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
+          </div>
+
+          {/* Mobile Profile Summary: Visible at top after header */}
+          <div className="lg:hidden">
+            {accountSummaryCard}
           </div>
 
           {/* Two Column Section Layout */}
@@ -364,8 +447,8 @@ export default function WorkerProfilePage() {
             {/* Left Column (Span 2): Personal, Addresses, Professional */}
             <div className="lg:col-span-2 space-y-6">
               {/* Personal Information Card */}
-              <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900">
-                <div className="flex items-center justify-between mb-6 pb-4 border-b border-slate-100 dark:border-slate-800">
+              <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900">
+                <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100 dark:border-slate-800">
                   <div className="flex items-center gap-3">
                     <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400">
                       <User size={20} />
@@ -384,9 +467,9 @@ export default function WorkerProfilePage() {
                   </button>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {/* DISPLAY NAME */}
-                  <div className="rounded-xl bg-slate-50 p-4 border border-slate-100 dark:bg-slate-800/50 dark:border-slate-800">
+                  <div className="rounded-xl bg-slate-50 p-3 border border-slate-100 dark:bg-slate-800/50 dark:border-slate-800">
                     <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                       DISPLAY NAME
                     </p>
@@ -405,7 +488,7 @@ export default function WorkerProfilePage() {
                   </div>
 
                   {/* PHONE NUMBER */}
-                  <div className="rounded-xl bg-slate-50 p-4 border border-slate-100 dark:bg-slate-800/50 dark:border-slate-800">
+                  <div className="rounded-xl bg-slate-50 p-3 border border-slate-100 dark:bg-slate-800/50 dark:border-slate-800">
                     <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                       PHONE NUMBER
                     </p>
@@ -424,7 +507,7 @@ export default function WorkerProfilePage() {
                   </div>
 
                   {/* EMAIL */}
-                  <div className="sm:col-span-2 rounded-xl bg-slate-50 p-4 border border-slate-100 dark:bg-slate-800/50 dark:border-slate-800">
+                  <div className="sm:col-span-2 rounded-xl bg-slate-50 p-3 border border-slate-100 dark:bg-slate-800/50 dark:border-slate-800">
                     <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                       EMAIL
                     </p>
@@ -443,7 +526,7 @@ export default function WorkerProfilePage() {
                   </div>
 
                   {/* MARITAL STATUS */}
-                  <div className="rounded-xl bg-slate-50 p-4 border border-slate-100 dark:bg-slate-800/50 dark:border-slate-800">
+                  <div className="rounded-xl bg-slate-50 p-3 border border-slate-100 dark:bg-slate-800/50 dark:border-slate-800">
                     <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                       MARITAL STATUS
                     </p>
@@ -467,7 +550,7 @@ export default function WorkerProfilePage() {
                   </div>
 
                   {/* BLOOD GROUP */}
-                  <div className="rounded-xl bg-slate-50 p-4 border border-slate-100 dark:bg-slate-800/50 dark:border-slate-800">
+                  <div className="rounded-xl bg-slate-50 p-3 border border-slate-100 dark:bg-slate-800/50 dark:border-slate-800">
                     <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                       BLOOD GROUP
                     </p>
@@ -496,8 +579,8 @@ export default function WorkerProfilePage() {
               </section>
 
               {/* Addresses Card */}
-              <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900">
-                <div className="flex items-center justify-between mb-6 pb-4 border-b border-slate-100 dark:border-slate-800">
+              <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900">
+                <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100 dark:border-slate-800">
                   <div className="flex items-center gap-3">
                     <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400">
                       <MapPin size={20} />
@@ -617,8 +700,8 @@ export default function WorkerProfilePage() {
               </section>
 
               {/* Professional Details Card */}
-              <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900">
-                <div className="flex items-center justify-between mb-6 pb-4 border-b border-slate-100 dark:border-slate-800">
+              <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900">
+                <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100 dark:border-slate-800">
                   <div className="flex items-center gap-3">
                     <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400">
                       <Briefcase size={20} />
@@ -637,10 +720,10 @@ export default function WorkerProfilePage() {
                   </button>
                 </div>
 
-                <div className="space-y-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {/* WORK EXPERIENCE */}
-                    <div className="rounded-xl bg-slate-50 p-4 border border-slate-100 dark:bg-slate-800/50 dark:border-slate-800">
+                    <div className="rounded-xl bg-slate-50 p-3 border border-slate-100 dark:bg-slate-800/50 dark:border-slate-800">
                       <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                         WORK EXPERIENCE
                       </p>
@@ -666,7 +749,7 @@ export default function WorkerProfilePage() {
                     </div>
 
                     {/* CURRENT PROFESSION */}
-                    <div className="rounded-xl bg-slate-50 p-4 border border-slate-100 dark:bg-slate-800/50 dark:border-slate-800">
+                    <div className="rounded-xl bg-slate-50 p-3 border border-slate-100 dark:bg-slate-800/50 dark:border-slate-800">
                       <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                         CURRENT PROFESSION / TRADE
                       </p>
@@ -687,7 +770,7 @@ export default function WorkerProfilePage() {
                   </div>
 
                   {/* SKILLS / EXPERTISE */}
-                  <div className="rounded-xl bg-slate-50 p-4 border border-slate-100 dark:bg-slate-800/50 dark:border-slate-800 space-y-2">
+                  <div className="rounded-xl bg-slate-50 p-3 border border-slate-100 dark:bg-slate-800/50 dark:border-slate-800 space-y-2">
                     <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                       SKILLS / EXPERTISE
                     </p>
@@ -743,9 +826,9 @@ export default function WorkerProfilePage() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {/* EXPECTED WAGE */}
-                    <div className="rounded-xl bg-slate-50 p-4 border border-slate-100 dark:bg-slate-800/50 dark:border-slate-800">
+                    <div className="rounded-xl bg-slate-50 p-3 border border-slate-100 dark:bg-slate-800/50 dark:border-slate-800">
                       <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                         EXPECTED WAGE
                       </p>
@@ -771,7 +854,7 @@ export default function WorkerProfilePage() {
                     </div>
 
                     {/* AVAILABILITY */}
-                    <div className="rounded-xl bg-slate-50 p-4 border border-slate-100 dark:bg-slate-800/50 dark:border-slate-800">
+                    <div className="rounded-xl bg-slate-50 p-3 border border-slate-100 dark:bg-slate-800/50 dark:border-slate-800">
                       <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                         AVAILABILITY
                       </p>
@@ -793,12 +876,36 @@ export default function WorkerProfilePage() {
                   </div>
                 </div>
               </section>
+
+              {/* Save Profile Action Area */}
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900 flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white">Save Profile Changes</h3>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    Keep your personal details, location, and trade information up to date for the best job matches.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() => void save()}
+                  className="w-full sm:w-auto inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 py-2.5 text-sm font-bold text-white shadow-md transition hover:bg-blue-700 active:scale-95 disabled:opacity-50 cursor-pointer shrink-0"
+                >
+                  {saving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+                  <span>{saving ? "Saving Changes..." : "Save Changes"}</span>
+                </button>
+              </div>
             </div>
 
-            {/* Right Column (Span 1): Documents & Security Cards */}
-            <div className="space-y-6">
+            {/* Right Column (Span 1): Account Summary (Desktop) + Informational / Safety Card */}
+            <div className="space-y-6 lg:sticky lg:top-6">
+              {/* Desktop Account Summary */}
+              <div className="hidden lg:block">
+                {accountSummaryCard}
+              </div>
+
               {/* Security / Privacy Banner Card matching Figma */}
-              <section className="relative overflow-hidden rounded-2xl bg-linear-to-br from-blue-600 to-indigo-700 p-6 text-white text-center shadow-lg">
+              <section className="relative overflow-hidden rounded-2xl bg-linear-to-br from-blue-600 via-indigo-600 to-purple-600 p-6 text-white text-center shadow-lg">
                 <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-white/20 backdrop-blur-md">
                   <ShieldCheck size={32} className="text-white" />
                 </div>
@@ -817,20 +924,6 @@ export default function WorkerProfilePage() {
             </div>
           </div>
         </main>
-
-        <div className="mx-auto flex w-full max-w-7xl justify-end px-4 pb-8 sm:px-6">
-          <button
-            type="button"
-            disabled={saving}
-            onClick={() => void save()}
-            className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-bold text-white shadow-md transition hover:bg-blue-500 active:scale-95 disabled:opacity-50"
-          >
-            {saving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
-            <span>Save Changes</span>
-          </button>
-        </div>
-      </div>
-    </div>
     </AccountManagementShell>
   );
 }

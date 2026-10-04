@@ -93,6 +93,45 @@ class FakeSupabase:
         return self.current_location_query if name == "worker_current_locations" else self.query
 
 
+class FakePhotoUserQuery:
+    def __init__(self, user):
+        self.user = user
+        self.is_update = False
+        self.filters = {}
+
+    def select(self, _fields):
+        return self
+
+    def eq(self, field, value):
+        self.filters[field] = value
+        return self
+
+    def single(self):
+        return self
+
+    def update(self, payload):
+        self.is_update = True
+        self.payload = payload
+        return self
+
+    def execute(self):
+        if self.filters.get("id") != self.user["id"]:
+            return SimpleNamespace(data=None if not self.is_update else [])
+        if self.is_update:
+            self.user.update(self.payload)
+            return SimpleNamespace(data=[self.user.copy()])
+        return SimpleNamespace(data=self.user.copy())
+
+
+class FakePhotoSupabase:
+    def __init__(self, user):
+        self.user_query = FakePhotoUserQuery(user)
+
+    def table(self, name):
+        assert name == "users"
+        return self.user_query
+
+
 @pytest.mark.asyncio
 async def test_worker_profile_save_and_followup_get_persist_trade_and_completion(monkeypatch):
     row = profile_row(trade_id=None, profile_completed=False, onboarding_status="IN_PROGRESS")
@@ -115,6 +154,19 @@ async def test_worker_profile_save_and_followup_get_persist_trade_and_completion
     assert loaded.trade_id == "Electrician"
     assert loaded.onboarding_status == "COMPLETED"
     assert fake_supabase.query.updated["onboarding_status"] == "COMPLETED"
+
+
+@pytest.mark.asyncio
+async def test_worker_profile_photo_delete_clears_reference_and_removes_owned_object(monkeypatch):
+    user_row = {"id": USER.id, "profile_photo_path": f"users/{USER.id}/photo.png"}
+    deleted_paths = []
+    monkeypatch.setattr(workers, "supabase", FakePhotoSupabase(user_row))
+    monkeypatch.setattr(workers, "delete_profile_photo", deleted_paths.append)
+
+    await workers.delete_profile_photo_upload(USER)
+
+    assert user_row["profile_photo_path"] is None
+    assert deleted_paths == [f"users/{USER.id}/photo.png"]
 
 
 @pytest.mark.asyncio

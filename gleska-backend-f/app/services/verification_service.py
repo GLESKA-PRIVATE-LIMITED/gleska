@@ -55,6 +55,15 @@ class VerificationService:
         )
 
     @staticmethod
+    def previously_set_identity_changed(previous: dict[str, Any], current: dict[str, Any]) -> bool:
+        return any(
+            bool(str(previous.get(field) or "").strip())
+            and str(previous.get(field) or "").strip().casefold()
+            != str(current.get(field) or "").strip().casefold()
+            for field in VerificationService.IDENTITY_FIELDS
+        )
+
+    @staticmethod
     def invalidate_for_identity_change(employer_id: str) -> None:
         for verification_type in VERIFICATION_TYPES:
             response = (

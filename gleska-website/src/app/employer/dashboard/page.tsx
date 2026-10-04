@@ -5,23 +5,15 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import {
-  LogOut,
   Check,
   Zap,
-  Building2,
   Users,
   Briefcase,
   Clock,
-  CreditCard,
-  HelpCircle,
-  Home,
   Loader2,
   MapPin,
   Plus,
   Trash2,
-  PanelLeft,
-  LayoutDashboard,
-  ShieldCheck,
   User,
   X,
   Mic,
@@ -41,7 +33,7 @@ import { getLocationErrorMessage, watchBrowserLocation } from "@/lib/location";
 
 import LocationPicker, { LocationSelection } from "@/components/LocationPicker";
 import VoiceMicIcon from "@/components/ui/VoiceMicIcon";
-import { formatEmployerType } from "@/components/AccountManagementShell";
+import AccountManagementShell, { formatEmployerType } from "@/components/AccountManagementShell";
 
 /**
  * Supported languages for job description input.
@@ -244,7 +236,7 @@ interface EmployerProfile {
   commission_required_for_next_worker: boolean;
   commission_amount: number;
   has_availed_free_dispatch?: boolean;
-  logo_url?: string;
+  profile_photo_url?: string | null;
 }
 
 interface JobSite {
@@ -357,6 +349,8 @@ export default function EmployerDashboard() {
   const router = useRouter();
   const { user, isLoading, nextStep, logout } = useAuth();
   const [employerProfile, setEmployerProfile] = React.useState<EmployerProfile | null>(null);
+  const displayedProfilePhotoUrl =
+    employerProfile?.profile_photo_url ?? user?.profile_photo_url ?? null;
   const [jobSites, setJobSites] = React.useState<JobSite[]>([]);
   const [siteForm, setSiteForm] = React.useState({ name: "", address: "", city: "", state: "", pincode: "", latitude: "", longitude: "" });
   const [siteError, setSiteError] = React.useState("");
@@ -392,8 +386,6 @@ export default function EmployerDashboard() {
   const [isListening, setIsListening] = React.useState(false);
   const [voiceError, setVoiceError] = React.useState("");
   const speechRecognitionRef = React.useRef<SpeechRecognitionLike | null>(null);
-  const [isSidebarOpen, setIsSidebarOpen] = React.useState(true);
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
   const [isWorkSiteModalOpen, setIsWorkSiteModalOpen] = React.useState(false);
   const [workSiteModalMode, setWorkSiteModalMode] = React.useState<WorkSiteModalMode>(null);
   const [selectedJobSiteId, setSelectedJobSiteId] = React.useState("");
@@ -1558,321 +1550,16 @@ export default function EmployerDashboard() {
   };
 
   return (
-    <div className="flex flex-col md:flex-row min-h-screen bg-[#eef1fb] font-sans text-slate-900 dark:bg-slate-950 dark:text-slate-100">
-      {/* Desktop Left Sidebar (hidden on mobile, flex on md+) */}
-      <aside
-        className={`hidden md:flex sticky top-0 h-screen flex-col justify-between border-r border-slate-200 bg-white/95 p-4 shadow-xs backdrop-blur transition-all duration-300 dark:border-slate-800 dark:bg-slate-900/95 z-40 shrink-0 ${
-          isSidebarOpen ? "w-64" : "w-20 items-center"
-        }`}
-      >
-        <div className="space-y-6 w-full">
-          {/* Sidebar Top: Branding + Collapse Toggle */}
-          <div className={`flex items-center gap-2 ${isSidebarOpen ? "justify-between px-1" : "justify-center"}`}>
-            {isSidebarOpen ? (
-              <>
-                <Link href="/" className="flex items-center min-w-0">
-                  <span className="font-[var(--font-anton)] text-xl uppercase tracking-wider bg-[linear-gradient(180deg,#E86100_0%,#FFF5EA_48%,#128807_100%)] bg-clip-text text-transparent select-none whitespace-nowrap">
-                    GO LESKA AI
-                  </span>
-                </Link>
-                <button
-                  type="button"
-                  onClick={() => setIsSidebarOpen(false)}
-                  title="Collapse sidebar"
-                  aria-label="Collapse sidebar"
-                  className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white transition"
-                >
-                  <PanelLeft size={20} />
-                </button>
-              </>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setIsSidebarOpen(true)}
-                title="Expand sidebar"
-                aria-label="Expand sidebar"
-                className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white transition"
-              >
-                <PanelLeft size={20} />
-              </button>
-            )}
-          </div>
-
-          {/* Sidebar Navigation Items */}
-          <nav className="space-y-1.5 w-full">
-            <Link
-              href="/employer/dashboard"
-              className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition ${
-                isSidebarOpen ? "" : "justify-center"
-              } bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400`}
-              title="Dashboard"
-            >
-              <LayoutDashboard size={20} className="shrink-0" />
-              {isSidebarOpen && <span>Dashboard</span>}
-            </Link>
-
-            <button
-              type="button"
-              onClick={scrollToAssistant}
-              className={`flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white transition ${
-                isSidebarOpen ? "text-left" : "justify-center"
-              }`}
-              title="Post a Job & Sites"
-            >
-              <Briefcase size={20} className="shrink-0" />
-              {isSidebarOpen && <span>Post a Job & Sites</span>}
-            </button>
-
-            <Link
-              href="/employer/workers"
-              className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white transition ${
-                isSidebarOpen ? "" : "justify-center"
-              }`}
-              title="Workers"
-            >
-              <Users size={20} className="shrink-0" />
-              {isSidebarOpen && <span>Workers</span>}
-            </Link>
-
-            <Link
-              href="/employer/attendance"
-              className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white transition ${
-                isSidebarOpen ? "" : "justify-center"
-              }`}
-              title="Attendance"
-            >
-              <Clock size={20} className="shrink-0" />
-              {isSidebarOpen && <span>Attendance</span>}
-            </Link>
-
-            <Link
-              href="/employer/subscription"
-              className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white transition ${
-                isSidebarOpen ? "" : "justify-center"
-              }`}
-              title="Subscription"
-            >
-              <CreditCard size={20} className="shrink-0" />
-              {isSidebarOpen && <span>Subscription</span>}
-            </Link>
-
-            <Link
-              href="/employer/security"
-              className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white transition ${
-                isSidebarOpen ? "" : "justify-center"
-              }`}
-              title="Security & Settings"
-            >
-              <ShieldCheck size={20} className="shrink-0" />
-              {isSidebarOpen && <span>Security & Settings</span>}
-            </Link>
-
-            <Link
-              href="/employer/help"
-              className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white transition ${
-                isSidebarOpen ? "" : "justify-center"
-              }`}
-              title="Help"
-            >
-              <HelpCircle size={20} className="shrink-0" />
-              {isSidebarOpen && <span>Help</span>}
-            </Link>
-                <Link
-                  href="/"
-                  className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white transition ${isSidebarOpen ? "" : "justify-center"}`}
-                  title="Back to Home"
-                >
-                  <Home size={20} className="shrink-0" />
-                  {isSidebarOpen && <span>Back to Home</span>}
-                </Link>
-
-          </nav>
-        </div>
-
-        {/* Sidebar Bottom: account actions */}
-        <div className="relative border-t border-slate-200 pt-4 dark:border-slate-800">
-          <div
-            className={`mb-2 flex items-center gap-3 rounded-xl px-2 py-2 ${isSidebarOpen ? "" : "justify-center"}`}
-          >
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-sm font-bold text-white shadow-xs">
-              {(employerProfile?.contact_person_name || user?.name || "E").charAt(0).toUpperCase()}
-            </div>
-            {isSidebarOpen && (
-              <div className="min-w-0">
-                <p className="truncate text-sm font-bold text-slate-900 dark:text-white">{employerProfile?.contact_person_name || user?.name}</p>
-                <p className="truncate text-xs text-slate-500 dark:text-slate-400">{formatEmployerType(employerProfile?.employer_type)}</p>
-              </div>
-            )}
-          </div>
-          <Link
-            href="/employer/company-profile"
-            className={`flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800 ${isSidebarOpen ? "" : "justify-center"}`}
-            title="Profile"
-          >
-            <User size={18} className="shrink-0" />
-            {isSidebarOpen && <span>Profile</span>}
-          </Link>
-          <button
-            type="button"
-            onClick={() => void logout()}
-            className={`mt-1 flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40 ${isSidebarOpen ? "" : "justify-center"}`}
-            title="Log out"
-          >
-            <LogOut size={18} className="shrink-0" />
-            {isSidebarOpen && <span>Log out</span>}
-          </button>
-        </div>
-      </aside>
-
-      {/* Mobile Top Header Bar (visible on < md) */}
-      <div className="md:hidden sticky top-0 z-30 flex items-center justify-between border-b border-slate-200 bg-white/95 px-4 py-3 shadow-xs backdrop-blur dark:border-slate-800 dark:bg-slate-900/95 w-full">
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-            title="Toggle sidebar menu"
-            aria-label="Toggle sidebar menu"
-            className="rounded-lg p-2 text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
-          >
-            {isMobileMenuOpen ? <X size={20} /> : <PanelLeft size={20} />}
-          </button>
-          <Link href="/" className="flex items-center">
-            <span className="font-[var(--font-anton)] text-xl uppercase tracking-wider bg-[linear-gradient(180deg,#E86100_0%,#FFF5EA_48%,#128807_100%)] bg-clip-text text-transparent select-none whitespace-nowrap">
-              GO LESKA AI
-            </span>
-          </Link>
-        </div>
-      </div>
-
-      {/* Mobile Drawer Overlay */}
-      {isMobileMenuOpen && (
-        <div className="md:hidden fixed inset-0 z-50 flex">
-          <div
-            className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs"
-            onClick={() => setIsMobileMenuOpen(false)}
-          />
-          <div className="relative flex w-72 max-w-[80vw] flex-col justify-between border-r border-slate-200 bg-white p-4 shadow-xl dark:border-slate-800 dark:bg-slate-900 z-10">
-            <div className="space-y-6">
-              <div className="flex items-center justify-between px-1">
-                <Link href="/" className="flex items-center" onClick={() => setIsMobileMenuOpen(false)}>
-                  <span className="font-[var(--font-anton)] text-xl uppercase tracking-wider bg-[linear-gradient(180deg,#E86100_0%,#FFF5EA_48%,#128807_100%)] bg-clip-text text-transparent select-none whitespace-nowrap">
-                    GO LESKA AI
-                  </span>
-                </Link>
-                <button
-                  type="button"
-                  onClick={() => setIsMobileMenuOpen(false)}
-                  className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
-                >
-                  <X size={20} />
-                </button>
-              </div>
-
-              <nav className="space-y-1.5">
-                <Link
-                  href="/employer/dashboard"
-                  onClick={() => setIsMobileMenuOpen(false)}
-                  className="flex items-center gap-3 rounded-xl bg-blue-50 px-3 py-2.5 text-sm font-semibold text-blue-600 dark:bg-blue-950/40 dark:text-blue-400"
-                >
-                  <LayoutDashboard size={20} />
-                  <span>Dashboard</span>
-                </Link>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsMobileMenuOpen(false);
-                    scrollToAssistant();
-                  }}
-                  className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
-                >
-                  <Briefcase size={20} />
-                  <span>Post a Job & Sites</span>
-                </button>
-                <Link
-                  href="/employer/workers"
-                  onClick={() => setIsMobileMenuOpen(false)}
-                  className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
-                >
-                  <Users size={20} />
-                  <span>Workers</span>
-                </Link>
-                <Link
-                  href="/employer/attendance"
-                  onClick={() => setIsMobileMenuOpen(false)}
-                  className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
-                >
-                  <Clock size={20} />
-                  <span>Attendance</span>
-                </Link>
-                <Link
-                  href="/employer/subscription"
-                  onClick={() => setIsMobileMenuOpen(false)}
-                  className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
-                >
-                  <CreditCard size={20} />
-                  <span>Subscription</span>
-                </Link>
-                <Link
-                  href="/employer/security"
-                  onClick={() => setIsMobileMenuOpen(false)}
-                  className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
-                >
-                  <ShieldCheck size={20} />
-                  <span>Security & Settings</span>
-                </Link>
-                <Link
-                  href="/employer/help"
-                  onClick={() => setIsMobileMenuOpen(false)}
-                  className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
-                >
-                  <HelpCircle size={20} />
-                  <span>Help</span>
-                </Link>
-                <Link
-                  href="/"
-                  onClick={() => setIsMobileMenuOpen(false)}
-                  className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
-                >
-                  <Home size={20} />
-                  <span>Back to Home</span>
-                </Link>
-
-              </nav>
-            </div>
-
-            <div className="relative border-t border-slate-200 pt-4 dark:border-slate-800">
-              <div className="mb-2 flex w-full items-center gap-3 rounded-xl px-2 py-2"
-              >
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-sm font-bold text-white shadow-xs">
-                  {(employerProfile?.contact_person_name || user?.name || "E").charAt(0).toUpperCase()}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-bold text-slate-900 dark:text-white">{employerProfile?.contact_person_name || user?.name}</p>
-                  <p className="truncate text-xs text-slate-500 dark:text-slate-400">{formatEmployerType(employerProfile?.employer_type)}</p>
-                </div>
-              </div>
-              <Link
-                href="/employer/company-profile"
-                onClick={() => setIsMobileMenuOpen(false)}
-                className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
-              >
-                <User size={18} />
-                <span>Profile</span>
-              </Link>
-              <button
-                type="button"
-                onClick={() => { setIsMobileMenuOpen(false); void logout(); }}
-                className="mt-1 flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
-              >
-                <LogOut size={18} />
-                <span>Log out</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Main Content Area */}
+    <AccountManagementShell
+      kind="employer"
+      name={employerProfile?.contact_person_name || user.name}
+      accountLabel={formatEmployerType(employerProfile?.employer_type)}
+      employerType={employerProfile?.employer_type}
+      profileHref="/employer/company-profile"
+      profilePhotoUrl={displayedProfilePhotoUrl}
+      onPostJob={scrollToAssistant}
+      onLogout={() => void logout()}
+    >
       <div className="flex-1 min-w-0">
         <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-12">
           {/* Welcome Card */}
@@ -1891,20 +1578,20 @@ export default function EmployerDashboard() {
               </div>
               <Link
                 href="/employer/company-profile"
-                className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-blue-600 text-white shadow-lg"
+                className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-full bg-blue-600 text-white shadow-lg"
                 title="View profile"
               >
-                {(user.profile_photo_url || employerProfile?.logo_url) ? (
+                {displayedProfilePhotoUrl ? (
                   <Image
-                    src={user.profile_photo_url || employerProfile?.logo_url || ""}
-                    alt="Profile"
-                    width={64}
-                    height={64}
+                    src={displayedProfilePhotoUrl}
+                    alt="Employer profile image"
+                    width={80}
+                    height={80}
                     className="h-full w-full object-cover"
                     unoptimized
                   />
                 ) : (
-                  <User size={32} />
+                  <User size={40} />
                 )}
               </Link>
             </div>
@@ -2124,7 +1811,7 @@ export default function EmployerDashboard() {
                           <span>{assistantCopy.thinking}</span>
                         </div>
                       )}
-                    </div>
+                      </div>
 
                     {/* Input Bar */}
                     <div className="mt-auto pt-2">
@@ -2773,7 +2460,6 @@ export default function EmployerDashboard() {
           </section>
 
         </main>
-      </div>
 
       {/* Floating Work Sites Popover/Modal */}
       {isWorkSiteModalOpen && (
@@ -3023,6 +2709,7 @@ export default function EmployerDashboard() {
           </section>
         </div>
       )}
-    </div>
+      </div>
+    </AccountManagementShell>
   );
 }

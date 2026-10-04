@@ -79,8 +79,14 @@ async def test_employer_onboarding_allows_custom_contacts_and_falls_back(monkeyp
 
     assert result.company_email == "custom@example.com"
     assert result.company_phone == "9000000000"
+    assert result.city == "Pune"
+    assert result.state == "Maharashtra"
+    assert result.pincode == "411001"
     assert fake.queries["employer_onboarding_details"].payload["company_email"] == "custom@example.com"
     assert fake.queries["employer_onboarding_details"].payload["company_phone"] == "9000000000"
+    assert fake.queries["employer_onboarding_details"].payload["city"] == "Pune"
+    assert fake.queries["employer_onboarding_details"].payload["state"] == "Maharashtra"
+    assert fake.queries["employer_onboarding_details"].payload["pincode"] == "411001"
 
     # 2. Fallback to signup account defaults when not provided
     request_fallback = IndividualOnboardingSchema(

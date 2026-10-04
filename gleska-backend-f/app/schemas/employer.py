@@ -1,7 +1,7 @@
 """Pydantic schemas for employer profiles and onboarding."""
 
-from pydantic import BaseModel, Field
-from typing import Literal, Optional
+from pydantic import BaseModel, ConfigDict, Field
+from typing import Any, Literal, Optional
 from datetime import datetime
 
 
@@ -13,6 +13,7 @@ class EmployerProfileResponse(BaseModel):
     onboarding_status: str = "NOT_STARTED"  # NOT_STARTED, IN_PROGRESS, COMPLETED
     verification_status: str = "PENDING"  # PENDING, VERIFIED, REJECTED
     contact_person_name: str
+    profile_photo_url: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     subscription_valid_until: datetime | None = None
@@ -122,6 +123,52 @@ class EmployerOnboardingDetailsResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class EmployerAccountIdentity(BaseModel):
+    name: str
+    email: Optional[str] = None
+    mobile: Optional[str] = None
+
+
+class EmployerProfileSummary(BaseModel):
+    id: str
+    employer_type: Optional[str] = None
+    onboarding_status: str
+    verification_status: str
+    contact_person_name: str
+    created_at: datetime
+
+
+class EmployerMeResponse(EmployerProfileResponse):
+    """Authoritative employer profile, with legacy top-level fields retained."""
+
+    employer: EmployerProfileSummary
+    account: EmployerAccountIdentity
+    profile: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Only onboarding fields applicable to employer.employer_type.",
+    )
+    verification: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Public verification state; provider-only metadata is redacted.",
+    )
+
+
+class EmployerProfileUpdateResponse(EmployerOnboardingDetailsResponse):
+    """Updated profile details plus the consolidated profile representation."""
+
+    profile_photo_url: Optional[str] = None
+    employer: EmployerProfileSummary
+    account: EmployerAccountIdentity
+    profile: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Only onboarding fields applicable to employer.employer_type.",
+    )
+    verification: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Public verification state; provider-only metadata is redacted.",
+    )
 
 
 class RegisteredIndustryOnboardingSchema(BaseModel):
@@ -234,8 +281,25 @@ class IndividualOnboardingSchema(BaseModel):
 
 
 class CompanyProfileUpdateSchema(BaseModel):
-    """Schema for updating company profile from dashboard."""
+    """Type-filtered partial employer profile update."""
+    model_config = ConfigDict(extra="forbid")
+
+    contact_person_name: Optional[str] = None
     business_name: Optional[str] = None
+    business_type: Optional[str] = None
+    business_category: Optional[str] = None
+    industry_type: Optional[str] = None
+    industry_category: Optional[str] = None
+    nature_of_business: Optional[str] = None
+    services_required: Optional[list[Any]] = None
+    director_data: Optional[list[Any]] = None
+    number_of_proprietors: Optional[int] = Field(default=None, ge=1)
+    proprietor_names: Optional[list[str]] = None
+    proprietor_name: Optional[str] = None
+    proprietor_aadhaar: Optional[str] = None
+    website_url: Optional[str] = None
+    annual_revenue: Optional[str] = None
+    description: Optional[str] = None
     company_phone: Optional[str] = None
     company_email: Optional[str] = None
     address: Optional[str] = None
@@ -243,20 +307,22 @@ class CompanyProfileUpdateSchema(BaseModel):
     city: Optional[str] = None
     state: Optional[str] = None
     pincode: Optional[str] = None
-    website_url: Optional[str] = None
-    description: Optional[str] = None
     gstin: Optional[str] = None
     cin_number: Optional[str] = None
     pan_number: Optional[str] = None
     tan_number: Optional[str] = None
-    business_category: Optional[str] = None
-    industry_type: Optional[str] = None
-    industry_category: Optional[str] = None
+    registration_number: Optional[str] = None
+    udyam_number: Optional[str] = None
     work_location: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    hiring_mode: Optional[str] = None
 
 
 class DirectorProfileUpdateSchema(BaseModel):
-    """Schema for updating director profile from dashboard."""
+    """Partial director details update; omitted fields stay unchanged and null/blank clears a value."""
+    model_config = ConfigDict(extra="forbid")
+
     director_name: Optional[str] = None
     director_phone: Optional[str] = None
     director_email: Optional[str] = None

@@ -78,7 +78,7 @@ async def test_individual_completion_sets_existing_verified_state(monkeypatch):
         def table(self, table): return Query(table)
 
     monkeypatch.setattr(employers, "supabase", Supabase())
-    monkeypatch.setattr(VerificationService, "assert_required_complete", lambda *_args: None)
+    monkeypatch.setattr(VerificationService, "calculate_overall_status", lambda *_args: "VERIFIED")
 
     result = await employers.complete_onboarding(CompleteOnboardingSchema(), user)
 

@@ -38,5 +38,15 @@ export function useWorkerProfilePhoto() {
     }
   };
 
-  return { isUploading, uploadPhoto };
+  const removePhoto = async (refreshUser: () => Promise<unknown>) => {
+    setIsUploading(true);
+    try {
+      await apiClient.delete("/api/v1/workers/me/profile-photo", { withCredentials: true });
+      await refreshUser();
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  return { isUploading, uploadPhoto, removePhoto };
 }

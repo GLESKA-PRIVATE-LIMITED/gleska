@@ -7,6 +7,8 @@ from app.core.supabase import supabase
 from app.schemas.auth import UserResponse
 from app.schemas.employer import (
     EmployerProfileResponse,
+    EmployerMeResponse,
+    EmployerProfileUpdateResponse,
     EmployerOnboardingDetailsResponse,
     SelectEmployerTypeSchema,
     RegisteredIndustryOnboardingSchema,
@@ -20,9 +22,17 @@ from app.schemas.employer import (
     EmployerPreferencesResponse,
     EmployerPreferencesUpdate,
 )
+from app.schemas.worker import ProfilePhotoUploadRequest
 from app.services.onboarding_service import OnboardingService
 from app.services.entitlements import employer_state
 from app.services.job_match_service import JobMatchService
+from app.services.profile_photo_service import (
+    delete_profile_photo,
+    get_profile_photo_path,
+    get_signed_profile_photo_url,
+    now_iso,
+    validate_profile_photo,
+)
 from app.services.verification_service import VerificationService
 from app.schemas.verification import (
     VerificationRecordResponse,
@@ -72,61 +82,131 @@ async def update_employer_preferences(
     return await get_employer_preferences(user)
 
 
-@router.get("/me", response_model=EmployerProfileResponse)
+@router.get("/me", response_model=EmployerMeResponse)
 async def get_employer_profile(user: UserResponse = Depends(require_employer)):
-    """Get current employer's profile with real-time verification status alignment."""
+    """Get the authenticated employer's consolidated, type-aware profile."""
     try:
-        response = (
-            supabase.table("employer_profiles")
-            .select("*")
-            .eq("user_id", user.id)
-            .single()
-            .execute()
-        )
-
-        if not response.data:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Employer profile not found",
-            )
-
-        employer = response.data
-        if employer.get("id"):
-            details_response = (
-                supabase.table("employer_onboarding_details")
-                .select("*")
-                .eq("employer_id", employer["id"])
-                .execute()
-            )
-            details = details_response.data[0] if details_response.data else {}
-            active_details = OnboardingService.active_details_for_type(
-                employer.get("employer_type") or "", details
-            )
-            calculated_status = VerificationService.calculate_overall_status(
-                employer.get("employer_type") or "",
-                employer["id"],
-                active_details,
-            )
-            persisted_status = "REJECTED" if calculated_status == "FAILED" else calculated_status
-            if persisted_status != employer.get("verification_status"):
-                update_res = (
-                    supabase.table("employer_profiles")
-                    .update({"verification_status": persisted_status})
-                    .eq("id", employer["id"])
-                    .execute()
-                )
-                if update_res.data:
-                    employer["verification_status"] = persisted_status
-
-        return EmployerProfileResponse(**{**employer, **employer_state(employer)})
+        return _load_employer_profile_contract(user)
 
     except HTTPException:
         raise
-    except Exception:
+    except Exception as exc:
+        logger.exception("Failed to load employer profile: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Unable to load employer onboarding",
         )
+
+
+@router.post("/me/profile-photo/upload-start")
+async def start_employer_profile_photo_upload(
+    request: ProfilePhotoUploadRequest,
+    user: UserResponse = Depends(require_employer),
+):
+    try:
+        validate_profile_photo(request)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    return {"storage_path": get_profile_photo_path(user.id, request.original_filename)}
+
+
+@router.post("/me/profile-photo/upload-complete")
+async def complete_employer_profile_photo_upload(
+    request: ProfilePhotoUploadRequest,
+    user: UserResponse = Depends(require_employer),
+):
+    try:
+        validate_profile_photo(request)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+    expected_prefix = f"users/{user.id}/"
+    storage_path = request.storage_path
+    if (
+        not storage_path
+        or not storage_path.startswith(expected_prefix)
+        or any(part in {"", ".", ".."} for part in storage_path.split("/"))
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid profile photo path",
+        )
+
+    profile_photo_url = get_signed_profile_photo_url(storage_path)
+    if not profile_photo_url:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Uploaded profile photo was not found",
+        )
+
+    current_response = (
+        supabase.table("users")
+        .select("profile_photo_path")
+        .eq("id", user.id)
+        .single()
+        .execute()
+    )
+    if not current_response.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employer account not found")
+    old_path = current_response.data.get("profile_photo_path")
+
+    update_response = (
+        supabase.table("users")
+        .update({"profile_photo_path": storage_path, "updated_at": now_iso()})
+        .eq("id", user.id)
+        .execute()
+    )
+    if not update_response.data:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to save employer profile photo",
+        )
+
+    if old_path and old_path != storage_path:
+        try:
+            delete_profile_photo(old_path)
+        except Exception:
+            logger.exception("Failed to remove replaced employer profile photo for user_id=%s", user.id)
+
+    return {"profile_photo_url": profile_photo_url}
+
+
+@router.delete("/me/profile-photo")
+async def delete_employer_profile_photo(user: UserResponse = Depends(require_employer)):
+    current_response = (
+        supabase.table("users")
+        .select("profile_photo_path")
+        .eq("id", user.id)
+        .single()
+        .execute()
+    )
+    if not current_response.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employer account not found")
+
+    old_path = current_response.data.get("profile_photo_path")
+    update_response = (
+        supabase.table("users")
+        .update({"profile_photo_path": None, "updated_at": now_iso()})
+        .eq("id", user.id)
+        .execute()
+    )
+    if not update_response.data:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to remove employer profile photo",
+        )
+    if old_path:
+        try:
+            delete_profile_photo(old_path)
+        except Exception:
+            logger.exception("Failed to remove employer profile photo storage object for user_id=%s", user.id)
+    return {"profile_photo_url": None}
 
 
 @router.get("/me/available-worker-count")
@@ -239,14 +319,26 @@ async def select_employer_type(
         if not current_employer:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employer profile not found")
         previous_type = current_employer.get("employer_type")
-        if previous_type == request.employer_type and request.employer_type != "INDIVIDUAL":
+        if previous_type == request.employer_type:
+            if (
+                request.employer_type == "INDIVIDUAL"
+                and current_employer.get("onboarding_status") != "COMPLETED"
+            ):
+                response = (
+                    supabase.table("employer_profiles")
+                    .update({"onboarding_status": "COMPLETED"})
+                    .eq("user_id", user.id)
+                    .execute()
+                )
+                if not response.data:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail="Employer profile not found",
+                    )
+                return EmployerProfileResponse(**response.data[0])
             return EmployerProfileResponse(**current_employer)
 
-        profile_updates = {"employer_type": request.employer_type}
-        if request.employer_type == "INDIVIDUAL":
-            profile_updates["onboarding_status"] = "COMPLETED"
-        else:
-            profile_updates["onboarding_status"] = "IN_PROGRESS"
+        if request.employer_type != "INDIVIDUAL" or previous_type:
             details_response = (
                 supabase.table("employer_onboarding_details")
                 .select("*")
@@ -268,13 +360,12 @@ async def select_employer_type(
             if not details_upsert.data:
                 raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to switch employer directory")
 
-            if previous_type:
-                supabase.table("employer_verifications").update({
-                    "status": "FAILED",
-                    "failure_reason": "Employer directory changed; verification required again",
-                    "verified_at": None,
-                }).eq("employer_id", current_employer["id"]).execute()
+        profile_updates = {"employer_type": request.employer_type}
+        profile_updates["onboarding_status"] = (
+            "COMPLETED" if request.employer_type == "INDIVIDUAL" else "IN_PROGRESS"
+        )
 
+        if previous_type != request.employer_type:
             profile_updates["verification_status"] = "PENDING"
 
         # Update employer profile with the selected type and its routing state.
@@ -290,6 +381,13 @@ async def select_employer_type(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Employer profile not found",
             )
+
+        if previous_type and previous_type != request.employer_type:
+            supabase.table("employer_verifications").update({
+                "status": "FAILED",
+                "failure_reason": "Employer directory changed; verification required again",
+                "verified_at": None,
+            }).eq("employer_id", current_employer["id"]).execute()
 
         return EmployerProfileResponse(**response.data[0])
 
@@ -381,10 +479,10 @@ async def update_legal_identity(
         existing_response.data[0] if existing_response.data else {},
     )
     merged_identity = {**previous, **data}
-    if employer.get("onboarding_status") == "COMPLETED" and VerificationService.identity_changed(previous, merged_identity):
+    identity_changed = VerificationService.identity_changed(previous, merged_identity)
+    if employer.get("onboarding_status") == "COMPLETED" and identity_changed:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Completed employer identity cannot be changed")
-    if VerificationService.identity_changed(previous, merged_identity):
-        VerificationService.invalidate_for_identity_change(employer["id"])
+    verified_identity_changed = VerificationService.previously_set_identity_changed(previous, merged_identity)
 
     update_payload = OnboardingService.active_details_payload(
         employer.get("employer_type") or "",
@@ -399,6 +497,8 @@ async def update_legal_identity(
     )
     if not response.data:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to save legal identity")
+    if verified_identity_changed:
+        VerificationService.invalidate_for_identity_change(employer["id"])
     return EmployerOnboardingDetailsResponse(**OnboardingService.active_details_for_type(
         employer.get("employer_type") or "", response.data[0]
     ))
@@ -479,6 +579,90 @@ def _verification_details_for_user(
             detail="Authenticated registrant name is required for Aadhaar verification",
         )
     return {**details, "proprietor_name": registrant_name}
+
+
+def _load_employer_profile_contract(user: UserResponse) -> EmployerMeResponse:
+    profile_response = (
+        supabase.table("employer_profiles")
+        .select("*")
+        .eq("user_id", user.id)
+        .single()
+        .execute()
+    )
+    employer = profile_response.data
+    if not employer:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employer profile not found")
+
+    details_response = (
+        supabase.table("employer_onboarding_details")
+        .select("*")
+        .eq("employer_id", employer["id"])
+        .execute()
+    )
+    details = details_response.data[0] if details_response.data else {}
+    employer_type = employer.get("employer_type") or ""
+    active_details = OnboardingService.active_details_for_type(employer_type, details)
+
+    calculated_status = VerificationService.calculate_overall_status(
+        employer_type, employer["id"], active_details
+    )
+    persisted_status = "REJECTED" if calculated_status == "FAILED" else calculated_status
+    if persisted_status != employer.get("verification_status"):
+        update_res = (
+            supabase.table("employer_profiles")
+            .update({"verification_status": persisted_status})
+            .eq("id", employer["id"])
+            .eq("user_id", user.id)
+            .execute()
+        )
+        if update_res.data:
+            employer["verification_status"] = persisted_status
+
+    account_response = (
+        supabase.table("users")
+        .select("name, email, mobile, profile_photo_path")
+        .eq("id", user.id)
+        .single()
+        .execute()
+    )
+    account = account_response.data
+    if not account:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employer account not found")
+
+    verification_records = [
+        _public_verification_record(record)
+        for record in VerificationService.list_for_employer(employer["id"])
+    ]
+    profile_fields = OnboardingService.fields_for_type(employer_type)
+    profile_data = {
+        key: value for key, value in active_details.items()
+        if key in profile_fields
+    }
+    employer_summary = {
+        key: employer.get(key)
+        for key in (
+            "id", "employer_type", "onboarding_status", "verification_status",
+            "contact_person_name", "created_at",
+        )
+    }
+    return EmployerMeResponse(
+        **{**employer, **employer_state(employer)},
+        profile_photo_url=get_signed_profile_photo_url(account.get("profile_photo_path")),
+        employer=employer_summary,
+        account=account,
+        profile=profile_data,
+        verification=verification_records,
+    )
+
+
+def _updated_employer_profile_response(
+    user: UserResponse,
+    details: dict[str, Any],
+) -> EmployerProfileUpdateResponse:
+    contract = _load_employer_profile_contract(user)
+    return EmployerProfileUpdateResponse(
+        **{**contract.model_dump(), **details}
+    )
 
 
 @router.post(
@@ -638,7 +822,11 @@ async def verify_onboarding_aadhaar_otp(
     return VerificationRecordResponse(**_public_verification_record(record))
 
 
-@router.put("/company-profile", response_model=EmployerOnboardingDetailsResponse)
+@router.put(
+    "/company-profile",
+    response_model=EmployerProfileUpdateResponse,
+    response_model_exclude_none=True,
+)
 async def update_company_profile(
     request: CompanyProfileUpdateSchema,
     user: UserResponse = Depends(require_employer),
@@ -656,21 +844,6 @@ async def update_company_profile(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employer profile not found")
 
         employer = profile_response.data
-        allowed_fields_by_type = {
-            "INDIVIDUAL": {"company_phone", "company_email", "address", "city", "state", "pincode", "work_location"},
-            "UNREGISTERED_BUSINESS": {
-                "business_name", "company_phone", "company_email", "address", "city", "state", "pincode",
-                "website_url", "description", "business_category", "industry_category", "work_location",
-            },
-            "REGISTERED_BUSINESS": {
-                "business_name", "company_phone", "company_email", "address", "city", "state", "pincode",
-                "work_location", "gstin", "cin_number", "pan_number",
-            },
-            "REGISTERED_INDUSTRY": {
-                "business_name", "company_phone", "company_email", "address", "city", "state", "pincode",
-                "work_location", "gstin", "cin_number", "pan_number", "registration_number", "udyam_number",
-            },
-        }
         existing_details_response = (
             supabase.table("employer_onboarding_details")
             .select("*")
@@ -682,12 +855,15 @@ async def update_company_profile(
             employer.get("employer_type") or "", previous_details
         )
 
-        raw_data = request.model_dump()
-        data = {key: value for key, value in raw_data.items() if value is not None}
+        data = request.model_dump(exclude_unset=True)
         if not data:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="At least one field is required to update")
 
-        allowed_fields = allowed_fields_by_type.get(employer.get("employer_type"), set())
+        allowed_fields = OnboardingService.fields_for_type(
+            employer.get("employer_type") or ""
+        ).intersection(CompanyProfileUpdateSchema.model_fields)
+        if employer.get("employer_type") == "INDIVIDUAL":
+            allowed_fields.add("contact_person_name")
         unsupported_fields = sorted(set(data) - allowed_fields)
         if unsupported_fields:
             raise HTTPException(
@@ -695,45 +871,77 @@ async def update_company_profile(
                 detail=f"Fields are not applicable to {employer.get('employer_type')}: {', '.join(unsupported_fields)}",
             )
 
-        pincode = str(data.get("pincode", "")).strip()
-        if pincode and not re.fullmatch(r"[0-9]{6}", pincode):
+        for key, value in list(data.items()):
+            if isinstance(value, str):
+                normalized = value.strip()
+                data[key] = normalized or None
+        contact_person_name = data.pop("contact_person_name", None)
+        if "contact_person_name" in request.model_fields_set and not contact_person_name:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="contact_person_name cannot be cleared",
+            )
+        if data.get("pincode") and not re.fullmatch(r"[0-9]{6}", data["pincode"]):
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="pincode must be a valid 6-digit number")
+        if "company_email" in data and data["company_email"] is not None:
+            data["company_email"] = data["company_email"].lower()
 
-        if "company_phone" in data:
-            data["company_phone"] = str(data["company_phone"]).strip()
-        if "company_email" in data:
-            data["company_email"] = str(data["company_email"]).strip().lower()
-
-        # Discard fields that do not belong to the database schema
         sanitized_data = data
 
         merged_details = {**previous_active_details, **sanitized_data, "employer_id": employer["id"]}
-        if employer.get("employer_type") in {"REGISTERED_INDUSTRY", "REGISTERED_BUSINESS"}:
-            identity_changed = VerificationService.identity_changed(previous_active_details, merged_details)
-            if employer.get("onboarding_status") == "COMPLETED" and identity_changed:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail="Completed employer identity cannot be changed",
-                )
-            if identity_changed:
-                VerificationService.invalidate_for_identity_change(employer["id"])
+        identity_changed = VerificationService.identity_changed(previous_active_details, merged_details)
+        if employer.get("onboarding_status") == "COMPLETED" and identity_changed:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Completed employer identity cannot be changed",
+            )
+        verified_identity_changed = VerificationService.previously_set_identity_changed(
+            previous_active_details, merged_details
+        )
 
-        update_payload = OnboardingService.active_details_payload(
-            employer.get("employer_type") or "", previous_details, sanitized_data
+        is_completed = employer.get("onboarding_status") == "COMPLETED"
+        valid, validation_error = OnboardingService.validate_onboarding_fields(
+            employer.get("employer_type") or "",
+            merged_details,
+            require_all_fields=is_completed,
         )
-        update_payload["employer_id"] = employer["id"]
-        details_response = (
-            supabase.table("employer_onboarding_details")
-            .upsert(update_payload, on_conflict="employer_id")
-            .execute()
-        )
-        if not details_response.data:
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update company details")
+        if not valid:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=validation_error,
+            )
+        active_details = previous_active_details
+        if sanitized_data:
+            update_payload = OnboardingService.active_details_payload(
+                employer.get("employer_type") or "", previous_details, sanitized_data
+            )
+            update_payload["employer_id"] = employer["id"]
+            details_response = (
+                supabase.table("employer_onboarding_details")
+                .upsert(update_payload, on_conflict="employer_id")
+                .execute()
+            )
+            if not details_response.data:
+                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update company details")
+            active_details = OnboardingService.active_details_for_type(
+                employer.get("employer_type") or "", details_response.data[0]
+            )
 
-        active_details = OnboardingService.active_details_for_type(
-            employer.get("employer_type") or "", details_response.data[0]
-        )
-        return EmployerOnboardingDetailsResponse(**active_details)
+        if contact_person_name is not None:
+            profile_update = (
+                supabase.table("employer_profiles")
+                .update({"contact_person_name": contact_person_name})
+                .eq("id", employer["id"])
+                .eq("user_id", user.id)
+                .execute()
+            )
+            if not profile_update.data:
+                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update employer name")
+
+        if verified_identity_changed:
+            VerificationService.invalidate_for_identity_change(employer["id"])
+
+        return _updated_employer_profile_response(user, active_details)
 
     except HTTPException:
         raise
@@ -742,7 +950,11 @@ async def update_company_profile(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Unable to update company profile")
 
 
-@router.put("/director-profile", response_model=EmployerOnboardingDetailsResponse)
+@router.put(
+    "/director-profile",
+    response_model=EmployerProfileUpdateResponse,
+    response_model_exclude_none=True,
+)
 async def update_director_profile(
     request: DirectorProfileUpdateSchema,
     user: UserResponse = Depends(require_employer),
@@ -776,28 +988,62 @@ async def update_director_profile(
             employer.get("employer_type") or "", previous_details
         )
 
-        raw_data = request.model_dump()
-        data = {key: value for key, value in raw_data.items() if value is not None}
+        data = request.model_dump(exclude_unset=True)
         if not data:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="At least one field is required to update")
 
+        allowed_fields = {
+            "REGISTERED_BUSINESS": {
+                "director_name", "director_phone", "director_email", "director_address",
+                "director_aadhaar", "director_pan",
+            },
+            "REGISTERED_INDUSTRY": {
+                "director_name", "director_phone", "director_email", "director_address",
+                "director_aadhaar", "director_pan", "director_din", "director_blood_group",
+            },
+            "UNREGISTERED_BUSINESS": {"director_name", "director_aadhaar"},
+        }.get(employer.get("employer_type"), set())
+        unsupported_fields = sorted(set(data) - allowed_fields)
+        if unsupported_fields:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Fields are not applicable to {employer.get('employer_type')}: {', '.join(unsupported_fields)}",
+            )
+        if (
+            employer.get("employer_type") != "UNREGISTERED_BUSINESS"
+            and "director_name" in data
+            and (data["director_name"] is None or not str(data["director_name"]).strip())
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="director_name cannot be cleared",
+            )
+        for key, value in list(data.items()):
+            if isinstance(value, str):
+                normalized = value.strip()
+                data[key] = normalized or None
+        if data.get("director_email"):
+            data["director_email"] = data["director_email"].lower()
+        if data.get("director_pan"):
+            data["director_pan"] = data["director_pan"].upper()
+
         update_dict: dict[str, Any] = {}
-        if "director_name" in data and str(data["director_name"]).strip():
-            name_val = str(data["director_name"]).strip()
+        if "director_name" in data:
+            name_val = data["director_name"]
             name_field = "proprietor_name" if employer.get("employer_type") == "UNREGISTERED_BUSINESS" else "director_name"
             update_dict[name_field] = name_val
-        if "director_phone" in data and str(data["director_phone"]).strip():
-            update_dict["director_phone"] = str(data["director_phone"]).strip()
-        if "director_email" in data and str(data["director_email"]).strip():
-            update_dict["director_email"] = str(data["director_email"]).strip().lower()
-        if "director_address" in data and str(data["director_address"]).strip():
-            update_dict["director_address"] = str(data["director_address"]).strip()
-        if "director_aadhaar" in data and str(data["director_aadhaar"]).strip():
-            aadhaar_val = str(data["director_aadhaar"]).strip()
+        if "director_phone" in data:
+            update_dict["director_phone"] = data["director_phone"]
+        if "director_email" in data:
+            update_dict["director_email"] = data["director_email"]
+        if "director_address" in data:
+            update_dict["director_address"] = data["director_address"]
+        if "director_aadhaar" in data:
+            aadhaar_val = data["director_aadhaar"]
             aadhaar_field = "proprietor_aadhaar" if employer.get("employer_type") == "UNREGISTERED_BUSINESS" else "director_aadhaar"
             update_dict[aadhaar_field] = aadhaar_val
-        if "director_pan" in data and str(data["director_pan"]).strip():
-            update_dict["pan_number"] = str(data["director_pan"]).strip().upper()
+        if "director_pan" in data:
+            update_dict["pan_number"] = data["director_pan"]
 
         extra_director_data = previous_active_details.get("director_data") or []
         if not isinstance(extra_director_data, list):
@@ -805,11 +1051,11 @@ async def update_director_profile(
 
         director_meta: dict[str, Any] = dict(extra_director_data[0]) if extra_director_data and isinstance(extra_director_data[0], dict) else {}
         if "director_din" in data:
-            director_meta["din"] = str(data["director_din"]).strip()
+            director_meta["din"] = data["director_din"]
         if "director_blood_group" in data:
-            director_meta["blood_group"] = str(data["director_blood_group"]).strip()
+            director_meta["blood_group"] = data["director_blood_group"]
         if "director_name" in data:
-            director_meta["name"] = str(data["director_name"]).strip()
+            director_meta["name"] = data["director_name"]
         if director_meta:
             update_dict["director_data"] = [director_meta]
 
@@ -818,16 +1064,24 @@ async def update_director_profile(
             if key in OnboardingService.fields_for_type(employer.get("employer_type") or "")
         }
         merged_details = {**previous_active_details, **update_dict, "employer_id": employer["id"]}
-        if employer.get("employer_type") == "REGISTERED_INDUSTRY":
-            identity_changed = VerificationService.identity_changed(previous_active_details, merged_details)
-            if employer.get("onboarding_status") == "COMPLETED" and identity_changed:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail="Completed employer identity cannot be changed",
-                )
-            if identity_changed:
-                VerificationService.invalidate_for_identity_change(employer["id"])
+        identity_changed = VerificationService.identity_changed(previous_active_details, merged_details)
+        if employer.get("onboarding_status") == "COMPLETED" and identity_changed:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Completed employer identity cannot be changed",
+            )
 
+        is_completed = employer.get("onboarding_status") == "COMPLETED"
+        valid, validation_error = OnboardingService.validate_onboarding_fields(
+            employer.get("employer_type") or "",
+            merged_details,
+            require_all_fields=is_completed,
+        )
+        if not valid:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=validation_error,
+            )
         update_payload = OnboardingService.active_details_payload(
             employer.get("employer_type") or "", previous_details, update_dict
         )
@@ -840,13 +1094,21 @@ async def update_director_profile(
         if not details_response.data:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update director profile")
 
+        verified_identity_changed = VerificationService.previously_set_identity_changed(
+            previous_active_details, merged_details
+        )
+        if verified_identity_changed:
+            VerificationService.invalidate_for_identity_change(employer["id"])
+
         if update_dict.get("director_name"):
-            supabase.table("employer_profiles").update({"contact_person_name": update_dict["director_name"]}).eq("id", employer["id"]).execute()
+            supabase.table("employer_profiles").update(
+                {"contact_person_name": update_dict["director_name"]}
+            ).eq("id", employer["id"]).eq("user_id", user.id).execute()
 
         active_details = OnboardingService.active_details_for_type(
             employer.get("employer_type") or "", details_response.data[0]
         )
-        return EmployerOnboardingDetailsResponse(**active_details)
+        return _updated_employer_profile_response(user, active_details)
 
     except HTTPException:
         raise
@@ -866,7 +1128,6 @@ async def _update_onboarding(
             key: value
             for key, value in data.items()
             if value is not None
-            and key not in {"city", "state", "pincode"}
             and key in OnboardingService.fields_for_type(employer_type)
         }
         # Validate type matches
@@ -942,23 +1203,15 @@ async def _update_onboarding(
                     VerificationService.assert_verified_types(employer["id"], ["CIN", "AADHAAR"])
                 except ValueError as exc:
                     raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-        identity_for_comparison = {
-            **previous_active_details,
-            **{
-                field: merged_details.get(field)
-                for field in VerificationService.IDENTITY_FIELDS
-                if str(previous_active_details.get(field) or "").strip()
-            },
-        }
-        identity_changed = VerificationService.identity_changed(previous_active_details, identity_for_comparison)
+        identity_changed = VerificationService.identity_changed(previous_active_details, merged_details)
         if employer.get("onboarding_status") == "COMPLETED" and identity_changed:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Completed employer identity cannot be changed",
             )
-        if identity_changed:
-            VerificationService.invalidate_for_identity_change(employer["id"])
-
+        verified_identity_changed = VerificationService.previously_set_identity_changed(
+            previous_active_details, merged_details
+        )
         # Validate required fields for this type
         is_valid, error_msg = OnboardingService.validate_onboarding_fields(
             employer_type,
@@ -993,6 +1246,9 @@ async def _update_onboarding(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to save onboarding details",
             )
+
+        if verified_identity_changed:
+            VerificationService.invalidate_for_identity_change(employer["id"])
 
         return EmployerOnboardingDetailsResponse(**OnboardingService.active_details_for_type(
             employer_type, details_response.data[0]
@@ -1030,6 +1286,31 @@ async def complete_onboarding(
             )
 
         employer = profile_response.data
+
+        if employer.get("employer_type") == "INDIVIDUAL":
+            calculated_status = VerificationService.calculate_overall_status(
+                "INDIVIDUAL", employer["id"], {}
+            )
+            individual_updates = {}
+            if employer.get("onboarding_status") != "COMPLETED":
+                individual_updates["onboarding_status"] = "COMPLETED"
+            persisted_status = "REJECTED" if calculated_status == "FAILED" else calculated_status
+            if employer.get("verification_status") != persisted_status:
+                individual_updates["verification_status"] = persisted_status
+            if individual_updates:
+                individual_response = (
+                    supabase.table("employer_profiles")
+                    .update(individual_updates)
+                    .eq("user_id", user.id)
+                    .execute()
+                )
+                if not individual_response.data:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail="Failed to complete individual profile",
+                    )
+                employer = individual_response.data[0]
+            return EmployerProfileResponse(**employer)
 
         if employer.get("onboarding_status") != "IN_PROGRESS":
             raise HTTPException(

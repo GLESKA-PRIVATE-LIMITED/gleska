@@ -2,6 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Briefcase,
@@ -19,6 +20,7 @@ import {
   X,
   Clock,
 } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
 
 interface AccountManagementShellProps {
   kind: "employer" | "worker";
@@ -26,8 +28,10 @@ interface AccountManagementShellProps {
   accountLabel: string;
   /** Employer account type retained for caller compatibility. */
   employerType?: string | null;
-  /** For worker kind: direct href for the profile link. */
+  /** Direct href for the profile identity block. */
   profileHref?: string;
+  profilePhotoUrl?: string | null;
+  onPostJob?: () => void;
   onLogout: () => void | Promise<void>;
   children: React.ReactNode;
 }
@@ -46,6 +50,9 @@ export default function AccountManagementShell({
   kind,
   name,
   accountLabel,
+  profileHref,
+  profilePhotoUrl,
+  onPostJob,
   onLogout,
   children,
 }: AccountManagementShellProps) {
@@ -53,45 +60,34 @@ export default function AccountManagementShell({
   const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
   const pathname = usePathname();
   const router = useRouter();
+  const { user } = useAuth();
 
   const employer = kind === "employer";
   const dashboardHref = employer ? "/employer/dashboard" : "/worker/dashboard";
+  const identityHref = profileHref || (employer ? "/employer/company-profile" : "/worker/profile");
   const closeMobile = () => setIsMobileMenuOpen(false);
   const handleShellLogout = async () => {
     await onLogout();
     router.replace("/");
   };
 
-  const renderMainActions = (mobile = false) => (
-    <div className="mt-3 space-y-1.5">
+  const renderAccountActions = (mobile = false) => (
+    <div className="mt-3 space-y-1.5 border-t border-slate-200 pt-3 dark:border-slate-800">
       <Link
         href="/"
         onClick={mobile ? closeMobile : undefined}
-        className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
+        className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-slate-200 dark:hover:bg-slate-800"
       >
         <Home size={17} className="shrink-0 text-slate-500 dark:text-slate-400" />
         <span>Back to Home</span>
       </Link>
-    </div>
-  );
-
-  const renderAccountActions = (mobile = false) => (
-    <div className="mt-3 space-y-1.5 border-t border-slate-200 pt-3 dark:border-slate-800">
-      {employer && <Link
-        href="/employer/company-profile"
-        onClick={mobile ? closeMobile : undefined}
-        className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
-      >
-        <User size={17} className="shrink-0 text-slate-500 dark:text-slate-400" />
-        <span>Profile</span>
-      </Link>}
       <button
         type="button"
         onClick={() => {
           if (mobile) closeMobile();
           void handleShellLogout();
         }}
-        className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
+        className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 dark:text-red-400 dark:hover:bg-red-950/40"
       >
         <LogOut size={17} className="shrink-0" />
         <span>Log out</span>
@@ -106,7 +102,6 @@ export default function AccountManagementShell({
     { href: "/employer/attendance", label: "Attendance", icon: Clock, isPage: true },
     { href: "/employer/subscription", label: "Subscription", icon: CreditCard, isPage: true },
     { href: "/employer/security", label: "Security & Settings", icon: ShieldCheck, isPage: true },
-    { href: "/employer/help", label: "Help", icon: HelpCircle, isPage: true },
   ];
 
   const workerNav = [
@@ -116,10 +111,9 @@ export default function AccountManagementShell({
     { href: "/worker/documents", label: "Documents", icon: FileText, isPage: true },
     { href: "/worker/subscription", label: "Subscription", icon: CreditCard, isPage: true },
     { href: "/worker/settings-security", label: "Settings & Security", icon: ShieldCheck, isPage: true },
-    { href: "/worker/help", label: "Help", icon: HelpCircle, isPage: true },
-    { href: "/worker/profile", label: "Profile", icon: User, isPage: true },
   ];
 
+  const helpHref = employer ? "/employer/help" : "/worker/help";
   const navigation = employer ? employerNav : workerNav;
 
   const linkIsActive = (href: string) => {
@@ -137,41 +131,90 @@ export default function AccountManagementShell({
   ) =>
     `flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition ${
       linkIsActive(href) ? "bg-blue-600 text-white shadow-xs" : base
-    } ${!isSidebarOpen && !mobile ? "justify-center" : ""}`;
+    } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${!isSidebarOpen && !mobile ? "justify-center" : ""}`;
 
   const renderLinks = (mobile = false) => (
     <div className="space-y-1.5">
       {navigation.map(({ href, label, icon: Icon, isPage }) => (
-        <Link
-          key={label}
-          href={href}
-          onClick={mobile ? closeMobile : undefined}
-          className={linkClass(isPage ? href : "", mobile)}
-          title={label}
-        >
-          <Icon size={19} className="shrink-0" />
-          {(isSidebarOpen || mobile) && <span>{label}</span>}
-        </Link>
+        href.includes("#") && pathname === dashboardHref && onPostJob ? (
+          <button
+            key={label}
+            type="button"
+            onClick={() => {
+              if (mobile) closeMobile();
+              onPostJob();
+            }}
+            className={`${linkClass("", mobile)} w-full`}
+            title={label}
+          >
+            <Icon size={19} className="shrink-0" />
+            {(isSidebarOpen || mobile) && <span>{label}</span>}
+          </button>
+        ) : (
+          <Link
+            key={label}
+            href={href}
+            onClick={mobile ? closeMobile : undefined}
+            aria-current={isPage && linkIsActive(href) ? "page" : undefined}
+            className={linkClass(isPage ? href : "", mobile)}
+            title={label}
+          >
+            <Icon size={19} className="shrink-0" />
+            {(isSidebarOpen || mobile) && <span>{label}</span>}
+          </Link>
+        )
       ))}
-      {renderMainActions(mobile)}
+      <Link
+        href={helpHref}
+        onClick={mobile ? closeMobile : undefined}
+        className={linkClass(helpHref, mobile)}
+        title="Help"
+      >
+        <HelpCircle size={19} className="shrink-0" />
+        {(isSidebarOpen || mobile) && <span>Help</span>}
+      </Link>
     </div>
   );
+
+  const renderProfileIdentity = (mobile = false) => {
+    const active = linkIsActive(identityHref);
+    const photoUrl = profilePhotoUrl !== undefined ? profilePhotoUrl : user?.profile_photo_url;
+    return (
+      <Link
+        href={identityHref}
+        onClick={mobile ? closeMobile : undefined}
+        aria-current={active ? "page" : undefined}
+        title={`${name} · ${employer ? accountLabel : "Worker"}`}
+        className={`flex min-w-0 items-center gap-3 rounded-xl px-2 py-2 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+          active
+            ? "bg-blue-50 ring-1 ring-blue-200 dark:bg-blue-950/40 dark:ring-blue-900"
+            : "hover:bg-slate-100 dark:hover:bg-slate-800"
+        } ${!isSidebarOpen && !mobile ? "justify-center" : ""}`}
+      >
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-blue-600 text-sm font-bold text-white shadow-xs">
+          {photoUrl ? (
+            <Image src={photoUrl} alt="" width={40} height={40} unoptimized className="h-full w-full object-cover" />
+          ) : (
+            name.charAt(0).toUpperCase() || <User size={20} />
+          )}
+        </span>
+        {(isSidebarOpen || mobile) && (
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-bold text-slate-900 dark:text-white">{name}</span>
+            <span className="block truncate text-xs text-slate-500 dark:text-slate-400">
+              {employer ? accountLabel : "Worker"}
+            </span>
+          </span>
+        )}
+      </Link>
+    );
+  };
 
   // Bottom section for desktop sidebar
   const renderDesktopBottom = () => {
     return (
       <div className="relative border-t border-slate-200 pt-4 dark:border-slate-800">
-        <div className={`mb-1 flex items-center gap-3 rounded-xl px-2 py-2 ${!isSidebarOpen ? "justify-center" : ""}`}>
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-sm font-bold text-white">
-            {name.charAt(0).toUpperCase()}
-          </div>
-          {isSidebarOpen && (
-            <div className="min-w-0">
-              <p className="truncate text-sm font-bold">{name}</p>
-              <p className="truncate text-xs text-slate-500">{accountLabel}</p>
-            </div>
-          )}
-        </div>
+        {renderProfileIdentity()}
         {renderAccountActions()}
       </div>
     );
@@ -181,15 +224,7 @@ export default function AccountManagementShell({
   const renderMobileBottom = () => {
     return (
       <div className="relative border-t border-slate-200 pt-4 dark:border-slate-800">
-        <div className="mb-1 flex items-center gap-3 rounded-xl px-2 py-2">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-sm font-bold text-white shadow-xs">
-            {name.charAt(0).toUpperCase()}
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-bold text-slate-900 dark:text-white">{name}</p>
-            <p className="truncate text-xs text-slate-500 dark:text-slate-400">{accountLabel}</p>
-          </div>
-        </div>
+        {renderProfileIdentity(true)}
         {renderAccountActions(true)}
       </div>
     );
@@ -199,7 +234,7 @@ export default function AccountManagementShell({
     <div className="flex min-h-screen flex-col bg-[#eef1fb] font-sans text-slate-900 dark:bg-slate-950 dark:text-slate-100 md:flex-row">
       {/* Desktop sidebar */}
       <aside
-        className={`sticky top-0 z-40 hidden h-screen shrink-0 flex-col justify-between border-r border-slate-200 bg-white/95 p-4 shadow-xs backdrop-blur transition-all dark:border-slate-800 dark:bg-slate-900/95 md:flex ${
+        className={`sticky top-0 z-40 hidden h-screen shrink-0 flex-col justify-between border-r border-slate-200 bg-white p-4 transition-all dark:border-slate-800 dark:bg-slate-900 md:flex ${
           isSidebarOpen ? "w-64" : "w-20"
         }`}
       >
@@ -208,7 +243,7 @@ export default function AccountManagementShell({
             {isSidebarOpen && (
               <Link
                 href={dashboardHref}
-                className="font-(--font-anton) text-xl uppercase tracking-wider bg-[linear-gradient(180deg,#E86100_0%,#FFF5EA_48%,#128807_100%)] bg-clip-text text-transparent"
+                className="font-(--font-anton) text-xl uppercase tracking-wider text-slate-900 dark:text-white"
               >
                 GO LESKA AI
               </Link>
@@ -230,7 +265,7 @@ export default function AccountManagementShell({
       {/* Main content */}
       <div className="flex-1 min-w-0">
         {/* Mobile top bar */}
-        <header className="flex items-center justify-between border-b border-slate-200 bg-white/95 px-4 py-3 shadow-xs backdrop-blur dark:border-slate-800 dark:bg-slate-900/95 md:hidden">
+        <header className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-900 md:hidden">
           <button
             type="button"
             onClick={() => setIsMobileMenuOpen(true)}
@@ -241,7 +276,7 @@ export default function AccountManagementShell({
           </button>
           <Link
             href={dashboardHref}
-            className="font-(--font-anton) text-xl uppercase tracking-wider bg-[linear-gradient(180deg,#E86100_0%,#FFF5EA_48%,#128807_100%)] bg-clip-text text-transparent"
+            className="font-(--font-anton) text-xl uppercase tracking-wider text-slate-900 dark:text-white"
           >
             GO LESKA AI
           </Link>
@@ -257,13 +292,13 @@ export default function AccountManagementShell({
               onClick={closeMobile}
               aria-label="Close navigation"
             />
-            <div className="relative z-10 flex w-72 max-w-[80vw] flex-col justify-between border-r border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+            <div className="relative z-10 flex h-full w-72 max-w-[80vw] flex-col justify-between overflow-y-auto border-r border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
               <div>
                 <div className="mb-6 flex items-center justify-between">
                   <Link
                     href={dashboardHref}
                     onClick={closeMobile}
-                    className="font-(--font-anton) text-xl uppercase tracking-wider bg-[linear-gradient(180deg,#E86100_0%,#FFF5EA_48%,#128807_100%)] bg-clip-text text-transparent"
+                    className="font-(--font-anton) text-xl uppercase tracking-wider text-slate-900 dark:text-white"
                   >
                     GO LESKA AI
                   </Link>

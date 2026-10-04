@@ -60,9 +60,22 @@ async def complete_profile_photo_upload(request: ProfilePhotoUploadRequest, user
 
     current = supabase.table("users").select("profile_photo_path").eq("id", user.id).single().execute().data or {}
     old_path = current.get("profile_photo_path")
-    supabase.table("users").update({"profile_photo_path": request.storage_path, "updated_at": now_iso()}).eq("id", user.id).execute()
+    update_response = (
+        supabase.table("users")
+        .update({"profile_photo_path": request.storage_path, "updated_at": now_iso()})
+        .eq("id", user.id)
+        .execute()
+    )
+    if not update_response.data:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to save worker profile photo",
+        )
     if old_path and old_path != request.storage_path:
-        delete_profile_photo(old_path)
+        try:
+            delete_profile_photo(old_path)
+        except Exception:
+            logger.exception("Failed to remove replaced worker profile photo for user_id=%s", user.id)
     updated = supabase.table("users").select("*").eq("id", user.id).single().execute().data
     return UserResponse(**updated, profile_photo_url=get_signed_profile_photo_url(request.storage_path))
 
@@ -70,8 +83,21 @@ async def complete_profile_photo_upload(request: ProfilePhotoUploadRequest, user
 @router.delete("/me/profile-photo", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_profile_photo_upload(user: UserResponse = Depends(require_worker)):
     current = supabase.table("users").select("profile_photo_path").eq("id", user.id).single().execute().data or {}
-    delete_profile_photo(current.get("profile_photo_path"))
-    supabase.table("users").update({"profile_photo_path": None, "updated_at": now_iso()}).eq("id", user.id).execute()
+    update_response = (
+        supabase.table("users")
+        .update({"profile_photo_path": None, "updated_at": now_iso()})
+        .eq("id", user.id)
+        .execute()
+    )
+    if not update_response.data:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to remove worker profile photo",
+        )
+    try:
+        delete_profile_photo(current.get("profile_photo_path"))
+    except Exception:
+        logger.exception("Failed to remove worker profile photo storage object for user_id=%s", user.id)
 
 
 def _is_current_location_fresh(updated_at: Any) -> bool:

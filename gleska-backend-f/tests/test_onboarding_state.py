@@ -298,6 +298,7 @@ class EmployerTypeSelectionSupabase:
         self.profile = profile
         self.table_calls = []
         self.details_upsert = None
+        self.details = {}
         self.verification_update = None
 
     def table(self, name):
@@ -338,8 +339,9 @@ class EmployerTypeSelectionQuery:
         if self.table_name == "employer_onboarding_details":
             if self.upsert_payload is not None:
                 self.database.details_upsert = self.upsert_payload
-                return SimpleNamespace(data=[self.upsert_payload])
-            return SimpleNamespace(data=[])
+                self.database.details = {**self.database.details, **self.upsert_payload}
+                return SimpleNamespace(data=[self.database.details])
+            return SimpleNamespace(data=[self.database.details] if self.database.details else [])
         if self.table_name == "employer_verifications":
             self.database.verification_update = self.update_payload
             return SimpleNamespace(data=[])
@@ -361,7 +363,7 @@ def employer_user():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("previous_type", [None, "INDIVIDUAL", "REGISTERED_BUSINESS"])
-async def test_individual_type_assignment_skips_onboarding_and_routes_to_dashboard(monkeypatch, previous_type):
+async def test_individual_type_assignment_completes_without_onboarding_details(monkeypatch, previous_type):
     database = EmployerTypeSelectionSupabase(
         employer_profile(previous_type, onboarding_status="IN_PROGRESS")
     )
@@ -374,10 +376,13 @@ async def test_individual_type_assignment_skips_onboarding_and_routes_to_dashboa
 
     assert selected.employer_type == "INDIVIDUAL"
     assert selected.onboarding_status == "COMPLETED"
-    assert "employer_onboarding_details" not in database.table_calls
-    assert "employer_verifications" not in database.table_calls
-    assert database.details_upsert is None
-    assert database.verification_update is None
+    if previous_type in {None, "INDIVIDUAL"}:
+        assert "employer_onboarding_details" not in database.table_calls
+        assert database.details_upsert is None
+        assert database.verification_update is None
+    else:
+        assert database.details_upsert is not None
+        assert database.verification_update is not None
     assert OnboardingService.determine_next_step(employer_user()) == "DASHBOARD"
 
 
@@ -569,25 +574,17 @@ def test_registered_industry_keeps_required_industrial_fields_with_shared_busine
         assert message == f"{field} is required for registered industry"
 
 
-def test_employer_required_string_fields_reject_whitespace():
+def test_individual_profile_details_are_optional_without_onboarding():
     valid, message = OnboardingService.validate_onboarding_fields(
         "INDIVIDUAL",
-        {
-            "address": "   ",
-            "company_email": "account@example.com",
-            "company_phone": "919876543210",
-            "city": "Pune",
-            "state": "Maharashtra",
-            "pincode": "411001",
-            "work_location": "Pune",
-        },
+        {"address": "   "},
     )
 
-    assert valid is False
-    assert message == "address is required for individual employer"
+    assert valid is True
+    assert message == ""
 
 
-def test_individual_requires_separate_address_and_preserves_location_fields():
+def test_individual_profile_fields_remain_supported_without_becoming_requirements():
     valid, message = OnboardingService.validate_onboarding_fields(
         "INDIVIDUAL",
         {
@@ -605,7 +602,7 @@ def test_individual_requires_separate_address_and_preserves_location_fields():
     assert message == ""
 
 
-def test_individual_draft_requires_address_but_not_later_step_fields():
+def test_individual_profile_can_be_partially_populated():
     valid, message = OnboardingService.validate_onboarding_fields(
         "INDIVIDUAL",
         {"address": "12 Main Road"},
@@ -616,11 +613,11 @@ def test_individual_draft_requires_address_but_not_later_step_fields():
     assert message == ""
 
 
-def test_individual_final_validation_still_requires_later_step_fields():
+def test_individual_profile_can_be_empty():
     valid, message = OnboardingService.validate_onboarding_fields(
         "INDIVIDUAL",
         {"address": "12 Main Road"},
     )
 
-    assert valid is False
-    assert message == "company_email is required for individual employer"
+    assert valid is True
+    assert message == ""
