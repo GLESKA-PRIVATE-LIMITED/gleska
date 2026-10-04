@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import apiClient from "@/lib/api";
 import {
-  LogOut,
   Zap,
   Factory,
   Building2,
@@ -40,6 +39,7 @@ import {
 import { toast } from "sonner";
 import Link from "next/link";
 import LocationPicker, { LocationSelection } from "@/components/LocationPicker";
+import Navbar from "@/components/landing/Navbar";
 
 type EmployerType =
   | "REGISTERED_INDUSTRY"
@@ -413,7 +413,7 @@ function formDataFromDetails(
 
 export default function EmployerOnboarding() {
   const router = useRouter();
-  const { user, isLoading, nextStep, logout, refreshUser } = useAuth();
+  const { user, isLoading, nextStep, refreshUser } = useAuth();
 
   // 1: Business, 2: Company and work details, 3: Verification and review
   const [activeStep, setActiveStep] = useState<0 | 1 | 2 | 3 | 4 | 5>(0);
@@ -1203,14 +1203,6 @@ export default function EmployerOnboarding() {
     }
   };
 
-  const handleLogout = async () => {
-    try {
-      await logout();
-      router.replace("/");
-    } catch {
-      toast.error("Logout failed");
-    }
-  };
 
   const isRegistered =
     employerType === "REGISTERED_BUSINESS" || employerType === "REGISTERED_INDUSTRY";
@@ -1222,48 +1214,8 @@ export default function EmployerOnboarding() {
   ];
 
   return (
-    <div className="min-h-screen bg-slate-50/80 font-sans text-slate-900 dark:bg-slate-950 dark:text-slate-100 flex flex-col selection:bg-blue-500 selection:text-white">
-      {/* Header */}
-      <header className="sticky top-0 z-30 border-b border-slate-200/70 bg-white/80 backdrop-blur-xl dark:border-slate-800/80 dark:bg-slate-900/80">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3.5 sm:px-6">
-          <Link href="/" className="flex items-center gap-3 group">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-blue-500 shadow-md shadow-blue-500/25 transition group-hover:scale-105">
-              <Zap size={20} className="text-white" fill="currentColor" />
-            </div>
-            <div className="flex flex-col">
-              <div className="flex items-center gap-1.5">
-                <span className="font-extrabold tracking-tight text-slate-900 text-lg leading-none dark:text-white">
-                  GO LESKA
-                </span>
-                <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-700 dark:bg-blue-950 dark:text-blue-300">
-                  PRO
-                </span>
-              </div>
-              <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-                Business Profile
-              </span>
-            </div>
-          </Link>
-
-          <div className="flex items-center gap-4">
-            {user.email && (
-              <div className="hidden sm:flex flex-col items-end">
-                <span className="text-xs font-semibold text-slate-800 dark:text-slate-200">
-                  {user.email}
-                </span>
-                <span className="text-[10px] text-slate-400">Verified Employer Account</span>
-              </div>
-            )}
-            <button
-              onClick={handleLogout}
-              className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-bold text-slate-700 shadow-xs transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-            >
-              <LogOut size={14} />
-              <span>Logout</span>
-            </button>
-          </div>
-        </div>
-      </header>
+    <div className="min-h-screen bg-slate-50 font-sans text-slate-900 dark:bg-slate-950 dark:text-slate-100 flex flex-col selection:bg-blue-500 selection:text-white">
+      <Navbar />
 
       {/* Main Container */}
       <main className="flex-1 mx-auto w-full max-w-3xl p-4 sm:p-6 lg:p-8">
