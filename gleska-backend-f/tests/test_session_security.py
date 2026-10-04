@@ -8,7 +8,7 @@ from starlette.requests import Request
 
 from app.core import security
 from app.routers import auth, security as worker_security
-from app.schemas.auth import UserResponse
+from app.schemas.auth import RegisterSessionSchema, UserResponse
 
 
 USER = {
@@ -29,12 +29,22 @@ class Query:
         self.data = data
         self.filters = []
         self.update_payload = None
+        self.upsert_payload = None
 
     def select(self, *_args, **_kwargs):
         return self
 
     def update(self, payload):
         self.update_payload = payload
+        return self
+
+    def upsert(self, payload, **_kwargs):
+        self.upsert_payload = payload
+        return self
+
+    def insert(self, payload):
+        self.upsert_payload = payload
+        self.data = [payload]
         return self
 
     def eq(self, field, value):
@@ -54,7 +64,9 @@ class Query:
 class FakeSupabase:
     def __init__(self, session_row=None):
         self.session_query = Query(session_row)
+        self.activity_query = Query([])
         self.user_query = Query(USER)
+        self.rpc_call = None
         self.auth = SimpleNamespace(
             get_user=lambda _token: SimpleNamespace(user=SimpleNamespace(id="user-a")),
         )
@@ -62,9 +74,15 @@ class FakeSupabase:
     def table(self, name):
         if name == "user_sessions":
             return self.session_query
+        if name == "security_activity":
+            return self.activity_query
         if name == "users":
             return self.user_query
         raise AssertionError(name)
+
+    def rpc(self, name, params):
+        self.rpc_call = (name, params)
+        return SimpleNamespace(execute=lambda: SimpleNamespace(data=self.session_query.data))
 
 
 @pytest.mark.asyncio
@@ -126,17 +144,63 @@ async def test_invalid_key_cannot_authenticate_as_another_user(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_logout_revokes_only_authenticated_matching_session(monkeypatch):
-    fake = FakeSupabase()
+    fake = FakeSupabase([{"device_name": "Browser"}])
     monkeypatch.setattr(auth, "supabase", fake)
     user = UserResponse(**USER)
 
     result = await auth.logout(Response(), user=user, session_key="key-a")
 
     assert result["success"] is True
-    assert fake.session_query.update_payload == {"is_revoked": True, "revoked_at": fake.session_query.update_payload["revoked_at"]}
-    assert ("user_id", "user-a") in fake.session_query.filters
-    assert ("session_key", "key-a") in fake.session_query.filters
-    assert ("is_revoked", False) in fake.session_query.filters
+    assert fake.rpc_call == (
+        "logout_account_session",
+        {"p_user_id": "user-a", "p_session_key": "key-a"},
+    )
+
+
+@pytest.mark.asyncio
+async def test_worker_session_revoke_scopes_update_and_records_activity(monkeypatch):
+    from app.routers import security as worker_security
+
+    fake = FakeSupabase([{
+        "id": "session-a",
+        "device_name": "Browser",
+        "browser": "Chrome",
+        "os": "Windows",
+        "city": None,
+        "country": None,
+    }])
+    monkeypatch.setattr(worker_security, "supabase", fake)
+
+    result = await worker_security.revoke_worker_security_session(
+        "session-a",
+        UserResponse(**USER),
+    )
+
+    assert result.success is True
+    assert fake.rpc_call == (
+        "revoke_account_session",
+        {"p_user_id": "user-a", "p_session_id": "session-a"},
+    )
+
+
+@pytest.mark.asyncio
+async def test_session_registration_records_idempotent_login_activity(monkeypatch):
+    fake = FakeSupabase()
+    monkeypatch.setattr(auth, "supabase", fake)
+
+    result = await auth.register_authenticated_session(
+        RegisterSessionSchema(
+            session_key="new-session-key",
+            device_name="Browser",
+            browser="Chrome",
+            os="Windows",
+        ),
+        UserResponse(**USER),
+    )
+
+    assert result["success"] is True
+    assert fake.activity_query.upsert_payload["event_type"] == "login"
+    assert fake.activity_query.upsert_payload["event_key"] == "login:new-session-key"
 
 
 @pytest.mark.asyncio
@@ -147,7 +211,7 @@ async def test_logout_without_session_key_does_not_revoke_sessions(monkeypatch):
     result = await auth.logout(Response(), user=UserResponse(**USER), session_key=None)
 
     assert result["success"] is True
-    assert fake.session_query.update_payload is None
+    assert fake.rpc_call is None
 
 
 @pytest.mark.asyncio

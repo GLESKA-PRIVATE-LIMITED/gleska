@@ -4,7 +4,7 @@ import React, { createContext, useContext, useEffect, useState } from "react";
 import apiClient from "@/lib/api";
 import { supabase } from "@/lib/supabase";
 import { initializeMSG91Widget, otpUserMessage, retryOTP, runWithOtpOperationLock, sendOTP, verifyOTP } from "@/lib/msg91";
-import { registerSession, clearSessionKey, logSecurityActivity, parseDeviceInfo } from "@/lib/security";
+import { registerSession, clearSessionKey } from "@/lib/security";
 import { classifyOtpVerificationError, toSignupFlowError } from "@/lib/auth-errors";
 
 export interface AuthUser {
@@ -547,18 +547,6 @@ const resendOTP = async (mobile: string, requestId: string | null, channel: "SMS
     setError(null);
     setIsLoggingOut(true);
     try {
-      // Log security activity before signing out (non-blocking, best-effort)
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user?.id) {
-        const deviceInfo = parseDeviceInfo();
-        logSecurityActivity(supabase, session.user.id, {
-          event_type: "logout",
-          description: `Signed out from ${deviceInfo.deviceName}`,
-          device_name: deviceInfo.deviceName,
-          browser: deviceInfo.browser,
-          os: deviceInfo.os,
-        });
-      }
       await apiClient.post("/api/v1/auth/logout", {}, { withCredentials: true });
     } catch (err) {
       console.error("Backend logout error:", err);

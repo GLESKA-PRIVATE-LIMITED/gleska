@@ -9,6 +9,7 @@ import { useAuth } from "@/context/AuthContext";
 import apiClient from "@/lib/api";
 import { getSessionKey, updateLastActive } from "@/lib/security";
 import { supabase } from "@/lib/supabase";
+import NotificationCenter from "@/components/notifications/NotificationCenter";
 import { WorkerEmptyState, WorkerErrorState, WorkerLoadingState, WorkerPageFrame, WorkerPageHeader, WorkspaceCard } from "@/components/worker/WorkspaceUI";
 
 type WorkerPreferences = {
@@ -204,6 +205,24 @@ export default function WorkerSettingsSecurityPage() {
                 {savingPreference && <p className="flex items-center gap-2 text-sm text-blue-700 dark:text-blue-300" role="status"><Loader2 size={16} className="animate-spin" /> Saving setting...</p>}
               </div>
             )}
+          </WorkspaceCard>
+
+          <NotificationCenter />
+
+          <WorkspaceCard>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="font-bold text-slate-900 dark:text-white">Change password</h2>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Verify your phone with an OTP to set a new password.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => router.push("/auth/forgot-password")}
+                className="inline-flex min-h-10 shrink-0 items-center justify-center rounded-lg border border-blue-600 px-4 py-2 text-sm font-semibold text-blue-700 transition hover:bg-blue-50 dark:border-blue-500 dark:text-blue-300 dark:hover:bg-blue-950/30"
+              >
+                Continue to password reset
+              </button>
+            </div>
           </WorkspaceCard>
 
           <WorkspaceCard>

@@ -65,25 +65,13 @@ async def revoke_worker_security_session(
     user: UserResponse = Depends(require_worker),
 ):
     response = (
-        supabase.table("user_sessions")
-        .update({"is_revoked": True, "revoked_at": "now()"})
-        .eq("id", session_id)
-        .eq("user_id", user.id)
-        .eq("is_revoked", False)
+        supabase.rpc("revoke_account_session", {
+            "p_user_id": user.id,
+            "p_session_id": session_id,
+        })
         .execute()
     )
     if not response.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="SECURITY_SESSION_NOT_FOUND")
 
-    session = response.data[0]
-    supabase.table("security_activity").insert({
-        "user_id": user.id,
-        "event_type": "session_revoked",
-        "description": f"Session revoked: {session.get('device_name') or 'Unknown device'}",
-        "device_name": session.get("device_name"),
-        "browser": session.get("browser"),
-        "os": session.get("os"),
-        "city": session.get("city"),
-        "country": session.get("country"),
-    }).execute()
     return WorkerSecurityRevokeResponse(success=True, session_id=session_id)

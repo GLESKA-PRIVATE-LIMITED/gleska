@@ -273,19 +273,21 @@ async def register_authenticated_session(
         if response is None:
             raise RuntimeError("Session registration returned no response")
 
-        try:
-            supabase.table("security_activity").insert({
+        supabase.table("security_activity").upsert(
+            {
                 "user_id": user.id,
                 "event_type": "login",
+                "event_key": f"login:{request.session_key}",
                 "description": f"New login on {request.device_name or 'Unknown device'}",
                 "device_name": request.device_name,
                 "browser": request.browser,
                 "os": request.os,
                 "city": request.city,
                 "country": request.country,
-            }).execute()
-        except Exception:
-            logger.exception("Failed to record login activity for user_id=%s", user.id)
+            },
+            on_conflict="user_id,event_key",
+            ignore_duplicates=True,
+        ).execute()
 
         return {"success": True}
     except HTTPException:
@@ -645,10 +647,10 @@ async def logout(
 ):
     if user and session_key:
         try:
-            supabase.table("user_sessions").update({
-                "is_revoked": True,
-                "revoked_at": datetime.now(timezone.utc).isoformat(),
-            }).eq("user_id", user.id).eq("session_key", session_key).eq("is_revoked", False).execute()
+            supabase.rpc("logout_account_session", {
+                "p_user_id": user.id,
+                "p_session_key": session_key,
+            }).execute()
         except Exception as exc:
             logger.exception("Application session logout failed for user_id=%s", user.id)
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="SESSION_LOGOUT_FAILED") from exc

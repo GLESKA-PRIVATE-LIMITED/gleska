@@ -94,4 +94,14 @@ class PasswordResetService:
         if not user:
             raise ValueError("INVALID_RESET_AUTHORIZATION")
         supabase.auth.admin.update_user_by_id(user["id"], {"password": password})
+        supabase.table("security_activity").upsert(
+            {
+                "user_id": user["id"],
+                "event_type": "password_changed",
+                "event_key": f"password_changed:{challenge['id']}",
+                "description": "Password changed after phone OTP verification",
+            },
+            on_conflict="user_id,event_key",
+            ignore_duplicates=True,
+        ).execute()
         supabase.table("password_reset_challenges").update({"used_at": cls._now().isoformat()}).eq("phone", challenge["phone"]).is_("used_at", "null").execute()
