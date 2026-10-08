@@ -2,6 +2,14 @@ import type { NextStep } from "@/context/AuthContext";
 
 type Role = "WORKER" | "EMPLOYER" | "ADMIN";
 
+const EMPLOYER_AGENT_ROUTES = new Set([
+  "/logistics",
+  "/tender-filing",
+  "/procurement",
+  "/financial",
+  "/tender-tracking",
+]);
+
 export function getRouteForNextStep(role: Role, nextStep: NextStep | string | null | undefined): string {
   if (role === "WORKER") {
     return "/worker/dashboard";
@@ -36,7 +44,11 @@ export function getRouteForAuthenticatedUser(
       parsed.pathname === "/employer/auth"
     ) return fallback;
     if (role === "WORKER" && !parsed.pathname.startsWith("/worker/")) return fallback;
-    if (role === "EMPLOYER" && !parsed.pathname.startsWith("/employer/")) return fallback;
+    if (
+      role === "EMPLOYER"
+      && !parsed.pathname.startsWith("/employer/")
+      && !EMPLOYER_AGENT_ROUTES.has(parsed.pathname)
+    ) return fallback;
     if (role === "ADMIN") return fallback;
     return `${parsed.pathname}${parsed.search}${parsed.hash}`;
   } catch {

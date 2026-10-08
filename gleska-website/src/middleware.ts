@@ -48,12 +48,11 @@ export function middleware(request: NextRequest) {
   // Inspect cookies for active authentication tokens
   const cookies = request.cookies;
   const hasGoleskaSession = Boolean(cookies.get("goleska_session")?.value);
-  const hasGoleskaClientAuth = Boolean(cookies.get("goleska_client_auth")?.value);
   const hasSupabaseAuthToken = Array.from(cookies.getAll()).some(
     (c) => (c.name.startsWith("sb-") && Boolean(c.value)) || c.name === "sb-auth-token"
   );
 
-  const isAuthenticated = hasGoleskaSession || hasGoleskaClientAuth || hasSupabaseAuthToken;
+  const isAuthenticated = hasGoleskaSession || hasSupabaseAuthToken;
 
   if (!isAuthenticated) {
     const targetAuth = isAdminProtected ? "/admin/login" : "/auth/signin";
@@ -87,6 +86,11 @@ export const config = {
     "/employer/workers/:path*",
     "/employer/attendance/:path*",
     "/employer/subscription/:path*",
+    "/logistics/:path*",
+    "/tender-filing/:path*",
+    "/procurement/:path*",
+    "/financial/:path*",
+    "/tender-tracking/:path*",
     "/admin/:path*",
   ],
 };

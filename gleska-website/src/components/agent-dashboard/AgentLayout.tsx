@@ -1,9 +1,12 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Menu, X } from "lucide-react";
 import { AgentConfig } from "./types";
+import { useAuth } from "@/context/AuthContext";
+import { getRouteForNextStep } from "@/lib/auth-routing";
 import AgentSidebar from "./AgentSidebar";
 import AgentHeader from "./AgentHeader";
 import AgentSearchBar from "./AgentSearchBar";
@@ -21,12 +24,36 @@ export default function AgentLayout({
   activeTab: externalActiveTab,
   setActiveTab: externalSetActiveTab,
 }: AgentLayoutProps) {
+  const router = useRouter();
+  const { user, isLoading, nextStep } = useAuth();
   const [internalActiveTab, setInternalActiveTab] = useState<string>("dashboard");
   const [isCollapsed, setIsCollapsed] = useState<boolean>(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState<boolean>(false);
 
+  useEffect(() => {
+    if (isLoading) return;
+    if (!user) {
+      const requestedPath = `${window.location.pathname}${window.location.search}`;
+      router.replace(`/auth/signin?next=${encodeURIComponent(requestedPath)}`);
+      return;
+    }
+    if (user.role !== "EMPLOYER" || nextStep !== "DASHBOARD") {
+      router.replace(getRouteForNextStep(user.role, nextStep));
+    }
+  }, [isLoading, nextStep, router, user]);
+
   const activeTab = externalActiveTab !== undefined ? externalActiveTab : internalActiveTab;
   const setActiveTab = externalSetActiveTab || setInternalActiveTab;
+
+  if (isLoading || !user || user.role !== "EMPLOYER" || nextStep !== "DASHBOARD") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#eef1fb] dark:bg-slate-950">
+        <p className="text-sm font-semibold text-slate-600 dark:text-slate-400">
+          {isLoading ? "Checking your account..." : "Redirecting..."}
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#eef1fb] font-sans text-slate-900 dark:bg-slate-950 dark:text-slate-100 flex">

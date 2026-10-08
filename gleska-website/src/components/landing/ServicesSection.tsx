@@ -54,7 +54,11 @@ function AgentCardsGrid({ agentCards }: { agentCards: AgentCard[] }) {
             <span className="font-mono text-xs uppercase tracking-wider">{t('services.customPricing')}</span>
             {agent.id === "01" ? (
               <Link
-                href={user ? "/employer/dashboard" : "/employer/auth"}
+                href={
+                  user
+                    ? "/employer/dashboard"
+                    : "/auth/signin?next=%2Femployer%2Fdashboard"
+                }
                 className={`inline-flex items-center gap-1.5 font-bold transition-colors ${agent.dashboardCtaColor}`}
               >
                 {user ? t('services.dashboard') : t('services.subscribe')} {user ? <LayoutDashboard size={16} /> : <ArrowRight size={16} />}
