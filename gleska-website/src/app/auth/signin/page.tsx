@@ -6,7 +6,7 @@ import { Briefcase, UserCheck, ArrowRight, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useLanguage } from "@/context/LanguageContext";
 import { useAuth } from "@/context/AuthContext";
-import { getRouteForNextStep } from "@/lib/auth-routing";
+import { getRouteForAuthenticatedUser } from "@/lib/auth-routing";
 import AuthMethodPanel from "@/components/auth/AuthMethodPanel";
 import AuthPageFrame from "@/components/auth/AuthPageFrame";
 import BackLink from "@/components/auth/BackLink";
@@ -19,7 +19,8 @@ export default function SignInSelectionPage() {
 
   useEffect(() => {
     if (!authLoading && user) {
-      router.replace(getRouteForNextStep(user.role, nextStep));
+      const requestedNext = new URLSearchParams(window.location.search).get("next");
+      router.replace(getRouteForAuthenticatedUser(user.role, nextStep, requestedNext));
     }
   }, [authLoading, user, nextStep, router]);
 

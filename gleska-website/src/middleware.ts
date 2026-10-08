@@ -48,11 +48,16 @@ export function middleware(request: NextRequest) {
   // Inspect cookies for active authentication tokens
   const cookies = request.cookies;
   const hasGoleskaSession = Boolean(cookies.get("goleska_session")?.value);
+  const hasClientAuthHint = Boolean(cookies.get("goleska_client_auth")?.value);
   const hasSupabaseAuthToken = Array.from(cookies.getAll()).some(
     (c) => (c.name.startsWith("sb-") && Boolean(c.value)) || c.name === "sb-auth-token"
   );
 
-  const isAuthenticated = hasGoleskaSession || hasSupabaseAuthToken;
+  // The Supabase token may live only in browser storage, so middleware cannot
+  // see it on client-side navigation. This hint only avoids redirect loops;
+  // client route guards and backend authorization remain authoritative.
+  const isAuthenticated =
+    hasGoleskaSession || hasSupabaseAuthToken || (!isAdminProtected && hasClientAuthHint);
 
   if (!isAuthenticated) {
     const targetAuth = isAdminProtected ? "/admin/login" : "/auth/signin";
