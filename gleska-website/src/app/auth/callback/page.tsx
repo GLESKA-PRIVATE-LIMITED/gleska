@@ -131,7 +131,10 @@ export default function AuthCallbackPage() {
           console.log("[OAuth] User already provisioned. Role:", meRes.data.user.role);
           const existingRole = meRes.data.user.role as "WORKER" | "EMPLOYER";
           const nextStep = meRes.data.next_step;
-          const requestedNext = getStoredNext();
+          const requestedNext = existingRole === "EMPLOYER"
+            && meRes.data.user.employer_type !== "INDIVIDUAL"
+            ? getStoredNext()
+            : null;
           await registerSession();
           clearStoredRole();
           setAuthState(meRes.data.user, meRes.data.next_step || null);
@@ -171,7 +174,9 @@ export default function AuthCallbackPage() {
 
         const authenticatedRole = provisionedData.user.role as "WORKER" | "EMPLOYER";
         const nextStep = provisionedData.nextStep;
-        const requestedNext = getStoredNext();
+        const requestedNext = authenticatedRole === "EMPLOYER" && storedAccountType === "BUSINESS"
+          ? getStoredNext()
+          : null;
 
         if (!authenticatedRole) {
           throw new Error(

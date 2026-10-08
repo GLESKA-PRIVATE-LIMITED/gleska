@@ -48,6 +48,13 @@ type EmployerType =
 
 type OnboardingFormData = Record<string, string>;
 
+function getPostOnboardingRoute(employerType: string | undefined): string {
+  const requestedNext = new URLSearchParams(window.location.search).get("next");
+  return employerType !== "INDIVIDUAL" && requestedNext === "/procurement"
+    ? "/procurement"
+    : "/employer/dashboard";
+}
+
 type VerificationRecord = {
   verification_type: string;
   status: "PENDING" | "VERIFIED" | "FAILED" | "NOT_CONFIGURED" | "REJECTED" | "MISMATCHED";
@@ -458,7 +465,7 @@ export default function EmployerOnboarding() {
     }
 
     if (!isLoading && nextStep === "DASHBOARD") {
-      router.replace("/employer/dashboard");
+      router.replace(getPostOnboardingRoute(user?.employer_type));
     }
   }, [user, isLoading, nextStep, router]);
 
@@ -489,7 +496,7 @@ export default function EmployerOnboarding() {
           setVerification(currentVerification);
 
           if (nextStep === "DASHBOARD" || employer.onboarding_status === "COMPLETED") {
-            router.push("/employer/dashboard");
+            router.push(getPostOnboardingRoute(user.employer_type));
             return;
           }
 
@@ -1193,7 +1200,7 @@ export default function EmployerOnboarding() {
       }
 
       toast.success("Onboarding completed successfully!");
-      router.replace("/employer/dashboard");
+      router.replace(getPostOnboardingRoute(user?.employer_type));
     } catch (err: unknown) {
       const message = getErrorDetail(err, "Failed to complete onboarding");
       setFormError(message);

@@ -7,7 +7,7 @@ import { Mail, Loader2, X, Shield, FileText, CheckCircle2, ExternalLink } from "
 import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
 import { useLanguage } from "@/context/LanguageContext";
-import { getRouteForAuthenticatedUser, getRouteForNextStep } from "@/lib/auth-routing";
+import { getRouteForAuthenticatedUser } from "@/lib/auth-routing";
 import { normalizeIndianMobile, otpUserMessage } from "@/lib/msg91";
 import { SignupFlowError, toSignupFlowError } from "@/lib/auth-errors";
 import { isValidSignupMobile, isValidSignupName, isValidSignupPassword, passwordsMatch, sanitizeSignupName } from "@/lib/signup-validation";
@@ -180,7 +180,10 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS", initia
         const authenticatedUser = await signInWithEmail(email, password, role);
         const nextStep = await refreshUser();
         toast.success(t('auth.welcomeBack'));
-        router.replace(getRouteForAuthenticatedUser(authenticatedUser.role, nextStep, new URLSearchParams(window.location.search).get("next")));
+        const requestedNext = authenticatedUser.role === "EMPLOYER" && authenticatedUser.employer_type !== "INDIVIDUAL"
+          ? new URLSearchParams(window.location.search).get("next")
+          : null;
+        router.replace(getRouteForAuthenticatedUser(authenticatedUser.role, nextStep, requestedNext));
       }
     } catch (error: unknown) {
       toast.error(authUserMessage(error, mode === "signup" || loginMethod === "mobile" ? "send" : "auth"));
@@ -225,13 +228,19 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS", initia
         const { user: authenticatedUser, nextStep } = await loginWithMobile(otpTransaction.mobile, otp);
         clearOtpTransaction();
         toast.success(t('auth.welcomeBack'));
-        router.replace(getRouteForAuthenticatedUser(authenticatedUser.role, nextStep, new URLSearchParams(window.location.search).get("next")));
+        const requestedNext = authenticatedUser.role === "EMPLOYER" && authenticatedUser.employer_type !== "INDIVIDUAL"
+          ? new URLSearchParams(window.location.search).get("next")
+          : null;
+        router.replace(getRouteForAuthenticatedUser(authenticatedUser.role, nextStep, requestedNext));
         return;
       }
       const nextStep = await refreshUser(otpPurpose === "signup");
       clearOtpTransaction();
       toast.success(t('auth.accountCreated'));
-      router.replace(getRouteForNextStep(role, nextStep));
+      const requestedNext = role === "EMPLOYER" && accountType === "BUSINESS"
+        ? new URLSearchParams(window.location.search).get("next")
+        : null;
+      router.replace(getRouteForAuthenticatedUser(role, nextStep, requestedNext));
     } catch (error: unknown) {
       if (otpPurpose === "signup") setOtp("");
       const signupError = otpPurpose === "signup"

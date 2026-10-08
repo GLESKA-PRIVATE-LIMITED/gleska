@@ -32,11 +32,17 @@ export function getRouteForAuthenticatedUser(
   requestedNext?: string | null,
 ): string {
   const fallback = getRouteForNextStep(role, nextStep);
-  if (!requestedNext || nextStep !== "DASHBOARD") return fallback;
+  if (!requestedNext) return fallback;
 
   try {
     const parsed = new URL(requestedNext, window.location.origin);
     if (parsed.origin !== window.location.origin || parsed.pathname.startsWith("//")) return fallback;
+    if (role === "EMPLOYER" && parsed.pathname === "/procurement") {
+      return nextStep === "DASHBOARD"
+        ? `${parsed.pathname}${parsed.search}${parsed.hash}`
+        : "/employer/onboarding?next=%2Fprocurement";
+    }
+    if (nextStep !== "DASHBOARD") return fallback;
     if (
       parsed.pathname.startsWith("/auth") ||
       parsed.pathname.startsWith("/admin") ||
