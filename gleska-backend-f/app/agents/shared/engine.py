@@ -286,6 +286,7 @@ class AgentRuntime:
                 ),
                 task=task,
                 task_state=request.task_state or TaskState(),
+                history=list(request.history),
             )
             self._conversations[key] = record
             return record
@@ -323,6 +324,7 @@ class AgentRuntime:
                     "LLM_CONFIGURATION_ERROR",
                     "LLM_TIMEOUT",
                     "LLM_UNAVAILABLE",
+                    "LLM_RATE_LIMITED",
                     "LLM_PROVIDER_ERROR",
                     "LLM_INVALID_RESPONSE",
                 }

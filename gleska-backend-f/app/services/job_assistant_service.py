@@ -230,7 +230,10 @@ class JobAssistantService:
                 raise ValueError("CONVERSATION_NOT_FOUND")
             if conversation.get("status") != "ACTIVE":
                 raise ValueError("CONVERSATION_NOT_ACTIVE")
-            state = JobAssistantState.model_validate(conversation.get("structured_state") or {})
+            stored_state = conversation.get("structured_state") or {}
+            if stored_state.get("agent_kind") == "hiring_agent":
+                raise ValueError("CONVERSATION_MODE_MISMATCH")
+            state = JobAssistantState.model_validate(stored_state)
             history = conversation.get("history") or []
             if not isinstance(history, list):
                 raise ValueError("CONVERSATION_HISTORY_INVALID")
@@ -320,6 +323,8 @@ class JobAssistantService:
             .execute()
         )
         conversation = cls._conversation_row(conversation_response)
+        if (conversation.get("structured_state") or {}).get("agent_kind") == "hiring_agent":
+            raise ValueError("CONVERSATION_MODE_MISMATCH")
         persisted_state = JobAssistantState.model_validate(conversation.get("structured_state") or {}) if conversation else None
         if not conversation or conversation.get("status") != "ACTIVE" or persisted_state != state:
             raise ValueError("INVALID_CONFIRMATION")
@@ -1421,6 +1426,8 @@ class JobAssistantService:
         conversation = cls._conversation_row(response)
         if not conversation or conversation.get("status") != "ACTIVE":
             raise ValueError("CONVERSATION_NOT_FOUND")
+        if (conversation.get("structured_state") or {}).get("agent_kind") == "hiring_agent":
+            raise ValueError("CONVERSATION_MODE_MISMATCH")
         revision = int(conversation.get("revision") or 0)
         if revision != request.state_revision:
             raise ValueError("STALE_ASSISTANT_STATE")

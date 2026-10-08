@@ -25,6 +25,7 @@ class AgentRuntimeRequest(_RuntimeModel):
     message: str = Field(min_length=1)
     task: AgentTask | None = None
     task_state: TaskState | None = None
+    history: list[AgentConversationMessage] = Field(default_factory=list)
     expected_revision: int | None = Field(default=None, ge=0)
 
     @field_validator("message")

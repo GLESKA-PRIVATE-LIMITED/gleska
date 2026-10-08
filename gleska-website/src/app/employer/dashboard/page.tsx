@@ -4,26 +4,28 @@ import React, { useEffect } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
+import { isAxiosError } from "axios";
 import {
   Check,
-  Zap,
   Users,
   Briefcase,
-  Clock,
   Loader2,
   MapPin,
   Plus,
   Trash2,
   User,
   X,
-  Mic,
   ArrowRight,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
+  RotateCcw,
+  Calendar,
+  Clock,
+  Award,
   Eye,
   Sparkles,
   CheckCircle2,
-  ChevronDown,
-  ChevronUp,
 } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
@@ -32,171 +34,32 @@ import { formatSubscriptionExpiry, isSubscriptionActive } from "@/lib/subscripti
 import { getLocationErrorMessage, watchBrowserLocation } from "@/lib/location";
 
 import LocationPicker, { LocationSelection } from "@/components/LocationPicker";
-import VoiceMicIcon from "@/components/ui/VoiceMicIcon";
 import AccountManagementShell, { formatEmployerType } from "@/components/AccountManagementShell";
 
-/**
- * Supported languages for job description input.
- * Mapped to browser Web Speech Recognition language codes.
- */
-type AssistantLanguage = "EN" | "HI" | "MR" | "TA" | "HINGLISH";
-
-const SUPPORTED_LANGUAGES: Record<AssistantLanguage, { label: string; speechCode: string }> = {
-  MR: { label: "Marathi", speechCode: "mr-IN" },
-  HI: { label: "Hindi", speechCode: "hi-IN" },
-  TA: { label: "Tamil", speechCode: "ta-IN" },
-  EN: { label: "English", speechCode: "en-IN" },
-  HINGLISH: { label: "Hinglish", speechCode: "en-IN" },
-};
-
-const LANGUAGE_OPTIONS = Object.entries(SUPPORTED_LANGUAGES) as [AssistantLanguage, { label: string; speechCode: string }][];
-const DEFAULT_LANGUAGE: AssistantLanguage = "EN";
-
-const ASSISTANT_COPY: Record<AssistantLanguage, Record<string, string>> = {
-  EN: {
-    welcome: "Hello! Tell me about the job you want to create. For example: 5 cooks for 20 days, ₹700 per day, 8 AM to 5 PM.",
-    heading: "AI Job Creation Assistant", subtitle: "Speak or type requirements naturally", listening: "Listening...", speak: "Speak requirement",
-    thinking: "Understanding requirements & validating...", placeholder: "e.g. 5 cooks for 20 days, ₹700/day, 8 AM to 5 PM", preview: "Structured Job Preview",
-    ready: "Ready to create", incomplete: "Incomplete", role: "Job Title", workers: "Workers Needed", site: "Work Site", wage: "Daily Wage", duration: "Work Duration", timing: "Daily Timing", experience: "Min Experience", missing: "Missing", required: "Required", selectSite: "Select site", changeSite: "Change site", years: "years", year: "year", days: "days", create: "Create Job", creating: "Creating job...", complete: "Complete all requirements to create job", languageChanged: "Language changed. Please continue with your requirements in English.", error: "Sorry, I encountered an issue. Please try again.", voiceUnsupported: "Speech recognition is not supported in this browser. Please type your description instead.", noSpeech: "No speech was captured. Please try again.", micDenied: "Microphone permission was denied. Please allow microphone access and try again.", noDetected: "No speech was detected. Please try again.", voiceFailed: "Could not capture voice input. Please try again.",
-    valid: "Valid", notProvided: "Not provided", invalidValue: "Invalid value", selected: "Selected", notSelected: "Not selected", optional: "Optional", change: "Change",
-    roleGuidance: "", rolePlaceholder: "Job title",
-    workersGuidance: "", workersPlaceholder: "Number of workers",
-    siteGuidance: "",
-    wageGuidance: "", wagePlaceholder: "Daily wage", perDay: "/ day",
-    durationGuidance: "", durationPlaceholder: "Duration", unitDays: "Days", unitMonths: "Months", unitYears: "Years",
-    timingGuidance: "", timingPlaceholder: "Working hours",
-    experienceGuidance: "", experiencePlaceholder: "Experience", noExperience: "No experience required (Fresher)", experienceRequired: "Experience required",
-    skills: "Required Skills", skillsGuidance: "", skillsPlaceholder: "Add a skill", addSkill: "+ Add", noSkillsAdded: "No skills added",
-    remainingRequirements: "remaining to complete", pleaseComplete: "Please complete:",
-    createJobTitle: "Create Job", jobDetailsTitle: "Job Details", workDetailsTitle: "Work Details",
-    durationHelpText: "",
-    experienceHelpText: "",
-    titleRequired: "Job Title is required.", titleTooLong: "Job Title cannot exceed 120 characters.",
-    workersRequired: "Workers Needed is required.", workersMin: "Workers Needed must be at least 1.", workersMax: "Workers Needed cannot exceed 1,000.",
-    wageRequired: "Daily Wage is required.", wageValid: "Please enter a valid daily wage.",
-    durationRequired: "Work Duration is required.", durationRange: "Work duration must be between 1 and 365 days.",
-    timingRequired: "Daily Timing is required.",
-    experienceRequiredErr: "Min Experience is required.", experienceRange: "Minimum experience must be 0 (no experience) or at least 1 year.",
-    siteRequired: "Work Site is required.",
-    skillAlreadyAdded: "Skill already added.", removeSkill: "Remove skill", createJobBtn: "Create Job",
-  },
-  HI: {
-    welcome: "नमस्ते! आप जो नौकरी बनाना चाहते हैं, उसके बारे में बताएं। उदाहरण: 20 दिनों के लिए 5 कुक, ₹700 रोज़, सुबह 8 बजे से शाम 5 बजे तक।",
-    heading: "एआई नौकरी निर्माण सहायक", subtitle: "अपनी ज़रूरतें स्वाभाविक रूप से बोलें या लिखें", listening: "सुन रहा है...", speak: "ज़रूरत बताएं",
-    thinking: "जानकारी समझी और जांची जा रही है...", placeholder: "उदाहरण: 20 दिनों के लिए 5 कुक, ₹700 रोज़, सुबह 8 से शाम 5 बजे तक", preview: "नौकरी का विवरण", ready: "बनाने के लिए तैयार", incomplete: "अपूर्ण", role: "नौकरी का पद", workers: "आवश्यक कामगार", site: "कार्य स्थल", wage: "दैनिक वेतन", duration: "काम की अवधि", timing: "दैनिक समय", experience: "न्यूनतम अनुभव", missing: "आवश्यक", required: "आवश्यक", selectSite: "स्थान चुनें", changeSite: "स्थान बदलें", years: "वर्ष", year: "वर्ष", days: "दिन", create: "नौकरी बनाएं", creating: "नौकरी बनाई जा रही है...", complete: "नौकरी बनाने के लिए सभी जानकारी पूरी करें", languageChanged: "भाषा बदल दी गई है। कृपया अपनी ज़रूरतें हिंदी में बताना जारी रखें।", error: "माफ़ कीजिए, एक समस्या आई। कृपया फिर से कोशिश करें।", voiceUnsupported: "इस ब्राउज़र में आवाज़ पहचान उपलब्ध नहीं है। कृपया अपनी जानकारी लिखें।", noSpeech: "आवाज़ नहीं मिली। कृपया फिर से कोशिश करें।", micDenied: "माइक्रोफ़ोन की अनुमति नहीं मिली। कृपया अनुमति देकर फिर से कोशिश करें।", noDetected: "आवाज़ पहचानी नहीं गई। कृपया फिर से कोशिश करें।", voiceFailed: "आवाज़ दर्ज नहीं हो सकी। कृपया फिर से कोशिश करें।",
-    valid: "मान्य", notProvided: "जानकारी नहीं दी गई", invalidValue: "अमान्य मान", selected: "चुना गया", notSelected: "नहीं चुना गया", optional: "वैकल्पिक", change: "बदलें",
-    roleGuidance: "", rolePlaceholder: "नौकरी का पद",
-    workersGuidance: "", workersPlaceholder: "कामगारों की संख्या",
-    siteGuidance: "",
-    wageGuidance: "", wagePlaceholder: "दैनिक वेतन", perDay: "/ दिन",
-    durationGuidance: "", durationPlaceholder: "अवधि", unitDays: "दिन", unitMonths: "महीने", unitYears: "वर्ष",
-    timingGuidance: "", timingPlaceholder: "काम का समय",
-    experienceGuidance: "", experiencePlaceholder: "अनुभव", noExperience: "कोई अनुभव आवश्यक नहीं (फ्रेशर)", experienceRequired: "अनुभव आवश्यक",
-    skills: "आवश्यक कौशल", skillsGuidance: "", skillsPlaceholder: "कौशल जोड़ें", addSkill: "+ जोड़ें", noSkillsAdded: "कोई कौशल नहीं जोड़ा",
-    remainingRequirements: "जानकारी शेष हैं", pleaseComplete: "कृपया पूरा करें:",
-    createJobTitle: "नौकरी बनाएं", jobDetailsTitle: "नौकरी का विवरण", workDetailsTitle: "कार्य विवरण",
-    durationHelpText: "",
-    experienceHelpText: "",
-    titleRequired: "नौकरी का पद / शीर्षक आवश्यक है।", titleTooLong: "नौकरी का शीर्षक 120 अक्षरों से अधिक नहीं हो सकता।",
-    workersRequired: "आवश्यक कामगारों की संख्या आवश्यक है।", workersMin: "कम से कम 1 कामगार आवश्यक है।", workersMax: "कामगारों की संख्या 1,000 से अधिक नहीं हो सकती।",
-    wageRequired: "दैनिक वेतन आवश्यक है।", wageValid: "कृपया मान्य दैनिक वेतन दर्ज करें।",
-    durationRequired: "काम की अवधि आवश्यक है।", durationRange: "काम की अवधि 1 से 365 दिनों के बीच होनी चाहिए।",
-    timingRequired: "दैनिक समय आवश्यक है।",
-    experienceRequiredErr: "न्यूनतम अनुभव आवश्यक है।", experienceRange: "न्यूनतम अनुभव 0 (फ्रेशर) या कम से कम 1 वर्ष होना चाहिए।",
-    siteRequired: "कृपया कार्य स्थल चुनें।",
-    skillAlreadyAdded: "यह कौशल पहले से जोड़ा गया है।", removeSkill: "कौशल हटाएं", createJobBtn: "नौकरी बनाएं",
-  },
-  MR: {
-    welcome: "नमस्कार! तुम्हाला तयार करायच्या नोकरीबद्दल सांगा. उदाहरण: 20 दिवसांसाठी 5 स्वयंपाकी, ₹700 रोज, सकाळी 8 ते संध्याकाळी 5.", heading: "एआय नोकरी निर्मिती सहाय्यक", subtitle: "तुमच्या गरजा सहज बोला किंवा टाइप करा", listening: "ऐकत आहे...", speak: "गरज सांगा", thinking: "गरजा समजून तपासल्या जात आहेत...", placeholder: "उदाहरण: 20 दिवसांसाठी 5 स्वयंपाकी, ₹700 रोज", preview: "नोकरीचा तपशील", ready: "तयार आहे", incomplete: "अपूर्ण", role: "पदाचे नाव", workers: "आवश्यक कामगार", site: "कामाचे ठिकाण", wage: "दैनिक वेतन", duration: "कामाचा कालावधी", timing: "दररोजची वेळ", experience: "किमान अनुभव", missing: "आवश्यक", required: "आवश्यक", selectSite: "ठिकाण निवडा", changeSite: "ठिकाण बदला", years: "वर्षे", year: "वर्ष", days: "दिवस", create: "नोकरी तयार करा", creating: "नोकरी तयार होत आहे...", complete: "नोकरी तयार करण्यासाठी सर्व माहिती पूर्ण करा", languageChanged: "भाषा बदलली आहे. कृपया मराठीत तुमच्या गरजा सांगा.", error: "माफ करा, एक समस्या आली. कृपया पुन्हा प्रयत्न करा.", voiceUnsupported: "या ब्राउझरमध्ये आवाज ओळख उपलब्ध नाही. कृपया टाइप करा.", noSpeech: "आवाज मिळाला नाही. कृपया पुन्हा प्रयत्न करा.", micDenied: "मायक्रोफोनची परवानगी नाकारली. कृपया परवानगी द्या.", noDetected: "आवाज ओळखला गेला नाही. कृपया पुन्हा प्रयत्न करा.", voiceFailed: "आवाज नोंदवता आला नाही. कृपया पुन्हा प्रयत्न करा.",
-    valid: "वैध", notProvided: "माहिती दिली नाही", invalidValue: "अवैध मूल्य", selected: "निवडले", notSelected: "निवडले नाही", optional: "पर्यायी", change: "बदला",
-    roleGuidance: "", rolePlaceholder: "पदाचे नाव",
-    workersGuidance: "", workersPlaceholder: "कामगारांची संख्या",
-    siteGuidance: "",
-    wageGuidance: "", wagePlaceholder: "दैनिक वेतन", perDay: "/ दिवस",
-    durationGuidance: "", durationPlaceholder: "कालावधी", unitDays: "दिवस", unitMonths: "महिने", unitYears: "वर्षे",
-    timingGuidance: "", timingPlaceholder: "कामाची वेळ",
-    experienceGuidance: "", experiencePlaceholder: "अनुभव", noExperience: "अनुभवाची आवश्यकता नाही (फ्रेशर)", experienceRequired: "अनुभव आवश्यक",
-    skills: "आवश्यक कौशल्ये", skillsGuidance: "", skillsPlaceholder: "कौशल्य जोडा", addSkill: "+ जोडा", noSkillsAdded: "कोणतेही कौशल्य जोडले नाही",
-    remainingRequirements: "माहिती भरणे बाकी आहे", pleaseComplete: "कृपया पूर्ण करा:",
-    createJobTitle: "नोकरी तयार करा", jobDetailsTitle: "नोकरीचा तपशील", workDetailsTitle: "कामाचा तपशील",
-    durationHelpText: "",
-    experienceHelpText: "",
-    titleRequired: "नोकरीचे पद / शीर्षक आवश्यक आहे.", titleTooLong: "नोकरीचे शीर्षक 120 अक्षरांपेक्षा जास्त असू शकत नाही.",
-    workersRequired: "आवश्यक कामगारांची संख्या आवश्यक आहे.", workersMin: "किमान 1 कामगार आवश्यक आहे.", workersMax: "कामगारांची संख्या 1,000 पेक्षा जास्त असू शकत नाही.",
-    wageRequired: "दैनिक वेतन आवश्यक आहे.", wageValid: "कृपया वैध दैनिक वेतन प्रविष्ट करा.",
-    durationRequired: "कामाचा कालावधी आवश्यक आहे.", durationRange: "कामाचा कालावधी 1 ते 365 दिवसांच्या दरम्यान असावा.",
-    timingRequired: "दररोजची वेळ आवश्यक आहे.",
-    experienceRequiredErr: "किमान अनुभव आवश्यक आहे.", experienceRange: "किमान अनुभव 0 (फ्रेशर) किंवा किमान 1 वर्ष असावा.",
-    siteRequired: "कृपया कामाचे ठिकाण निवडा.",
-    skillAlreadyAdded: "हे कौशल्य आधीच जोडले आहे.", removeSkill: "कौशल्य काढा", createJobBtn: "नोकरी तयार करा",
-  },
-  TA: {
-    welcome: "வணக்கம்! நீங்கள் உருவாக்க விரும்பும் வேலை பற்றி சொல்லுங்கள். உதாரணம்: 20 நாட்களுக்கு 5 சமையல்காரர்கள், தினசரி ₹700, காலை 8 முதல் மாலை 5 வரை.", heading: "AI வேலை உருவாக்க உதவியாளர்", subtitle: "உங்கள் தேவைகளை இயல்பாகப் பேசவும் அல்லது தட்டச்சு செய்யவும்", listening: "கேட்கிறது...", speak: "தேவையைச் சொல்லுங்கள்", thinking: "தேவைகள் புரிந்துகொள்ளப்பட்டு சரிபார்க்கப்படுகின்றன...", placeholder: "உதாரணம்: 20 நாட்களுக்கு 5 சமையல்காரர்கள், தினசரி ₹700", preview: "வேலை விவரம்", ready: "உருவாக்கத் தயார்", incomplete: "முழுமையில்லை", role: "வேலை தலைப்பு", workers: "தேவையான தொழிலாளர்கள்", site: "வேலை இடம்", wage: "தினசரி ஊதியம்", duration: "வேலை காலம்", timing: "தினசரி நேரம்", experience: "குறைந்தபட்ச அனுபவம்", missing: "தேவை", required: "தேவை", selectSite: "இடத்தைத் தேர்ந்தெடுக்கவும்", changeSite: "இடத்தை மாற்றவும்", years: "ஆண்டுகள்", year: "ஆண்டு", days: "நாட்கள்", create: "வேலையை உருவாக்கவும்", creating: "வேலை உருவாக்கப்படுகிறது...", complete: "வேலையை உருவாக்க அனைத்து தகவல்களையும் நிரப்பவும்", languageChanged: "மொழி மாற்றப்பட்டது. தமிழில் உங்கள் தேவைகளைத் தொடரவும்.", error: "மன்னிக்கவும், ஒரு சிக்கல் ஏற்பட்டது. மீண்டும் முயற்சிக்கவும்.", voiceUnsupported: "இந்த உலாவியில் குரல் அறிதல் இல்லை. தயவுசெய்து தட்டச்சு செய்யவும்.", noSpeech: "குரல் பதிவு செய்யப்படவில்லை. மீண்டும் முயற்சிக்கவும்.", micDenied: "மைக்ரோஃபோன் அனுமதி மறுக்கப்பட்டது. அனுமதி அளித்து மீண்டும் முயற்சிக்கவும்.", noDetected: "குரல் கண்டறியப்படவில்லை. மீண்டும் முயற்சிக்கவும்.", voiceFailed: "குரலைப் பதிவு செய்ய முடியவில்லை. மீண்டும் முயற்சிக்கவும்.",
-    valid: "சரியானது", notProvided: "வழங்கப்படவில்லை", invalidValue: "தவறான மதிப்பு", selected: "தேர்ந்தெடுக்கப்பட்டது", notSelected: "தேர்ந்தெடுக்கப்படவில்லை", optional: "விருப்பமானது", change: "மாற்று",
-    roleGuidance: "", rolePlaceholder: "வேலை தலைப்பு",
-    workersGuidance: "", workersPlaceholder: "தொழிலாளர்களின் எண்ணிக்கை",
-    siteGuidance: "",
-    wageGuidance: "", wagePlaceholder: "தினசரி ஊதியம்", perDay: "/ நாள்",
-    durationGuidance: "", durationPlaceholder: "காலம்", unitDays: "நாட்கள்", unitMonths: "மாதங்கள்", unitYears: "ஆண்டுகள்",
-    timingGuidance: "", timingPlaceholder: "வேலை நேரம்",
-    experienceGuidance: "", experiencePlaceholder: "அனுபவம்", noExperience: "அனுபவம் தேவையில்லை (புதியவர்)", experienceRequired: "அனுபவம் தேவை",
-    skills: "தேவையான திறன்கள்", skillsGuidance: "", skillsPlaceholder: "திறனைச் சேர்க்கவும்", addSkill: "+ சேர்", noSkillsAdded: "திறன்கள் சேர்க்கப்படவில்லை",
-    remainingRequirements: "விவரங்கள் மீதமுள்ளன", pleaseComplete: "தயவுசெய்து முடிக்கவும்:",
-    createJobTitle: "வேலையை உருவாக்கவும்", jobDetailsTitle: "வேலை விவரங்கள்", workDetailsTitle: "பணி விவரங்கள்",
-    durationHelpText: "",
-    experienceHelpText: "",
-    titleRequired: "வேலை தலைப்பு தேவை.", titleTooLong: "வேலை தலைப்பு 120 எழுத்துகளுக்கு மிகாமல் இருக்க வேண்டும்.",
-    workersRequired: "தேவையான தொழிலாளர்கள் எண்ணிக்கை தேவை.", workersMin: "குறைந்தது 1 தொழிலாளி தேவை.", workersMax: "தொழிலாளர்கள் எண்ணிக்கை 1,000க்கு மிகாமல் இருக்க வேண்டும்.",
-    wageRequired: "தினசரி ஊதியம் தேவை.", wageValid: "சரியான தினசரி ஊதியத்தை உள்ளிடவும்.",
-    durationRequired: "வேலை காலம் தேவை.", durationRange: "வேலை காலம் 1 முதல் 365 நாட்களுக்குள் இருக்க வேண்டும்.",
-    timingRequired: "தினசரி நேரம் தேவை.",
-    experienceRequiredErr: "குறைந்தபட்ச அனுபவம் தேவை.", experienceRange: "குறைந்தபட்ச அனுபவம் 0 அல்லது குறைந்தது 1 ஆண்டாக இருக்க வேண்டும்.",
-    siteRequired: "தயவுசெய்து வேலை செய்யும் இடத்தைத் தேர்ந்தெடுக்கவும்.",
-    skillAlreadyAdded: "திறன் ஏற்கனவே சேர்க்கப்பட்டது.", removeSkill: "திறனை நீக்கு", createJobBtn: "வேலையை உருவாக்கவும்",
-  },
-  HINGLISH: {
-    welcome: "Namaste! Aap jo job banana chahte hain uske baare mein batayein. Example: 20 din ke liye 5 cooks, ₹700 per day, subah 8 se shaam 5.", heading: "AI Job Creation Assistant", subtitle: "Requirements naturally bolen ya type karein", listening: "Sun raha hoon...", speak: "Requirement bolen", thinking: "Requirements samajhkar validate kar raha hoon...", placeholder: "Example: 20 din ke liye 5 cooks, ₹700/day, subah 8 se shaam 5", preview: "Job Preview", ready: "Banane ke liye ready", incomplete: "Incomplete", role: "Job Title", workers: "Workers Needed", site: "Work Site", wage: "Daily Wage", duration: "Work Duration", timing: "Daily Timing", experience: "Min Experience", missing: "Required", required: "Required", selectSite: "Site select karein", changeSite: "Site change karein", years: "years", year: "year", days: "days", create: "Create Job", creating: "Job ban rahi hai...", complete: "Job banane ke liye saari requirements complete karein", languageChanged: "Language change ho gayi hai. Ab Hinglish mein requirements batayein.", error: "Sorry, ek problem aayi. Please dobara try karein.", voiceUnsupported: "Is browser mein speech recognition supported nahi hai. Please type karein.", noSpeech: "Speech capture nahi hui. Please dobara try karein.", micDenied: "Microphone permission deny hui. Please permission allow karein.", noDetected: "Speech detect nahi hui. Please dobara try karein.", voiceFailed: "Voice input capture nahi ho saka. Please dobara try karein.",
-    valid: "Valid", notProvided: "Not provided", invalidValue: "Invalid value", selected: "Selected", notSelected: "Not selected", optional: "Optional", change: "Change",
-    roleGuidance: "", rolePlaceholder: "Job title",
-    workersGuidance: "", workersPlaceholder: "Workers ki sankhya",
-    siteGuidance: "",
-    wageGuidance: "", wagePlaceholder: "Daily wage", perDay: "/ day",
-    durationGuidance: "", durationPlaceholder: "Duration", unitDays: "Days", unitMonths: "Months", unitYears: "Years",
-    timingGuidance: "", timingPlaceholder: "Working hours",
-    experienceGuidance: "", experiencePlaceholder: "Experience", noExperience: "No experience required (Fresher)", experienceRequired: "Experience required",
-    skills: "Required Skills", skillsGuidance: "", skillsPlaceholder: "Add a skill", addSkill: "+ Add", noSkillsAdded: "No skills added",
-    remainingRequirements: "fields remaining to complete", pleaseComplete: "Please complete:",
-    createJobTitle: "Create Job", jobDetailsTitle: "Job Details", workDetailsTitle: "Work Details",
-    durationHelpText: "",
-    experienceHelpText: "",
-    titleRequired: "Job Title zaroori hai.", titleTooLong: "Job Title 120 characters se zyada nahi ho sakta.",
-    workersRequired: "Workers Needed zaroori hai.", workersMin: "Kam se kam 1 worker zaroori hai.", workersMax: "Workers count 1,000 se zyada nahi ho sakta.",
-    wageRequired: "Daily Wage zaroori hai.", wageValid: "Valid daily wage enter karein.",
-    durationRequired: "Work Duration zaroori hai.", durationRange: "Work duration 1 se 365 din ke beech hona chahiye.",
-    timingRequired: "Daily Timing zaroori hai.",
-    experienceRequiredErr: "Minimum Experience zaroori hai.", experienceRange: "Minimum experience 0 (fresher) ya kam se kam 1 year hona chahiye.",
-    siteRequired: "Please work site select karein.",
-    skillAlreadyAdded: "Skill pehle se add hai.", removeSkill: "Skill remove karein", createJobBtn: "Create Job",
-  },
-};
-
-interface SpeechRecognitionLike {
-  lang: string;
-  interimResults: boolean;
-  maxAlternatives: number;
-  onstart: (() => void) | null;
-  onresult: ((event: any) => void) | null;
-  onerror: ((event: any) => void) | null;
-  onend: (() => void) | null;
-  start: () => void;
-  stop: () => void;
-  abort: () => void;
-}
+const JOB_FORM_COPY = {
+  titleRequired: "Job Title is required.", titleTooLong: "Job Title cannot exceed 120 characters.",
+  workersRequired: "Workers Needed is required.", workersMin: "Workers Needed must be at least 1.", workersMax: "Workers Needed cannot exceed 1,000.",
+  wageRequired: "Daily Wage is required.", wageValid: "Please enter a valid daily wage.",
+  durationRequired: "Work Duration is required.", durationRange: "Work duration must be between 1 and 365 days.",
+  timingRequired: "Daily Timing is required.",
+  experienceRequiredErr: "Min Experience is required.", experienceRange: "Minimum experience must be 0 (no experience) or at least 1 year.",
+  siteRequired: "Work Site is required.", skillAlreadyAdded: "Skill already added.",
+  createJobTitle: "Create Job", ready: "Ready to create", incomplete: "Incomplete",
+  jobDetailsTitle: "Job Details", role: "Job Title", rolePlaceholder: "Job title",
+  workers: "Workers Needed", workersPlaceholder: "Number of workers",
+  wage: "Daily Wage", wagePlaceholder: "Daily wage", perDay: "/ day",
+  workDetailsTitle: "Work Details", duration: "Work Duration", durationPlaceholder: "Duration",
+  unitDays: "Days", unitMonths: "Months", unitYears: "Years",
+  timing: "Daily Timing", timingPlaceholder: "Working hours",
+  experience: "Min Experience", noExperience: "No experience required (Fresher)", experiencePlaceholder: "Experience",
+  site: "Work Site", notSelected: "Not selected", selectSite: "Select site", changeSite: "Change site",
+  skills: "Required Skills", optional: "Optional", removeSkill: "Remove skill", noSkillsAdded: "No skills added",
+  skillsPlaceholder: "Add a skill", addSkill: "+ Add",
+  creating: "Creating job...", createJobBtn: "Create Job", pleaseComplete: "Please complete:", complete: "Complete all requirements to create job",
+} as const;
 
 declare global {
   interface Window {
-    SpeechRecognition?: new () => SpeechRecognitionLike;
-    webkitSpeechRecognition?: new () => SpeechRecognitionLike;
     Cashfree?: (options: { mode: "sandbox" | "production" }) => {
       checkout: (options: { paymentSessionId: string; redirectTarget: "_self" }) => Promise<void> | void;
     };
@@ -263,14 +126,54 @@ interface Job {
   updated_at?: string | null;
 }
 
-interface AssistantMessage {
-  id: string;
-  sender: "user" | "assistant";
-  text: string;
-  timestamp: string;
+interface HiringAgentMessage {
+  role: "user" | "assistant";
+  content: string;
+  created_at?: string | null;
 }
 
-interface AssistantJobState {
+interface HiringAgentCandidate {
+  candidate_ref: string;
+  name?: string | null;
+  trade?: string | null;
+  skills: string[];
+  experience_years?: number | null;
+  expected_daily_wage?: number | null;
+  availability_status?: string | null;
+  projected_distance_m?: number | null;
+  verified_evidence: string[];
+  unavailable_fields: string[];
+}
+
+interface HiringAgentJobDraft {
+  title?: string | null;
+  headcount_required?: number | null;
+  max_daily_salary?: number | null;
+  min_experience?: number | null;
+  work_duration_days?: number | null;
+  work_timing?: string | null;
+  trade_id?: string | null;
+  required_skills: string[];
+}
+
+interface HiringAgentConversation {
+  conversation_id: string;
+  job_id: string | null;
+  state_revision: number;
+  assistant_message?: string;
+  history: HiringAgentMessage[];
+  candidate_results: HiringAgentCandidate[];
+  candidate_result_status: "FOUND" | "NO_MATCHES" | "NOT_RETRIEVED" | "FAILED";
+  candidate_result_note?: string | null;
+  candidate_retrieved_at?: string | null;
+  job_draft: HiringAgentJobDraft;
+  job_site_id?: string | null;
+  job_site_name?: string | null;
+  job_confirmation_token?: string | null;
+  created_job_id?: string | null;
+}
+
+interface ManualJobFormState {
   title?: string | null;
   headcount_required?: number | null;
   max_daily_salary?: number | null;
@@ -361,31 +264,10 @@ export default function EmployerDashboard() {
   const [jobs, setJobs] = React.useState<Job[]>([]);
   const [availableWorkerCount, setAvailableWorkerCount] = React.useState(0);
   const [activeWorkerCount, setActiveWorkerCount] = React.useState(0);
-  const [assistantMessages, setAssistantMessages] = React.useState<AssistantMessage[]>([
-    {
-      id: "welcome",
-      sender: "assistant",
-      text: ASSISTANT_COPY.EN.welcome,
-      timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-    },
-  ]);
-  const [conversationId, setConversationId] = React.useState<string | null>(null);
-  const [assistantState, setAssistantState] = React.useState<AssistantJobState>({ required_skills: [] });
-  const [assistantStateRevision, setAssistantStateRevision] = React.useState(0);
-  const [missingFields, setMissingFields] = React.useState<string[]>([]);
-  const [assistantInvalidFields, setAssistantInvalidFields] = React.useState<string[]>([]);
-  const [assistantValidationErrors, setAssistantValidationErrors] = React.useState<string[]>([]);
-  const [readyToCreate, setReadyToCreate] = React.useState(false);
-  const [assistantConfirmationToken, setAssistantConfirmationToken] = React.useState<string | null>(null);
-  const [isAssistantSending, setIsAssistantSending] = React.useState(false);
-  const assistantRequestRef = React.useRef(0);
-  const manualRevisionRef = React.useRef(0);
-  const [assistantInput, setAssistantInput] = React.useState("");
+  const [manualJobState, setManualJobState] = React.useState<ManualJobFormState>({ required_skills: [] });
+  const [isHiringAgentSending, setIsHiringAgentSending] = React.useState(false);
+  const [hiringAgentInput, setHiringAgentInput] = React.useState("");
   const [isJobSaving, setIsJobSaving] = React.useState(false);
-  const [selectedAssistantLanguage, setSelectedAssistantLanguage] = React.useState<AssistantLanguage>(DEFAULT_LANGUAGE);
-  const [isListening, setIsListening] = React.useState(false);
-  const [voiceError, setVoiceError] = React.useState("");
-  const speechRecognitionRef = React.useRef<SpeechRecognitionLike | null>(null);
   const [isWorkSiteModalOpen, setIsWorkSiteModalOpen] = React.useState(false);
   const [workSiteModalMode, setWorkSiteModalMode] = React.useState<WorkSiteModalMode>(null);
   const [selectedJobSiteId, setSelectedJobSiteId] = React.useState("");
@@ -421,15 +303,105 @@ export default function EmployerDashboard() {
   const [formErrors, setFormErrors] = React.useState<Record<string, string>>({});
   const [touchedFields, setTouchedFields] = React.useState<Record<string, boolean>>({});
 
-  // Create Job section active tab ("ai" | "manual")
   const [createJobTab, setCreateJobTab] = React.useState<"ai" | "manual">("ai");
-  const [isSummaryExpandedMobile, setIsSummaryExpandedMobile] = React.useState(true);
+  const [isDraftExpandedMobile, setIsDraftExpandedMobile] = React.useState(true);
+  const [hiringConversationId, setHiringConversationId] = React.useState<string | null>(null);
+  const [hiringStateRevision, setHiringStateRevision] = React.useState(0);
+  const [hiringJobId, setHiringJobId] = React.useState("");
+  const [hiringSelectedJobSiteId, setHiringSelectedJobSiteId] = React.useState("");
+  const [hiringHistory, setHiringHistory] = React.useState<HiringAgentMessage[]>([
+    {
+      role: "assistant",
+        content: "Tell me what you need help with. I can help plan a job or discuss candidates for a selected job.",
+    },
+  ]);
+  const [hiringCandidates, setHiringCandidates] = React.useState<HiringAgentCandidate[]>([]);
+  const [hiringCandidateStatus, setHiringCandidateStatus] = React.useState<HiringAgentConversation["candidate_result_status"]>("NOT_RETRIEVED");
+  const [hiringCandidateNote, setHiringCandidateNote] = React.useState<string | null>(null);
+  const [hiringCandidateRetrievedAt, setHiringCandidateRetrievedAt] = React.useState<string | null>(null);
+  const [hiringJobDraft, setHiringJobDraft] = React.useState<HiringAgentJobDraft>({ required_skills: [] });
+  const [hiringJobSiteName, setHiringJobSiteName] = React.useState<string | null>(null);
+  const [hiringConfirmationToken, setHiringConfirmationToken] = React.useState<string | null>(null);
+  const [hiringCreatedJobId, setHiringCreatedJobId] = React.useState<string | null>(null);
+  const [hiringConversationError, setHiringConversationError] = React.useState("");
+  const [isHiringConversationLoading, setIsHiringConversationLoading] = React.useState(true);
+  const hiringSendInFlightRef = React.useRef(false);
+  const hiringMessagesRef = React.useRef<HTMLDivElement | null>(null);
 
-  const assistantCopy = ASSISTANT_COPY[selectedAssistantLanguage];
+  const jobFormCopy = JOB_FORM_COPY;
+
+  const applyHiringConversation = React.useCallback((data: HiringAgentConversation) => {
+    setHiringConversationId(data.conversation_id);
+    setHiringJobId(data.job_id || "");
+    setHiringStateRevision(data.state_revision);
+    setHiringHistory(data.history.length ? data.history : [{
+      role: "assistant",
+      content: "Tell me what you need help with. I can help plan a job or discuss candidates for a selected job.",
+    }]);
+    setHiringCandidates(data.candidate_results || []);
+    setHiringCandidateStatus(data.candidate_result_status);
+    setHiringCandidateNote(data.candidate_result_note || null);
+    setHiringCandidateRetrievedAt(data.candidate_retrieved_at || null);
+    setHiringJobDraft(data.job_draft || { required_skills: [] });
+    setHiringSelectedJobSiteId(data.job_site_id || "");
+    setHiringJobSiteName(data.job_site_name || null);
+    setHiringConfirmationToken(data.job_confirmation_token || null);
+    setHiringCreatedJobId(data.created_job_id || null);
+  }, []);
+
+  React.useEffect(() => {
+    const messageList = hiringMessagesRef.current;
+    if (messageList) {
+      messageList.scrollTop = messageList.scrollHeight;
+    }
+  }, [hiringHistory, isHiringAgentSending]);
+
+  const loadHiringConversation = React.useCallback(async (savedConversationId: string) => {
+    setIsHiringConversationLoading(true);
+    setHiringConversationError("");
+    try {
+      const { data } = await apiClient.get<HiringAgentConversation>(
+        `/api/v1/jobs/assistant/agent/${encodeURIComponent(savedConversationId)}`,
+        { withCredentials: true },
+      );
+      applyHiringConversation(data);
+    } catch (error: unknown) {
+      if (isAxiosError(error) && error.response?.status === 404 && user?.id) {
+        window.localStorage.removeItem(`gleska_hiring_agent_conversation:${user.id}`);
+      }
+      setHiringConversationError("Couldn't reload the saved AI Assistant conversation. Your draft is unchanged; retry or start a new conversation.");
+    } finally {
+      setIsHiringConversationLoading(false);
+    }
+  }, [applyHiringConversation, user?.id]);
+
+  const restoreHiringConversation = () => {
+    const savedConversationId = hiringConversationId || (user?.id
+      ? window.localStorage.getItem(`gleska_hiring_agent_conversation:${user.id}`)
+      : null);
+    if (!savedConversationId) {
+      setHiringConversationError("There is no saved conversation to reload.");
+      return;
+    }
+    void loadHiringConversation(savedConversationId);
+  };
+
+  React.useEffect(() => {
+    if (!user?.id) {
+      setIsHiringConversationLoading(false);
+      return;
+    }
+    const savedConversationId = window.localStorage.getItem(`gleska_hiring_agent_conversation:${user.id}`);
+    if (!savedConversationId) {
+      setIsHiringConversationLoading(false);
+      return;
+    }
+    void loadHiringConversation(savedConversationId);
+  }, [user?.id, loadHiringConversation]);
 
   // Validate manual job form against backend JobCreate rules
   const validateManualJobForm = React.useCallback((
-    state: AssistantJobState,
+    state: ManualJobFormState,
     dUnit: "days" | "months" | "years",
     eUnit: "years" | "months",
     dRaw: string,
@@ -440,84 +412,84 @@ export default function EmployerDashboard() {
     // 1. Job Title (1..120 chars, normalized)
     const trimmedTitle = state.title?.trim();
     if (!trimmedTitle) {
-      errors.title = assistantCopy.titleRequired;
+      errors.title = jobFormCopy.titleRequired;
     } else if (trimmedTitle.length > 120) {
-      errors.title = assistantCopy.titleTooLong;
+      errors.title = jobFormCopy.titleTooLong;
     }
 
     // 2. Workers Needed (1..1000)
     if (state.headcount_required === null || state.headcount_required === undefined || isNaN(state.headcount_required)) {
-      errors.headcount_required = assistantCopy.workersRequired;
+      errors.headcount_required = jobFormCopy.workersRequired;
     } else if (state.headcount_required < 1) {
-      errors.headcount_required = assistantCopy.workersMin;
+      errors.headcount_required = jobFormCopy.workersMin;
     } else if (state.headcount_required > 1000) {
-      errors.headcount_required = assistantCopy.workersMax;
+      errors.headcount_required = jobFormCopy.workersMax;
     }
 
     // 3. Daily Wage (> 0, <= 1000000)
     if (state.max_daily_salary === null || state.max_daily_salary === undefined || isNaN(state.max_daily_salary)) {
-      errors.max_daily_salary = assistantCopy.wageRequired;
+      errors.max_daily_salary = jobFormCopy.wageRequired;
     } else if (state.max_daily_salary <= 0 || state.max_daily_salary > 1000000) {
-      errors.max_daily_salary = assistantCopy.wageValid;
+      errors.max_daily_salary = jobFormCopy.wageValid;
     }
 
     // 4. Work Duration (1..365 days)
     if (!dRaw.trim() || state.work_duration_days === null || state.work_duration_days === undefined || isNaN(state.work_duration_days)) {
-      errors.work_duration_days = assistantCopy.durationRequired;
+      errors.work_duration_days = jobFormCopy.durationRequired;
     } else if (state.work_duration_days < 1 || state.work_duration_days > 365) {
-      errors.work_duration_days = assistantCopy.durationRange;
+      errors.work_duration_days = jobFormCopy.durationRange;
     }
 
     // 5. Daily Timing (1..120 chars)
     const trimmedTiming = state.work_timing?.trim();
     if (!trimmedTiming) {
-      errors.work_timing = assistantCopy.timingRequired;
+      errors.work_timing = jobFormCopy.timingRequired;
     }
 
     // 6. Minimum Experience (0 for fresher, or >= 1 year, <= 50)
     if (!eRaw.trim() || state.min_experience === null || state.min_experience === undefined || isNaN(state.min_experience)) {
-      errors.min_experience = assistantCopy.experienceRequiredErr;
+      errors.min_experience = jobFormCopy.experienceRequiredErr;
     } else if (state.min_experience < 0 || (state.min_experience > 0 && state.min_experience < 1) || state.min_experience > 50) {
-      errors.min_experience = assistantCopy.experienceRange;
+      errors.min_experience = jobFormCopy.experienceRange;
     }
 
     // 7. Work Site (required UUID)
     if (!state.job_site_id) {
-      errors.job_site_id = assistantCopy.siteRequired;
+      errors.job_site_id = jobFormCopy.siteRequired;
     }
 
     return errors;
-  }, [assistantCopy]);
+  }, [jobFormCopy]);
 
-  const currentFormErrors = validateManualJobForm(assistantState, durationUnit, experienceUnit, durationInputValue, experienceInputValue);
+  const currentFormErrors = validateManualJobForm(manualJobState, durationUnit, experienceUnit, durationInputValue, experienceInputValue);
   const isFormReady = Object.keys(currentFormErrors).length === 0;
 
-  // Sync Duration from assistantState if updated externally
+  // Sync Duration from manualJobState if updated externally
   React.useEffect(() => {
-    if (assistantState.work_duration_days != null) {
-      if (assistantState.work_duration_months != null) {
+    if (manualJobState.work_duration_days != null) {
+      if (manualJobState.work_duration_months != null) {
         setDurationUnit("months");
-        setDurationInputValue(String(assistantState.work_duration_months));
-      } else if (assistantState.work_duration_days >= 365 && assistantState.work_duration_days % 365 === 0) {
+        setDurationInputValue(String(manualJobState.work_duration_months));
+      } else if (manualJobState.work_duration_days >= 365 && manualJobState.work_duration_days % 365 === 0) {
         setDurationUnit("years");
-        setDurationInputValue(String(assistantState.work_duration_days / 365));
-      } else if (assistantState.work_duration_days >= 30 && assistantState.work_duration_days % 30 === 0) {
+        setDurationInputValue(String(manualJobState.work_duration_days / 365));
+      } else if (manualJobState.work_duration_days >= 30 && manualJobState.work_duration_days % 30 === 0) {
         setDurationUnit("months");
-        setDurationInputValue(String(assistantState.work_duration_days / 30));
+        setDurationInputValue(String(manualJobState.work_duration_days / 30));
       } else {
         setDurationUnit("days");
-        setDurationInputValue(String(assistantState.work_duration_days));
+        setDurationInputValue(String(manualJobState.work_duration_days));
       }
     }
-  }, [assistantState.work_duration_days, assistantState.work_duration_months]);
+  }, [manualJobState.work_duration_days, manualJobState.work_duration_months]);
 
-  // Sync Experience from assistantState if updated externally
+  // Sync Experience from manualJobState if updated externally
   React.useEffect(() => {
-    if (assistantState.min_experience != null) {
-      setExperienceInputValue(String(assistantState.min_experience));
+    if (manualJobState.min_experience != null) {
+      setExperienceInputValue(String(manualJobState.min_experience));
       setExperienceUnit("years");
     }
-  }, [assistantState.min_experience]);
+  }, [manualJobState.min_experience]);
 
   const handleDurationChange = (rawVal: string, unit: "days" | "months" | "years") => {
     setDurationInputValue(rawVal);
@@ -536,7 +508,7 @@ export default function EmployerDashboard() {
       }
     }
 
-    setAssistantState((curr) => ({
+    setManualJobState((curr) => ({
       ...curr,
       work_duration_days: days,
       work_duration_months: months,
@@ -556,7 +528,7 @@ export default function EmployerDashboard() {
       }
     }
 
-    setAssistantState((curr) => ({
+    setManualJobState((curr) => ({
       ...curr,
       min_experience: expYears,
     }));
@@ -565,7 +537,7 @@ export default function EmployerDashboard() {
   const handleSetFresher = () => {
     setExperienceInputValue("0");
     setExperienceUnit("years");
-    setAssistantState((curr) => ({
+    setManualJobState((curr) => ({
       ...curr,
       min_experience: 0,
     }));
@@ -574,19 +546,19 @@ export default function EmployerDashboard() {
   const handleAddSkill = (customSkill?: string) => {
     const raw = (customSkill ?? newSkillInput).trim();
     if (!raw) return;
-    const currentSkills = assistantState.required_skills || [];
+    const currentSkills = manualJobState.required_skills || [];
     if (currentSkills.some((s) => s.toLowerCase() === raw.toLowerCase())) {
-      toast.error(assistantCopy.skillAlreadyAdded);
+      toast.error(jobFormCopy.skillAlreadyAdded);
       return;
     }
     const updatedSkills = [...currentSkills, raw];
-    setAssistantState((curr) => ({ ...curr, required_skills: updatedSkills }));
+    setManualJobState((curr) => ({ ...curr, required_skills: updatedSkills }));
     setNewSkillInput("");
   };
 
   const handleRemoveSkill = (skillToRemove: string) => {
-    const updatedSkills = (assistantState.required_skills || []).filter((s) => s !== skillToRemove);
-    setAssistantState((curr) => ({ ...curr, required_skills: updatedSkills }));
+    const updatedSkills = (manualJobState.required_skills || []).filter((s) => s !== skillToRemove);
+    setManualJobState((curr) => ({ ...curr, required_skills: updatedSkills }));
   };
 
   const handleFieldBlur = (fieldName: string) => {
@@ -595,7 +567,7 @@ export default function EmployerDashboard() {
 
   // Direct manual job creation handler
   const handleCreateJobManual = async () => {
-    const errors = validateManualJobForm(assistantState, durationUnit, experienceUnit, durationInputValue, experienceInputValue);
+    const errors = validateManualJobForm(manualJobState, durationUnit, experienceUnit, durationInputValue, experienceInputValue);
     setFormErrors(errors);
     setTouchedFields({
       title: true,
@@ -628,14 +600,14 @@ export default function EmployerDashboard() {
 
     try {
       const payload = {
-        job_site_id: assistantState.job_site_id!,
-        title: assistantState.title!.trim(),
-        headcount_required: Number(assistantState.headcount_required),
-        max_daily_salary: Number(assistantState.max_daily_salary),
-        work_duration_days: Number(assistantState.work_duration_days),
-        work_timing: assistantState.work_timing!.trim(),
-        min_experience: Number(assistantState.min_experience),
-        required_skills: assistantState.required_skills || [],
+        job_site_id: manualJobState.job_site_id!,
+        title: manualJobState.title!.trim(),
+        headcount_required: Number(manualJobState.headcount_required),
+        max_daily_salary: Number(manualJobState.max_daily_salary),
+        work_duration_days: Number(manualJobState.work_duration_days),
+        work_timing: manualJobState.work_timing!.trim(),
+        min_experience: Number(manualJobState.min_experience),
+        required_skills: manualJobState.required_skills || [],
       };
 
       const response = await apiClient.post<Job>("/api/v1/jobs", payload, { withCredentials: true });
@@ -652,46 +624,19 @@ export default function EmployerDashboard() {
 
       toast.success("Job created successfully!");
 
-      if (conversationId) {
-        setAssistantMessages((prev) => [
-          ...prev,
-          {
-            id: (Date.now() + 2).toString(),
-            sender: "assistant",
-            text: `Job ${response.data.title} has been successfully created and published!`,
-            timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-          },
-        ]);
-      }
-
       // Reset form state cleanly
-      setAssistantState({ required_skills: [] });
+      setManualJobState({ required_skills: [] });
       setDurationInputValue("");
       setExperienceInputValue("");
       setNewSkillInput("");
       setTouchedFields({});
       setFormErrors({});
-      setReadyToCreate(false);
-      setAssistantConfirmationToken(null);
     } catch (err: any) {
       const message = err.response?.data?.detail || "Unable to create job";
       toast.error(message);
     } finally {
       setIsJobSaving(false);
     }
-  };
-
-  const handleAssistantLanguageChange = (language: AssistantLanguage) => {
-    setSelectedAssistantLanguage(language);
-    setAssistantMessages((current) => [
-      ...current,
-      {
-        id: `language-${Date.now()}`,
-        sender: "assistant",
-        text: ASSISTANT_COPY[language].languageChanged,
-        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-      },
-    ]);
   };
 
   const scrollToAssistant = () => {
@@ -729,37 +674,6 @@ export default function EmployerDashboard() {
   };
 
   const handleOpenJobSiteSelector = () => openWorkSiteModal("site");
-
-  const updateManualAssistantState = async (patch: Partial<AssistantJobState>) => {
-    const nextState = { ...assistantState, ...patch, required_skills: patch.required_skills ?? assistantState.required_skills };
-    setAssistantState(nextState);
-    manualRevisionRef.current += 1;
-    if (!conversationId) return;
-    try {
-      const response = await apiClient.post<{
-        structured_state: AssistantJobState;
-        missing_fields: string[];
-        invalid_fields?: string[];
-        validation_errors?: string[];
-        ready_to_create: boolean;
-        confirmation_token?: string | null;
-        state_revision: number;
-      }>("/api/v1/jobs/assistant/state", {
-        conversation_id: conversationId,
-        state: nextState,
-        state_revision: assistantStateRevision,
-      }, { withCredentials: true });
-      setAssistantState(response.data.structured_state);
-      setMissingFields(response.data.missing_fields || []);
-      setAssistantInvalidFields(response.data.invalid_fields || []);
-      setAssistantValidationErrors(response.data.validation_errors || []);
-      setReadyToCreate(response.data.ready_to_create);
-      setAssistantConfirmationToken(response.data.confirmation_token || null);
-      setAssistantStateRevision(response.data.state_revision);
-    } catch (error: any) {
-      toast.error(error.response?.data?.detail || "Unable to save job details");
-    }
-  };
 
   const loadEmployerProfile = React.useCallback(async () => {
     if (!user || user.role !== "EMPLOYER") return;
@@ -931,80 +845,6 @@ export default function EmployerDashboard() {
     void resumeDispatch();
   }, [isLoading, user]);
 
-  const handleVoiceInput = React.useCallback(() => {
-    const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognitionCtor) {
-      setVoiceError(assistantCopy.voiceUnsupported);
-      return;
-    }
-
-    if (speechRecognitionRef.current) {
-      speechRecognitionRef.current.stop();
-      speechRecognitionRef.current = null;
-      setIsListening(false);
-      return;
-    }
-
-    const recognition = new SpeechRecognitionCtor() as SpeechRecognitionLike;
-    recognition.lang = SUPPORTED_LANGUAGES[selectedAssistantLanguage].speechCode;
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
-
-    recognition.onstart = () => {
-      setVoiceError("");
-      setIsListening(true);
-    };
-
-    recognition.onresult = (event: any) => {
-      const transcript = Array.from(event.results)
-        .map((result: any) => result[0]?.transcript ?? "")
-        .join(" ")
-        .trim();
-
-      if (!transcript) {
-        setVoiceError(assistantCopy.noSpeech);
-        setIsListening(false);
-        return;
-      }
-
-      setAssistantInput(transcript);
-      setVoiceError("");
-      setIsListening(false);
-      void handleSendAssistantMessage(transcript);
-    };
-
-    recognition.onerror = (event: any) => {
-      const code = event?.error ?? "unknown";
-      const friendlyMessage =
-        code === "not-allowed"
-          ? assistantCopy.micDenied
-          : code === "no-speech"
-            ? assistantCopy.noDetected
-            : code === "not-supported"
-              ? assistantCopy.voiceUnsupported
-              : assistantCopy.voiceFailed;
-      setVoiceError(friendlyMessage);
-      setIsListening(false);
-    };
-
-    recognition.onend = () => {
-      setIsListening(false);
-      speechRecognitionRef.current = null;
-    };
-
-    speechRecognitionRef.current = recognition;
-    recognition.start();
-  }, [assistantCopy, selectedAssistantLanguage]);
-
-  React.useEffect(() => {
-    return () => {
-      if (speechRecognitionRef.current) {
-        speechRecognitionRef.current.stop();
-        speechRecognitionRef.current = null;
-      }
-    };
-  }, []);
-
   if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#eef1fb] dark:bg-slate-950">
@@ -1061,9 +901,7 @@ export default function EmployerDashboard() {
       setJobSites((current) => [response.data, ...current]);
       setSelectedJobSiteId(response.data.id);
       setSelectedJobSite(response.data);
-      setAssistantState((current) => ({ ...current, job_site_id: response.data.id, job_site_name: response.data.name }));
-      setReadyToCreate(false);
-      setAssistantConfirmationToken(null);
+      setManualJobState((current) => ({ ...current, job_site_id: response.data.id, job_site_name: response.data.name }));
       setSiteForm({ name: "", address: "", city: "", state: "", pincode: "", latitude: "", longitude: "" });
       setSelectedSiteLocation(null);
       setSiteLocationNotice("");
@@ -1097,14 +935,12 @@ export default function EmployerDashboard() {
   const selectJobSite = (site: JobSite) => {
     setSelectedJobSiteId(site.id);
     setSelectedJobSite(site);
-    setAssistantState((current) => ({
+    setHiringSelectedJobSiteId(site.id);
+    setManualJobState((current) => ({
       ...current,
       job_site_id: site.id,
       job_site_name: site.name,
     }));
-    void updateManualAssistantState({ job_site_id: site.id, job_site_name: site.name });
-    setReadyToCreate(false);
-    setAssistantConfirmationToken(null);
     setIsWorkSiteModalOpen(false);
     setWorkSiteModalMode(null);
   };
@@ -1179,129 +1015,13 @@ export default function EmployerDashboard() {
       if (selectedJobSiteId === siteId) {
         setSelectedJobSiteId("");
         setSelectedJobSite(null);
-        setAssistantState((current) => ({ ...current, job_site_id: null, job_site_name: null }));
+        setManualJobState((current) => ({ ...current, job_site_id: null, job_site_name: null }));
       }
       toast.success("Work site removed");
     } catch (err: any) {
       const message = err.response?.data?.detail || "Unable to remove work site";
       setSiteError(message);
       toast.error(message);
-    }
-  };
-
-  const handleSendAssistantMessage = async (messageText?: string) => {
-    const text = (messageText !== undefined ? messageText : assistantInput).trim();
-    if (!text || isAssistantSending) return;
-
-    setAssistantInput("");
-    const userMsgId = Date.now().toString();
-    const timeNow = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    setAssistantMessages((prev) => [
-      ...prev,
-      { id: userMsgId, sender: "user", text, timestamp: timeNow },
-    ]);
-    setIsAssistantSending(true);
-    const requestId = assistantRequestRef.current + 1;
-    assistantRequestRef.current = requestId;
-    const manualRevisionAtRequest = manualRevisionRef.current;
-
-    try {
-      const res = await apiClient.post<{
-        conversation_id: string;
-        assistant_message: string;
-        structured_state: AssistantJobState;
-        missing_fields: string[];
-        invalid_fields?: string[];
-        validation_errors: string[];
-        ready_to_create: boolean;
-        confirmation_token?: string | null;
-        state_revision: number;
-      }>("/api/v1/jobs/assistant/message", {
-        message: text,
-        language: selectedAssistantLanguage,
-        conversation_id: conversationId,
-        current_state: assistantState,
-        state_revision: conversationId ? assistantStateRevision : undefined,
-        selected_job_site_id: selectedJobSiteId || undefined,
-      }, { withCredentials: true });
-
-      if (assistantRequestRef.current !== requestId || manualRevisionRef.current !== manualRevisionAtRequest) return;
-      setConversationId(res.data.conversation_id);
-      setAssistantState(res.data.structured_state);
-      setAssistantStateRevision(res.data.state_revision);
-      setMissingFields(res.data.missing_fields || []);
-      setAssistantInvalidFields(res.data.invalid_fields || []);
-      setAssistantValidationErrors(res.data.validation_errors || []);
-      setReadyToCreate(res.data.ready_to_create);
-      setAssistantConfirmationToken(res.data.confirmation_token || null);
-
-      if (res.data.structured_state.job_site_id) {
-        setSelectedJobSiteId(res.data.structured_state.job_site_id);
-        const site = jobSites.find((s) => s.id === res.data.structured_state.job_site_id) || null;
-        setSelectedJobSite(site);
-      }
-
-      setAssistantMessages((prev) => [
-        ...prev,
-        {
-          id: (Date.now() + 1).toString(),
-          sender: "assistant",
-          text: res.data.assistant_message,
-          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-        },
-      ]);
-    } catch (err: any) {
-      const errorMsg = err.response?.data?.detail || assistantCopy.error;
-      setAssistantMessages((prev) => [
-        ...prev,
-        {
-          id: (Date.now() + 1).toString(),
-          sender: "assistant",
-          text: typeof errorMsg === "string" ? errorMsg : assistantCopy.error,
-          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-        },
-      ]);
-    } finally {
-      setIsAssistantSending(false);
-    }
-  };
-
-  const handleCreateJobFromAssistant = async () => {
-    if (!readyToCreate || !conversationId || !assistantConfirmationToken || isJobSaving) return;
-
-    setIsJobSaving(true);
-    try {
-      const response = await apiClient.post<Job>("/api/v1/jobs/assistant/create", {
-        conversation_id: conversationId,
-        confirmation_token: assistantConfirmationToken,
-      }, { withCredentials: true });
-      setJobs((current) => [response.data, ...current.filter((job) => job.id !== response.data.id)]);
-      try {
-        const summaryResponse = await apiClient.get<JobMatchSummary[]>('/api/v1/jobs/match-summary', { withCredentials: true });
-        setJobMatchSummaries(Object.fromEntries(summaryResponse.data.map((summary) => [summary.job_id, summary])));
-        setJobMatchSummaryState("FOUND");
-      } catch {
-        setJobMatchSummaryState("ERROR");
-      }
-      void loadAvailableWorkerCount();
-
-      toast.success("Job created successfully!");
-      setAssistantMessages((prev) => [
-        ...prev,
-        {
-          id: (Date.now() + 2).toString(),
-          sender: "assistant",
-          text: `Job ${response.data.title} has been successfully created and published!`,
-          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-        },
-      ]);
-      setReadyToCreate(false);
-      setAssistantConfirmationToken(null);
-    } catch (err: any) {
-      const message = err.response?.data?.detail || "Unable to create job";
-      toast.error(message);
-    } finally {
-      setIsJobSaving(false);
     }
   };
 
@@ -1438,6 +1158,190 @@ export default function EmployerDashboard() {
       commissionOrderInFlightRef.current = false;
     }
   }
+
+  const startNewHiringConversation = () => {
+    if (hiringSendInFlightRef.current || isHiringConversationLoading) return;
+    if (user?.id) {
+      window.localStorage.removeItem(`gleska_hiring_agent_conversation:${user.id}`);
+    }
+    setHiringConversationId(null);
+    setHiringStateRevision(0);
+    setHiringJobId("");
+    setHiringSelectedJobSiteId("");
+    setHiringCandidates([]);
+    setHiringCandidateStatus("NOT_RETRIEVED");
+    setHiringCandidateNote(null);
+    setHiringCandidateRetrievedAt(null);
+    setHiringJobDraft({ required_skills: [] });
+    setHiringJobSiteName(null);
+    setHiringConfirmationToken(null);
+    setHiringCreatedJobId(null);
+    setHiringConversationError("");
+    setHiringHistory([{
+      role: "assistant",
+      content: "Tell me about the job you need or ask me about an existing searching job. I can help prepare a job draft and show current matching candidates.",
+    }]);
+    setHiringAgentInput("");
+  };
+
+  const handleEditExtractedDataInManualForm = () => {
+    setManualJobState((prev) => ({
+      ...prev,
+      title: hiringJobDraft.title || prev.title,
+      headcount_required: hiringJobDraft.headcount_required ?? prev.headcount_required,
+      max_daily_salary: hiringJobDraft.max_daily_salary ?? prev.max_daily_salary,
+      work_duration_days: hiringJobDraft.work_duration_days ?? prev.work_duration_days,
+      work_timing: hiringJobDraft.work_timing || prev.work_timing,
+      min_experience: hiringJobDraft.min_experience ?? prev.min_experience,
+      job_site_id: hiringSelectedJobSiteId || prev.job_site_id,
+      job_site_name: hiringJobSiteName || (jobSites.find((site) => site.id === hiringSelectedJobSiteId)?.name) || prev.job_site_name,
+      required_skills: (hiringJobDraft.required_skills && hiringJobDraft.required_skills.length > 0)
+        ? hiringJobDraft.required_skills
+        : prev.required_skills,
+    }));
+    if (hiringJobDraft.work_duration_days != null) {
+      setDurationInputValue(String(hiringJobDraft.work_duration_days));
+      setDurationUnit("days");
+    }
+    if (hiringJobDraft.min_experience != null) {
+      setExperienceInputValue(String(hiringJobDraft.min_experience));
+      setExperienceUnit("years");
+    }
+    if (hiringSelectedJobSiteId) {
+      setSelectedJobSiteId(hiringSelectedJobSiteId);
+      const site = jobSites.find((s) => s.id === hiringSelectedJobSiteId);
+      if (site) setSelectedJobSite(site);
+    }
+    setCreateJobTab("manual");
+  };
+
+  const handleSendHiringAgentMessage = async (messageText = hiringAgentInput) => {
+    const text = messageText.trim();
+    if (!text || hiringSendInFlightRef.current || isHiringConversationLoading) return;
+    hiringSendInFlightRef.current = true;
+    setHiringAgentInput("");
+    setHiringConversationError("");
+    setHiringHistory((current) => [...current, { role: "user", content: text }]);
+    setIsHiringAgentSending(true);
+    try {
+      const response = await apiClient.post<HiringAgentConversation>(
+        "/api/v1/jobs/assistant/agent/message",
+        {
+          message: text,
+          conversation_id: hiringConversationId,
+          job_id: hiringJobId || undefined,
+          selected_job_site_id: hiringSelectedJobSiteId || undefined,
+          state_revision: hiringConversationId ? hiringStateRevision : undefined,
+        },
+        { withCredentials: true },
+      );
+      const data = response.data;
+      applyHiringConversation(data);
+      if (user?.id) {
+        window.localStorage.setItem(
+          `gleska_hiring_agent_conversation:${user.id}`,
+          data.conversation_id,
+        );
+      }
+    } catch (error: unknown) {
+      const detail = isAxiosError<{ detail?: unknown }>(error)
+        ? error.response?.data?.detail
+        : undefined;
+      const stale = detail === "STALE_ASSISTANT_STATE";
+      let savedHistory = hiringHistory;
+      if (hiringConversationId) {
+        try {
+          const { data } = await apiClient.get<HiringAgentConversation>(
+            `/api/v1/jobs/assistant/agent/${encodeURIComponent(hiringConversationId)}`,
+            { withCredentials: true },
+          );
+          applyHiringConversation(data);
+          savedHistory = data.history;
+        } catch {
+          // Keep the last known history and the unsent text visible if refresh is unavailable.
+        }
+      }
+      setHiringAgentInput(text);
+      const recoverableError = stale
+        ? "This conversation changed elsewhere. The latest saved state has been loaded; review your message and resend it."
+        : isAxiosError(error) && error.response?.status === 402
+          ? "Your account needs an active subscription to continue. Your message is preserved in the input."
+          : isAxiosError(error) && error.response?.status === 403
+            ? "You aren't authorized to use this conversation. Your message is preserved in the input."
+            : isAxiosError(error) && error.response?.status === 429
+              ? "The AI Assistant is temporarily at its usage limit. Your message is preserved in the input; try again later."
+              : "Couldn't reach the AI Assistant. Your message is preserved in the input; retry when the connection is available.";
+      setHiringConversationError(recoverableError);
+      setHiringHistory([
+        ...savedHistory,
+        {
+          role: "assistant",
+          content: recoverableError,
+        },
+      ]);
+    } finally {
+      setIsHiringAgentSending(false);
+      hiringSendInFlightRef.current = false;
+    }
+  };
+
+  const handleConfirmHiringJob = async () => {
+    if (
+      !hiringConversationId
+      || !hiringConfirmationToken
+      || isJobSaving
+      || hiringCreatedJobId
+    ) return;
+
+    setIsJobSaving(true);
+    setHiringConversationError("");
+    try {
+      const { data } = await apiClient.post<HiringAgentConversation>(
+        "/api/v1/jobs/assistant/agent/create",
+        {
+          conversation_id: hiringConversationId,
+          state_revision: hiringStateRevision,
+          confirmation_token: hiringConfirmationToken,
+        },
+        { withCredentials: true },
+      );
+      applyHiringConversation(data);
+      const [jobsResult, summariesResult] = await Promise.allSettled([
+        apiClient.get<Job[]>("/api/v1/jobs", { withCredentials: true }),
+        apiClient.get<JobMatchSummary[]>("/api/v1/jobs/match-summary", { withCredentials: true }),
+      ]);
+      if (jobsResult.status === "fulfilled") setJobs(jobsResult.value.data);
+      if (summariesResult.status === "fulfilled") {
+        setJobMatchSummaries(Object.fromEntries(summariesResult.value.data.map((summary) => [summary.job_id, summary])));
+        setJobMatchSummaryState("FOUND");
+      } else {
+        setJobMatchSummaryState("ERROR");
+      }
+      void loadAvailableWorkerCount();
+      toast.success("Job created successfully.");
+      if (jobsResult.status === "rejected" || summariesResult.status === "rejected") {
+        toast.error("The job was created, but some dashboard details could not be refreshed. Reload the dashboard.");
+      }
+    } catch (error: unknown) {
+      const detail = isAxiosError<{ detail?: unknown }>(error)
+        ? error.response?.data?.detail
+        : undefined;
+      setHiringConversationError(
+        detail === "STALE_ASSISTANT_STATE"
+          ? "The conversation changed before confirmation. Reload the saved conversation and review the draft before trying again."
+          : detail === "JOB_CREATED_CONVERSATION_UPDATE_FAILED"
+            ? "The job may have been created, but the conversation couldn't be updated. Check your jobs before trying again."
+            : isAxiosError(error) && error.response?.status === 402
+              ? "Your account needs an active subscription to create this job. The draft is preserved."
+              : "Couldn't complete job creation. Reload the saved conversation and check your jobs before trying again.",
+      );
+      if (hiringConversationId) {
+        void loadHiringConversation(hiringConversationId);
+      }
+    } finally {
+      setIsJobSaving(false);
+    }
+  };
 
   const handleSelectWorker = async (jobId: string, workerProfileId: string) => {
     const requestId = selectedJobRequestRef.current;
@@ -1686,7 +1590,7 @@ export default function EmployerDashboard() {
                     <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400">
                       <Briefcase size={20} />
                     </div>
-                    <h2 className="font-bold text-slate-900 dark:text-white">{assistantCopy.createJobTitle}</h2>
+                    <h2 className="font-bold text-slate-900 dark:text-white">{jobFormCopy.createJobTitle}</h2>
                   </div>
 
                   {/* Tabs */}
@@ -1703,7 +1607,7 @@ export default function EmployerDashboard() {
                       }`}
                     >
                       <Sparkles size={13} />
-                      {assistantCopy.heading}
+                      AI Assistant
                     </button>
                     <button
                       role="tab"
@@ -1731,12 +1635,12 @@ export default function EmployerDashboard() {
                         ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800"
                         : "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800"
                     }`}>
-                      {isFormReady ? assistantCopy.ready : `${assistantCopy.incomplete} (${Object.keys(currentFormErrors).length})`}
+                      {isFormReady ? jobFormCopy.ready : `${jobFormCopy.incomplete} (${Object.keys(currentFormErrors).length})`}
                     </span>
                   )}
 
                   {/* Job Site pill */}
-                  <button
+                  {createJobTab === "manual" && <button
                     type="button"
                     onClick={handleOpenJobSiteSelector}
                     className="group flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-blue-700 transition hover:bg-blue-100 active:scale-95 cursor-pointer dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300 dark:hover:bg-blue-950/60"
@@ -1746,293 +1650,398 @@ export default function EmployerDashboard() {
                       {selectedJobSite?.name || "Select job site"}
                     </span>
                     <ChevronRight size={13} className="shrink-0 opacity-60 group-hover:translate-x-0.5 transition-transform" />
-                  </button>
+                  </button>}
                 </div>
               </div>
 
               {/* ── Tab Panels ────────────────────────────────────────────── */}
 
-              {/* AI Assistant tab — Responsive Two-Panel Layout */}
+              {/* Conversational Hiring Agent used for AI-assisted job drafting and candidate discovery. */}
               <div
                 role="tabpanel"
                 hidden={createJobTab !== "ai"}
                 className="p-4 sm:p-6"
               >
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-
-                  {/* Left Column: Conversational AI Chat (Desktop: 7 cols) */}
-                  <div className="lg:col-span-7 flex flex-col rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900 min-h-[460px]">
-                    {/* Header */}
-                    <div className="flex items-center justify-between border-b border-slate-100 pb-3 dark:border-slate-800">
-                      <div className="flex items-center gap-2.5">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400">
-                          <Sparkles size={18} />
+                <div className="grid min-h-0 items-stretch gap-5 lg:grid-cols-12">
+                  <section className="flex h-[440px] sm:h-[480px] lg:h-[500px] min-h-0 flex-col rounded-2xl border border-slate-200 bg-white p-3.5 sm:p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900 lg:col-span-6">
+                    {/* Header Toolbar */}
+                    <div className="flex flex-none items-center justify-between gap-2.5 border-b border-slate-100 pb-3 dark:border-slate-800">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950/60 dark:text-blue-400">
+                          <Sparkles size={16} />
                         </div>
-                        <div>
-                          <h3 className="font-bold text-slate-900 dark:text-white text-sm">{assistantCopy.heading}</h3>
-                          <p className="text-xs text-slate-500 dark:text-slate-400">{assistantCopy.subtitle}</p>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate">
+                              AI Assistant
+                            </h3>
+                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
+                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                              Active
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-500 dark:text-slate-400 hidden sm:block truncate">
+                            Chat naturally to draft jobs and discover matching workers
+                          </p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <select
-                          value={selectedAssistantLanguage}
-                          onChange={(e) => handleAssistantLanguageChange(e.target.value as AssistantLanguage)}
-                          className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        {/* Work Site Selector Pill */}
+                        <div className="relative flex items-center">
+                          <MapPin size={13} className="pointer-events-none absolute left-2.5 text-blue-600 dark:text-blue-400" />
+                          <select
+                            value={hiringSelectedJobSiteId}
+                            disabled={isHiringAgentSending || isHiringConversationLoading}
+                            onChange={(event) => {
+                              const siteId = event.target.value;
+                              setHiringSelectedJobSiteId(siteId);
+                              const site = jobSites.find((s) => s.id === siteId);
+                              if (site) {
+                                setSelectedJobSiteId(site.id);
+                                setSelectedJobSite(site);
+                                setManualJobState((prev) => ({
+                                  ...prev,
+                                  job_site_id: site.id,
+                                  job_site_name: site.name,
+                                }));
+                              }
+                            }}
+                            aria-label="Select Work Site"
+                            className="h-8 max-w-[130px] sm:max-w-[190px] truncate rounded-lg border border-slate-200 bg-slate-50 pl-7 pr-6 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 focus:border-blue-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 cursor-pointer"
+                          >
+                            <option value="">Select work site</option>
+                            {jobSites.map((site) => (
+                              <option key={site.id} value={site.id}>{site.name}</option>
+                            ))}
+                          </select>
+                          <ChevronDown size={12} className="pointer-events-none absolute right-2 text-slate-400" />
+                        </div>
+
+                        {/* New conversation button */}
+                        <button
+                          type="button"
+                          onClick={startNewHiringConversation}
+                          disabled={isHiringAgentSending || isHiringConversationLoading}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 hover:text-slate-900 active:scale-95 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 cursor-pointer"
+                          title="Start new conversation"
                         >
-                          {LANGUAGE_OPTIONS.map(([code, opt]) => (
-                            <option key={code} value={code}>{opt.label}</option>
-                          ))}
-                        </select>
+                          <RotateCcw size={12} />
+                          <span className="hidden sm:inline">New chat</span>
+                        </button>
                       </div>
                     </div>
+
+                    {hiringConversationError && (
+                      <div role="alert" className="mt-3 flex-none rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-200">
+                        <p>{hiringConversationError}</p>
+                        <button
+                          type="button"
+                          onClick={() => void restoreHiringConversation()}
+                          disabled={isHiringConversationLoading || !hiringConversationId}
+                          className="mt-1.5 font-semibold underline disabled:opacity-50 cursor-pointer"
+                        >
+                          Reload saved conversation
+                        </button>
+                      </div>
+                    )}
 
                     {/* Messages Thread */}
-                    <div className="my-4 flex-1 h-[280px] sm:h-[320px] overflow-y-auto space-y-3 pr-2 flex flex-col">
-                      {assistantMessages.map((msg) => (
+                    <div
+                      ref={hiringMessagesRef}
+                      className="my-3 min-h-0 flex-1 space-y-3.5 overflow-y-auto overscroll-contain pr-1.5 custom-scrollbar"
+                      aria-live="polite"
+                    >
+                      {hiringHistory.map((message, index) => (
                         <div
-                          key={msg.id}
-                          className={`flex flex-col ${msg.sender === "user" ? "items-end" : "items-start"}`}
+                          key={`${index}-${message.role}`}
+                          className={`flex ${message.role === "user" ? "justify-end" : "justify-start items-start gap-2.5"}`}
                         >
+                          {message.role === "assistant" && (
+                            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600 dark:bg-blue-950/60 dark:text-blue-400 mt-0.5">
+                              <Sparkles size={13} />
+                            </div>
+                          )}
                           <div
-                            className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
-                              msg.sender === "user"
-                                ? "bg-blue-600 text-white rounded-br-xs shadow-xs"
-                                : "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 rounded-bl-xs border border-slate-200/50 dark:border-slate-700/50"
+                            className={`max-w-[85%] sm:max-w-[82%] whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-xs sm:text-sm leading-relaxed ${
+                              message.role === "user"
+                                ? "rounded-br-xs bg-blue-600 text-white shadow-2xs"
+                                : "rounded-bl-xs border border-slate-200/90 bg-slate-50/90 text-slate-800 dark:border-slate-700 dark:bg-slate-800/90 dark:text-slate-200 shadow-2xs"
                             }`}
                           >
-                            {msg.text}
+                            {message.content}
                           </div>
-                          <span className="text-[10px] text-slate-400 mt-1 px-1">{msg.timestamp}</span>
                         </div>
                       ))}
-                      {isAssistantSending && (
+
+                      {isHiringAgentSending && (
                         <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/40 p-2.5 rounded-xl w-fit">
-                          <Loader2 size={14} className="animate-spin text-blue-500" />
-                          <span>{assistantCopy.thinking}</span>
+                          <Loader2 size={14} className="animate-spin text-blue-600" />
+                          <span>AI is analyzing requirements...</span>
                         </div>
                       )}
-                      </div>
-
-                    {/* Input Bar */}
-                    <div className="mt-auto pt-2">
-                      {voiceError && <p className="mb-2 text-xs text-rose-500">{voiceError}</p>}
-                      <div className="relative flex items-center rounded-full border border-blue-500/80 bg-slate-50/50 p-1.5 shadow-sm transition-all focus-within:ring-3 focus-within:ring-blue-500/20 dark:border-blue-500 dark:bg-slate-800/50">
-                        <button
-                          type="button"
-                          onClick={handleVoiceInput}
-                          title={isListening ? assistantCopy.listening : assistantCopy.speak}
-                          className={`relative ml-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-all cursor-pointer ${
-                            isListening
-                              ? "bg-purple-100 text-purple-700 dark:bg-purple-950/50 dark:text-purple-200"
-                              : "text-slate-500 hover:bg-slate-200/70 dark:text-slate-400 dark:hover:bg-slate-700"
-                          }`}
-                        >
-                          <VoiceMicIcon className="w-5 h-5" />
-                        </button>
-
-                        <input
-                          type="text"
-                          value={assistantInput}
-                          onChange={(e) => setAssistantInput(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                              e.preventDefault();
-                              void handleSendAssistantMessage();
-                            }
-                          }}
-                          placeholder={assistantCopy.placeholder}
-                          className="w-full min-w-0 bg-transparent px-3 py-1.5 text-sm font-medium text-slate-900 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-slate-500"
-                        />
-
-                        <button
-                          type="button"
-                          onClick={() => void handleSendAssistantMessage()}
-                          disabled={isAssistantSending || !assistantInput.trim()}
-                          className="mr-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white shadow-sm transition hover:bg-blue-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
-                        >
-                          {isAssistantSending ? <Loader2 size={16} className="animate-spin" /> : <ArrowRight size={16} />}
-                        </button>
-                      </div>
                     </div>
-                  </div>
 
-                  {/* Right Column: Compact Read-Only Live Extracted Job Details Summary (Desktop: 5 cols) */}
-                  <div className="lg:col-span-5 flex flex-col rounded-2xl border border-slate-200 bg-slate-50/70 p-4 sm:p-5 dark:border-slate-800 dark:bg-slate-900/60">
-                    {/* Header */}
-                    <div className="flex items-center justify-between pb-3 border-b border-slate-200/80 dark:border-slate-800">
-                      <div className="flex items-center gap-2">
-                        <Briefcase size={16} className="text-blue-600 dark:text-blue-400" />
-                        <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                          {assistantCopy.preview}
-                        </h3>
+                    {/* Chat Input Bar */}
+                    <form
+                      className="mt-auto flex flex-none items-center gap-2 border-t border-slate-100 pt-3 dark:border-slate-800"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        void handleSendHiringAgentMessage();
+                      }}
+                    >
+                      <div className="relative flex flex-1 items-center rounded-full border border-slate-200 bg-slate-50/90 p-1 shadow-2xs transition focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-800/80">
+                        <input
+                          value={hiringAgentInput}
+                          disabled={isHiringAgentSending || isHiringConversationLoading}
+                          onChange={(event) => setHiringAgentInput(event.target.value)}
+                          placeholder="Describe a job, workers needed, wage, or timing..."
+                          className="w-full bg-transparent px-3.5 py-1.5 text-xs sm:text-sm font-medium text-slate-900 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-slate-500"
+                        />
+                        <button
+                          type="submit"
+                          disabled={isHiringAgentSending || isHiringConversationLoading || !hiringAgentInput.trim()}
+                          className="flex h-8 w-8 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white shadow-xs transition hover:bg-blue-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 cursor-pointer"
+                          aria-label="Send message to AI Assistant"
+                        >
+                          {isHiringAgentSending ? <Loader2 size={15} className="animate-spin" /> : <ArrowRight size={15} />}
+                        </button>
                       </div>
+                    </form>
+                  </section>
+
+                  {/* Right Column: Live Job Draft Preview & Candidate Matches */}
+                  <aside className="flex h-[440px] sm:h-[480px] lg:h-[500px] min-h-0 flex-col justify-between rounded-2xl border border-slate-200 bg-white p-3.5 sm:p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900 lg:col-span-6">
+                    <div className="flex flex-none items-center justify-between gap-2 border-b border-slate-100 pb-3 dark:border-slate-800">
+                      <div className="flex items-center gap-2.5">
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950/60 dark:text-blue-400">
+                          <Briefcase size={16} />
+                        </div>
+                        <div>
+                          <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">Job Draft Preview</h3>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 hidden sm:block">Live extracted requirements</p>
+                        </div>
+                      </div>
+
                       <div className="flex items-center gap-2">
-                        <span className={`text-[11px] font-semibold px-2.5 py-0.5 rounded-full border ${
-                          isFormReady
-                            ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800"
-                            : "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800"
-                        }`}>
-                          {isFormReady ? assistantCopy.ready : `${Object.keys(currentFormErrors).length} remaining`}
-                        </span>
-                        {/* Mobile Toggle Button */}
+                        {hiringCreatedJobId ? (
+                          <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800">
+                            Created ✓
+                          </span>
+                        ) : hiringConfirmationToken ? (
+                          <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800 animate-pulse">
+                            Ready to confirm ✨
+                          </span>
+                        ) : (
+                          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600 border border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700">
+                            {[
+                              Boolean(hiringJobDraft.title),
+                              hiringJobDraft.headcount_required != null,
+                              hiringJobDraft.max_daily_salary != null,
+                              hiringJobDraft.work_duration_days != null,
+                              Boolean(hiringJobDraft.work_timing),
+                              hiringJobDraft.min_experience != null,
+                              Boolean(hiringJobSiteName || hiringSelectedJobSiteId),
+                              hiringJobDraft.required_skills && hiringJobDraft.required_skills.length > 0,
+                            ].filter(Boolean).length}/8 details
+                          </span>
+                        )}
+
+                        {/* Mobile toggle button */}
                         <button
                           type="button"
-                          onClick={() => setIsSummaryExpandedMobile((prev) => !prev)}
+                          onClick={() => setIsDraftExpandedMobile((prev) => !prev)}
                           className="lg:hidden p-1 text-slate-500 hover:text-slate-700 dark:text-slate-400 cursor-pointer"
                           aria-label="Toggle details summary"
                         >
-                          {isSummaryExpandedMobile ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                          {isDraftExpandedMobile ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                         </button>
                       </div>
                     </div>
 
-                    {/* Extracted Details List */}
-                    <div className={`mt-3 space-y-2.5 text-xs ${isSummaryExpandedMobile ? "block" : "hidden lg:block"}`}>
-                      <div className="space-y-2 divide-y divide-slate-200/70 dark:divide-slate-800/70">
-                        {/* Job Title */}
-                        <div className="flex items-center justify-between pt-1">
-                          <span className="text-slate-500 dark:text-slate-400 font-medium">{assistantCopy.role}</span>
-                          <span className={`font-semibold text-right truncate max-w-[60%] ${assistantState.title ? "text-slate-900 dark:text-white" : "text-slate-400 italic"}`}>
-                            {assistantState.title || assistantCopy.notProvided}
-                          </span>
-                        </div>
-
-                        {/* Workers Needed */}
-                        <div className="flex items-center justify-between pt-2">
-                          <span className="text-slate-500 dark:text-slate-400 font-medium">{assistantCopy.workers}</span>
-                          <span className={`font-semibold text-right ${assistantState.headcount_required ? "text-slate-900 dark:text-white" : "text-slate-400 italic"}`}>
-                            {assistantState.headcount_required ? `${assistantState.headcount_required} workers` : assistantCopy.notProvided}
-                          </span>
-                        </div>
-
-                        {/* Daily Wage */}
-                        <div className="flex items-center justify-between pt-2">
-                          <span className="text-slate-500 dark:text-slate-400 font-medium">{assistantCopy.wage}</span>
-                          <span className={`font-semibold text-right ${assistantState.max_daily_salary ? "text-slate-900 dark:text-white" : "text-slate-400 italic"}`}>
-                            {assistantState.max_daily_salary ? `₹${Number(assistantState.max_daily_salary).toLocaleString("en-IN")}/day` : assistantCopy.notProvided}
-                          </span>
-                        </div>
-
-                        {/* Work Duration */}
-                        <div className="flex items-center justify-between pt-2">
-                          <span className="text-slate-500 dark:text-slate-400 font-medium">{assistantCopy.duration}</span>
-                          <span className={`font-semibold text-right ${assistantState.work_duration_days ? "text-slate-900 dark:text-white" : "text-slate-400 italic"}`}>
-                            {assistantState.work_duration_days ? `${assistantState.work_duration_days} days` : assistantCopy.notProvided}
-                          </span>
-                        </div>
-
-                        {/* Daily Timing */}
-                        <div className="flex items-center justify-between pt-2">
-                          <span className="text-slate-500 dark:text-slate-400 font-medium">{assistantCopy.timing}</span>
-                          <span className={`font-semibold text-right truncate max-w-[60%] ${assistantState.work_timing ? "text-slate-900 dark:text-white" : "text-slate-400 italic"}`}>
-                            {assistantState.work_timing || assistantCopy.notProvided}
-                          </span>
-                        </div>
-
-                        {/* Min Experience */}
-                        <div className="flex items-center justify-between pt-2">
-                          <span className="text-slate-500 dark:text-slate-400 font-medium">{assistantCopy.experience}</span>
-                          <span className={`font-semibold text-right ${assistantState.min_experience !== null && assistantState.min_experience !== undefined ? "text-slate-900 dark:text-white" : "text-slate-400 italic"}`}>
-                            {assistantState.min_experience === 0
-                              ? assistantCopy.noExperience
-                              : assistantState.min_experience
-                                ? `${assistantState.min_experience} ${assistantState.min_experience === 1 ? assistantCopy.year : assistantCopy.years}`
-                                : assistantCopy.notProvided}
-                          </span>
-                        </div>
-
-                        {/* Work Site */}
-                        <div className="flex items-center justify-between pt-2">
-                          <span className="text-slate-500 dark:text-slate-400 font-medium">{assistantCopy.site}</span>
-                          <div className="text-right truncate max-w-[60%]">
-                            {(assistantState.job_site_name || selectedJobSite?.name) ? (
-                              <span className="font-semibold text-slate-900 dark:text-white">
-                                {assistantState.job_site_name || selectedJobSite?.name}
-                              </span>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={handleOpenJobSiteSelector}
-                                className="text-xs font-semibold text-blue-600 hover:underline dark:text-blue-400 cursor-pointer"
-                              >
-                                {assistantCopy.selectSite}
-                              </button>
-                            )}
+                    {/* Detail Rows (Scrollable if needed) */}
+                    <div className={`my-2 flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1 ${isDraftExpandedMobile ? "block" : "hidden lg:block"}`}>
+                      <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                        {[
+                          {
+                            label: "Job title",
+                            value: hiringJobDraft.title,
+                            fallback: "Not specified yet",
+                            icon: Briefcase,
+                          },
+                          {
+                            label: "Workers needed",
+                            value: hiringJobDraft.headcount_required != null ? `${hiringJobDraft.headcount_required} workers` : null,
+                            fallback: "Not specified yet",
+                            icon: Users,
+                          },
+                          {
+                            label: "Daily wage",
+                            value: hiringJobDraft.max_daily_salary != null ? `₹${hiringJobDraft.max_daily_salary} / day` : null,
+                            fallback: "Not specified yet",
+                            icon: null,
+                            isRupee: true,
+                          },
+                          {
+                            label: "Work duration",
+                            value: hiringJobDraft.work_duration_days != null ? `${hiringJobDraft.work_duration_days} days` : null,
+                            fallback: "Not specified yet",
+                            icon: Calendar,
+                          },
+                          {
+                            label: "Daily working hours",
+                            value: hiringJobDraft.work_timing,
+                            fallback: "Not specified yet",
+                            icon: Clock,
+                          },
+                          {
+                            label: "Minimum experience",
+                            value: hiringJobDraft.min_experience != null ? (hiringJobDraft.min_experience === 0 ? "Fresher (0 yrs)" : `${hiringJobDraft.min_experience} yrs`) : null,
+                            fallback: "Not specified yet",
+                            icon: Award,
+                          },
+                          {
+                            label: "Work site",
+                            value: hiringJobSiteName || jobSites.find((site) => site.id === hiringSelectedJobSiteId)?.name,
+                            fallback: "Select a work site",
+                            icon: MapPin,
+                          },
+                        ].map((item) => (
+                          <div key={item.label} className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1.8fr)] items-center gap-3 py-2">
+                            <span className="flex items-center gap-2 text-xs sm:text-sm font-semibold text-slate-600 dark:text-slate-300">
+                              {item.icon && <item.icon size={15} className="shrink-0 text-slate-400" />}
+                              {item.isRupee && <span className="font-bold text-slate-500 text-sm shrink-0">₹</span>}
+                              <span className="truncate">{item.label}</span>
+                            </span>
+                            <span className={`text-right text-xs sm:text-sm truncate ${item.value ? "text-slate-900 dark:text-white font-bold" : "text-slate-400 italic font-normal"}`}>
+                              {item.value || item.fallback}
+                            </span>
                           </div>
-                        </div>
+                        ))}
 
-                        {/* Skills */}
-                        <div className="flex items-start justify-between pt-2">
-                          <span className="text-slate-500 dark:text-slate-400 font-medium">{assistantCopy.skills}</span>
-                          <div className="text-right max-w-[65%] flex flex-wrap justify-end gap-1">
-                            {assistantState.required_skills && assistantState.required_skills.length > 0 ? (
-                              assistantState.required_skills.map((skill) => (
+                        {/* Required skills */}
+                        <div className="py-2.5">
+                          <span className="block text-xs sm:text-sm font-semibold text-slate-600 dark:text-slate-300 mb-1.5">Required skills</span>
+                          {hiringJobDraft.required_skills && hiringJobDraft.required_skills.length > 0 ? (
+                            <div className="flex flex-wrap gap-1.5">
+                              {hiringJobDraft.required_skills.map((skill) => (
                                 <span
                                   key={skill}
-                                  className="inline-block rounded-md bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
+                                  className="inline-flex items-center rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 dark:border-blue-800 dark:bg-blue-950/50 dark:text-blue-300"
                                 >
                                   {skill}
                                 </span>
-                              ))
-                            ) : (
-                              <span className="text-slate-400 italic">None specified</span>
-                            )}
-                          </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-xs sm:text-sm text-slate-400 italic font-normal">Not specified yet</span>
+                          )}
                         </div>
                       </div>
+                    </div>
 
-                      {/* Status Indicator */}
-                      <div className="pt-2">
-                        {isFormReady ? (
-                          <div className="flex items-center gap-2 rounded-xl bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
-                            <CheckCircle2 size={16} className="shrink-0 text-emerald-600 dark:text-emerald-400" />
-                            <span>All required details complete. Ready to create!</span>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-2 rounded-xl bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
-                            <Clock size={16} className="shrink-0 text-amber-600 dark:text-amber-400" />
-                            <span className="truncate">
-                              {Object.keys(currentFormErrors).length > 0
-                                ? `${assistantCopy.pleaseComplete} ${Object.values(currentFormErrors)[0]}`
-                                : assistantCopy.complete}
+                    {/* Actions pinned at bottom */}
+                    <div className="flex-none pt-3 space-y-2 border-t border-slate-100 dark:border-slate-800">
+                      {hiringCreatedJobId ? (
+                        <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-2.5 text-xs text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200 flex items-center gap-2">
+                          <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+                          <span>Job successfully created! (ID: {hiringCreatedJobId})</span>
+                        </div>
+                      ) : hiringConfirmationToken ? (
+                        <button
+                          type="button"
+                          onClick={() => void handleConfirmHiringJob()}
+                          disabled={isJobSaving || isHiringAgentSending || isHiringConversationLoading}
+                          className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-xs sm:text-sm font-bold text-white shadow-md transition hover:bg-blue-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+                        >
+                          {isJobSaving ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
+                          Confirm &amp; Create Job
+                        </button>
+                      ) : null}
+
+                      <button
+                        type="button"
+                        onClick={handleEditExtractedDataInManualForm}
+                        className="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-2.5 text-xs sm:text-sm font-bold text-slate-700 transition hover:bg-slate-100 hover:text-slate-900 active:scale-95 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 cursor-pointer"
+                      >
+                        <span>Edit Details in Manual Form</span>
+                        <ArrowRight size={14} />
+                      </button>
+                    </div>
+
+                    {/* Candidate Matches Section (if any retrieved) */}
+                    {hiringCandidateStatus !== "NOT_RETRIEVED" && (
+                      <section className="mt-5 border-t border-slate-200/80 pt-4 dark:border-slate-800">
+                        <div className="flex items-center justify-between gap-3">
+                          <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">Candidate matches</h3>
+                          {hiringCandidateStatus === "FOUND" && (
+                            <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
+                              Matches found
                             </span>
+                          )}
+                        </div>
+                        {hiringCandidateRetrievedAt && (
+                          <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                            Updated {new Date(hiringCandidateRetrievedAt).toLocaleTimeString()}
+                          </p>
+                        )}
+                        {hiringCandidateStatus === "NO_MATCHES" && (
+                          <p className="mt-3 rounded-xl bg-amber-50 p-3 text-xs text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+                            No matching workers were found for this job yet.
+                          </p>
+                        )}
+                        {hiringCandidateStatus === "FAILED" && (
+                          <p className="mt-3 rounded-xl bg-rose-50 p-3 text-xs text-rose-700 dark:bg-rose-950/30 dark:text-rose-200">
+                            Couldn’t retrieve worker matches. Please try again.
+                          </p>
+                        )}
+                        {hiringCandidateNote && (
+                          <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">{hiringCandidateNote}</p>
+                        )}
+                        {hiringCandidates.length > 0 && (
+                          <div className="mt-3 space-y-2.5">
+                            {hiringCandidates.map((candidate) => (
+                              <article key={candidate.candidate_ref} className="rounded-xl border border-slate-200/80 bg-white p-3 dark:border-slate-700 dark:bg-slate-900 shadow-2xs">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div>
+                                    <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">{candidate.name || candidate.candidate_ref}</h4>
+                                    <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-300">
+                                      {candidate.trade || "Trade unavailable"} · {candidate.experience_years == null ? "Experience unavailable" : `${candidate.experience_years} yrs exp`}
+                                    </p>
+                                  </div>
+                                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                                    {candidate.availability_status || "Available"}
+                                  </span>
+                                </div>
+                                <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400">
+                                  {candidate.expected_daily_wage != null && (
+                                    <span className="rounded-md bg-slate-100 px-1.5 py-0.5 dark:bg-slate-800 font-medium">
+                                      ₹{candidate.expected_daily_wage}/day
+                                    </span>
+                                  )}
+                                  {candidate.projected_distance_m != null && (
+                                    <span className="flex items-center gap-1">
+                                      <MapPin size={11} />
+                                      {(candidate.projected_distance_m / 1000).toFixed(1)} km away
+                                    </span>
+                                  )}
+                                </div>
+                                {candidate.skills.length > 0 && (
+                                  <div className="mt-2 flex flex-wrap gap-1">
+                                    {candidate.skills.map((skill) => (
+                                      <span key={skill} className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                                        {skill}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                              </article>
+                            ))}
                           </div>
                         )}
-                      </div>
-
-                      {/* Actions */}
-                      <div className="pt-3 space-y-2 border-t border-slate-200/80 dark:border-slate-800">
-                        <button
-                          type="button"
-                          onClick={() => void handleCreateJobManual()}
-                          disabled={isJobSaving}
-                          className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white shadow-md transition hover:bg-blue-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
-                        >
-                          {isJobSaving ? (
-                            <>
-                              <Loader2 size={16} className="animate-spin" />
-                              <span>{assistantCopy.creating}</span>
-                            </>
-                          ) : (
-                            <>
-                              <Plus size={16} />
-                              <span>{assistantCopy.createJobBtn}</span>
-                            </>
-                          )}
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => setCreateJobTab("manual")}
-                          className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 cursor-pointer"
-                        >
-                          <span>Edit Details in Manual Form</span>
-                          <ArrowRight size={13} />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
+                      </section>
+                    )}
+                  </aside>
                 </div>
               </div>
 
@@ -2047,29 +2056,29 @@ export default function EmployerDashboard() {
                   {/* SECTION 1: JOB DETAILS */}
                   <div className="space-y-4">
                     <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 border-b border-slate-100 pb-2 dark:border-slate-800">
-                      1. {assistantCopy.jobDetailsTitle}
+                      1. {jobFormCopy.jobDetailsTitle}
                     </p>
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
 
                       {/* Job Title */}
                       <div className="sm:col-span-2 space-y-1">
                         <label htmlFor="field-title" className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                          {assistantCopy.role} <span className="text-rose-500">*</span>
+                          {jobFormCopy.role} <span className="text-rose-500">*</span>
                         </label>
                         <input
                           id="field-title"
                           type="text"
-                          value={assistantState.title || ""}
+                          value={manualJobState.title || ""}
                           onChange={(e) => {
                             const val = e.target.value;
-                            setAssistantState((curr) => ({ ...curr, title: val }));
+                            setManualJobState((curr) => ({ ...curr, title: val }));
                             if (touchedFields.title) {
-                              const errs = validateManualJobForm({ ...assistantState, title: val }, durationUnit, experienceUnit, durationInputValue, experienceInputValue);
+                              const errs = validateManualJobForm({ ...manualJobState, title: val }, durationUnit, experienceUnit, durationInputValue, experienceInputValue);
                               setFormErrors((prev) => ({ ...prev, title: errs.title || "" }));
                             }
                           }}
                           onBlur={() => handleFieldBlur("title")}
-                          placeholder={assistantCopy.rolePlaceholder}
+                          placeholder={jobFormCopy.rolePlaceholder}
                           className={`w-full rounded-xl border bg-slate-50/50 px-3.5 py-2.5 text-sm font-medium text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white dark:bg-slate-800/50 dark:text-white dark:focus:bg-slate-800 ${
                             touchedFields.title && currentFormErrors.title
                               ? "border-rose-300 bg-rose-50/30 dark:border-rose-800 dark:bg-rose-950/20"
@@ -2084,24 +2093,24 @@ export default function EmployerDashboard() {
                       {/* Workers Needed */}
                       <div className="space-y-1">
                         <label htmlFor="field-headcount_required" className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                          {assistantCopy.workers} <span className="text-rose-500">*</span>
+                          {jobFormCopy.workers} <span className="text-rose-500">*</span>
                         </label>
                         <input
                           id="field-headcount_required"
                           type="number"
                           min="1"
                           max="1000"
-                          value={assistantState.headcount_required ?? ""}
+                          value={manualJobState.headcount_required ?? ""}
                           onChange={(e) => {
                             const val = e.target.value ? Number(e.target.value) : null;
-                            setAssistantState((curr) => ({ ...curr, headcount_required: val }));
+                            setManualJobState((curr) => ({ ...curr, headcount_required: val }));
                             if (touchedFields.headcount_required) {
-                              const errs = validateManualJobForm({ ...assistantState, headcount_required: val }, durationUnit, experienceUnit, durationInputValue, experienceInputValue);
+                              const errs = validateManualJobForm({ ...manualJobState, headcount_required: val }, durationUnit, experienceUnit, durationInputValue, experienceInputValue);
                               setFormErrors((prev) => ({ ...prev, headcount_required: errs.headcount_required || "" }));
                             }
                           }}
                           onBlur={() => handleFieldBlur("headcount_required")}
-                          placeholder={assistantCopy.workersPlaceholder}
+                          placeholder={jobFormCopy.workersPlaceholder}
                           className={`w-full rounded-xl border bg-slate-50/50 px-3.5 py-2.5 text-sm font-medium text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white dark:bg-slate-800/50 dark:text-white dark:focus:bg-slate-800 ${
                             touchedFields.headcount_required && currentFormErrors.headcount_required
                               ? "border-rose-300 bg-rose-50/30 dark:border-rose-800 dark:bg-rose-950/20"
@@ -2116,7 +2125,7 @@ export default function EmployerDashboard() {
                       {/* Daily Wage */}
                       <div className="space-y-1">
                         <label htmlFor="field-max_daily_salary" className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                          {assistantCopy.wage} <span className="text-rose-500">*</span>
+                          {jobFormCopy.wage} <span className="text-rose-500">*</span>
                         </label>
                         <div className="relative flex items-center">
                           <span className="absolute left-3 text-sm font-semibold text-slate-500">₹</span>
@@ -2125,24 +2134,24 @@ export default function EmployerDashboard() {
                             type="number"
                             min="1"
                             max="1000000"
-                            value={assistantState.max_daily_salary ?? ""}
+                            value={manualJobState.max_daily_salary ?? ""}
                             onChange={(e) => {
                               const val = e.target.value ? Number(e.target.value) : null;
-                              setAssistantState((curr) => ({ ...curr, max_daily_salary: val }));
+                              setManualJobState((curr) => ({ ...curr, max_daily_salary: val }));
                               if (touchedFields.max_daily_salary) {
-                                const errs = validateManualJobForm({ ...assistantState, max_daily_salary: val }, durationUnit, experienceUnit, durationInputValue, experienceInputValue);
+                                const errs = validateManualJobForm({ ...manualJobState, max_daily_salary: val }, durationUnit, experienceUnit, durationInputValue, experienceInputValue);
                                 setFormErrors((prev) => ({ ...prev, max_daily_salary: errs.max_daily_salary || "" }));
                               }
                             }}
                             onBlur={() => handleFieldBlur("max_daily_salary")}
-                            placeholder={assistantCopy.wagePlaceholder}
+                            placeholder={jobFormCopy.wagePlaceholder}
                             className={`w-full rounded-xl border bg-slate-50/50 pl-7 pr-14 py-2.5 text-sm font-medium text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white dark:bg-slate-800/50 dark:text-white dark:focus:bg-slate-800 ${
                               touchedFields.max_daily_salary && currentFormErrors.max_daily_salary
                                 ? "border-rose-300 bg-rose-50/30 dark:border-rose-800 dark:bg-rose-950/20"
                                 : "border-slate-200 dark:border-slate-700"
                             }`}
                           />
-                          <span className="absolute right-3 text-xs font-medium text-slate-400">{assistantCopy.perDay}</span>
+                          <span className="absolute right-3 text-xs font-medium text-slate-400">{jobFormCopy.perDay}</span>
                         </div>
                         {touchedFields.max_daily_salary && currentFormErrors.max_daily_salary && (
                           <p className="text-xs font-medium text-rose-500">{currentFormErrors.max_daily_salary}</p>
@@ -2154,14 +2163,14 @@ export default function EmployerDashboard() {
                   {/* SECTION 2: WORK DETAILS */}
                   <div className="space-y-4">
                     <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 border-b border-slate-100 pb-2 dark:border-slate-800">
-                      2. {assistantCopy.workDetailsTitle}
+                      2. {jobFormCopy.workDetailsTitle}
                     </p>
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
 
                       {/* Work Duration */}
                       <div className="space-y-1">
                         <label htmlFor="field-work_duration_days" className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                          {assistantCopy.duration} <span className="text-rose-500">*</span>
+                          {jobFormCopy.duration} <span className="text-rose-500">*</span>
                         </label>
                         <div className="flex items-center gap-2">
                           <input
@@ -2171,7 +2180,7 @@ export default function EmployerDashboard() {
                             value={durationInputValue}
                             onChange={(e) => handleDurationChange(e.target.value, durationUnit)}
                             onBlur={() => handleFieldBlur("work_duration_days")}
-                            placeholder={assistantCopy.durationPlaceholder}
+                            placeholder={jobFormCopy.durationPlaceholder}
                             className={`flex-1 rounded-xl border bg-slate-50/50 px-3.5 py-2.5 text-sm font-medium text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white dark:bg-slate-800/50 dark:text-white dark:focus:bg-slate-800 ${
                               touchedFields.work_duration_days && currentFormErrors.work_duration_days
                                 ? "border-rose-300 bg-rose-50/30 dark:border-rose-800 dark:bg-rose-950/20"
@@ -2187,9 +2196,9 @@ export default function EmployerDashboard() {
                             }}
                             className="rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2.5 text-sm font-semibold text-slate-700 outline-none transition focus:border-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 cursor-pointer"
                           >
-                            <option value="days">{assistantCopy.unitDays}</option>
-                            <option value="months">{assistantCopy.unitMonths}</option>
-                            <option value="years">{assistantCopy.unitYears}</option>
+                            <option value="days">{jobFormCopy.unitDays}</option>
+                            <option value="months">{jobFormCopy.unitMonths}</option>
+                            <option value="years">{jobFormCopy.unitYears}</option>
                           </select>
                         </div>
                         {touchedFields.work_duration_days && currentFormErrors.work_duration_days && (
@@ -2200,22 +2209,22 @@ export default function EmployerDashboard() {
                       {/* Daily Timing */}
                       <div className="space-y-1">
                         <label htmlFor="field-work_timing" className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                          {assistantCopy.timing} <span className="text-rose-500">*</span>
+                          {jobFormCopy.timing} <span className="text-rose-500">*</span>
                         </label>
                         <input
                           id="field-work_timing"
                           type="text"
-                          value={assistantState.work_timing || ""}
+                          value={manualJobState.work_timing || ""}
                           onChange={(e) => {
                             const val = e.target.value;
-                            setAssistantState((curr) => ({ ...curr, work_timing: val }));
+                            setManualJobState((curr) => ({ ...curr, work_timing: val }));
                             if (touchedFields.work_timing) {
-                              const errs = validateManualJobForm({ ...assistantState, work_timing: val }, durationUnit, experienceUnit, durationInputValue, experienceInputValue);
+                              const errs = validateManualJobForm({ ...manualJobState, work_timing: val }, durationUnit, experienceUnit, durationInputValue, experienceInputValue);
                               setFormErrors((prev) => ({ ...prev, work_timing: errs.work_timing || "" }));
                             }
                           }}
                           onBlur={() => handleFieldBlur("work_timing")}
-                          placeholder={assistantCopy.timingPlaceholder}
+                          placeholder={jobFormCopy.timingPlaceholder}
                           className={`w-full rounded-xl border bg-slate-50/50 px-3.5 py-2.5 text-sm font-medium text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white dark:bg-slate-800/50 dark:text-white dark:focus:bg-slate-800 ${
                             touchedFields.work_timing && currentFormErrors.work_timing
                               ? "border-rose-300 bg-rose-50/30 dark:border-rose-800 dark:bg-rose-950/20"
@@ -2231,14 +2240,14 @@ export default function EmployerDashboard() {
                       <div className="space-y-1">
                         <div className="flex items-center justify-between">
                           <label htmlFor="field-min_experience" className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                            {assistantCopy.experience} <span className="text-rose-500">*</span>
+                            {jobFormCopy.experience} <span className="text-rose-500">*</span>
                           </label>
                           <button
                             type="button"
                             onClick={handleSetFresher}
                             className="text-[11px] font-semibold text-blue-600 hover:underline cursor-pointer dark:text-blue-400"
                           >
-                            {assistantCopy.noExperience}
+                            {jobFormCopy.noExperience}
                           </button>
                         </div>
                         <div className="flex items-center gap-2">
@@ -2250,7 +2259,7 @@ export default function EmployerDashboard() {
                             value={experienceInputValue}
                             onChange={(e) => handleExperienceChange(e.target.value, experienceUnit)}
                             onBlur={() => handleFieldBlur("min_experience")}
-                            placeholder={assistantCopy.experiencePlaceholder}
+                            placeholder={jobFormCopy.experiencePlaceholder}
                             className={`flex-1 rounded-xl border bg-slate-50/50 px-3.5 py-2.5 text-sm font-medium text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white dark:bg-slate-800/50 dark:text-white dark:focus:bg-slate-800 ${
                               touchedFields.min_experience && currentFormErrors.min_experience
                                 ? "border-rose-300 bg-rose-50/30 dark:border-rose-800 dark:bg-rose-950/20"
@@ -2266,8 +2275,8 @@ export default function EmployerDashboard() {
                             }}
                             className="rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2.5 text-sm font-semibold text-slate-700 outline-none transition focus:border-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 cursor-pointer"
                           >
-                            <option value="years">{assistantCopy.unitYears}</option>
-                            <option value="months">{assistantCopy.unitMonths}</option>
+                            <option value="years">{jobFormCopy.unitYears}</option>
+                            <option value="months">{jobFormCopy.unitMonths}</option>
                           </select>
                         </div>
                         {touchedFields.min_experience && currentFormErrors.min_experience && (
@@ -2278,12 +2287,12 @@ export default function EmployerDashboard() {
                       {/* Work Site */}
                       <div className="space-y-1">
                         <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                          {assistantCopy.site} <span className="text-rose-500">*</span>
+                          {jobFormCopy.site} <span className="text-rose-500">*</span>
                         </label>
                         <div
                           id="field-job_site_id"
                           className={`flex items-center justify-between rounded-xl border p-2.5 transition ${
-                            assistantState.job_site_id
+                            manualJobState.job_site_id
                               ? "border-emerald-200 bg-emerald-50/30 dark:border-emerald-900/40 dark:bg-emerald-950/20"
                               : touchedFields.job_site_id && currentFormErrors.job_site_id
                                 ? "border-rose-300 bg-rose-50/30 dark:border-rose-800 dark:bg-rose-950/20"
@@ -2291,10 +2300,10 @@ export default function EmployerDashboard() {
                           }`}
                         >
                           <div className="min-w-0 pr-2">
-                            {assistantState.job_site_id && (assistantState.job_site_name || selectedJobSite?.name) ? (
+                            {manualJobState.job_site_id && (manualJobState.job_site_name || selectedJobSite?.name) ? (
                               <div>
                                 <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
-                                  {assistantState.job_site_name || selectedJobSite?.name}
+                                  {manualJobState.job_site_name || selectedJobSite?.name}
                                 </p>
                                 <p className="text-[11px] text-slate-500 truncate">
                                   {selectedJobSite?.address || "Saved location"}
@@ -2302,7 +2311,7 @@ export default function EmployerDashboard() {
                               </div>
                             ) : (
                               <p className="text-xs font-medium text-slate-400 dark:text-slate-500">
-                                {assistantCopy.notSelected}
+                                {jobFormCopy.notSelected}
                               </p>
                             )}
                           </div>
@@ -2310,12 +2319,12 @@ export default function EmployerDashboard() {
                             type="button"
                             onClick={handleOpenJobSiteSelector}
                             className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-bold transition cursor-pointer ${
-                              assistantState.job_site_id
+                              manualJobState.job_site_id
                                 ? "bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
                                 : "bg-blue-600 text-white hover:bg-blue-700 shadow-xs"
                             }`}
                           >
-                            {assistantState.job_site_id ? assistantCopy.changeSite : assistantCopy.selectSite}
+                            {manualJobState.job_site_id ? jobFormCopy.changeSite : jobFormCopy.selectSite}
                           </button>
                         </div>
                         {touchedFields.job_site_id && currentFormErrors.job_site_id && (
@@ -2326,11 +2335,11 @@ export default function EmployerDashboard() {
                       {/* Required Skills */}
                       <div className="sm:col-span-2 space-y-2">
                         <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                          {assistantCopy.skills} <span className="text-xs font-normal text-slate-400">({assistantCopy.optional})</span>
+                          {jobFormCopy.skills} <span className="text-xs font-normal text-slate-400">({jobFormCopy.optional})</span>
                         </label>
                         <div className="flex flex-wrap gap-1.5 min-h-[36px] rounded-xl border border-slate-200 bg-slate-50/50 p-2 dark:border-slate-700 dark:bg-slate-800/50">
-                          {(assistantState.required_skills && assistantState.required_skills.length > 0) ? (
-                            assistantState.required_skills.map((skill) => (
+                          {(manualJobState.required_skills && manualJobState.required_skills.length > 0) ? (
+                            manualJobState.required_skills.map((skill) => (
                               <span
                                 key={skill}
                                 className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 dark:border-blue-800 dark:bg-blue-950/50 dark:text-blue-300"
@@ -2340,14 +2349,14 @@ export default function EmployerDashboard() {
                                   type="button"
                                   onClick={() => handleRemoveSkill(skill)}
                                   className="cursor-pointer font-bold leading-none text-blue-400 hover:text-rose-600"
-                                  title={assistantCopy.removeSkill}
+                                  title={jobFormCopy.removeSkill}
                                 >
                                   ×
                                 </button>
                               </span>
                             ))
                           ) : (
-                            <span className="py-0.5 text-xs italic text-slate-400">{assistantCopy.noSkillsAdded}</span>
+                            <span className="py-0.5 text-xs italic text-slate-400">{jobFormCopy.noSkillsAdded}</span>
                           )}
                         </div>
                         <div className="flex items-center gap-2">
@@ -2361,7 +2370,7 @@ export default function EmployerDashboard() {
                                 handleAddSkill();
                               }
                             }}
-                            placeholder={assistantCopy.skillsPlaceholder}
+                            placeholder={jobFormCopy.skillsPlaceholder}
                             className="flex-1 rounded-xl border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm font-medium text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white dark:border-slate-700 dark:bg-slate-800/50 dark:text-white dark:focus:bg-slate-800"
                           />
                           <button
@@ -2369,7 +2378,7 @@ export default function EmployerDashboard() {
                             onClick={() => handleAddSkill()}
                             className="shrink-0 cursor-pointer rounded-xl bg-slate-100 px-4 py-2.5 text-xs font-bold text-slate-700 transition hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
                           >
-                            {assistantCopy.addSkill}
+                            {jobFormCopy.addSkill}
                           </button>
                         </div>
                       </div>
@@ -2386,20 +2395,20 @@ export default function EmployerDashboard() {
                       {isJobSaving ? (
                         <>
                           <Loader2 size={18} className="animate-spin" />
-                          <span>{assistantCopy.creating}</span>
+                          <span>{jobFormCopy.creating}</span>
                         </>
                       ) : (
                         <>
                           <Plus size={18} />
-                          <span>{assistantCopy.createJobBtn}</span>
+                          <span>{jobFormCopy.createJobBtn}</span>
                         </>
                       )}
                     </button>
                     {!isFormReady && (
                       <p className="mt-2 text-center text-xs font-medium text-amber-600 dark:text-amber-400">
                         {Object.keys(currentFormErrors).length > 0
-                          ? `${assistantCopy.pleaseComplete} ${Object.values(currentFormErrors)[0]}`
-                          : assistantCopy.complete}
+                          ? `${jobFormCopy.pleaseComplete} ${Object.values(currentFormErrors)[0]}`
+                          : jobFormCopy.complete}
                       </p>
                     )}
                   </div>

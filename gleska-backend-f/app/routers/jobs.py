@@ -2,13 +2,16 @@
 
 from fastapi import APIRouter, Depends, HTTPException, status
 import logging
+from uuid import UUID
 
 from app.core.security import require_employer
 from app.schemas.auth import UserResponse
 from app.schemas.job import JobCreate, JobDetailsResponse, JobMatchAcceptRequest, JobMatchAcceptResponse, JobMatchSummary, JobMatchesResponse, JobResponse
 from app.schemas.job_extraction import JobExtractionRequest, JobExtractionResponse
 from app.schemas.job_assistant import JobAssistantCreateRequest, JobAssistantMessageRequest, JobAssistantResponse, JobAssistantStateUpdateRequest, JobAssistantStateUpdateResponse
+from app.schemas.hiring_agent import HiringAgentConversationResponse, HiringAgentCreateRequest, HiringAgentMessageRequest, HiringAgentResponse
 from app.services.job_assistant_service import JobAssistantService
+from app.services.hiring_agent_service import HiringAgentConversationError, HiringAgentService
 from app.services.job_service import JobLifecycleError, JobNotFound, JobPaymentRequired, JobService
 from app.services.job_match_service import JobMatchService
 from app.services.matching_service import MatchingError
@@ -21,6 +24,79 @@ from app.services.gemini_service import (
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 logger = logging.getLogger(__name__)
+
+
+@router.post("/assistant/agent/message", response_model=HiringAgentResponse)
+async def process_hiring_agent_message(
+    request: HiringAgentMessageRequest,
+    user: UserResponse = Depends(require_employer),
+):
+    try:
+        return await HiringAgentService.process_message(user, request)
+    except HiringAgentConversationError as exc:
+        code = str(exc)
+        error_status = (
+            status.HTTP_404_NOT_FOUND
+            if code == "CONVERSATION_NOT_FOUND"
+            else status.HTTP_409_CONFLICT
+        )
+        raise HTTPException(status_code=error_status, detail=code) from exc
+    except JobNotFound as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Hiring agent message processing failed: user_id=%s", user.id)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="HIRING_AGENT_FAILED") from exc
+
+
+@router.get(
+    "/assistant/agent/{conversation_id}",
+    response_model=HiringAgentConversationResponse,
+)
+async def get_hiring_agent_conversation(
+    conversation_id: str,
+    user: UserResponse = Depends(require_employer),
+):
+    try:
+        return HiringAgentService.get_conversation(user, UUID(conversation_id))
+    except ValueError as exc:
+        code = str(exc)
+        error_status = status.HTTP_404_NOT_FOUND if code == "CONVERSATION_NOT_FOUND" else status.HTTP_422_UNPROCESSABLE_ENTITY
+        raise HTTPException(status_code=error_status, detail=code) from exc
+    except JobNotFound as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+
+
+@router.post(
+    "/assistant/agent/create",
+    response_model=HiringAgentConversationResponse,
+)
+async def create_hiring_agent_job(
+    request: HiringAgentCreateRequest,
+    user: UserResponse = Depends(require_employer),
+):
+    try:
+        return HiringAgentService.create_confirmed_job(user, request)
+    except HiringAgentConversationError as exc:
+        code = str(exc)
+        error_status = (
+            status.HTTP_404_NOT_FOUND
+            if code == "CONVERSATION_NOT_FOUND"
+            else status.HTTP_409_CONFLICT
+        )
+        raise HTTPException(status_code=error_status, detail=code) from exc
+    except JobNotFound as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except JobPaymentRequired as exc:
+        raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Hiring agent job creation failed: user_id=%s", user.id)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="HIRING_AGENT_JOB_CREATE_FAILED") from exc
 
 
 @router.get("", response_model=list[JobResponse])

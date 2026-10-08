@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import asdict
 from typing import Any, Protocol
 
@@ -11,6 +12,8 @@ from pydantic_core import to_jsonable_python
 from app.agents.shared.runtime import AgentLLMRequest, StructuredAgentResponse
 from app.core.config import settings
 from app.services.gemini_service import GeminiService
+
+logger = logging.getLogger(__name__)
 
 
 class LLMProvider(Protocol):
@@ -101,6 +104,24 @@ class GeminiLLMProvider:
             raise LLMProviderError("LLM_UNAVAILABLE") from exc
 
         if response.status_code >= 400:
+            try:
+                body = response.json()
+            except ValueError:
+                body = {}
+            provider_error = body.get("error", {}) if isinstance(body, dict) else {}
+            provider_error_code = (
+                provider_error.get("status") or provider_error.get("code")
+                if isinstance(provider_error, dict)
+                else None
+            )
+            logger.error(
+                "Gemini agent request failed: model=%s status_code=%s provider_error_code=%s",
+                model,
+                response.status_code,
+                provider_error_code,
+            )
+            if response.status_code == 429 or provider_error_code == "RESOURCE_EXHAUSTED":
+                raise LLMProviderError("LLM_RATE_LIMITED")
             raise LLMProviderError("LLM_PROVIDER_ERROR")
 
         try:
