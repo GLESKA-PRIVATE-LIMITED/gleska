@@ -62,6 +62,12 @@ class GeminiLLMProvider:
                         "You are a domain-neutral conversational agent. Use only the supplied "
                         "agent description, conversation, task state, and registered tool "
                         "descriptions. Never claim a tool succeeded unless a tool result says so. "
+                        + (
+                            request.agent.system_instruction.strip() + " "
+                            if request.agent.system_instruction
+                            else ""
+                        )
+                        +
                         "Return one JSON object with assistant_message, task_state (or null), "
                         "tool_calls (each with call_id, tool_name, arguments), and completed. "
                         "Do not return confirmation decisions, execution results, or extra fields."
@@ -122,6 +128,8 @@ class GeminiLLMProvider:
             )
             if response.status_code == 429 or provider_error_code == "RESOURCE_EXHAUSTED":
                 raise LLMProviderError("LLM_RATE_LIMITED")
+            if response.status_code >= 500:
+                raise LLMProviderError("LLM_UNAVAILABLE")
             raise LLMProviderError("LLM_PROVIDER_ERROR")
 
         try:

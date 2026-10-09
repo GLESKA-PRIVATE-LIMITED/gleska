@@ -82,14 +82,15 @@ class ProcurementService:
     @staticmethod
     def _history(value: Any) -> list[ProcurementConversationMessage]:
         if not isinstance(value, list):
-            raise ProcurementConflict("CONVERSATION_HISTORY_INVALID")
+            raise ProcurementServiceError("CONVERSATION_HISTORY_INVALID")
         try:
             return [
                 ProcurementConversationMessage.model_validate(item)
                 for item in value[-HISTORY_LIMIT:]
             ]
         except ValidationError as exc:
-            raise ProcurementConflict("CONVERSATION_HISTORY_INVALID") from exc
+            logger.exception("Failed to validate conversation history: %s", value)
+            raise ProcurementServiceError("CONVERSATION_HISTORY_INVALID") from exc
 
     @staticmethod
     def _conversation_response(row: dict[str, Any]) -> ProcurementConversationCreateResponse:
@@ -109,14 +110,16 @@ class ProcurementService:
         except (KeyError, ValidationError, TypeError, ValueError) as exc:
             if isinstance(exc, ProcurementServiceError):
                 raise
-            raise ProcurementConflict("CONVERSATION_STATE_INVALID") from exc
+            logger.exception("Failed to validate conversation row: %s", row)
+            raise ProcurementServiceError("CONVERSATION_STATE_INVALID") from exc
 
     @staticmethod
     def _material_request_response(row: dict[str, Any]) -> ProcurementMaterialRequestResponse:
         try:
             return ProcurementMaterialRequestResponse.model_validate(row)
         except (ValidationError, TypeError, ValueError) as exc:
-            raise ProcurementConflict("MATERIAL_REQUEST_STATE_INVALID") from exc
+            logger.exception("Failed to validate material request row: %s", row)
+            raise ProcurementServiceError("MATERIAL_REQUEST_STATE_INVALID") from exc
 
     @staticmethod
     def _owned_conversation(
@@ -202,7 +205,13 @@ class ProcurementService:
             .limit(LIST_LIMIT)
             .execute()
         )
-        return [cls._conversation_response(row) for row in cls._rows(response)]
+        conversations: list[ProcurementConversationCreateResponse] = []
+        for row in cls._rows(response):
+            try:
+                conversations.append(cls._conversation_response(row))
+            except Exception as exc:
+                logger.warning("Skipping unparseable conversation row id=%s: %s", row.get("id"), exc)
+        return conversations
 
     @classmethod
     def get_conversation(
@@ -369,10 +378,13 @@ class ProcurementService:
             .limit(LIST_LIMIT)
             .execute()
         )
-        return [
-            cls._material_request_response(row)
-            for row in cls._rows(response)
-        ]
+        requests: list[ProcurementMaterialRequestResponse] = []
+        for row in cls._rows(response):
+            try:
+                requests.append(cls._material_request_response(row))
+            except Exception as exc:
+                logger.warning("Skipping unparseable material request row id=%s: %s", row.get("id"), exc)
+        return requests
 
     @classmethod
     def get_material_request(
@@ -393,90 +405,38 @@ class ProcurementService:
         request: ProcurementSaveRequest,
     ) -> ProcurementMaterialRequestResponse:
         employer_id = cls._employer_id(user)
-        existing_response = (
-            supabase.table("procurement_material_requests")
-            .select("*")
-            .eq("employer_id", employer_id)
-            .eq("user_id", str(user.id))
-            .eq("idempotency_key", str(request.idempotency_key))
-            .maybe_single()
-            .execute()
+        result = cls._row(
+            supabase.rpc(
+                "save_procurement_material_request",
+                {
+                    "p_conversation_id": str(conversation_id),
+                    "p_user_id": str(user.id),
+                    "p_employer_id": employer_id,
+                    "p_expected_revision": request.expected_revision,
+                    "p_idempotency_key": str(request.idempotency_key),
+                },
+            ).execute()
         )
-        existing = cls._row(existing_response)
-        if existing:
-            if str(existing.get("origin_conversation_id")) != str(conversation_id):
-                raise ProcurementConflict("IDEMPOTENCY_KEY_REUSED")
-            return cls._material_request_response(existing)
+        if result.get("ok") is not True:
+            error_code = str(result.get("error_code") or "MATERIAL_REQUEST_SAVE_FAILED")
+            if error_code in {"CONVERSATION_NOT_FOUND", "EMPLOYER_NOT_FOUND"}:
+                raise ProcurementNotFound(error_code)
+            if error_code == "PROCUREMENT_FORBIDDEN":
+                raise PermissionError(error_code)
+            if error_code in {
+                "STALE_CONVERSATION_STATE",
+                "CONVERSATION_NOT_ACTIVE",
+                "REQUIRED_FIELDS_NOT_CONFIRMED",
+                "IDEMPOTENCY_KEY_REUSED",
+                "IDEMPOTENCY_PAYLOAD_CONFLICT",
+                "CONVERSATION_ALREADY_SAVED",
+            }:
+                raise ProcurementConflict(error_code)
+            raise ProcurementServiceError(error_code)
 
-        conversation = cls._owned_conversation(conversation_id, user, employer_id)
-        revision = int(conversation.get("revision") or 0)
-        if revision != request.expected_revision:
-            raise ProcurementConflict("STALE_CONVERSATION_STATE")
-        if conversation.get("status") != "ACTIVE":
-            raise ProcurementConflict("CONVERSATION_NOT_ACTIVE")
-
-        draft = MaterialRequestDraft.model_validate(conversation.get("draft") or {})
-        confirmed_fields = list(conversation.get("confirmed_fields") or [])
-        for required_field in ("item_name", "quantity", "unit"):
-            if required_field not in confirmed_fields or getattr(draft, required_field) is None:
-                raise ProcurementConflict("REQUIRED_FIELDS_NOT_CONFIRMED")
-
-        now = datetime.now(timezone.utc).isoformat()
-        payload = draft.model_dump(mode="json")
-        try:
-            inserted = (
-                supabase.table("procurement_material_requests")
-                .insert({
-                    "employer_id": employer_id,
-                    "user_id": str(user.id),
-                    "origin_conversation_id": str(conversation_id),
-                    "idempotency_key": str(request.idempotency_key),
-                    **payload,
-                    "confirmed_fields": confirmed_fields,
-                    "status": "SAVED",
-                    "revision": 0,
-                    "created_at": now,
-                    "updated_at": now,
-                })
-                .execute()
-            )
-            saved = cls._row(inserted)
-        except Exception:
-            replay = (
-                supabase.table("procurement_material_requests")
-                .select("*")
-                .eq("employer_id", employer_id)
-                .eq("user_id", str(user.id))
-                .eq("idempotency_key", str(request.idempotency_key))
-                .maybe_single()
-                .execute()
-            )
-            saved = cls._row(replay)
-            if not saved:
-                raise
-            if str(saved.get("origin_conversation_id")) != str(conversation_id):
-                raise ProcurementConflict("IDEMPOTENCY_KEY_REUSED")
-            return cls._material_request_response(saved)
-
-        if not saved:
+        saved = result.get("request")
+        if not isinstance(saved, dict):
             raise ProcurementServiceError("MATERIAL_REQUEST_SAVE_FAILED")
-
-        completed = (
-            supabase.table("procurement_conversations")
-            .update({
-                "status": "COMPLETED",
-                "revision": revision + 1,
-                "updated_at": now,
-            })
-            .eq("id", str(conversation_id))
-            .eq("user_id", str(user.id))
-            .eq("employer_id", employer_id)
-            .eq("revision", revision)
-            .eq("status", "ACTIVE")
-            .execute()
-        )
-        if not cls._row(completed):
-            raise ProcurementConflict("REQUEST_SAVED_CONVERSATION_STALE")
         return cls._material_request_response(saved)
 
     @classmethod
@@ -539,3 +499,23 @@ class ProcurementService:
         if not row:
             raise ProcurementConflict("STALE_MATERIAL_REQUEST")
         return cls._material_request_response(row)
+
+    @classmethod
+    def delete_material_request(
+        cls,
+        user: UserResponse,
+        request_id: UUID,
+    ) -> None:
+        employer_id = cls._employer_id(user)
+        cls._owned_request(request_id, user, employer_id)
+        response = (
+            supabase.table("procurement_material_requests")
+            .delete()
+            .eq("id", str(request_id))
+            .eq("user_id", str(user.id))
+            .eq("employer_id", employer_id)
+            .select("id")
+            .execute()
+        )
+        if not cls._row(response):
+            raise ProcurementNotFound("MATERIAL_REQUEST_NOT_FOUND")

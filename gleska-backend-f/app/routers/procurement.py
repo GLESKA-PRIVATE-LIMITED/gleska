@@ -3,7 +3,7 @@
 import logging
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 
 from app.core.security import require_employer
 from app.schemas.auth import UserResponse
@@ -33,6 +33,12 @@ def _raise_procurement_error(exc: Exception) -> None:
     if isinstance(exc, ProcurementConflict):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     if isinstance(exc, ProcurementAgentError):
+        if str(exc) == "LLM_RATE_LIMITED":
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=str(exc),
+                headers={"Retry-After": "30"},
+            ) from exc
         http_status = (
             status.HTTP_502_BAD_GATEWAY
             if "INVALID" in str(exc)
@@ -250,4 +256,30 @@ async def update_procurement_request(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="PROCUREMENT_REQUEST_UPDATE_FAILED",
+        ) from exc
+
+
+@router.delete(
+    "/requests/{request_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
+async def delete_procurement_request(
+    request_id: UUID,
+    user: UserResponse = Depends(require_employer),
+):
+    try:
+        ProcurementService.delete_material_request(user, request_id)
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+    except Exception as exc:
+        if isinstance(exc, ProcurementServiceError) or isinstance(exc, PermissionError):
+            _raise_procurement_error(exc)
+        logger.exception(
+            "Procurement request deletion failed: user_id=%s request_id=%s",
+            user.id,
+            request_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="PROCUREMENT_REQUEST_DELETE_FAILED",
         ) from exc

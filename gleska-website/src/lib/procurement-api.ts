@@ -131,4 +131,11 @@ export const procurementApi = {
     );
     return response.data;
   },
+
+  async deleteRequest(id: string) {
+    await apiClient.delete(
+      `${basePath}/requests/${encodeURIComponent(id)}`,
+      { withCredentials: true },
+    );
+  },
 };

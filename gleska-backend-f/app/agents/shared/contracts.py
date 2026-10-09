@@ -16,6 +16,7 @@ class AgentDefinition:
     enabled: bool = True
     roles: tuple[str, ...] = ()
     metadata: dict[str, Any] = field(default_factory=dict)
+    system_instruction: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

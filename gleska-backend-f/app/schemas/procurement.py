@@ -26,6 +26,7 @@ class ProcurementModel(BaseModel):
 
 
 class MaterialRequestDraft(ProcurementModel):
+    model_config = ConfigDict(extra="ignore")
     title: str | None = Field(default=None, max_length=160)
     item_name: str | None = Field(default=None, max_length=240)
     specification: str | None = Field(default=None, max_length=2000)
@@ -65,17 +66,19 @@ class MaterialRequestDraft(ProcurementModel):
 
 
 class ProcurementConversationMessage(ProcurementModel):
+    model_config = ConfigDict(extra="ignore")
     role: Literal["user", "assistant"]
     content: str = Field(min_length=1, max_length=4000)
     created_at: datetime
 
 
 class ProcurementConversationCreateResponse(ProcurementModel):
+    model_config = ConfigDict(extra="ignore")
     conversation_id: UUID
     status: Literal["ACTIVE", "COMPLETED"]
     history: list[ProcurementConversationMessage]
     draft: MaterialRequestDraft
-    confirmed_fields: list[str]
+    confirmed_fields: list[str] = Field(default_factory=list)
     revision: int
     created_at: datetime
     updated_at: datetime
@@ -164,6 +167,7 @@ class ProcurementMaterialRequestPatch(ProcurementModel):
 
 
 class ProcurementMaterialRequestResponse(ProcurementModel):
+    model_config = ConfigDict(extra="ignore")
     id: UUID
     origin_conversation_id: UUID | None = None
     title: str | None = None
@@ -173,9 +177,9 @@ class ProcurementMaterialRequestResponse(ProcurementModel):
     unit: str
     required_by: date | None = None
     delivery_location: str | None = None
-    additional_requirements: list[str]
+    additional_requirements: list[str] = Field(default_factory=list)
     notes: str | None = None
-    confirmed_fields: list[str]
+    confirmed_fields: list[str] = Field(default_factory=list)
     status: Literal["SAVED"]
     revision: int
     created_at: datetime
