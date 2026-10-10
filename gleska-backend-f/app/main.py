@@ -6,7 +6,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from app.core.config import settings
-from app.routers import health, auth, workers, employers, employer_workers, attendance, jobs, job_sites, locations, payments, contact, security, employer_security, notifications, admin, procurement
+from app.routers import health, auth, workers, employers, employer_workers, attendance, jobs, job_sites, locations, payments, contact, security, employer_security, notifications, admin, procurement, suppliers
 
 # Create FastAPI app
 app = FastAPI(
@@ -74,6 +74,7 @@ app.include_router(attendance.worker_router, prefix=settings.API_V1_PREFIX)
 app.include_router(attendance.employer_router, prefix=settings.API_V1_PREFIX)
 app.include_router(jobs.router, prefix=settings.API_V1_PREFIX, tags=["jobs"])
 app.include_router(procurement.router, prefix=settings.API_V1_PREFIX)
+app.include_router(suppliers.router, prefix=settings.API_V1_PREFIX)
 app.include_router(job_sites.router, prefix=settings.API_V1_PREFIX, tags=["job-sites"])
 app.include_router(locations.router, prefix=settings.API_V1_PREFIX, tags=["locations"])
 app.include_router(payments.router, prefix=settings.API_V1_PREFIX, tags=["payments"])

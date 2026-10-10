@@ -3,7 +3,7 @@ import ProcurementAgentPage from "@/components/agents/procurement/ProcurementAge
 
 export const metadata = {
   title: "Procurement Agent | GLESKA AI",
-  description: "Clarify, review, and save structured material requests.",
+  description: "Manage material requests and explore the Procurement Agent workspace.",
 };
 
 export default function ProcurementPage() {

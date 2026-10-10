@@ -4,6 +4,8 @@ import React, { FormEvent, useEffect, useRef, useState } from "react";
 import {
   AlertCircle,
   ArrowRight,
+  Activity,
+  Boxes,
   Calendar,
   Check,
   CheckCircle2,
@@ -22,6 +24,7 @@ import {
   RotateCcw,
   Save,
   Search,
+  ShoppingCart,
   Sparkles,
   StickyNote,
   Trash2,
@@ -35,9 +38,42 @@ import {
 } from "@/lib/procurement-api";
 import { procurementConfig } from "./procurementConfig";
 
-type Section = "new-request" | "saved-requests";
+type Section =
+  | "dashboard"
+  | "new-request"
+  | "saved-requests"
+  | "details"
+  | "status"
+  | "companies-out"
+  | "get-procurement"
+  | "material-details"
+  | "companies"
+  | "settings";
 type CreationMode = "ai" | "manual";
 type DraftField = keyof MaterialRequestDraft;
+
+const plannedSectionDetails: Partial<Record<Section, { title: string; description: string }>> = {
+  details: {
+    title: "Procurement Details",
+    description: "Procurement profile and sourcing preferences are not available yet.",
+  },
+  status: {
+    title: "Current Status",
+    description: "Request lifecycle and fulfillment tracking are not available yet. Saved material requests remain available in Saved Requests.",
+  },
+  "companies-out": {
+    title: "Procurement to Companies",
+    description: "Company sourcing and procurement coordination are planned for a future release.",
+  },
+  companies: {
+    title: "Procurement Companies",
+    description: "A supplier and procurement-company directory is not available yet.",
+  },
+  settings: {
+    title: "Procurement Settings",
+    description: "Procurement-specific preferences are not available yet.",
+  },
+};
 
 const draftFieldLabels: Record<DraftField, string> = {
   title: "Request title",
@@ -342,7 +378,7 @@ function validateRequestDraft(draft: MaterialRequestDraft): Record<string, strin
 }
 
 export default function ProcurementAgentPage() {
-  const [section, setSection] = useState<Section>("new-request");
+  const [section, setSection] = useState<Section>("dashboard");
   const [creationMode, setCreationMode] = useState<CreationMode>("ai");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -976,11 +1012,23 @@ export default function ProcurementAgentPage() {
   };
 
   const onSectionChange = (id: string) => {
-    if (id === "new-request" || id === "saved-requests") {
-      setSection(id);
-      setActionError("");
-      setActionSuccess("");
-    }
+    const destination: Record<string, Section> = {
+      dashboard: "dashboard",
+      "new-request": "new-request",
+      "saved-requests": "saved-requests",
+      details: "details",
+      status: "status",
+      "companies-out": "companies-out",
+      "get-procurement": "new-request",
+      "material-details": "saved-requests",
+      companies: "companies",
+      settings: "settings",
+    };
+    const nextSection = destination[id];
+    if (!nextSection) return;
+    setSection(nextSection);
+    setActionError("");
+    setActionSuccess("");
   };
 
   const filteredRequests = requests.filter((item) => {
@@ -1027,22 +1075,44 @@ export default function ProcurementAgentPage() {
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
               <h1 className="font-anton text-2xl uppercase tracking-wide text-slate-900 dark:text-white sm:text-3xl">
-                Procurement Agent
+                {section === "dashboard"
+                  ? "Manage Procurement"
+                  : section === "saved-requests" || section === "material-details"
+                    ? "Saved Material Requests"
+                    : plannedSectionDetails[section]?.title || "Procurement Agent"}
               </h1>
               <p className="mt-1 max-w-2xl text-xs sm:text-sm text-slate-600 dark:text-slate-300">
-                Clarify, review, and save structured material requests for your projects.
+                {section === "dashboard"
+                  ? "Manage your material requests and explore the Procurement Agent workspace."
+                  : section === "saved-requests" || section === "material-details"
+                    ? "Retrieve, review, edit, and remove saved material requests."
+                    : "Clarify, review, and save structured material requests for your projects."}
               </p>
             </div>
 
             <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-              {/* Navigation Tabs Pill (consistent with dashboard cards) */}
               <div
                 role="tablist"
-                aria-label="Procurement Views"
+                aria-label="Procurement workspace views"
                 className="flex items-center gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800"
               >
                 <button
                   type="button"
+                  role="tab"
+                  aria-selected={section === "dashboard"}
+                  onClick={() => onSectionChange("dashboard")}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                    section === "dashboard"
+                      ? "bg-white text-purple-700 shadow-sm dark:bg-slate-700 dark:text-purple-300 font-bold"
+                      : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                  }`}
+                >
+                  Dashboard
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={section === "new-request"}
                   onClick={() => onSectionChange("new-request")}
                   className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition cursor-pointer ${
                     section === "new-request"
@@ -1055,6 +1125,8 @@ export default function ProcurementAgentPage() {
                 </button>
                 <button
                   type="button"
+                  role="tab"
+                  aria-selected={section === "saved-requests"}
                   onClick={() => onSectionChange("saved-requests")}
                   className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition cursor-pointer ${
                     section === "saved-requests"
@@ -1067,7 +1139,7 @@ export default function ProcurementAgentPage() {
                 </button>
               </div>
 
-              {section === "new-request" && (
+              {(section === "new-request" || section === "get-procurement") && (
                 <button
                   type="button"
                   onClick={() => void startConversation()}
@@ -1142,7 +1214,112 @@ export default function ProcurementAgentPage() {
             <LoaderCircle size={24} className="animate-spin text-purple-600" />
             <p>Loading your Procurement workspace…</p>
           </div>
-        ) : section === "new-request" ? (
+        ) : section === "dashboard" ? (
+          <div className="space-y-6">
+            <section aria-label="Procurement actions" className="grid gap-4 lg:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => onSectionChange("get-procurement")}
+                className="group flex min-h-40 items-center justify-between rounded-2xl border border-slate-200 border-t-4 border-t-indigo-500 bg-white p-5 text-left shadow-lg shadow-slate-900/5 transition hover:-translate-y-1 hover:shadow-xl dark:border-slate-800 dark:bg-slate-900 sm:p-6"
+              >
+                <span className="min-w-0 pr-4">
+                  <span className="font-mono text-xs font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">OPTION 02 · AVAILABLE</span>
+                  <span className="mt-1 block text-xl font-bold text-slate-900 dark:text-white">Get Procurement</span>
+                  <span className="mt-1 block text-sm text-slate-600 dark:text-slate-400">
+                    Create, review, and manage material requests for your projects.
+                  </span>
+                  <span className="mt-4 inline-flex items-center gap-1.5 text-sm font-bold text-indigo-700 dark:text-indigo-300">
+                    Open material requests <ArrowRight size={15} />
+                  </span>
+                </span>
+                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-indigo-100 bg-indigo-50 text-indigo-600 dark:border-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-400">
+                  <ShoppingCart size={24} />
+                </span>
+              </button>
+
+              <article className="flex min-h-40 items-center justify-between rounded-2xl border border-slate-200 border-t-4 border-t-purple-500 bg-white p-5 shadow-lg shadow-slate-900/5 dark:border-slate-800 dark:bg-slate-900 sm:p-6">
+                <div className="min-w-0 pr-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-mono text-xs font-bold uppercase tracking-wider text-purple-600 dark:text-purple-400">OPTION 01</span>
+                    <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                      Planned
+                    </span>
+                  </div>
+                  <h2 className="mt-1 text-xl font-bold text-slate-900 dark:text-white">Provide Procurement</h2>
+                  <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+                    Supplier discovery, catalogs, and company sourcing are not available yet.
+                  </p>
+                </div>
+                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-purple-100 bg-purple-50 text-purple-600 dark:border-purple-800 dark:bg-purple-950/60 dark:text-purple-400">
+                  <Package size={24} />
+                </span>
+              </article>
+            </section>
+
+            <section aria-label="Material request overview" className="grid gap-4 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => onSectionChange("saved-requests")}
+                className="rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-xs transition hover:border-purple-300 hover:bg-purple-50/40 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-purple-800 dark:hover:bg-purple-950/20"
+              >
+                <span className="flex items-center gap-2 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                  <Boxes size={17} className="text-purple-600 dark:text-purple-400" />
+                  Saved material requests
+                </span>
+                <span className="mt-2 block text-3xl font-bold text-slate-900 dark:text-white">{requests.length}</span>
+                <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">Open the saved request list</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onSectionChange("new-request")}
+                className="rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-xs transition hover:border-purple-300 hover:bg-purple-50/40 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-purple-800 dark:hover:bg-purple-950/20"
+              >
+                <span className="flex items-center gap-2 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                  <Activity size={17} className="text-purple-600 dark:text-purple-400" />
+                  Active conversations
+                </span>
+                <span className="mt-2 block text-3xl font-bold text-slate-900 dark:text-white">
+                  {conversations.filter((item) => item.status === "ACTIVE").length}
+                </span>
+                <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">Continue an in-progress material request</span>
+              </button>
+            </section>
+
+            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900 sm:p-6">
+              <div className="mb-3">
+                <h2 className="text-base font-bold text-slate-900 dark:text-white">Search material requests</h2>
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  Search is limited to your saved requests; supplier and purchase-order search is not available.
+                </p>
+              </div>
+              <form
+                className="flex flex-col gap-2 sm:flex-row"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  onSectionChange("saved-requests");
+                }}
+              >
+                <div className="relative flex-1">
+                  <Search size={16} className="pointer-events-none absolute left-3 top-3 text-slate-400" />
+                  <input
+                    type="search"
+                    value={savedRequestSearch}
+                    onChange={(event) => setSavedRequestSearch(event.target.value)}
+                    placeholder="Search by title, material, specification, or unit"
+                    aria-label="Search saved material requests"
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-sm text-slate-900 outline-none transition focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-purple-700 px-4 py-2 text-sm font-bold text-white transition hover:bg-purple-800"
+                >
+                  <Search size={15} /> Search requests
+                </button>
+              </form>
+            </section>
+          </div>
+        ) : section === "new-request" || section === "get-procurement" ? (
           <div className="space-y-4">
             {/* Mode Switcher: AI Assistant vs Manual Form (matching Hiring Agent tabs) */}
             <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-3 dark:border-slate-800">
@@ -1834,7 +2011,7 @@ export default function ProcurementAgentPage() {
               </div>
             )}
           </div>
-        ) : (
+        ) : section === "saved-requests" || section === "material-details" ? (
           /* SECTION 2: Saved Requests */
           <div className="grid gap-6 lg:grid-cols-[minmax(280px,0.8fr)_minmax(0,1.2fr)]">
             {/* Left Column: Request List */}
@@ -2060,6 +2237,36 @@ export default function ProcurementAgentPage() {
               )}
             </section>
           </div>
+        ) : (
+          <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900 sm:p-8">
+            <div className="mx-auto max-w-2xl text-center">
+              <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-bold uppercase tracking-wide text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                Planned · Not connected to a backend
+              </span>
+              <h2 className="mt-4 text-xl font-bold text-slate-900 dark:text-white">
+                {plannedSectionDetails[section]?.title || "Procurement workspace"}
+              </h2>
+              <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-400">
+                {plannedSectionDetails[section]?.description || "This procurement workflow is not available yet."}
+              </p>
+              <div className="mt-6 flex flex-wrap justify-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => onSectionChange("new-request")}
+                  className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-purple-700 px-4 py-2 text-sm font-bold text-white transition hover:bg-purple-800"
+                >
+                  <PlusCircle size={16} /> Create material request
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onSectionChange("saved-requests")}
+                  className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+                >
+                  <ClipboardList size={16} /> Saved requests
+                </button>
+              </div>
+            </div>
+          </section>
         )}
       </div>
     </AgentLayout>
