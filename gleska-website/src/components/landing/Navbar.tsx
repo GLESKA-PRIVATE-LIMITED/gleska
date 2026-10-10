@@ -140,10 +140,12 @@ export default function Navbar({
               setCurrentQuery("");
               if (isMobile) setMobileMenuOpen(false);
             }}
-            className={contextualActionClass(isMobile)}
+            className={`${contextualActionClass(isMobile)} ${!isMobile ? "h-9 w-9 p-0 sm:w-auto sm:px-3.5 sm:py-1.5" : ""}`}
+            aria-label={t('nav.signIn') || "Sign In"}
+            title={t('nav.signIn') || "Sign In"}
           >
-            <User size={15} />
-            <span>{t('nav.signIn') || "Sign In"}</span>
+            <User className="h-5 w-5 sm:h-3.5 sm:w-3.5 shrink-0" size={20} />
+            <span className={isMobile ? "" : "hidden sm:inline"}>{t('nav.signIn') || "Sign In"}</span>
           </Link>
         );
       }
@@ -158,10 +160,12 @@ export default function Navbar({
           <Link
             href="/auth/signin"
             onClick={() => isMobile && setMobileMenuOpen(false)}
-            className={contextualActionClass(isMobile)}
+            className={`${contextualActionClass(isMobile)} ${!isMobile ? "h-9 w-9 p-0 sm:w-auto sm:px-3.5 sm:py-1.5" : ""}`}
+            aria-label={t('nav.signIn') || "Sign In"}
+            title={t('nav.signIn') || "Sign In"}
           >
-            <User size={15} />
-            <span>{t('nav.signIn') || "Sign In"}</span>
+            <User className="h-5 w-5 sm:h-3.5 sm:w-3.5 shrink-0" size={20} />
+            <span className={isMobile ? "" : "hidden sm:inline"}>{t('nav.signIn') || "Sign In"}</span>
           </Link>
         );
       }
@@ -175,10 +179,12 @@ export default function Navbar({
         onClick={() => isMobile && setMobileMenuOpen(false)}
         className={`${contextualActionClass(isMobile)} ${
           pathname === "/auth/signin" ? "border-indigo-500 text-indigo-600 dark:border-indigo-500 dark:text-indigo-400" : ""
-        }`}
+        } ${!isMobile ? "h-9 w-9 p-0 sm:w-auto sm:px-3.5 sm:py-1.5" : ""}`}
+        aria-label={t('nav.signIn') || "Sign In"}
+        title={t('nav.signIn') || "Sign In"}
       >
-        <User size={15} />
-        <span>{t('nav.signIn') || "Sign In"}</span>
+        <User className="h-5 w-5 sm:h-3.5 sm:w-3.5 shrink-0" size={20} />
+        <span className={isMobile ? "" : "hidden sm:inline"}>{t('nav.signIn') || "Sign In"}</span>
       </Link>
     );
   };
@@ -220,6 +226,9 @@ export default function Navbar({
             {link.label}
           </Link>
         ))}
+
+        {/* Language Option below Terms */}
+        <LanguageSelector variant="menuItem" onSelectLanguage={() => setMobileMenuOpen(false)} />
       </div>
 
       {mobileContextualAction && (
@@ -244,7 +253,9 @@ export default function Navbar({
         {desktopNavLinksMarkup}
 
         <div className="flex items-center gap-2 sm:gap-3">
-          <LanguageSelector />
+          <div className="hidden md:block">
+            <LanguageSelector />
+          </div>
           {renderContextualAction()}
 
           {/* Mobile hamburger toggle button */}
