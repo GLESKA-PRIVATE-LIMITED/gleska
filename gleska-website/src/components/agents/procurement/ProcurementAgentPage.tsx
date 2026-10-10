@@ -38,12 +38,14 @@ import {
   procurementApi,
 } from "@/lib/procurement-api";
 import { procurementConfig, supplierWorkspacePath } from "./procurementConfig";
+import ProcurementRFQPanel from "./ProcurementRFQPanel";
 
 type Section =
   | "dashboard"
   | "details"
   | "status"
   | "get-procurement"
+  | "rfqs"
   | "material-details"
   | "settings";
 type CreationMode = "ai" | "manual";
@@ -1148,6 +1150,7 @@ export default function ProcurementAgentPage() {
       details: "details",
       status: "status",
       "get-procurement": "get-procurement",
+      rfqs: "rfqs",
       "material-details": "material-details",
       settings: "settings",
     };
@@ -1247,6 +1250,8 @@ export default function ProcurementAgentPage() {
                     ? "Current Status"
                     : section === "get-procurement"
                       ? "Get Procurement"
+                      : section === "rfqs"
+                        ? "Requests for Quote"
                       : section === "settings"
                         ? "Settings"
                         : "Requirement Details"}
@@ -1254,12 +1259,14 @@ export default function ProcurementAgentPage() {
               <p className="mt-1 max-w-2xl text-xs sm:text-sm text-slate-600 dark:text-slate-300">
                 {section === "get-procurement"
                   ? "Review active listings from verified suppliers against one of your saved material requirements. Discovery does not contact suppliers."
+                  : section === "rfqs"
+                    ? "Create persistent RFQs from saved requirements and review supplier acknowledgements or declines."
                   : section === "material-details"
                     ? requirementView === "create"
                       ? "Create and confirm a material requirement with AI or the manual form."
                       : "Find, review, edit, or delete material requirements you have saved."
                     : section === "status"
-                      ? "See the saved-request and AI-conversation statuses that are actually recorded. Sourcing and fulfillment progress is not available yet."
+                      ? "See saved requirements, RFQs, and recipient response statuses. Quotations and fulfillment progress are not available yet."
                       : section === "settings"
                         ? "Manage employer-specific defaults and supported supplier-matching preferences."
                         : "Review the material specifications and delivery details currently saved in your Procurement workspace."}
@@ -1348,7 +1355,7 @@ export default function ProcurementAgentPage() {
               variant={procurementConfig.variant}
             />
             <p className="mx-auto mt-3 max-w-2xl text-center text-xs text-slate-500 dark:text-slate-400">
-              Supplier listings can be matched to a saved requirement in Get Procurement. Matching does not send the requirement or contact suppliers.
+              Compare active supplier listings in Get Procurement, then create a persistent RFQ from the Requests for Quote workspace. Matching alone does not contact suppliers.
             </p>
             <div className="mx-auto mt-6 grid max-w-2xl gap-3 sm:grid-cols-2">
               <div className="rounded-2xl border border-slate-200 bg-white/90 p-4 text-center shadow-sm dark:border-slate-800 dark:bg-slate-900/90">
@@ -2362,7 +2369,7 @@ export default function ProcurementAgentPage() {
             <div>
               <h2 className="text-base font-bold text-slate-900 dark:text-white">Recorded requirement status</h2>
               <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-                These are the statuses currently persisted for saved requirements and AI conversations. Supplier matching, RFQs, quotations, selection, orders, and fulfillment tracking are not implemented, so no sourcing progress is shown.
+                Saved requirements and RFQ invitations have persistent status. RFQ recipients can acknowledge or decline; price quotations, supplier selection, purchase orders, and fulfillment tracking belong to later phases.
               </p>
             </div>
             <div className="grid gap-4 md:grid-cols-2">
@@ -2404,12 +2411,14 @@ export default function ProcurementAgentPage() {
               </div>
             </div>
           </section>
+        ) : section === "rfqs" ? (
+          <ProcurementRFQPanel requests={requests} />
         ) : section === "get-procurement" ? (
           <section className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900 sm:p-6">
             <div>
               <h2 className="text-base font-bold text-slate-900 dark:text-white">Discover supplier offerings</h2>
               <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-                Select a saved requirement to compare it with current listings from verified, active suppliers. This is a catalogue match only; it does not send the requirement or contact suppliers.
+                Select a saved requirement to compare it with current listings from verified, active suppliers. Matching is a catalogue view only; create an RFQ in Requests for Quote to give selected suppliers access.
               </p>
             </div>
 
@@ -2813,7 +2822,7 @@ export default function ProcurementAgentPage() {
                 This Procurement view is not available
               </h2>
               <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-400">
-                You can create and save material requirements, but they are not sent to suppliers. Supplier matching, RFQs, quotations, supplier selection, purchase orders, and fulfillment tracking are not implemented.
+                You can create and save material requirements, match eligible supplier offerings, and create persistent RFQs. Price quotations, supplier selection, purchase orders, and fulfillment tracking are not part of this phase.
               </p>
             </div>
           </section>

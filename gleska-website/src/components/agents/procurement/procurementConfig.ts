@@ -6,6 +6,7 @@ import {
   ShoppingCart,
   Boxes,
   Package,
+  ClipboardList,
   Settings,
 } from "lucide-react";
 import { AgentConfig } from "@/components/agent-dashboard/types";
@@ -27,6 +28,7 @@ export const procurementConfig: AgentConfig = {
     { id: "status", label: "Current Status", icon: Activity, isTab: true },
     { id: "provide-procurement", label: "Provide Procurement", icon: Package, href: supplierWorkspacePath },
     { id: "get-procurement", label: "Get Procurement", icon: ShoppingCart, isTab: true },
+    { id: "rfqs", label: "Requests for Quote", icon: ClipboardList, isTab: true },
     { id: "settings", label: "Settings", icon: Settings, isTab: true },
     { id: "employer-dashboard", label: "Employer Dashboard", icon: LayoutDashboard, href: "/employer/dashboard" },
   ],

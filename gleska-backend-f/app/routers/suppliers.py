@@ -1,5 +1,6 @@
 """Authenticated supplier identity and membership endpoints."""
 
+import logging
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile, status
@@ -25,6 +26,14 @@ from app.schemas.supplier_offering import (
     SupplierMaterialOfferingPatchRequest,
     SupplierMaterialOfferingResponse,
 )
+from app.schemas.rfq import (
+    SupplierQuotationRequest,
+    SupplierQuotationResult,
+    SupplierRFQResponse,
+    SupplierRFQResponseRequest,
+    SupplierRFQResponseResult,
+)
+from app.services.rfq_service import RFQService, RFQServiceError
 from app.services.supplier_service import SupplierService
 from app.services.supplier_offering_service import SupplierOfferingService
 from app.services.supplier_verification_service import (
@@ -34,6 +43,11 @@ from app.services.supplier_verification_service import (
 )
 
 router = APIRouter(prefix="/suppliers", tags=["suppliers"])
+logger = logging.getLogger(__name__)
+
+
+def _raise_rfq_error(exc: RFQServiceError) -> None:
+    raise HTTPException(status_code=exc.http_status, detail=exc.code) from exc
 
 
 def _require_supplier_manager(membership: dict) -> None:
@@ -236,6 +250,107 @@ async def archive_supplier_material_offering(
         user.id,
         expected_revision,
     )
+
+
+@router.get(
+    "/companies/{company_id}/rfqs",
+    response_model=list[SupplierRFQResponse],
+)
+async def list_supplier_rfqs(
+    company_id: UUID,
+    membership: dict = Depends(require_supplier_company_membership),
+):
+    try:
+        return RFQService.list_supplier(company_id)
+    except RFQServiceError as exc:
+        _raise_rfq_error(exc)
+    except Exception as exc:
+        logger.exception("Supplier RFQ inbox load failed: company_id=%s", company_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="RFQ_LIST_FAILED",
+        ) from exc
+
+
+@router.get(
+    "/companies/{company_id}/rfqs/{rfq_id}",
+    response_model=SupplierRFQResponse,
+)
+async def get_supplier_rfq(
+    company_id: UUID,
+    rfq_id: UUID,
+    membership: dict = Depends(require_supplier_company_membership),
+):
+    try:
+        return RFQService.get_supplier(company_id, rfq_id)
+    except RFQServiceError as exc:
+        _raise_rfq_error(exc)
+    except Exception as exc:
+        logger.exception(
+            "Supplier RFQ load failed: company_id=%s rfq_id=%s",
+            company_id,
+            rfq_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="RFQ_LOAD_FAILED",
+        ) from exc
+
+
+@router.post(
+    "/companies/{company_id}/rfqs/{rfq_id}/response",
+    response_model=SupplierRFQResponseResult,
+)
+async def respond_to_supplier_rfq(
+    company_id: UUID,
+    rfq_id: UUID,
+    request: SupplierRFQResponseRequest,
+    user: UserResponse = Depends(get_current_user),
+    membership: dict = Depends(require_supplier_company_membership),
+):
+    try:
+        return RFQService.respond_supplier(user, company_id, rfq_id, request)
+    except RFQServiceError as exc:
+        _raise_rfq_error(exc)
+    except Exception as exc:
+        logger.exception(
+            "Supplier RFQ response failed: user_id=%s company_id=%s rfq_id=%s",
+            user.id,
+            company_id,
+            rfq_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="RFQ_RESPONSE_FAILED",
+        ) from exc
+
+
+@router.put(
+    "/companies/{company_id}/rfqs/{rfq_id}/quotation",
+    response_model=SupplierQuotationResult,
+)
+async def submit_supplier_quotation(
+    company_id: UUID,
+    rfq_id: UUID,
+    request: SupplierQuotationRequest,
+    user: UserResponse = Depends(get_current_user),
+    membership: dict = Depends(require_supplier_company_membership),
+):
+    try:
+        return RFQService.submit_quotation(user, company_id, rfq_id, request)
+    except RFQServiceError as exc:
+        _raise_rfq_error(exc)
+    except Exception as exc:
+        logger.exception(
+            "Supplier quotation submission failed: user_id=%s company_id=%s rfq_id=%s",
+            user.id,
+            company_id,
+            rfq_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="QUOTATION_SUBMISSION_FAILED",
+        ) from exc
 
 
 @router.post(

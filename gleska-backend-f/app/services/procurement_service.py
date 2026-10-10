@@ -45,6 +45,25 @@ def _search_tokens(value: str | None) -> set[str]:
     return set(re.findall(r"\w+", value.casefold())) if value else set()
 
 
+def _material_tokens(value: str | None) -> set[str]:
+    if not value:
+        return set()
+
+    # A steel grade identifies specification, not the underlying material.
+    material_name = re.sub(r"\bfe[\s-]*\d+[a-z]?\b", " ", value, flags=re.IGNORECASE)
+    tokens = _search_tokens(material_name)
+    reinforcement_terms = {
+        "bar", "bars", "rebar", "rebars", "reinforcement", "reinforcing",
+    }
+    if (
+        tokens & {"steel", "tmt", "rebar", "rebars", "reinforcement", "reinforcing"}
+        and tokens & reinforcement_terms
+    ):
+        tokens.difference_update(reinforcement_terms)
+        tokens.add("rebar")
+    return tokens
+
+
 def _coverage_matches(delivery_location: str, service_coverage: list[str]) -> bool:
     location_parts = [
         tokens
@@ -518,6 +537,7 @@ class ProcurementService:
         cls,
         user: UserResponse,
         request_id: UUID,
+        delivery_location_override: str | None = None,
     ) -> ProcurementSupplierDiscoveryResponse:
         employer_id = cls._employer_id(user)
         request = cls._owned_request(request_id, user, employer_id)
@@ -564,12 +584,12 @@ class ProcurementService:
             )
             raise ProcurementServiceError("SUPPLIER_DISCOVERY_FAILED") from exc
 
-        requested_item_tokens = _search_tokens(str(request.get("item_name") or ""))
+        requested_item_tokens = _material_tokens(str(request.get("item_name") or ""))
         requested_spec_tokens = _search_tokens(request.get("specification"))
         requested_listing_tokens = requested_item_tokens | requested_spec_tokens
         requested_quantity = Decimal(str(request["quantity"]))
         requested_unit = str(request["unit"]).strip().casefold()
-        delivery_location = request.get("delivery_location")
+        delivery_location = delivery_location_override or request.get("delivery_location")
         ranked_matches: list[
             tuple[float, float, float, int, ProcurementSupplierOfferingMatch]
         ] = []
@@ -580,7 +600,7 @@ class ProcurementService:
             if not supplier_name:
                 continue
 
-            offering_tokens = _search_tokens(str(offering.get("name") or ""))
+            offering_tokens = _material_tokens(str(offering.get("name") or ""))
             offering_spec_tokens = _search_tokens(offering.get("specification"))
             offering_listing_tokens = offering_tokens | offering_spec_tokens
             material_overlap = (

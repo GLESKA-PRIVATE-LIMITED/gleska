@@ -3,7 +3,7 @@
 import logging
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
 from app.core.security import require_employer
 from app.schemas.auth import UserResponse
@@ -18,6 +18,8 @@ from app.schemas.procurement import (
     ProcurementSettingsUpdate,
     ProcurementSupplierDiscoveryResponse,
 )
+from app.schemas.rfq import ProcurementRFQCreateRequest, ProcurementRFQResponse
+from app.services.rfq_service import RFQService, RFQServiceError
 from app.services.procurement_service import (
     ProcurementAgentError,
     ProcurementConflict,
@@ -86,6 +88,68 @@ def _raise_procurement_error(exc: Exception) -> None:
     if isinstance(exc, ProcurementServiceError):
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
     raise exc
+
+
+def _raise_rfq_error(exc: RFQServiceError) -> None:
+    raise HTTPException(status_code=exc.http_status, detail=exc.code) from exc
+
+
+@router.post(
+    "/rfqs",
+    response_model=ProcurementRFQResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_procurement_rfq(
+    request: ProcurementRFQCreateRequest,
+    user: UserResponse = Depends(require_employer),
+):
+    try:
+        return RFQService.create(user, request)
+    except RFQServiceError as exc:
+        _raise_rfq_error(exc)
+    except Exception as exc:
+        logger.exception("Procurement RFQ create failed: user_id=%s", user.id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="RFQ_CREATE_FAILED",
+        ) from exc
+
+
+@router.get("/rfqs", response_model=list[ProcurementRFQResponse])
+async def list_procurement_rfqs(
+    user: UserResponse = Depends(require_employer),
+):
+    try:
+        return RFQService.list_buyer(user)
+    except RFQServiceError as exc:
+        _raise_rfq_error(exc)
+    except Exception as exc:
+        logger.exception("Procurement RFQ list failed: user_id=%s", user.id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="RFQ_LIST_FAILED",
+        ) from exc
+
+
+@router.get("/rfqs/{rfq_id}", response_model=ProcurementRFQResponse)
+async def get_procurement_rfq(
+    rfq_id: UUID,
+    user: UserResponse = Depends(require_employer),
+):
+    try:
+        return RFQService.get_buyer(user, rfq_id)
+    except RFQServiceError as exc:
+        _raise_rfq_error(exc)
+    except Exception as exc:
+        logger.exception(
+            "Procurement RFQ load failed: user_id=%s rfq_id=%s",
+            user.id,
+            rfq_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="RFQ_LOAD_FAILED",
+        ) from exc
 
 
 @router.post(
@@ -276,10 +340,15 @@ async def get_procurement_request(
 )
 async def discover_suppliers_for_request(
     request_id: UUID,
+    delivery_location: str | None = Query(default=None, max_length=500),
     user: UserResponse = Depends(require_employer),
 ):
     try:
-        return ProcurementService.discover_supplier_offerings(user, request_id)
+        return ProcurementService.discover_supplier_offerings(
+            user,
+            request_id,
+            delivery_location_override=delivery_location,
+        )
     except Exception as exc:
         if isinstance(exc, ProcurementServiceError) or isinstance(exc, PermissionError):
             _raise_procurement_error(exc)
