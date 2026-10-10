@@ -15,9 +15,9 @@ export const supplierWorkspacePath = "/supplier";
 
 export const procurementConfig: AgentConfig = {
   agentId: "procurement",
-  agentName: "PROCUREMENT AGENT",
-  badgeText: "SUPPLY CHAIN & VENDOR AI",
-  title: "MANAGE PROCUREMENT",
+  agentName: "PROCUREMENT",
+  badgeText: "",
+  title: "",
   variant: "compact-centered",
   accentColor: "purple",
   sidebarItems: [
