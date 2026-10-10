@@ -10,9 +10,9 @@ import { AgentConfig } from "@/components/agent-dashboard/types";
 
 export const financialConfig: AgentConfig = {
   agentId: "financial",
-  agentName: "Financial Agent",
-  badgeText: "FINANCIAL AI",
-  title: "MANAGE FINANCIAL",
+  agentName: "FINANCIAL",
+  badgeText: "",
+  title: "",
   variant: "compact-centered",
   accentColor: "indigo",
   sidebarItems: [

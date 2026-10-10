@@ -17,6 +17,7 @@ export default function AgentHeader({ config, onOptionClick }: AgentHeaderProps)
     const isEmerald = config.accentColor === "emerald";
     const isCyan = config.accentColor === "cyan";
     const isAmber = config.accentColor === "amber";
+    const isIndigo = config.accentColor === "indigo";
 
     let badgeStyle = "border-purple-200/90 bg-purple-50 text-purple-700 dark:border-purple-800/80 dark:bg-purple-950/70 dark:text-purple-300";
     let badgeIconStyle = "text-purple-600 dark:text-purple-400";
@@ -34,6 +35,10 @@ export default function AgentHeader({ config, onOptionClick }: AgentHeaderProps)
       badgeStyle = "border-amber-200/90 bg-amber-50 text-amber-700 dark:border-amber-800/80 dark:bg-amber-950/70 dark:text-amber-300";
       badgeIconStyle = "text-amber-600 dark:text-amber-400";
       activeOptionStyle = "bg-amber-600 text-white font-bold shadow-xs dark:bg-amber-600";
+    } else if (isIndigo) {
+      badgeStyle = "border-indigo-200/90 bg-indigo-50 text-indigo-700 dark:border-indigo-800/80 dark:bg-indigo-950/70 dark:text-indigo-300";
+      badgeIconStyle = "text-indigo-600 dark:text-indigo-400";
+      activeOptionStyle = "bg-indigo-600 text-white font-bold shadow-xs dark:bg-indigo-600";
     }
 
     return (
