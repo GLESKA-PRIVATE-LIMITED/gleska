@@ -3,10 +3,9 @@
 import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { User, LayoutDashboard, LogOut, ArrowLeft, Menu, X } from "lucide-react";
+import { User, LogOut, ArrowLeft, Menu, X } from "lucide-react";
 import LanguageSelector from "@/components/landing/LanguageSelector";
 import { useAuth } from "@/context/AuthContext";
-import { getRouteForNextStep } from "@/lib/auth-routing";
 import { useLanguage } from "@/context/LanguageContext";
 
 export default function Navbar({
@@ -15,17 +14,11 @@ export default function Navbar({
   rightAction?: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const { user, nextStep, logout, isLoggingOut } = useAuth();
+  const { user, logout, isLoggingOut } = useAuth();
   const { t } = useLanguage();
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
   const [currentQuery, setCurrentQuery] = React.useState("");
   const containerRef = React.useRef<HTMLDivElement>(null);
-
-  const dashboardHref = user ? getRouteForNextStep(user.role, nextStep) : "/auth/signin";
-  const isDashboardActive =
-    pathname.startsWith("/employer") ||
-    pathname.startsWith("/worker") ||
-    pathname === dashboardHref;
 
   // Track client search params safely
   React.useEffect(() => {
@@ -86,57 +79,36 @@ export default function Navbar({
       return rightAction;
     }
 
-    // 2. Authenticated user (Public or Auth page): Dashboard + Logout
+    // 2. Authenticated user (Public or Auth page): Logout
     if (user) {
       if (isMobile) {
         return (
-          <div className="grid grid-cols-2 gap-2">
-            <Link
-              href={dashboardHref}
-              onClick={() => setMobileMenuOpen(false)}
-              className={contextualActionClass(true)}
-            >
-              <LayoutDashboard size={15} />
-              <span>{t('nav.dashboard') || "Dashboard"}</span>
-            </Link>
-            <button
-              type="button"
-              onClick={() => {
-                setMobileMenuOpen(false);
-                void logout();
-              }}
-              disabled={isLoggingOut}
-              className={contextualActionClass(true, "danger")}
-            >
-              <LogOut size={15} />
-              <span>{t('nav.logout') || "Logout"}</span>
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setMobileMenuOpen(false);
+              void logout();
+            }}
+            disabled={isLoggingOut}
+            className={contextualActionClass(true, "danger")}
+          >
+            <LogOut size={15} />
+            <span>{t('nav.logout') || "Logout"}</span>
+          </button>
         );
       }
 
       return (
-        <div className="flex items-center gap-2">
-          <Link
-            href={dashboardHref}
-            className={`${contextualActionClass(false)} ${
-              isDashboardActive ? "border-indigo-500 text-indigo-600 dark:border-indigo-500 dark:text-indigo-400" : ""
-            }`}
-          >
-            <LayoutDashboard size={15} />
-            <span className="whitespace-nowrap">{t('nav.dashboard') || "Dashboard"}</span>
-          </Link>
-          <button
-            type="button"
-            onClick={() => void logout()}
-            disabled={isLoggingOut}
-            className={contextualActionClass(false, "danger")}
-            title={t('nav.logout') || "Logout"}
-          >
-            <LogOut size={15} />
-            <span className="whitespace-nowrap">{t('nav.logout') || "Logout"}</span>
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={() => void logout()}
+          disabled={isLoggingOut}
+          className={contextualActionClass(false, "danger")}
+          title={t('nav.logout') || "Logout"}
+        >
+          <LogOut size={15} />
+          <span className="whitespace-nowrap">{t('nav.logout') || "Logout"}</span>
+        </button>
       );
     }
 
