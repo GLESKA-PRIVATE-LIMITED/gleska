@@ -3,6 +3,7 @@ import {
   LayoutDashboard,
   Truck,
   Key,
+  ClipboardList,
   HelpCircle,
   Settings,
 } from "lucide-react";
@@ -10,16 +11,17 @@ import { AgentConfig } from "@/components/agent-dashboard/types";
 
 export const logisticsConfig: AgentConfig = {
   agentId: "logistics",
-  agentName: "LOGISTICS AGENT",
-  badgeText: "FLEET & DISPATCH MANAGEMENT",
-  title: "MANAGE LOGISTICS",
+  agentName: "LOGISTICS",
+  badgeText: "",
+  title: "",
   variant: "compact-centered",
   accentColor: "emerald",
   sidebarItems: [
     { id: "home", label: "Home", icon: Home, href: "/#services" },
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, isTab: true },
-    { id: "lend", label: "Lend your vehicle", icon: Truck, isTab: true },
-    { id: "get", label: "Get vehicle", icon: Key, isTab: true },
+    { id: "lend", label: "Lend Your Vehicle", icon: Truck, isTab: true },
+    { id: "get", label: "Get Vehicle", icon: Key, isTab: true },
+    { id: "vehicle-details", label: "Vehicle Details", icon: ClipboardList, isTab: true },
     { id: "help", label: "Help", icon: HelpCircle, isTab: true },
     { id: "settings", label: "Settings", icon: Settings, isTab: true },
   ],

@@ -1,9 +1,8 @@
 "use client";
 
 import React from "react";
-import AgentLayout from "@/components/agent-dashboard/AgentLayout";
-import { logisticsConfig } from "./logisticsConfig";
+import LogisticsDashboard from "@/app/logistics/dashboard";
 
 export default function LogisticsAgentPage() {
-  return <AgentLayout config={logisticsConfig} />;
+  return <LogisticsDashboard />;
 }
