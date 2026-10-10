@@ -1,17 +1,15 @@
 "use client";
 
 import React, { FormEvent, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   AlertCircle,
   ArrowRight,
-  Activity,
-  Boxes,
   Calendar,
   Check,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
-  ClipboardList,
   FileText,
   Hash,
   ListFilter,
@@ -20,60 +18,37 @@ import {
   MapPin,
   Package,
   Plus,
-  PlusCircle,
-  RotateCcw,
   Save,
   Search,
-  ShoppingCart,
   Sparkles,
   StickyNote,
   Trash2,
 } from "lucide-react";
 import AgentLayout from "@/components/agent-dashboard/AgentLayout";
+import AgentHeader from "@/components/agent-dashboard/AgentHeader";
+import AgentSearchBar from "@/components/agent-dashboard/AgentSearchBar";
 import {
   MaterialRequestDraft,
   ProcurementConversation,
   ProcurementMaterialRequest,
+  ProcurementSettings,
+  ProcurementSettingsUpdate,
+  ProcurementSupplierDiscovery,
+  ProcurementUnit,
   procurementApi,
 } from "@/lib/procurement-api";
-import { procurementConfig } from "./procurementConfig";
+import { procurementConfig, supplierWorkspacePath } from "./procurementConfig";
 
 type Section =
   | "dashboard"
-  | "new-request"
-  | "saved-requests"
   | "details"
   | "status"
-  | "companies-out"
   | "get-procurement"
   | "material-details"
-  | "companies"
   | "settings";
 type CreationMode = "ai" | "manual";
+type RequirementView = "create" | "saved";
 type DraftField = keyof MaterialRequestDraft;
-
-const plannedSectionDetails: Partial<Record<Section, { title: string; description: string }>> = {
-  details: {
-    title: "Procurement Details",
-    description: "Procurement profile and sourcing preferences are not available yet.",
-  },
-  status: {
-    title: "Current Status",
-    description: "Request lifecycle and fulfillment tracking are not available yet. Saved material requests remain available in Saved Requests.",
-  },
-  "companies-out": {
-    title: "Procurement to Companies",
-    description: "Company sourcing and procurement coordination are planned for a future release.",
-  },
-  companies: {
-    title: "Procurement Companies",
-    description: "A supplier and procurement-company directory is not available yet.",
-  },
-  settings: {
-    title: "Procurement Settings",
-    description: "Procurement-specific preferences are not available yet.",
-  },
-};
 
 const draftFieldLabels: Record<DraftField, string> = {
   title: "Request title",
@@ -98,7 +73,17 @@ const draftFieldMaxLengths: Partial<Record<DraftField, number>> = {
   notes: 4000,
 };
 
-const commonUnits = ["MT", "Bags", "Pieces", "Kg", "Tons", "Meters", "Sq.ft", "Boxes", "Liters"];
+const commonUnits: ProcurementUnit[] = [
+  "MT", "Bags", "Pieces", "Kg", "Tons", "Meters", "Sq. ft", "Boxes", "Liters",
+];
+
+const defaultProcurementSettings: ProcurementSettings = {
+  default_delivery_location: null,
+  preferred_units: [],
+  specification_match_policy: "REVIEW_DIFFERENCES",
+  delivery_coverage_policy: "ALLOW_UNSPECIFIED",
+  updated_at: null,
+};
 
 function emptyDraft(): MaterialRequestDraft {
   return {
@@ -261,10 +246,10 @@ function errorMessage(error: unknown, fallback: string): string {
       REQUIRED_FIELDS_NOT_CONFIRMED: "Please review and confirm the material name, quantity, and unit of measure before saving.",
       REQUIRED_FIELDS_CANNOT_BE_EMPTY: "Material name, quantity, and unit of measure are required. Enter a value for each before saving.",
       MATERIAL_REQUEST_INVALID: "One or more request values are invalid. Check the material name, quantity, and unit.",
-      CONVERSATION_NOT_ACTIVE: "This conversation is already completed and saved. Check Saved Requests to view or edit the request, or start a new request.",
+      CONVERSATION_NOT_ACTIVE: "This conversation is already completed and saved. Open Requirement Details to view or edit the request, or start a new request.",
       CONVERSATION_STATE_INVALID: "This conversation could not be loaded due to an invalid format. Reload your Procurement workspace.",
-      CONVERSATION_ALREADY_SAVED: "A material request has already been saved from this conversation. Open Saved Requests to review it.",
-      REQUEST_SAVED_CONVERSATION_STALE: "The material request was saved, but the conversation could not be marked complete. Check Saved Requests.",
+      CONVERSATION_ALREADY_SAVED: "A material request has already been saved from this conversation. Open Requirement Details to review it.",
+      REQUEST_SAVED_CONVERSATION_STALE: "The material request was saved, but the conversation could not be marked complete. Check Requirement Details.",
       MATERIAL_REQUEST_SAVE_FAILED: "The server could not save this material request. Your details remain available; please retry shortly.",
       STALE_MATERIAL_REQUEST: "This saved request has changed on the server since it was loaded. Reload the latest version before editing; your edits remain in this form.",
       MATERIAL_REQUEST_NOT_FOUND: "This saved request is no longer available. Refresh the saved-request list.",
@@ -378,10 +363,13 @@ function validateRequestDraft(draft: MaterialRequestDraft): Record<string, strin
 }
 
 export default function ProcurementAgentPage() {
+  const router = useRouter();
   const [section, setSection] = useState<Section>("dashboard");
+  const [requirementView, setRequirementView] = useState<RequirementView>("create");
   const [creationMode, setCreationMode] = useState<CreationMode>("ai");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [workspaceSummaryAvailable, setWorkspaceSummaryAvailable] = useState(false);
   const [workspaceError, setWorkspaceError] = useState("");
   const [actionError, setActionError] = useState("");
   const [actionSuccess, setActionSuccess] = useState("");
@@ -390,6 +378,18 @@ export default function ProcurementAgentPage() {
   const [conversations, setConversations] = useState<ProcurementConversation[]>([]);
   const [conversation, setConversation] = useState<ProcurementConversation | null>(null);
   const [requests, setRequests] = useState<ProcurementMaterialRequest[]>([]);
+  const [discoveryRequestId, setDiscoveryRequestId] = useState("");
+  const [discoveryResults, setDiscoveryResults] = useState<ProcurementSupplierDiscovery | null>(null);
+  const [discoveryLoading, setDiscoveryLoading] = useState(false);
+  const [discoveryError, setDiscoveryError] = useState("");
+  const [procurementSettings, setProcurementSettings] = useState<ProcurementSettings>(
+    defaultProcurementSettings,
+  );
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const [settingsLoading, setSettingsLoading] = useState(true);
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [settingsError, setSettingsError] = useState("");
+  const [settingsSuccess, setSettingsSuccess] = useState("");
   const [draft, setDraft] = useState<MaterialRequestDraft>(emptyDraft);
   const [confirmedFields, setConfirmedFields] = useState<string[]>([]);
   const [manualConfirmed, setManualConfirmed] = useState(false);
@@ -404,6 +404,8 @@ export default function ProcurementAgentPage() {
 
   const idempotencyRef = useRef<{ conversationId: string; key: string } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const discoveryRunRef = useRef(0);
+  const settingsRequestRef = useRef<Promise<ProcurementSettings> | null>(null);
 
   const formErrors = validateRequestDraft(draft);
   const isFormReady = Object.keys(formErrors).length === 0;
@@ -425,11 +427,18 @@ export default function ProcurementAgentPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
+  const openRequirementView = (view: RequirementView) => {
+    setSection("material-details");
+    setRequirementView(view);
+    setActionError("");
+    setActionSuccess("");
+  };
+
   useEffect(() => {
-    if (creationMode === "ai" && section === "new-request") {
+    if (creationMode === "ai" && section === "material-details" && requirementView === "create") {
       scrollToBottom();
     }
-  }, [conversation?.history, busy, creationMode, section]);
+  }, [conversation?.history, busy, creationMode, requirementView, section]);
 
   const applyConversationState = (value: ProcurementConversation) => {
     setConversation(value);
@@ -487,6 +496,9 @@ export default function ProcurementAgentPage() {
       } else {
         errors.push(`Saved requests: ${errorMessage(requestsResult.reason, "Failed to load saved requests.")}`);
       }
+      setWorkspaceSummaryAvailable(
+        convosResult.status === "fulfilled" && requestsResult.status === "fulfilled",
+      );
 
       if (convosResult.status === "fulfilled") {
         const activeConvo = loadedConversations.find((item) => item.status === "ACTIVE");
@@ -524,6 +536,124 @@ export default function ProcurementAgentPage() {
     void loadWorkspace();
   }, []);
 
+  const loadProcurementSettings = async (): Promise<ProcurementSettings> => {
+    if (settingsRequestRef.current) return settingsRequestRef.current;
+    setSettingsLoading(true);
+    setSettingsError("");
+    const request = procurementApi.getSettings()
+      .then((value) => {
+        setProcurementSettings(value);
+        setSettingsLoaded(true);
+        return value;
+      })
+      .catch((error: unknown) => {
+        setSettingsError(errorMessage(error, "Unable to load Procurement settings."));
+        throw error;
+      })
+      .finally(() => {
+        settingsRequestRef.current = null;
+        setSettingsLoading(false);
+      });
+    settingsRequestRef.current = request;
+    return request;
+  };
+
+  useEffect(() => {
+    void loadProcurementSettings().catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    if (requests.length === 0) {
+      setDiscoveryRequestId("");
+      setDiscoveryResults(null);
+      return;
+    }
+    if (!requests.some((request) => request.id === discoveryRequestId)) {
+      setDiscoveryRequestId(requests[0].id);
+      setDiscoveryResults(null);
+    }
+  }, [discoveryRequestId, requests]);
+
+  const selectedDiscoveryRequest = requests.find(
+    (request) => request.id === discoveryRequestId,
+  );
+
+  useEffect(() => {
+    discoveryRunRef.current += 1;
+    setDiscoveryResults(null);
+    setDiscoveryError("");
+    setDiscoveryLoading(false);
+  }, [selectedDiscoveryRequest?.id, selectedDiscoveryRequest?.revision]);
+
+  const discoverSuppliers = async () => {
+    if (!discoveryRequestId) return;
+    const runId = ++discoveryRunRef.current;
+    setDiscoveryLoading(true);
+    setDiscoveryError("");
+    setDiscoveryResults(null);
+    try {
+      const result = await procurementApi.discoverSuppliers(discoveryRequestId);
+      if (discoveryRunRef.current === runId) {
+        setDiscoveryResults(result);
+      }
+    } catch (error) {
+      if (discoveryRunRef.current === runId) {
+        setDiscoveryError(errorMessage(error, "Supplier discovery could not be loaded. Please try again."));
+      }
+    } finally {
+      if (discoveryRunRef.current === runId) {
+        setDiscoveryLoading(false);
+      }
+    }
+  };
+
+  const enterManualRequirementMode = async () => {
+    let settings = procurementSettings;
+    if (!settingsLoaded) {
+      try {
+        settings = await loadProcurementSettings();
+      } catch {
+        settings = defaultProcurementSettings;
+        setActionError("Saved Procurement defaults could not be loaded. You can continue with the standard unit shortcuts.");
+      }
+    }
+    if (!conversation) {
+      setDraft((current) => ({
+        ...current,
+        delivery_location: current.delivery_location?.trim()
+          ? current.delivery_location
+          : settings.default_delivery_location,
+        unit: current.unit?.trim()
+          ? current.unit
+          : settings.preferred_units[0] || null,
+      }));
+    }
+    setCreationMode("manual");
+  };
+
+  const saveProcurementSettings = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!settingsLoaded || settingsSaving) return;
+    setSettingsSaving(true);
+    setSettingsError("");
+    setSettingsSuccess("");
+    const payload: ProcurementSettingsUpdate = {
+      default_delivery_location: procurementSettings.default_delivery_location?.trim() || null,
+      preferred_units: procurementSettings.preferred_units,
+      specification_match_policy: procurementSettings.specification_match_policy,
+      delivery_coverage_policy: procurementSettings.delivery_coverage_policy,
+    };
+    try {
+      const saved = await procurementApi.updateSettings(payload);
+      setProcurementSettings(saved);
+      setSettingsSuccess("Procurement settings saved.");
+    } catch (error) {
+      setSettingsError(errorMessage(error, "Unable to save Procurement settings."));
+    } finally {
+      setSettingsSaving(false);
+    }
+  };
+
   useEffect(() => {
     if (!isDraftDirty && !isRequestDirty && !message.trim()) return;
     const warnBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -541,6 +671,7 @@ export default function ProcurementAgentPage() {
 
   const startConversation = async () => {
     if (isDraftDirty && !confirmDiscardDraft()) return;
+    setCreationMode("ai");
     setBusy(true);
     setActionError("");
     setActionSuccess("");
@@ -552,7 +683,7 @@ export default function ProcurementAgentPage() {
       setManualConfirmed(false);
       setTouchedFields({});
       idempotencyRef.current = null;
-      setSection("new-request");
+      openRequirementView("create");
     } catch (error) {
       setActionError(errorMessage(error, "Unable to start a Procurement conversation."));
     } finally {
@@ -572,7 +703,7 @@ export default function ProcurementAgentPage() {
       setMessage("");
       setManualConfirmed(false);
       setTouchedFields({});
-      setSection("new-request");
+      openRequirementView("create");
     } catch (error) {
       setActionError(errorMessage(error, "Unable to restore this conversation."));
     } finally {
@@ -689,7 +820,7 @@ export default function ProcurementAgentPage() {
       saved,
       ...current.filter((item) => item.id !== saved.id),
     ]);
-    setSection("saved-requests");
+    openRequirementView("saved");
   };
 
   const recoverSavedRequest = async (
@@ -708,11 +839,11 @@ export default function ProcurementAgentPage() {
       if (requestFingerprint(saved) !== requestFingerprint(expectedConversation.draft)) {
         setActionSuccess("");
         setActionError(
-          `A saved request exists for this conversation, but its details differ from the draft. The saved request is open in Saved Requests; compare it before making another change.`,
+          `A saved request exists for this conversation, but its details differ from the draft. The saved request is open in Requirement Details; compare it before making another change.`,
         );
         return "mismatch";
       }
-      setActionSuccess(`“${saved.title || saved.item_name}” is saved and available in Saved Requests.`);
+      setActionSuccess(`“${saved.title || saved.item_name}” is saved and available in Requirement Details.`);
       setActionError("");
       return "saved";
     }
@@ -833,7 +964,7 @@ export default function ProcurementAgentPage() {
           if (recovery === "not-found") {
             setActionError(`${originalMessage} Recovery found no saved request; your current draft remains available.`);
           } else if (recovery === "mismatch") {
-            setActionError(`${originalMessage} Recovery found a saved request with different details; it is open in Saved Requests for review.`);
+            setActionError(`${originalMessage} Recovery found a saved request with different details; it is open in Requirement Details for review.`);
           }
         } catch (recoveryError) {
           setActionSuccess("");
@@ -862,7 +993,7 @@ export default function ProcurementAgentPage() {
         idempotencyRef.current = null;
         setActionSuccess(`“${draft.title || draft.item_name}” was saved successfully.`);
       } catch {
-        setActionSuccess("The request was saved and is available in Saved Requests.");
+        setActionSuccess("The request was saved and is available in Requirement Details.");
       }
     }
     setBusy(false);
@@ -1008,25 +1139,25 @@ export default function ProcurementAgentPage() {
   };
 
   const handleEditExtractedInManualForm = () => {
-    setCreationMode("manual");
+    void enterManualRequirementMode();
   };
 
   const onSectionChange = (id: string) => {
-    const destination: Record<string, Section> = {
+    const destinations: Record<string, Section> = {
       dashboard: "dashboard",
-      "new-request": "new-request",
-      "saved-requests": "saved-requests",
       details: "details",
       status: "status",
-      "companies-out": "companies-out",
-      "get-procurement": "new-request",
-      "material-details": "saved-requests",
-      companies: "companies",
+      "get-procurement": "get-procurement",
+      "material-details": "material-details",
       settings: "settings",
     };
-    const nextSection = destination[id];
-    if (!nextSection) return;
-    setSection(nextSection);
+    const destination = destinations[id];
+    if (!destination) return;
+    if (destination === "material-details") {
+      openRequirementView("create");
+      return;
+    }
+    setSection(destination);
     setActionError("");
     setActionSuccess("");
   };
@@ -1063,6 +1194,41 @@ export default function ProcurementAgentPage() {
   if (draft.quantity === null || draft.quantity === "" || Number(draft.quantity) <= 0) missingRequiredFields.push("quantity");
   if (!draft.unit?.trim()) missingRequiredFields.push("unit");
 
+  const requirementViewNavigation = (
+    <div
+      role="tablist"
+      aria-label="Material requirements"
+      className="inline-flex flex-wrap items-center gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800"
+    >
+      <button
+        type="button"
+        role="tab"
+        aria-selected={requirementView === "create"}
+        onClick={() => openRequirementView("create")}
+        className={`rounded-lg px-3.5 py-2 text-xs font-semibold transition ${
+          requirementView === "create"
+            ? "bg-white text-purple-700 shadow-sm dark:bg-slate-700 dark:text-purple-300"
+            : "text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white"
+        }`}
+      >
+        Create requirement
+      </button>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={requirementView === "saved"}
+        onClick={() => openRequirementView("saved")}
+        className={`rounded-lg px-3.5 py-2 text-xs font-semibold transition ${
+          requirementView === "saved"
+            ? "bg-white text-purple-700 shadow-sm dark:bg-slate-700 dark:text-purple-300"
+            : "text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white"
+        }`}
+      >
+        Saved requirements{requests.length > 0 ? ` (${requests.length})` : ""}
+      </button>
+    </div>
+  );
+
   return (
     <AgentLayout
       config={procurementConfig}
@@ -1070,89 +1236,38 @@ export default function ProcurementAgentPage() {
       setActiveTab={onSectionChange}
     >
       <div className="space-y-6">
-        {/* Page Header */}
-        <header className="space-y-2">
+        {section !== "dashboard" && (
+          <header className="space-y-2">
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
               <h1 className="font-anton text-2xl uppercase tracking-wide text-slate-900 dark:text-white sm:text-3xl">
-                {section === "dashboard"
-                  ? "Manage Procurement"
-                  : section === "saved-requests" || section === "material-details"
-                    ? "Saved Material Requests"
-                    : plannedSectionDetails[section]?.title || "Procurement Agent"}
+                {section === "details"
+                  ? "Procurement Details"
+                  : section === "status"
+                    ? "Current Status"
+                    : section === "get-procurement"
+                      ? "Get Procurement"
+                      : section === "settings"
+                        ? "Settings"
+                        : "Requirement Details"}
               </h1>
               <p className="mt-1 max-w-2xl text-xs sm:text-sm text-slate-600 dark:text-slate-300">
-                {section === "dashboard"
-                  ? "Manage your material requests and explore the Procurement Agent workspace."
-                  : section === "saved-requests" || section === "material-details"
-                    ? "Retrieve, review, edit, and remove saved material requests."
-                    : "Clarify, review, and save structured material requests for your projects."}
+                {section === "get-procurement"
+                  ? "Review active listings from verified suppliers against one of your saved material requirements. Discovery does not contact suppliers."
+                  : section === "material-details"
+                    ? requirementView === "create"
+                      ? "Create and confirm a material requirement with AI or the manual form."
+                      : "Find, review, edit, or delete material requirements you have saved."
+                    : section === "status"
+                      ? "See the saved-request and AI-conversation statuses that are actually recorded. Sourcing and fulfillment progress is not available yet."
+                      : section === "settings"
+                        ? "Manage employer-specific defaults and supported supplier-matching preferences."
+                        : "Review the material specifications and delivery details currently saved in your Procurement workspace."}
               </p>
             </div>
-
-            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-              <div
-                role="tablist"
-                aria-label="Procurement workspace views"
-                className="flex items-center gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800"
-              >
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={section === "dashboard"}
-                  onClick={() => onSectionChange("dashboard")}
-                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                    section === "dashboard"
-                      ? "bg-white text-purple-700 shadow-sm dark:bg-slate-700 dark:text-purple-300 font-bold"
-                      : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
-                  }`}
-                >
-                  Dashboard
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={section === "new-request"}
-                  onClick={() => onSectionChange("new-request")}
-                  className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition cursor-pointer ${
-                    section === "new-request"
-                      ? "bg-white text-purple-700 shadow-sm dark:bg-slate-700 dark:text-purple-300 font-bold"
-                      : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
-                  }`}
-                >
-                  <PlusCircle size={13} />
-                  New Request
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={section === "saved-requests"}
-                  onClick={() => onSectionChange("saved-requests")}
-                  className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition cursor-pointer ${
-                    section === "saved-requests"
-                      ? "bg-white text-purple-700 shadow-sm dark:bg-slate-700 dark:text-purple-300 font-bold"
-                      : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
-                  }`}
-                >
-                  <ClipboardList size={13} />
-                  Saved Requests {requests.length > 0 && `(${requests.length})`}
-                </button>
-              </div>
-
-              {(section === "new-request" || section === "get-procurement") && (
-                <button
-                  type="button"
-                  onClick={() => void startConversation()}
-                  disabled={busy || loading}
-                  className="inline-flex min-h-8 items-center gap-1.5 rounded-xl bg-purple-700 px-3.5 py-1.5 text-xs font-bold text-white transition hover:bg-purple-800 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer shadow-sm"
-                >
-                  <Plus size={14} />
-                  Start new request
-                </button>
-              )}
-            </div>
           </div>
-        </header>
+          </header>
+        )}
 
         {/* Workspace Load Error Banner */}
         {workspaceError && (
@@ -1215,112 +1330,59 @@ export default function ProcurementAgentPage() {
             <p>Loading your Procurement workspace…</p>
           </div>
         ) : section === "dashboard" ? (
-          <div className="space-y-6">
-            <section aria-label="Procurement actions" className="grid gap-4 lg:grid-cols-2">
-              <button
-                type="button"
-                onClick={() => onSectionChange("get-procurement")}
-                className="group flex min-h-40 items-center justify-between rounded-2xl border border-slate-200 border-t-4 border-t-indigo-500 bg-white p-5 text-left shadow-lg shadow-slate-900/5 transition hover:-translate-y-1 hover:shadow-xl dark:border-slate-800 dark:bg-slate-900 sm:p-6"
-              >
-                <span className="min-w-0 pr-4">
-                  <span className="font-mono text-xs font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">OPTION 02 · AVAILABLE</span>
-                  <span className="mt-1 block text-xl font-bold text-slate-900 dark:text-white">Get Procurement</span>
-                  <span className="mt-1 block text-sm text-slate-600 dark:text-slate-400">
-                    Create, review, and manage material requests for your projects.
-                  </span>
-                  <span className="mt-4 inline-flex items-center gap-1.5 text-sm font-bold text-indigo-700 dark:text-indigo-300">
-                    Open material requests <ArrowRight size={15} />
-                  </span>
-                </span>
-                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-indigo-100 bg-indigo-50 text-indigo-600 dark:border-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-400">
-                  <ShoppingCart size={24} />
-                </span>
-              </button>
-
-              <article className="flex min-h-40 items-center justify-between rounded-2xl border border-slate-200 border-t-4 border-t-purple-500 bg-white p-5 shadow-lg shadow-slate-900/5 dark:border-slate-800 dark:bg-slate-900 sm:p-6">
-                <div className="min-w-0 pr-4">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-mono text-xs font-bold uppercase tracking-wider text-purple-600 dark:text-purple-400">OPTION 01</span>
-                    <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
-                      Planned
-                    </span>
-                  </div>
-                  <h2 className="mt-1 text-xl font-bold text-slate-900 dark:text-white">Provide Procurement</h2>
-                  <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-                    Supplier discovery, catalogs, and company sourcing are not available yet.
-                  </p>
-                </div>
-                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-purple-100 bg-purple-50 text-purple-600 dark:border-purple-800 dark:bg-purple-950/60 dark:text-purple-400">
-                  <Package size={24} />
-                </span>
-              </article>
-            </section>
-
-            <section aria-label="Material request overview" className="grid gap-4 sm:grid-cols-2">
-              <button
-                type="button"
-                onClick={() => onSectionChange("saved-requests")}
-                className="rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-xs transition hover:border-purple-300 hover:bg-purple-50/40 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-purple-800 dark:hover:bg-purple-950/20"
-              >
-                <span className="flex items-center gap-2 text-sm font-semibold text-slate-600 dark:text-slate-300">
-                  <Boxes size={17} className="text-purple-600 dark:text-purple-400" />
-                  Saved material requests
-                </span>
-                <span className="mt-2 block text-3xl font-bold text-slate-900 dark:text-white">{requests.length}</span>
-                <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">Open the saved request list</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => onSectionChange("new-request")}
-                className="rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-xs transition hover:border-purple-300 hover:bg-purple-50/40 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-purple-800 dark:hover:bg-purple-950/20"
-              >
-                <span className="flex items-center gap-2 text-sm font-semibold text-slate-600 dark:text-slate-300">
-                  <Activity size={17} className="text-purple-600 dark:text-purple-400" />
-                  Active conversations
-                </span>
-                <span className="mt-2 block text-3xl font-bold text-slate-900 dark:text-white">
-                  {conversations.filter((item) => item.status === "ACTIVE").length}
-                </span>
-                <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">Continue an in-progress material request</span>
-              </button>
-            </section>
-
-            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900 sm:p-6">
-              <div className="mb-3">
-                <h2 className="text-base font-bold text-slate-900 dark:text-white">Search material requests</h2>
-                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                  Search is limited to your saved requests; supplier and purchase-order search is not available.
+          <div>
+            <AgentHeader
+              config={procurementConfig}
+              onOptionClick={(optionId) => {
+                if (optionId === "provide") {
+                  router.push(supplierWorkspacePath);
+                } else if (optionId === "get") {
+                  onSectionChange("get-procurement");
+                }
+              }}
+            />
+            <AgentSearchBar
+              title={procurementConfig.searchTitle}
+              subtitle={procurementConfig.searchSubtitle}
+              placeholder={procurementConfig.searchPlaceholder}
+              variant={procurementConfig.variant}
+            />
+            <p className="mx-auto mt-3 max-w-2xl text-center text-xs text-slate-500 dark:text-slate-400">
+              Supplier listings can be matched to a saved requirement in Get Procurement. Matching does not send the requirement or contact suppliers.
+            </p>
+            <div className="mx-auto mt-6 grid max-w-2xl gap-3 sm:grid-cols-2">
+              <div className="rounded-2xl border border-slate-200 bg-white/90 p-4 text-center shadow-sm dark:border-slate-800 dark:bg-slate-900/90">
+                <p className="text-2xl font-bold text-slate-900 dark:text-white">
+                  {workspaceSummaryAvailable ? requests.length : "—"}
                 </p>
+                <p className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">Saved material requirements</p>
               </div>
-              <form
-                className="flex flex-col gap-2 sm:flex-row"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  onSectionChange("saved-requests");
-                }}
-              >
-                <div className="relative flex-1">
-                  <Search size={16} className="pointer-events-none absolute left-3 top-3 text-slate-400" />
-                  <input
-                    type="search"
-                    value={savedRequestSearch}
-                    onChange={(event) => setSavedRequestSearch(event.target.value)}
-                    placeholder="Search by title, material, specification, or unit"
-                    aria-label="Search saved material requests"
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-sm text-slate-900 outline-none transition focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                  />
-                </div>
-                <button
-                  type="submit"
-                  className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-purple-700 px-4 py-2 text-sm font-bold text-white transition hover:bg-purple-800"
-                >
-                  <Search size={15} /> Search requests
-                </button>
-              </form>
-            </section>
+              <div className="rounded-2xl border border-slate-200 bg-white/90 p-4 text-center shadow-sm dark:border-slate-800 dark:bg-slate-900/90">
+                <p className="text-2xl font-bold text-slate-900 dark:text-white">
+                  {workspaceSummaryAvailable
+                    ? conversations.filter((item) => item.status === "ACTIVE").length
+                    : "—"}
+                </p>
+                <p className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">Active AI conversations</p>
+              </div>
+            </div>
           </div>
-        ) : section === "new-request" || section === "get-procurement" ? (
+        ) : section === "material-details" && requirementView === "create" ? (
           <div className="space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-xs dark:border-slate-800 dark:bg-slate-900">
+              {requirementViewNavigation}
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void startConversation()}
+                  disabled={busy || loading}
+                  className="inline-flex min-h-9 items-center gap-1.5 rounded-xl bg-purple-700 px-3.5 py-1.5 text-xs font-bold text-white transition hover:bg-purple-800 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <Plus size={14} />
+                  Start new AI request
+                </button>
+              </div>
+            </div>
             {/* Mode Switcher: AI Assistant vs Manual Form (matching Hiring Agent tabs) */}
             <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-3 dark:border-slate-800">
               <div
@@ -1346,7 +1408,7 @@ export default function ProcurementAgentPage() {
                   role="tab"
                   type="button"
                   aria-selected={creationMode === "manual"}
-                  onClick={() => setCreationMode("manual")}
+                  onClick={() => void enterManualRequirementMode()}
                   className={`flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-all cursor-pointer ${
                     creationMode === "manual"
                       ? "bg-white text-purple-700 shadow-sm dark:bg-slate-700 dark:text-purple-300 font-bold"
@@ -1409,9 +1471,15 @@ export default function ProcurementAgentPage() {
                           <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate">
                             AI Assistant
                           </h3>
-                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
-                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                            {conversation?.status === "ACTIVE" ? "Active" : "Completed"}
+                          <span className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
+                            conversation?.status === "ACTIVE"
+                              ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300"
+                              : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                          }`}>
+                            <span className={`h-1.5 w-1.5 rounded-full ${
+                              conversation?.status === "ACTIVE" ? "bg-emerald-500 animate-pulse" : "bg-slate-400"
+                            }`} />
+                            {!conversation ? "Not started" : conversation.status === "ACTIVE" ? "Active" : "Completed"}
                           </span>
                         </div>
                         <p className="text-[11px] text-slate-500 dark:text-slate-400 hidden sm:block truncate">
@@ -1420,18 +1488,6 @@ export default function ProcurementAgentPage() {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => void startConversation()}
-                        disabled={busy}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 hover:text-slate-900 active:scale-95 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 cursor-pointer"
-                        title="Start new conversation"
-                      >
-                        <RotateCcw size={12} />
-                        <span className="hidden sm:inline">New chat</span>
-                      </button>
-                    </div>
                   </div>
 
                   {/* Conflict alert if conversation state changed on server */}
@@ -1702,10 +1758,10 @@ export default function ProcurementAgentPage() {
                         </div>
                         <button
                           type="button"
-                          onClick={() => setSection("saved-requests")}
+                          onClick={() => openRequirementView("saved")}
                           className="font-bold underline text-emerald-800 dark:text-emerald-300 cursor-pointer"
                         >
-                          View in Saved Requests
+                          View saved requirement
                         </button>
                       </div>
                     ) : (
@@ -1843,7 +1899,9 @@ export default function ProcurementAgentPage() {
                             }`}
                           />
                           <div className="flex flex-wrap gap-1">
-                            {commonUnits.map((u) => (
+                            {[...procurementSettings.preferred_units, ...commonUnits.filter(
+                              (unit) => !procurementSettings.preferred_units.includes(unit),
+                            )].map((u) => (
                               <button
                                 key={u}
                                 type="button"
@@ -2011,9 +2069,15 @@ export default function ProcurementAgentPage() {
               </div>
             )}
           </div>
-        ) : section === "saved-requests" || section === "material-details" ? (
-          /* SECTION 2: Saved Requests */
-          <div className="grid gap-6 lg:grid-cols-[minmax(280px,0.8fr)_minmax(0,1.2fr)]">
+        ) : section === "material-details" && requirementView === "saved" ? (
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-xs dark:border-slate-800 dark:bg-slate-900">
+              {requirementViewNavigation}
+              <p className="px-1 text-xs text-slate-500 dark:text-slate-400">
+                Select a saved requirement to view or edit its details.
+              </p>
+            </div>
+            <div className="grid gap-6 lg:grid-cols-[minmax(280px,0.8fr)_minmax(0,1.2fr)]">
             {/* Left Column: Request List */}
             <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900">
               <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-3 dark:border-slate-800">
@@ -2040,19 +2104,8 @@ export default function ProcurementAgentPage() {
                   <Package size={24} className="mx-auto text-slate-400" />
                   <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">No saved requests yet</p>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Create your first material request using AI Assistant or Manual Form.
+                    Use Create requirement above to start with AI Assistant or the manual form.
                   </p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSection("new-request");
-                      void startConversation();
-                    }}
-                    className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-purple-700 px-3 py-1.5 text-xs font-bold text-white hover:bg-purple-800 cursor-pointer"
-                  >
-                    <Plus size={14} />
-                    New Request
-                  </button>
                 </div>
               ) : filteredRequests.length === 0 ? (
                 <p className="rounded-xl border border-dashed border-slate-200 p-5 text-center text-xs text-slate-500">
@@ -2237,34 +2290,531 @@ export default function ProcurementAgentPage() {
               )}
             </section>
           </div>
+          </div>
+        ) : section === "details" ? (
+          <section className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900 sm:p-6">
+            <div>
+              <h2 className="text-base font-bold text-slate-900 dark:text-white">Saved requirement specifications</h2>
+              <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+                These details come from your saved material requirements. Use Material Requirements to edit them.
+              </p>
+            </div>
+            {requests.length === 0 ? (
+              <p className="rounded-xl border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                No saved requirements are available.
+              </p>
+            ) : (
+              <ul className="space-y-3">
+                {requests.map((request) => (
+                  <li key={request.id} className="rounded-xl border border-slate-200 p-4 dark:border-slate-700">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-semibold text-slate-900 dark:text-white">
+                          {request.title || request.item_name}
+                        </p>
+                        <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+                          {request.item_name} · {request.quantity} {request.unit}
+                        </p>
+                      </div>
+                      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                        {request.status}
+                      </span>
+                    </div>
+                    <dl className="mt-3 grid gap-x-5 gap-y-2 border-t border-slate-100 pt-3 text-sm dark:border-slate-800 sm:grid-cols-2">
+                      {request.specification && (
+                        <div className="sm:col-span-2">
+                          <dt className="text-xs font-semibold text-slate-500 dark:text-slate-400">Specification</dt>
+                          <dd className="mt-0.5 whitespace-pre-wrap text-slate-700 dark:text-slate-300">{request.specification}</dd>
+                        </div>
+                      )}
+                      {request.required_by && (
+                        <div>
+                          <dt className="text-xs font-semibold text-slate-500 dark:text-slate-400">Required by</dt>
+                          <dd className="mt-0.5 text-slate-700 dark:text-slate-300">{request.required_by}</dd>
+                        </div>
+                      )}
+                      {request.delivery_location && (
+                        <div>
+                          <dt className="text-xs font-semibold text-slate-500 dark:text-slate-400">Delivery location</dt>
+                          <dd className="mt-0.5 text-slate-700 dark:text-slate-300">{request.delivery_location}</dd>
+                        </div>
+                      )}
+                      {request.additional_requirements.length > 0 && (
+                        <div className="sm:col-span-2">
+                          <dt className="text-xs font-semibold text-slate-500 dark:text-slate-400">Additional requirements</dt>
+                          <dd className="mt-0.5 text-slate-700 dark:text-slate-300">{request.additional_requirements.join(" · ")}</dd>
+                        </div>
+                      )}
+                      {request.notes && (
+                        <div className="sm:col-span-2">
+                          <dt className="text-xs font-semibold text-slate-500 dark:text-slate-400">Notes</dt>
+                          <dd className="mt-0.5 whitespace-pre-wrap text-slate-700 dark:text-slate-300">{request.notes}</dd>
+                        </div>
+                      )}
+                    </dl>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        ) : section === "status" ? (
+          <section className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900 sm:p-6">
+            <div>
+              <h2 className="text-base font-bold text-slate-900 dark:text-white">Recorded requirement status</h2>
+              <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+                These are the statuses currently persisted for saved requirements and AI conversations. Supplier matching, RFQs, quotations, selection, orders, and fulfillment tracking are not implemented, so no sourcing progress is shown.
+              </p>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="rounded-xl border border-slate-200 p-4 dark:border-slate-700">
+                <h3 className="font-semibold text-slate-900 dark:text-white">Saved requirements ({requests.length})</h3>
+                {requests.length ? (
+                  <ul className="mt-3 space-y-2">
+                    {requests.map((request) => (
+                      <li key={request.id} className="flex items-center justify-between gap-3 text-sm">
+                        <span className="truncate text-slate-700 dark:text-slate-300">{request.title || request.item_name}</span>
+                        <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                          {request.status}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">No saved requirements.</p>
+                )}
+              </div>
+              <div className="rounded-xl border border-slate-200 p-4 dark:border-slate-700">
+                <h3 className="font-semibold text-slate-900 dark:text-white">AI conversations ({conversations.length})</h3>
+                {conversations.length ? (
+                  <ul className="mt-3 space-y-2">
+                    {conversations.map((item) => (
+                      <li key={item.conversation_id} className="flex items-center justify-between gap-3 text-sm">
+                        <span className="truncate text-slate-700 dark:text-slate-300">
+                          {item.draft.item_name || item.history.find((entry) => entry.role === "user")?.content.slice(0, 40) || "Material requirement"}
+                        </span>
+                        <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                          {item.status}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">No AI conversations.</p>
+                )}
+              </div>
+            </div>
+          </section>
+        ) : section === "get-procurement" ? (
+          <section className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900 sm:p-6">
+            <div>
+              <h2 className="text-base font-bold text-slate-900 dark:text-white">Discover supplier offerings</h2>
+              <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+                Select a saved requirement to compare it with current listings from verified, active suppliers. This is a catalogue match only; it does not send the requirement or contact suppliers.
+              </p>
+            </div>
+
+            {requests.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-slate-300 p-6 text-center dark:border-slate-700">
+                <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+                  Save a material requirement before searching supplier listings.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => openRequirementView("create")}
+                  className="mt-3 inline-flex min-h-10 items-center rounded-xl bg-purple-700 px-4 py-2 text-sm font-bold text-white transition hover:bg-purple-800"
+                >
+                  Create a material requirement
+                </button>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                <label className="min-w-0 flex-1 text-sm font-semibold text-slate-700 dark:text-slate-200">
+                  Saved material requirement
+                  <select
+                    value={discoveryRequestId}
+                    onChange={(event) => {
+                      discoveryRunRef.current += 1;
+                      setDiscoveryRequestId(event.target.value);
+                      setDiscoveryResults(null);
+                      setDiscoveryError("");
+                    }}
+                    className="mt-1.5 min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-900 outline-none transition focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                  >
+                    {requests.map((request) => (
+                      <option key={request.id} value={request.id}>
+                        {request.title || request.item_name} — {request.quantity} {request.unit}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => void discoverSuppliers()}
+                  disabled={!discoveryRequestId || discoveryLoading}
+                  className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-purple-700 px-5 py-2 text-sm font-bold text-white transition hover:bg-purple-800 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {discoveryLoading && <LoaderCircle size={16} className="animate-spin" />}
+                  {discoveryLoading ? "Searching listings…" : "Find matching offerings"}
+                </button>
+              </div>
+            )}
+
+            {discoveryError && (
+              <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200">
+                {discoveryError}
+              </p>
+            )}
+
+            {discoveryResults && discoveryResults.request_id === discoveryRequestId && (
+              <div className="space-y-4">
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm dark:border-slate-700 dark:bg-slate-950">
+                  <p className="font-semibold text-slate-900 dark:text-white">
+                    Matching against {discoveryResults.item_name} · {discoveryResults.quantity} {discoveryResults.unit}
+                  </p>
+                  {discoveryResults.specification && (
+                    <p className="mt-1 text-slate-600 dark:text-slate-400">
+                      Specification: {discoveryResults.specification}
+                    </p>
+                  )}
+                  {discoveryResults.delivery_location && (
+                    <p className="mt-1 text-slate-600 dark:text-slate-400">
+                      Delivery location: {discoveryResults.delivery_location}
+                    </p>
+                  )}
+                  <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                    Indicative listing information is not a quote. No supplier has been contacted.
+                  </p>
+                </div>
+
+                {discoveryResults.search_limit_reached && (
+                  <p role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+                    The search reached its result limit. Additional matching listings may exist.
+                  </p>
+                )}
+
+                {discoveryResults.matches.length === 0 ? (
+                  <p className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-600 dark:border-slate-700 dark:text-slate-400">
+                    No eligible supplier offerings matched this saved requirement. Only active, verified supplier companies with available, non-archived offerings are considered.
+                  </p>
+                ) : (
+                  <ul className="space-y-3">
+                    {discoveryResults.matches.map((match) => (
+                      <li key={match.offering_id} className="rounded-xl border border-slate-200 p-4 dark:border-slate-700">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <p className="font-semibold text-slate-900 dark:text-white">{match.name}</p>
+                            <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">{match.supplier_name}</p>
+                          </div>
+                          <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
+                            Verified supplier
+                          </span>
+                        </div>
+
+                        <dl className="mt-3 grid gap-x-5 gap-y-3 border-t border-slate-100 pt-3 text-sm dark:border-slate-800 sm:grid-cols-2">
+                          <div>
+                            <dt className="text-xs font-semibold text-slate-500 dark:text-slate-400">Offering unit</dt>
+                            <dd className="mt-0.5 text-slate-800 dark:text-slate-200">{match.unit}</dd>
+                          </div>
+                          <div>
+                            <dt className="text-xs font-semibold text-slate-500 dark:text-slate-400">Indicative price</dt>
+                            <dd className="mt-0.5 text-slate-800 dark:text-slate-200">
+                              {match.indicative_price === null
+                                ? "Not listed"
+                                : `${match.indicative_price} ${match.currency_code} (unit: ${match.unit})`}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt className="text-xs font-semibold text-slate-500 dark:text-slate-400">Minimum order</dt>
+                            <dd className="mt-0.5 text-slate-800 dark:text-slate-200">
+                              {match.minimum_order_quantity === null
+                                ? "Not specified"
+                                : `${match.minimum_order_quantity} ${match.unit}`}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt className="text-xs font-semibold text-slate-500 dark:text-slate-400">Service coverage</dt>
+                            <dd className="mt-0.5 text-slate-800 dark:text-slate-200">
+                              {match.service_coverage.length
+                                ? match.service_coverage.join(", ")
+                                : "Not specified"}
+                            </dd>
+                          </div>
+                          <div className="sm:col-span-2">
+                            <dt className="text-xs font-semibold text-slate-500 dark:text-slate-400">Listed specification</dt>
+                            <dd className="mt-0.5 whitespace-pre-wrap text-slate-800 dark:text-slate-200">
+                              {match.specification || "Not listed"}
+                              {match.specification_match === "PARTIAL" && (
+                                <span className="mt-1 block text-xs text-amber-700 dark:text-amber-300">
+                                  Text overlaps the requested specification; confirm exact compatibility.
+                                </span>
+                              )}
+                              {match.specification_match === "NO_MATCH" && (
+                                <span className="mt-1 block text-xs text-amber-700 dark:text-amber-300">
+                                  Listed specification text differs from the request; confirm compatibility.
+                                </span>
+                              )}
+                            </dd>
+                          </div>
+                        </dl>
+                        <ul className="mt-3 space-y-1 text-xs text-slate-500 dark:text-slate-400">
+                          {match.match_reasons.map((reason) => <li key={reason}>• {reason}</li>)}
+                        </ul>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+          </section>
+        ) : section === "settings" ? (
+          <form
+            onSubmit={(event) => void saveProcurementSettings(event)}
+            className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900 sm:p-6"
+          >
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-bold text-slate-900 dark:text-white">Procurement preferences</h2>
+                <p className="mt-1 max-w-3xl text-sm text-slate-600 dark:text-slate-400">
+                  These preferences are saved to your employer account. Defaults apply only to new requirements; existing requirements remain unchanged.
+                </p>
+              </div>
+              {procurementSettings.updated_at && (
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Updated {new Date(procurementSettings.updated_at).toLocaleString()}
+                </p>
+              )}
+            </div>
+
+            {settingsLoading && (
+              <div role="status" className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300">
+                <LoaderCircle size={17} className="animate-spin text-purple-600" />
+                Loading your saved preferences…
+              </div>
+            )}
+            {settingsError && (
+              <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200">
+                <span>{settingsError}</span>
+                {!settingsLoaded && (
+                  <button
+                    type="button"
+                    onClick={() => void loadProcurementSettings().catch(() => undefined)}
+                    disabled={settingsLoading}
+                    className="font-semibold underline disabled:opacity-60"
+                  >
+                    Retry loading
+                  </button>
+                )}
+              </div>
+            )}
+            {settingsSuccess && (
+              <p role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-medium text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200">
+                {settingsSuccess}
+              </p>
+            )}
+
+            <div className="grid gap-4 lg:grid-cols-2">
+              <section className="rounded-xl border border-slate-200 p-4 dark:border-slate-700">
+                <div className="flex items-center gap-2">
+                  <MapPin size={18} className="text-purple-700 dark:text-purple-300" />
+                  <h3 className="font-semibold text-slate-900 dark:text-white">Default delivery location</h3>
+                </div>
+                <label htmlFor="procurement-default-location" className="mt-3 block text-sm font-medium text-slate-700 dark:text-slate-200">
+                  Location
+                </label>
+                <input
+                  id="procurement-default-location"
+                  type="text"
+                  maxLength={500}
+                  value={procurementSettings.default_delivery_location || ""}
+                  onChange={(event) => {
+                    setProcurementSettings((current) => ({
+                      ...current,
+                      default_delivery_location: event.target.value || null,
+                    }));
+                    setSettingsSuccess("");
+                  }}
+                  placeholder="e.g. Pune, Maharashtra"
+                  disabled={!settingsLoaded || settingsSaving}
+                  className="mt-1.5 min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                />
+                <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                  Used as a starting value for new requirements and their delivery-coverage matching. You can change it on each requirement.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => openRequirementView("create")}
+                  className="mt-3 inline-flex min-h-10 items-center rounded-lg border border-purple-200 px-3 py-2 text-sm font-semibold text-purple-800 transition hover:bg-purple-50 dark:border-purple-800 dark:text-purple-300 dark:hover:bg-purple-950/40"
+                >
+                  Open requirement creation
+                </button>
+              </section>
+
+              <section className="rounded-xl border border-slate-200 p-4 dark:border-slate-700">
+                <div className="flex items-center gap-2">
+                  <Package size={18} className="text-purple-700 dark:text-purple-300" />
+                  <h3 className="font-semibold text-slate-900 dark:text-white">Preferred purchasing units</h3>
+                </div>
+                <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
+                  Select units to prioritize in the requirement form. The first selected unit is the default for new requirements.
+                </p>
+                <fieldset className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  <legend className="sr-only">Preferred purchasing units</legend>
+                  {commonUnits.map((unit) => {
+                    const selected = procurementSettings.preferred_units.includes(unit);
+                    return (
+                      <label
+                        key={unit}
+                        className={`flex min-h-10 cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                          selected
+                            ? "border-purple-300 bg-purple-50 text-purple-800 dark:border-purple-700 dark:bg-purple-950/40 dark:text-purple-200"
+                            : "border-slate-200 text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                        } ${!settingsLoaded || settingsSaving ? "cursor-not-allowed opacity-60" : ""}`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selected}
+                          disabled={!settingsLoaded || settingsSaving}
+                          onChange={() => {
+                            setProcurementSettings((current) => ({
+                              ...current,
+                              preferred_units: selected
+                                ? current.preferred_units.filter((value) => value !== unit)
+                                : [...current.preferred_units, unit],
+                            }));
+                            setSettingsSuccess("");
+                          }}
+                          className="accent-purple-700"
+                        />
+                        {unit}
+                      </label>
+                    );
+                  })}
+                </fieldset>
+                <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                  No units selected means there is no default unit. All unit shortcuts remain available.
+                </p>
+              </section>
+
+              <section className="rounded-xl border border-slate-200 p-4 dark:border-slate-700">
+                <div className="flex items-center gap-2">
+                  <Search size={18} className="text-purple-700 dark:text-purple-300" />
+                  <h3 className="font-semibold text-slate-900 dark:text-white">Specification compatibility</h3>
+                </div>
+                <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
+                  Choose how listings with different or missing specification text appear.
+                </p>
+                <fieldset className="mt-3 space-y-2">
+                  <legend className="sr-only">Specification matching preference</legend>
+                  <label className="flex cursor-pointer gap-3 rounded-lg border border-slate-200 p-3 text-sm dark:border-slate-700">
+                    <input
+                      type="radio"
+                      name="specification-match-policy"
+                      value="REVIEW_DIFFERENCES"
+                      checked={procurementSettings.specification_match_policy === "REVIEW_DIFFERENCES"}
+                      disabled={!settingsLoaded || settingsSaving}
+                      onChange={() => {
+                        setProcurementSettings((current) => ({ ...current, specification_match_policy: "REVIEW_DIFFERENCES" }));
+                        setSettingsSuccess("");
+                      }}
+                      className="mt-0.5 accent-purple-700"
+                    />
+                    <span><strong className="block text-slate-800 dark:text-slate-200">Show for review</strong><span className="text-xs text-slate-500 dark:text-slate-400">Keep relevant listings and label partial, different, or unlisted specifications.</span></span>
+                  </label>
+                  <label className="flex cursor-pointer gap-3 rounded-lg border border-slate-200 p-3 text-sm dark:border-slate-700">
+                    <input
+                      type="radio"
+                      name="specification-match-policy"
+                      value="REQUIRE_OVERLAP"
+                      checked={procurementSettings.specification_match_policy === "REQUIRE_OVERLAP"}
+                      disabled={!settingsLoaded || settingsSaving}
+                      onChange={() => {
+                        setProcurementSettings((current) => ({ ...current, specification_match_policy: "REQUIRE_OVERLAP" }));
+                        setSettingsSuccess("");
+                      }}
+                      className="mt-0.5 accent-purple-700"
+                    />
+                    <span><strong className="block text-slate-800 dark:text-slate-200">Require specification overlap</strong><span className="text-xs text-slate-500 dark:text-slate-400">Hide listings when a requested specification is missing or has no matching text.</span></span>
+                  </label>
+                </fieldset>
+              </section>
+
+              <section className="rounded-xl border border-slate-200 p-4 dark:border-slate-700">
+                <div className="flex items-center gap-2">
+                  <MapPin size={18} className="text-purple-700 dark:text-purple-300" />
+                  <h3 className="font-semibold text-slate-900 dark:text-white">Delivery coverage</h3>
+                </div>
+                <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
+                  This affects listings only when a requirement has a delivery location.
+                </p>
+                <fieldset className="mt-3 space-y-2">
+                  <legend className="sr-only">Delivery coverage preference</legend>
+                  <label className="flex cursor-pointer gap-3 rounded-lg border border-slate-200 p-3 text-sm dark:border-slate-700">
+                    <input
+                      type="radio"
+                      name="delivery-coverage-policy"
+                      value="ALLOW_UNSPECIFIED"
+                      checked={procurementSettings.delivery_coverage_policy === "ALLOW_UNSPECIFIED"}
+                      disabled={!settingsLoaded || settingsSaving}
+                      onChange={() => {
+                        setProcurementSettings((current) => ({ ...current, delivery_coverage_policy: "ALLOW_UNSPECIFIED" }));
+                        setSettingsSuccess("");
+                      }}
+                      className="mt-0.5 accent-purple-700"
+                    />
+                    <span><strong className="block text-slate-800 dark:text-slate-200">Allow unlisted coverage</strong><span className="text-xs text-slate-500 dark:text-slate-400">Keep offerings without coverage information and mark delivery as unconfirmed.</span></span>
+                  </label>
+                  <label className="flex cursor-pointer gap-3 rounded-lg border border-slate-200 p-3 text-sm dark:border-slate-700">
+                    <input
+                      type="radio"
+                      name="delivery-coverage-policy"
+                      value="REQUIRE_MATCH"
+                      checked={procurementSettings.delivery_coverage_policy === "REQUIRE_MATCH"}
+                      disabled={!settingsLoaded || settingsSaving}
+                      onChange={() => {
+                        setProcurementSettings((current) => ({ ...current, delivery_coverage_policy: "REQUIRE_MATCH" }));
+                        setSettingsSuccess("");
+                      }}
+                      className="mt-0.5 accent-purple-700"
+                    />
+                    <span><strong className="block text-slate-800 dark:text-slate-200">Require listed coverage match</strong><span className="text-xs text-slate-500 dark:text-slate-400">Hide offerings without a listed match for the requirement location.</span></span>
+                  </label>
+                </fieldset>
+              </section>
+
+              <section className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-950 lg:col-span-2">
+                <h3 className="font-semibold text-slate-900 dark:text-white">Supplier availability and eligibility</h3>
+                <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-400">
+                  Discovery always requires an available, non-archived offering from an active, verified supplier company. This mandatory safety filter cannot be disabled by preferences.
+                </p>
+              </section>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4 dark:border-slate-800">
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Preference changes affect new requirements and future discovery searches only.
+              </p>
+              <button
+                type="submit"
+                disabled={!settingsLoaded || settingsLoading || settingsSaving}
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-purple-700 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-purple-800 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {settingsSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                {settingsSaving ? "Saving settings…" : "Save settings"}
+              </button>
+            </div>
+          </form>
         ) : (
           <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900 sm:p-8">
             <div className="mx-auto max-w-2xl text-center">
               <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-bold uppercase tracking-wide text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
-                Planned · Not connected to a backend
+                Buyer sourcing is not available yet
               </span>
               <h2 className="mt-4 text-xl font-bold text-slate-900 dark:text-white">
-                {plannedSectionDetails[section]?.title || "Procurement workspace"}
+                This Procurement view is not available
               </h2>
               <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-400">
-                {plannedSectionDetails[section]?.description || "This procurement workflow is not available yet."}
+                You can create and save material requirements, but they are not sent to suppliers. Supplier matching, RFQs, quotations, supplier selection, purchase orders, and fulfillment tracking are not implemented.
               </p>
-              <div className="mt-6 flex flex-wrap justify-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => onSectionChange("new-request")}
-                  className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-purple-700 px-4 py-2 text-sm font-bold text-white transition hover:bg-purple-800"
-                >
-                  <PlusCircle size={16} /> Create material request
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onSectionChange("saved-requests")}
-                  className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
-                >
-                  <ClipboardList size={16} /> Saved requests
-                </button>
-              </div>
             </div>
           </section>
         )}

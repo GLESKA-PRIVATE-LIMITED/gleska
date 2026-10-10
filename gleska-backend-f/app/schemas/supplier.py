@@ -26,6 +26,21 @@ class SupplierCompanyOperationalStatus(str, Enum):
     ARCHIVED = "ARCHIVED"
 
 
+class SupplierVerificationStatus(str, Enum):
+    NOT_SUBMITTED = "NOT_SUBMITTED"
+    PENDING_REVIEW = "PENDING_REVIEW"
+    VERIFIED = "VERIFIED"
+    REJECTED = "REJECTED"
+    SUSPENDED = "SUSPENDED"
+
+
+class SupplierVerificationDocumentType(str, Enum):
+    BUSINESS_REGISTRATION = "BUSINESS_REGISTRATION"
+    TAX_REGISTRATION = "TAX_REGISTRATION"
+    ADDRESS_PROOF = "ADDRESS_PROOF"
+    OTHER = "OTHER"
+
+
 class SupplierCompanyCreateRequest(BaseModel):
     name: str = Field(..., min_length=2, max_length=160)
     description: Optional[str] = Field(default=None, max_length=2000)
@@ -53,6 +68,10 @@ class SupplierCompanyResponse(BaseModel):
     description: Optional[str] = None
     website: Optional[str] = None
     operational_status: SupplierCompanyOperationalStatus
+    verification_status: SupplierVerificationStatus = SupplierVerificationStatus.NOT_SUBMITTED
+    verification_reason: Optional[str] = None
+    verification_submitted_at: Optional[datetime] = None
+    verification_reviewed_at: Optional[datetime] = None
     role: SupplierCompanyRole
     created_at: datetime
     updated_at: datetime
@@ -71,6 +90,22 @@ class SupplierCompanyMembershipResponse(BaseModel):
     status: SupplierMembershipStatus
     created_at: datetime
     expires_at: Optional[datetime] = None
+    verification_status: Optional[SupplierVerificationStatus] = None
+
+
+class SupplierVerificationDocumentResponse(BaseModel):
+    id: str
+    company_id: str
+    document_type: SupplierVerificationDocumentType
+    original_filename: str
+    mime_type: str
+    file_size_bytes: int
+    uploaded_at: datetime
+
+
+class SupplierVerificationDocumentUrlResponse(BaseModel):
+    url: str
+    expires_in: int
 
 
 class SupplierMemberResponse(BaseModel):

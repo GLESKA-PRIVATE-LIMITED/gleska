@@ -5,12 +5,15 @@ import type { FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { isAxiosError } from "axios";
-import { ArrowLeft, Building2, Loader2, Plus, RefreshCw, UserPlus, Users } from "lucide-react";
+import { Archive, Building2, CheckCircle2, FileText, Loader2, Menu, Package, Pencil, Plus, RefreshCw, UserPlus, Users, X } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import apiClient from "@/lib/api";
+import AgentSidebar from "@/components/agent-dashboard/AgentSidebar";
+import { procurementConfig } from "@/components/agents/procurement/procurementConfig";
 
 type CompanyRole = "OWNER" | "ADMIN" | "MEMBER";
 type MembershipStatus = "ACTIVE" | "PENDING" | "REVOKED";
+type VerificationStatus = "NOT_SUBMITTED" | "PENDING_REVIEW" | "VERIFIED" | "REJECTED" | "SUSPENDED";
 
 interface CompanyMembership {
   id: string;
@@ -19,6 +22,7 @@ interface CompanyMembership {
   role: CompanyRole;
   status: MembershipStatus;
   created_at: string;
+  verification_status?: VerificationStatus | null;
 }
 
 interface SupplierCompany {
@@ -27,6 +31,10 @@ interface SupplierCompany {
   description: string | null;
   website: string | null;
   operational_status: "ACTIVE" | "SUSPENDED" | "ARCHIVED";
+  verification_status: VerificationStatus;
+  verification_reason: string | null;
+  verification_submitted_at: string | null;
+  verification_reviewed_at: string | null;
   role: CompanyRole;
   created_at: string;
   updated_at: string;
@@ -37,6 +45,16 @@ interface SupplierCompany {
   registered_address?: string | null;
 }
 
+interface VerificationDocument {
+  id: string;
+  company_id: string;
+  document_type: string;
+  original_filename: string;
+  mime_type: string;
+  file_size_bytes: number;
+  uploaded_at: string;
+}
+
 interface SupplierMember {
   id: string;
   name: string | null;
@@ -45,6 +63,45 @@ interface SupplierMember {
   status: MembershipStatus;
   created_at: string;
 }
+
+interface SupplierMaterialOffering {
+  id: string;
+  company_id: string;
+  name: string;
+  specification: string | null;
+  unit: string;
+  indicative_price: string | null;
+  currency_code: string | null;
+  minimum_order_quantity: string | null;
+  is_available: boolean;
+  service_coverage: string[];
+  revision: number;
+  archived_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface SupplierOfferingDraft {
+  name: string;
+  specification: string;
+  unit: string;
+  indicative_price: string;
+  currency_code: string;
+  minimum_order_quantity: string;
+  is_available: boolean;
+  service_coverage: string;
+}
+
+const emptyOfferingDraft: SupplierOfferingDraft = {
+  name: "",
+  specification: "",
+  unit: "",
+  indicative_price: "",
+  currency_code: "",
+  minimum_order_quantity: "",
+  is_available: true,
+  service_coverage: "",
+};
 
 interface CompanyDraft {
   name: string;
@@ -69,8 +126,11 @@ const emptyCompanyDraft: CompanyDraft = {
 };
 
 function errorMessage(error: unknown): string {
-  if (isAxiosError<{ detail?: string }>(error)) {
+  if (isAxiosError<{ detail?: unknown }>(error)) {
     const detail = error.response?.data?.detail;
+    if (detail !== undefined && typeof detail !== "string") {
+      return "Check the submitted fields and try again.";
+    }
     const messages: Record<string, string> = {
       SUPPLIER_COMPANY_MEMBERSHIP_NOT_FOUND: "You do not have active membership in that supplier company.",
       SUPPLIER_COMPANY_NOT_OPERATIONAL: "This supplier company is suspended or archived. Contact an authorized GLESKA administrator.",
@@ -79,6 +139,24 @@ function errorMessage(error: unknown): string {
       SUPPLIER_MEMBER_MANAGEMENT_FORBIDDEN: "Your company role does not allow member management.",
       SUPPLIER_OWNER_REQUIRED: "Only the current company owner can transfer ownership.",
       SUPPLIER_MEMBERSHIP_CONFLICT: "That account already has a company invitation or membership.",
+      SUPPLIER_DOCUMENT_UPLOAD_NOT_ALLOWED: "Documents cannot be changed while this verification is under review.",
+      SUPPLIER_VERIFICATION_DOCUMENT_REQUIRED: "Upload at least one verification document before submitting.",
+      SUPPLIER_VERIFICATION_SUBMISSION_NOT_ALLOWED: "This verification cannot be submitted in its current status.",
+      SUPPLIER_VERIFICATION_SUBMISSION_FORBIDDEN: "Only an active company owner or admin can submit verification.",
+      SUPPLIER_VERIFICATION_MANAGEMENT_FORBIDDEN: "Only active company owners and admins can manage verification documents.",
+      SUPPLIER_DOCUMENT_SIZE_INVALID: "Choose a document no larger than 10 MB.",
+      SUPPLIER_DOCUMENT_TYPE_INVALID: "Upload a PDF, JPEG, or PNG whose extension matches its file type.",
+      SUPPLIER_DOCUMENT_CONTENT_INVALID: "The selected file does not match its declared file type.",
+      SUPPLIER_OFFERING_MANAGEMENT_FORBIDDEN: "Only active company owners and admins can change material offerings.",
+      SUPPLIER_OFFERING_WRITE_NOT_ALLOWED: "Only an active company owner or admin can change offerings for an operational company.",
+      SUPPLIER_OFFERING_INVALID: "Check the material offering fields, including price and currency, and try again.",
+      SUPPLIER_OFFERING_NOT_FOUND: "That material offering was not found in this company.",
+      SUPPLIER_OFFERING_ARCHIVED: "That material offering is archived and cannot be edited.",
+      SUPPLIER_OFFERING_STALE: "This material offering changed on the server. Refresh the list before editing it.",
+      SUPPLIER_OFFERING_LIST_FAILED: "Material offerings could not be loaded. Check that migration 074 is applied, then refresh.",
+      SUPPLIER_OFFERING_CREATE_FAILED: "The material offering could not be created.",
+      SUPPLIER_OFFERING_UPDATE_FAILED: "The material offering could not be updated.",
+      SUPPLIER_OFFERING_ARCHIVE_FAILED: "The material offering could not be archived.",
     };
     return (detail && messages[detail]) || detail || "The supplier workspace could not complete that request.";
   }
@@ -92,14 +170,28 @@ export default function SupplierWorkspacePage() {
   const [invitations, setInvitations] = useState<CompanyMembership[]>([]);
   const [company, setCompany] = useState<SupplierCompany | null>(null);
   const [members, setMembers] = useState<SupplierMember[]>([]);
+  const [verificationDocuments, setVerificationDocuments] = useState<VerificationDocument[]>([]);
+  const [offerings, setOfferings] = useState<SupplierMaterialOffering[]>([]);
+  const [offeringDraft, setOfferingDraft] = useState<SupplierOfferingDraft>(emptyOfferingDraft);
+  const [editingOfferingId, setEditingOfferingId] = useState("");
+  const [includeArchivedOfferings, setIncludeArchivedOfferings] = useState(true);
+  const [offeringsLoading, setOfferingsLoading] = useState(false);
+  const [offeringBusy, setOfferingBusy] = useState(false);
+  const [offeringError, setOfferingError] = useState("");
+  const [offeringSuccess, setOfferingSuccess] = useState("");
   const [selectedCompanyId, setSelectedCompanyId] = useState("");
   const [companyDraft, setCompanyDraft] = useState<CompanyDraft>(emptyCompanyDraft);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<"ADMIN" | "MEMBER">("MEMBER");
+  const [verificationDocumentType, setVerificationDocumentType] = useState("BUSINESS_REGISTRATION");
+  const [verificationFile, setVerificationFile] = useState<File | null>(null);
+  const [verificationBusy, setVerificationBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [busyMemberId, setBusyMemberId] = useState("");
   const [error, setError] = useState("");
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   const loadMemberships = useCallback(async () => {
     const [companyResponse, invitationResponse] = await Promise.all([
@@ -120,6 +212,9 @@ export default function SupplierWorkspacePage() {
     if (!companyId) {
       setCompany(null);
       setMembers([]);
+      setVerificationDocuments([]);
+      setOfferings([]);
+      setOfferingError("");
       return;
     }
     const [companyResponse, membersResponse] = await Promise.all([
@@ -128,6 +223,29 @@ export default function SupplierWorkspacePage() {
     ]);
     setCompany(companyResponse.data);
     setMembers(membersResponse.data);
+    if (companyResponse.data.role === "OWNER" || companyResponse.data.role === "ADMIN") {
+      const documentsResponse = await apiClient.get<VerificationDocument[]>(
+        `/api/v1/suppliers/companies/${companyId}/verification/documents`,
+      );
+      setVerificationDocuments(documentsResponse.data);
+    } else {
+      setVerificationDocuments([]);
+    }
+    setOfferingsLoading(true);
+    setOfferingError("");
+    try {
+      const includeArchived = companyResponse.data.role === "OWNER" || companyResponse.data.role === "ADMIN";
+      const offeringsResponse = await apiClient.get<SupplierMaterialOffering[]>(
+        `/api/v1/suppliers/companies/${companyId}/offerings`,
+        { params: { include_archived: includeArchived } },
+      );
+      setOfferings(offeringsResponse.data);
+    } catch (offeringLoadError) {
+      setOfferings([]);
+      setOfferingError(errorMessage(offeringLoadError));
+    } finally {
+      setOfferingsLoading(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -147,12 +265,24 @@ export default function SupplierWorkspacePage() {
     if (!user || !selectedCompanyId) {
       setCompany(null);
       setMembers([]);
+      setOfferings([]);
+      setOfferingsLoading(false);
+      setOfferingError("");
+      setOfferingSuccess("");
+      setEditingOfferingId("");
+      setOfferingDraft(emptyOfferingDraft);
       return;
     }
+    setOfferings([]);
+    setOfferingError("");
     setError("");
+    setOfferingSuccess("");
+    setEditingOfferingId("");
+    setOfferingDraft(emptyOfferingDraft);
     void loadCompany(selectedCompanyId).catch((loadError: unknown) => {
       setCompany(null);
       setMembers([]);
+      setOfferingsLoading(false);
       setError(errorMessage(loadError));
     });
   }, [loadCompany, selectedCompanyId, user]);
@@ -263,56 +393,259 @@ export default function SupplierWorkspacePage() {
     }
   };
 
+  const uploadVerificationDocument = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selectedCompanyId || !verificationFile) return;
+    setVerificationBusy(true);
+    setError("");
+    try {
+      const body = new FormData();
+      body.set("document_type", verificationDocumentType);
+      body.set("file", verificationFile);
+      await apiClient.post(
+        `/api/v1/suppliers/companies/${selectedCompanyId}/verification/documents`,
+        body,
+        { headers: { "Content-Type": "multipart/form-data" } },
+      );
+      setVerificationFile(null);
+      await loadCompany(selectedCompanyId);
+    } catch (uploadError) {
+      setError(errorMessage(uploadError));
+    } finally {
+      setVerificationBusy(false);
+    }
+  };
+
+  const submitVerification = async () => {
+    if (!selectedCompanyId) return;
+    setVerificationBusy(true);
+    setError("");
+    try {
+      await apiClient.post(`/api/v1/suppliers/companies/${selectedCompanyId}/verification/submit`);
+      await Promise.all([loadCompany(selectedCompanyId), loadMemberships()]);
+    } catch (submitError) {
+      setError(errorMessage(submitError));
+    } finally {
+      setVerificationBusy(false);
+    }
+  };
+
+  const viewVerificationDocument = async (document: VerificationDocument) => {
+    if (!selectedCompanyId) return;
+    setError("");
+    try {
+      const response = await apiClient.get<{ url: string }>(
+        `/api/v1/suppliers/companies/${selectedCompanyId}/verification/documents/${document.id}/url`,
+      );
+      window.open(response.data.url, "_blank", "noopener,noreferrer");
+    } catch (viewError) {
+      setError(errorMessage(viewError));
+    }
+  };
+
+  const saveOffering = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selectedCompanyId) return;
+    setOfferingBusy(true);
+    setOfferingError("");
+    setOfferingSuccess("");
+    const payload = {
+      name: offeringDraft.name,
+      specification: offeringDraft.specification || null,
+      unit: offeringDraft.unit,
+      indicative_price: offeringDraft.indicative_price || null,
+      currency_code: offeringDraft.indicative_price ? offeringDraft.currency_code : null,
+      minimum_order_quantity: offeringDraft.minimum_order_quantity || null,
+      is_available: offeringDraft.is_available,
+      service_coverage: offeringDraft.service_coverage
+        .split(/\r?\n/)
+        .map((area) => area.trim())
+        .filter(Boolean),
+    };
+    try {
+      let savedOffering: SupplierMaterialOffering;
+      if (editingOfferingId) {
+        const current = offerings.find((offering) => offering.id === editingOfferingId);
+        if (!current) {
+          setOfferingError("The selected material offering is no longer available. Refresh and try again.");
+          return;
+        }
+        const response = await apiClient.patch<SupplierMaterialOffering>(
+          `/api/v1/suppliers/companies/${selectedCompanyId}/offerings/${editingOfferingId}`,
+          { ...payload, expected_revision: current.revision },
+        );
+        savedOffering = response.data;
+        setOfferingSuccess("Material offering updated.");
+      } else {
+        const response = await apiClient.post<SupplierMaterialOffering>(
+          `/api/v1/suppliers/companies/${selectedCompanyId}/offerings`,
+          payload,
+        );
+        savedOffering = response.data;
+        setOfferingSuccess("Material offering created.");
+      }
+      setOfferings((current) => [
+        savedOffering,
+        ...current.filter((offering) => offering.id !== savedOffering.id),
+      ]);
+      setOfferingDraft(emptyOfferingDraft);
+      setEditingOfferingId("");
+    } catch (saveError) {
+      setOfferingError(errorMessage(saveError));
+    } finally {
+      setOfferingBusy(false);
+    }
+  };
+
+  const editOffering = (offering: SupplierMaterialOffering) => {
+    setEditingOfferingId(offering.id);
+    setOfferingDraft({
+      name: offering.name,
+      specification: offering.specification || "",
+      unit: offering.unit,
+      indicative_price: offering.indicative_price || "",
+      currency_code: offering.currency_code || "",
+      minimum_order_quantity: offering.minimum_order_quantity || "",
+      is_available: offering.is_available,
+      service_coverage: offering.service_coverage.join("\n"),
+    });
+    setOfferingError("");
+    setOfferingSuccess("");
+  };
+
+  const archiveOffering = async (offering: SupplierMaterialOffering) => {
+    if (!selectedCompanyId || !window.confirm(`Archive "${offering.name}"? It will no longer be available for future discovery.`)) {
+      return;
+    }
+    setOfferingBusy(true);
+    setOfferingError("");
+    setOfferingSuccess("");
+    try {
+      const response = await apiClient.delete<SupplierMaterialOffering>(
+        `/api/v1/suppliers/companies/${selectedCompanyId}/offerings/${offering.id}`,
+        { params: { expected_revision: offering.revision } },
+      );
+      setOfferings((current) => [
+        response.data,
+        ...current.filter((currentOffering) => currentOffering.id !== offering.id),
+      ]);
+      setOfferingSuccess(`"${offering.name}" was archived.`);
+      if (editingOfferingId === offering.id) {
+        setEditingOfferingId("");
+        setOfferingDraft(emptyOfferingDraft);
+      }
+    } catch (archiveError) {
+      setOfferingError(errorMessage(archiveError));
+    } finally {
+      setOfferingBusy(false);
+    }
+  };
+
+  const cancelOfferingEdit = () => {
+    setEditingOfferingId("");
+    setOfferingDraft(emptyOfferingDraft);
+    setOfferingError("");
+    setOfferingSuccess("");
+  };
+
   if (isLoading || loading || !user) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-slate-950">
+      <div className="flex min-h-screen items-center justify-center bg-[#eef1fb] dark:bg-slate-950">
         <div className="flex items-center gap-3 text-sm font-medium text-slate-600 dark:text-slate-300">
           <Loader2 className="animate-spin" size={20} />
           Loading supplier workspace...
         </div>
-      </main>
+      </div>
     );
   }
 
   const canManageMembers = company?.role === "OWNER" || company?.role === "ADMIN";
+  const visibleOfferings = offerings.filter(
+    (offering) => includeArchivedOfferings || !offering.archived_at,
+  );
 
   return (
-    <main className="min-h-screen bg-slate-50 px-4 py-8 text-slate-900 dark:bg-slate-950 dark:text-slate-100 sm:px-8">
-      <div className="mx-auto max-w-6xl space-y-7">
-        <header className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-start gap-3">
-            <div className="rounded-2xl bg-blue-100 p-3 text-blue-700 dark:bg-blue-950 dark:text-blue-300">
-              <Building2 size={24} />
+    <div className="min-h-screen bg-[#eef1fb] font-sans text-slate-900 dark:bg-slate-950 dark:text-slate-100 flex">
+      {/* Mobile Header Bar — mirrors AgentLayout */}
+      <div className="md:hidden fixed top-0 left-0 right-0 z-40 flex items-center justify-between border-b border-slate-200/80 bg-white/90 px-4 py-3 shadow-sm backdrop-blur-md dark:border-slate-800 dark:bg-slate-900/90">
+        <Link href="/" className="flex items-center gap-2">
+          <img src="/favicon.ico" alt="GO LESKA" className="h-7 w-7 rounded-md" />
+          <span className="font-[var(--font-anton)] text-lg uppercase tracking-wide text-slate-900 dark:text-white">
+            {procurementConfig.agentName}
+          </span>
+        </Link>
+        <button
+          onClick={() => setMobileSidebarOpen(!mobileSidebarOpen)}
+          className="rounded-lg p-2 text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+          aria-label="Toggle Navigation Menu"
+        >
+          {mobileSidebarOpen ? <X size={22} /> : <Menu size={22} />}
+        </button>
+      </div>
+
+      {/* Sidebar — same component as Procurement dashboard, active item = provide-procurement */}
+      <AgentSidebar
+        config={procurementConfig}
+        activeTab="provide-procurement"
+        setActiveTab={() => undefined}
+        isCollapsed={isCollapsed}
+        setIsCollapsed={setIsCollapsed}
+        mobileSidebarOpen={mobileSidebarOpen}
+        setMobileSidebarOpen={setMobileSidebarOpen}
+      />
+
+      {/* Main Content — same margin / padding as AgentLayout */}
+      <main
+        className={`flex-1 transition-all duration-300 min-h-screen pt-20 md:pt-8 p-6 sm:p-10 lg:p-12 ${
+          isCollapsed ? "md:ml-20" : "md:ml-64"
+        }`}
+      >
+        <div className="mx-auto max-w-5xl space-y-6">
+          {/* Page header */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300">
+                <Package size={18} />
+              </div>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-purple-600 dark:text-purple-400">
+                  Provide Procurement
+                </p>
+                <h1 className="text-lg font-bold leading-tight text-slate-900 dark:text-white">
+                  Supplier Workspace
+                </h1>
+              </div>
             </div>
-            <div>
-              <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700 dark:text-blue-300">
-                Supplier identity & membership
-              </p>
-              <h1 className="mt-1 text-2xl font-bold tracking-tight sm:text-3xl">Supplier Workspace</h1>
-              <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-                Signed in as {user.name}. Supplier access is separate from your {user.role.toLowerCase()} account permissions.
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            {user.role === "EMPLOYER" && (
-              <Link
-                href="/employer/dashboard"
-                className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold hover:bg-white dark:border-slate-700 dark:hover:bg-slate-900"
+            <div className="flex items-center gap-2">
+              {user.role === "EMPLOYER" && (
+                <Link
+                  href="/procurement"
+                  className="inline-flex min-h-9 items-center rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold transition hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
+                >
+                  Procurement Dashboard
+                </Link>
+              )}
+              {user.role === "EMPLOYER" && (
+                <Link
+                  href="/employer/dashboard"
+                  className="inline-flex min-h-9 items-center rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold transition hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
+                >
+                  Employer workspace
+                </Link>
+              )}
+              <button
+                type="button"
+                onClick={() => void refreshWorkspace()}
+                className="inline-flex min-h-9 items-center gap-2 rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold transition hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
               >
-                Employer workspace
-              </Link>
-            )}
-            <button
-              type="button"
-              onClick={() => void refreshWorkspace()}
-              className="inline-flex items-center gap-2 rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold hover:bg-white dark:border-slate-700 dark:hover:bg-slate-900"
-            >
-              <RefreshCw size={16} />
-              Refresh
-            </button>
+                <RefreshCw size={15} />
+                Refresh
+              </button>
+            </div>
           </div>
-        </header>
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            Signed in as <span className="font-medium text-slate-700 dark:text-slate-200">{user.name}</span>. Supplier access is separate from your {user.role.toLowerCase()} account permissions.
+          </p>
 
         {error && (
           <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/50 dark:text-red-200">
@@ -337,7 +670,7 @@ export default function SupplierWorkspacePage() {
                     type="button"
                     disabled={busyMemberId === invitation.id}
                     onClick={() => void acceptInvitation(invitation.id)}
-                    className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
+                    className="rounded-lg bg-purple-700 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-800 disabled:opacity-60"
                   >
                     {busyMemberId === invitation.id ? "Joining..." : "Accept invitation"}
                   </button>
@@ -379,7 +712,7 @@ export default function SupplierWorkspacePage() {
                   </span>
                 </div>
                 {company.description && <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">{company.description}</p>}
-                {company.website && <a className="mt-3 inline-block text-sm font-medium text-blue-700 underline dark:text-blue-300" href={company.website} target="_blank" rel="noreferrer">{company.website}</a>}
+                {company.website && <a className="mt-3 inline-block text-sm font-medium text-purple-700 underline dark:text-purple-300" href={company.website} target="_blank" rel="noreferrer">{company.website}</a>}
                 {canManageMembers && (
                   <div className="mt-5 border-t border-slate-200 pt-4 text-sm dark:border-slate-800">
                     <h3 className="font-semibold">Private company details</h3>
@@ -396,14 +729,94 @@ export default function SupplierWorkspacePage() {
                     </dl>
                   </div>
                 )}
-                <p className="mt-5 rounded-xl bg-blue-50 px-3 py-2 text-xs leading-relaxed text-blue-900 dark:bg-blue-950/50 dark:text-blue-200">
-                  Company creation does not mean the supplier is verified. Verification and supplier discovery are not part of this workspace phase.
+                <p className="mt-5 rounded-xl bg-purple-50 px-3 py-2 text-xs leading-relaxed text-purple-900 dark:bg-purple-950/50 dark:text-purple-200">
+                  Buyer discovery requires the company to be active and verified and the offering to be available. Discovery shows catalogue listings only; it does not start procurement transactions.
                 </p>
+              </article>
+              <article className="rounded-2xl border border-indigo-200 bg-white p-5 shadow-sm dark:border-indigo-900 dark:bg-slate-900">
+                <div className="flex items-center justify-between gap-3">
+                  <h2 className="font-semibold">Supplier verification</h2>
+                  <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-bold text-indigo-800 dark:bg-indigo-950 dark:text-indigo-200">
+                    {company.verification_status.replaceAll("_", " ")}
+                  </span>
+                </div>
+                <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+                  Submit company evidence for an authorized GLESKA administrator to review. This status is independent of operational status.
+                </p>
+                {company.verification_reason && (
+                  <div className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-950 dark:bg-amber-950/40 dark:text-amber-100">
+                    <strong>Review feedback:</strong> {company.verification_reason}
+                  </div>
+                )}
+                {company.verification_submitted_at && (
+                  <p className="mt-2 text-xs text-slate-500">
+                    Submitted {new Date(company.verification_submitted_at).toLocaleString()}
+                    {company.verification_reviewed_at && ` · Reviewed ${new Date(company.verification_reviewed_at).toLocaleString()}`}
+                  </p>
+                )}
+                {canManageMembers && (
+                  <>
+                    <form onSubmit={uploadVerificationDocument} className="mt-4 space-y-3 border-t border-slate-200 pt-4 dark:border-slate-800">
+                      <h3 className="text-sm font-semibold">Private verification documents</h3>
+                      <div className="grid gap-3 sm:grid-cols-[1fr_1.5fr_auto]">
+                        <select
+                          value={verificationDocumentType}
+                          onChange={(event) => setVerificationDocumentType(event.target.value)}
+                          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950"
+                        >
+                          <option value="BUSINESS_REGISTRATION">Business registration</option>
+                          <option value="TAX_REGISTRATION">Tax registration</option>
+                          <option value="ADDRESS_PROOF">Address proof</option>
+                          <option value="OTHER">Other</option>
+                        </select>
+                        <input
+                          type="file"
+                          required
+                          accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+                          onChange={(event) => setVerificationFile(event.target.files?.[0] || null)}
+                          className="min-w-0 rounded-lg border border-slate-300 px-2 py-1.5 text-xs dark:border-slate-700"
+                        />
+                        <button
+                          disabled={verificationBusy || !verificationFile || !["NOT_SUBMITTED", "REJECTED"].includes(company.verification_status)}
+                          className="inline-flex items-center justify-center gap-2 rounded-lg border border-indigo-300 px-3 py-2 text-sm font-semibold text-indigo-800 disabled:opacity-50 dark:border-indigo-800 dark:text-indigo-200"
+                        >
+                          <FileText size={15} /> Upload
+                        </button>
+                      </div>
+                      <p className="text-xs text-slate-500">PDF, JPEG, or PNG · maximum 10 MB. Files are private to company managers and GLESKA reviewers.</p>
+                    </form>
+                    <div className="mt-3 space-y-2">
+                      {verificationDocuments.map((document) => (
+                        <div key={document.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm dark:bg-slate-950">
+                          <span>{document.document_type.replaceAll("_", " ")} · {document.original_filename}</span>
+                          <button type="button" onClick={() => void viewVerificationDocument(document)} className="text-xs font-semibold text-indigo-700 underline dark:text-indigo-300">View private file</button>
+                        </div>
+                      ))}
+                    </div>
+                    {["NOT_SUBMITTED", "REJECTED"].includes(company.verification_status) && (
+                      <button
+                        type="button"
+                        disabled={verificationBusy || verificationDocuments.length === 0}
+                        onClick={() => void submitVerification()}
+                        className="mt-4 inline-flex items-center gap-2 rounded-xl bg-indigo-700 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+                      >
+                        <CheckCircle2 size={16} />
+                        {verificationBusy ? "Submitting…" : "Submit for review"}
+                      </button>
+                    )}
+                    {company.verification_status === "PENDING_REVIEW" && (
+                      <p className="mt-4 text-sm font-medium text-indigo-800 dark:text-indigo-200">Your documents are awaiting admin review.</p>
+                    )}
+                    {company.verification_status === "SUSPENDED" && (
+                      <p className="mt-4 text-sm font-medium text-red-700 dark:text-red-300">Verification is suspended. Contact GLESKA support for next steps.</p>
+                    )}
+                  </>
+                )}
               </article>
               {canManageMembers && (
                 <form onSubmit={inviteMember} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                   <div className="flex items-center gap-2">
-                    <UserPlus size={18} className="text-blue-600" />
+                    <UserPlus size={18} className="text-purple-600 dark:text-purple-400" />
                     <h2 className="font-semibold">Invite a company member</h2>
                   </div>
                   <p className="mt-1 text-xs text-slate-500">The invitee must sign in with this email and accept the invitation. Share the invitation informally; email delivery is not configured here.</p>
@@ -426,7 +839,7 @@ export default function SupplierWorkspacePage() {
                         <option value="ADMIN">Admin</option>
                       </select>
                     )}
-                    <button disabled={saving} className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">
+                    <button disabled={saving} className="rounded-xl bg-purple-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-purple-800 disabled:opacity-60">
                       {saving ? "Sending..." : "Create invitation"}
                     </button>
                   </div>
@@ -436,7 +849,7 @@ export default function SupplierWorkspacePage() {
 
             <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
               <div className="flex items-center gap-2">
-                <Users size={19} className="text-blue-600" />
+                <Users size={19} className="text-purple-600 dark:text-purple-400" />
                 <h2 className="text-lg font-bold">Company members</h2>
               </div>
               <p className="mt-1 text-sm text-slate-500">Active membership is required for company-scoped access.</p>
@@ -466,7 +879,7 @@ export default function SupplierWorkspacePage() {
                             type="button"
                             disabled={busyMemberId === member.id}
                             onClick={() => void transferOwnership(member)}
-                            className="rounded-lg border border-blue-300 px-2 py-1.5 text-xs font-semibold text-blue-700 disabled:opacity-50 dark:border-blue-800 dark:text-blue-300"
+                            className="rounded-lg border border-purple-300 px-2 py-1.5 text-xs font-semibold text-purple-700 disabled:opacity-50 dark:border-purple-800 dark:text-purple-300"
                           >
                             Transfer owner
                           </button>
@@ -501,8 +914,8 @@ export default function SupplierWorkspacePage() {
 
         {!company && companies.length === 0 && (
           <section className="grid gap-6 lg:grid-cols-[0.8fr_1.2fr]">
-            <div className="rounded-2xl border border-blue-200 bg-blue-50 p-6 dark:border-blue-900 dark:bg-blue-950/30">
-              <Building2 className="text-blue-700 dark:text-blue-300" size={24} />
+            <div className="rounded-2xl border border-purple-200 bg-purple-50 p-6 dark:border-purple-900 dark:bg-purple-950/30">
+              <Building2 className="text-purple-700 dark:text-purple-300" size={24} />
               <h2 className="mt-3 text-lg font-bold">Set up a supplier company</h2>
               <p className="mt-2 text-sm leading-relaxed text-slate-600 dark:text-slate-300">
                 Your existing GLESKA login is used. Creating a supplier company adds a separate supplier persona and does not change your worker, employer, or admin role.
@@ -554,11 +967,216 @@ export default function SupplierWorkspacePage() {
                   <textarea maxLength={1000} rows={2} value={companyDraft.registered_address} onChange={(event) => setCompanyDraft({ ...companyDraft, registered_address: event.target.value })} className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-950" />
                 </label>
               </div>
-              <button disabled={saving} className="mt-5 inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60">
+              <button disabled={saving} className="mt-5 inline-flex items-center gap-2 rounded-xl bg-purple-700 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-purple-800 disabled:opacity-60">
                 {saving ? <Loader2 className="animate-spin" size={17} /> : <Plus size={17} />}
                 Create supplier company
               </button>
             </form>
+          </section>
+        )}
+
+        {company && (
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-bold">Material offerings</h2>
+                <p className="mt-1 max-w-3xl text-sm text-slate-600 dark:text-slate-400">
+                  Manage the materials and service areas your company can provide. Available, non-archived offerings from active, verified companies may appear as catalogue matches in Get Procurement. Buyers are not contacting suppliers or requesting quotes through discovery.
+                </p>
+              </div>
+              {canManageMembers && (
+                <label className="flex items-center gap-2 text-xs font-medium text-slate-600 dark:text-slate-300">
+                  <input
+                    type="checkbox"
+                    checked={includeArchivedOfferings}
+                    onChange={(event) => setIncludeArchivedOfferings(event.target.checked)}
+                  />
+                  Show archived
+                </label>
+              )}
+            </div>
+
+            {offeringError && (
+              <div role="alert" className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/50 dark:text-red-200">
+                {offeringError}
+              </div>
+            )}
+            {offeringSuccess && (
+              <div role="status" className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200">
+                {offeringSuccess}
+              </div>
+            )}
+
+            {canManageMembers && (
+              <form onSubmit={saveOffering} className="mt-5 space-y-4 border-t border-slate-200 pt-5 dark:border-slate-800">
+                <h3 className="font-semibold">{editingOfferingId ? "Edit material offering" : "Add a material offering"}</h3>
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  <label>
+                    <span className="mb-1 block text-sm font-medium">Material name *</span>
+                    <input
+                      required
+                      minLength={2}
+                      maxLength={240}
+                      value={offeringDraft.name}
+                      onChange={(event) => setOfferingDraft({ ...offeringDraft, name: event.target.value })}
+                      className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-950"
+                    />
+                  </label>
+                  <label>
+                    <span className="mb-1 block text-sm font-medium">Unit *</span>
+                    <input
+                      required
+                      maxLength={48}
+                      value={offeringDraft.unit}
+                      onChange={(event) => setOfferingDraft({ ...offeringDraft, unit: event.target.value })}
+                      placeholder="e.g. MT, bags, pieces"
+                      className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-950"
+                    />
+                  </label>
+                  <label>
+                    <span className="mb-1 block text-sm font-medium">Minimum order quantity</span>
+                    <input
+                      type="number"
+                      min="0.0001"
+                      step="any"
+                      value={offeringDraft.minimum_order_quantity}
+                      onChange={(event) => setOfferingDraft({ ...offeringDraft, minimum_order_quantity: event.target.value })}
+                      className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-950"
+                    />
+                  </label>
+                  <label>
+                    <span className="mb-1 block text-sm font-medium">Indicative price (optional)</span>
+                    <input
+                      type="number"
+                      min="0.0001"
+                      step="any"
+                      value={offeringDraft.indicative_price}
+                      onChange={(event) => setOfferingDraft({ ...offeringDraft, indicative_price: event.target.value })}
+                      className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-950"
+                    />
+                  </label>
+                  <label>
+                    <span className="mb-1 block text-sm font-medium">Currency code {offeringDraft.indicative_price && "*"}</span>
+                    <input
+                      minLength={3}
+                      maxLength={3}
+                      required={Boolean(offeringDraft.indicative_price)}
+                      value={offeringDraft.currency_code}
+                      onChange={(event) => setOfferingDraft({ ...offeringDraft, currency_code: event.target.value.toUpperCase() })}
+                      placeholder="e.g. INR"
+                      className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm uppercase dark:border-slate-700 dark:bg-slate-950"
+                    />
+                  </label>
+                  <label className="flex items-center gap-2 self-end pb-3 text-sm font-medium">
+                    <input
+                      type="checkbox"
+                      checked={offeringDraft.is_available}
+                      onChange={(event) => setOfferingDraft({ ...offeringDraft, is_available: event.target.checked })}
+                    />
+                    Currently available
+                  </label>
+                  <label className="sm:col-span-2 lg:col-span-3">
+                    <span className="mb-1 block text-sm font-medium">Specifications / grade</span>
+                    <textarea
+                      maxLength={2000}
+                      rows={2}
+                      value={offeringDraft.specification}
+                      onChange={(event) => setOfferingDraft({ ...offeringDraft, specification: event.target.value })}
+                      className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-950"
+                    />
+                  </label>
+                  <label className="sm:col-span-2 lg:col-span-3">
+                    <span className="mb-1 block text-sm font-medium">Service coverage areas (one per line)</span>
+                    <textarea
+                      rows={3}
+                      value={offeringDraft.service_coverage}
+                      onChange={(event) => setOfferingDraft({ ...offeringDraft, service_coverage: event.target.value })}
+                      placeholder="Enter the cities, districts, or regions you serve."
+                      className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-950"
+                    />
+                  </label>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    disabled={offeringBusy || company.operational_status !== "ACTIVE"}
+                    className="inline-flex items-center gap-2 rounded-xl bg-purple-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-purple-800 disabled:opacity-60"
+                  >
+                    {offeringBusy ? <Loader2 className="animate-spin" size={16} /> : <Plus size={16} />}
+                    {editingOfferingId ? "Save offering" : "Add offering"}
+                  </button>
+                  {editingOfferingId && (
+                    <button
+                      type="button"
+                      onClick={cancelOfferingEdit}
+                      disabled={offeringBusy}
+                      className="inline-flex items-center gap-2 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold dark:border-slate-700"
+                    >
+                      <X size={16} /> Cancel edit
+                    </button>
+                  )}
+                </div>
+              </form>
+            )}
+
+            <div className="mt-5 border-t border-slate-200 pt-5 dark:border-slate-800">
+              {offeringsLoading ? (
+                <div className="flex items-center gap-2 py-5 text-sm text-slate-500"><Loader2 className="animate-spin" size={16} /> Loading offerings...</div>
+              ) : visibleOfferings.length === 0 ? (
+                <p className="py-5 text-sm text-slate-500">
+                  {offeringError
+                    ? "Offerings are unavailable until the required database migration is applied."
+                    : offerings.length > 0
+                      ? "No active offerings. Turn on “Show archived” to view archived records."
+                      : "No material offerings have been added yet."}
+                </p>
+              ) : (
+                <ul className="space-y-3">
+                  {visibleOfferings.map((offering) => (
+                      <li key={offering.id} className="rounded-xl border border-slate-200 p-4 dark:border-slate-700">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h3 className="font-semibold">{offering.name}</h3>
+                              <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${offering.archived_at ? "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300" : offering.is_available ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300" : "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"}`}>
+                                {offering.archived_at ? "Archived" : offering.is_available ? "Available" : "Unavailable"}
+                              </span>
+                            </div>
+                            {offering.specification && <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{offering.specification}</p>}
+                            <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+                              Unit: {offering.unit}
+                              {offering.minimum_order_quantity && ` · Minimum order: ${offering.minimum_order_quantity} ${offering.unit}`}
+                              {offering.indicative_price && ` · Indicative price: ${offering.currency_code} ${offering.indicative_price} / ${offering.unit}`}
+                            </p>
+                            {offering.service_coverage.length > 0 && (
+                              <p className="mt-1 text-xs text-slate-500">Coverage: {offering.service_coverage.join(", ")}</p>
+                            )}
+                          </div>
+                          {canManageMembers && !offering.archived_at && (
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                disabled={offeringBusy}
+                                onClick={() => editOffering(offering)}
+                                className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold dark:border-slate-700"
+                              >
+                                <Pencil size={13} /> Edit
+                              </button>
+                              <button
+                                type="button"
+                                disabled={offeringBusy}
+                                onClick={() => void archiveOffering(offering)}
+                                className="inline-flex items-center gap-1 rounded-lg border border-amber-300 px-3 py-1.5 text-xs font-semibold text-amber-800 dark:border-amber-800 dark:text-amber-200"
+                              >
+                                <Archive size={13} /> Archive
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </li>
+                    ))}
+                </ul>
+              )}
+            </div>
           </section>
         )}
 
@@ -568,14 +1186,14 @@ export default function SupplierWorkspacePage() {
           </div>
         )}
 
-        <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-5 text-xs text-slate-500 dark:border-slate-800">
-          <span>Supplier verification, catalogue, discovery, RFQs, quotations, and orders are not available in this phase.</span>
-          <Link href="/" className="inline-flex items-center gap-1 font-semibold hover:text-blue-700 dark:hover:text-blue-300">
-            <ArrowLeft size={14} />
-            Back to GLESKA
-          </Link>
-        </footer>
-      </div>
-    </main>
+          <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-5 text-xs text-slate-500 dark:border-slate-800">
+            <span>Supplier discovery, RFQs, quotations, and orders are not available in this phase.</span>
+            <Link href="/" className="font-semibold hover:text-purple-700 dark:hover:text-purple-300">
+              Back to GLESKA
+            </Link>
+          </footer>
+        </div>
+      </main>
+    </div>
   );
 }

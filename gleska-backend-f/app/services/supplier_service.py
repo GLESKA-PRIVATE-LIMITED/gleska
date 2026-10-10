@@ -65,6 +65,14 @@ class SupplierService:
             description=company.get("description"),
             website=company.get("website"),
             operational_status=company["operational_status"],
+            verification_status=company.get("verification_status", "NOT_SUBMITTED"),
+            verification_reason=(
+                company.get("verification_reason")
+                if role in {"OWNER", "ADMIN"}
+                else None
+            ),
+            verification_submitted_at=company.get("verification_submitted_at"),
+            verification_reviewed_at=company.get("verification_reviewed_at"),
             role=role,
             created_at=company["created_at"],
             updated_at=company["updated_at"],
@@ -118,22 +126,25 @@ class SupplierService:
                 return []
             companies = SupplierService._rows(
                 supabase.table("supplier_companies")
-                .select("id, name")
+                .select("id, name, verification_status")
                 .in_("id", company_ids)
                 .execute()
             )
-            names = {str(company["id"]): company["name"] for company in companies}
+            company_data = {str(company["id"]): company for company in companies}
             return [
                 SupplierCompanyMembershipResponse(
                     id=str(membership["id"]),
                     company_id=str(membership["company_id"]),
-                    company_name=names[str(membership["company_id"])],
+                    company_name=company_data[str(membership["company_id"])]["name"],
                     role=membership["role"],
                     status=membership["status"],
                     created_at=membership["created_at"],
+                    verification_status=company_data[str(membership["company_id"])].get(
+                        "verification_status", "NOT_SUBMITTED"
+                    ),
                 )
                 for membership in memberships
-                if str(membership["company_id"]) in names
+                if str(membership["company_id"]) in company_data
             ]
         except Exception as exc:
             SupplierService._raise_storage_error("company_list", exc)

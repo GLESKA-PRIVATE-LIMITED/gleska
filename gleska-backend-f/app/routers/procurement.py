@@ -14,6 +14,9 @@ from app.schemas.procurement import (
     ProcurementMaterialRequestPatch,
     ProcurementMaterialRequestResponse,
     ProcurementSaveRequest,
+    ProcurementSettings,
+    ProcurementSettingsUpdate,
+    ProcurementSupplierDiscoveryResponse,
 )
 from app.services.procurement_service import (
     ProcurementAgentError,
@@ -25,6 +28,39 @@ from app.services.procurement_service import (
 
 router = APIRouter(prefix="/procurement", tags=["procurement"])
 logger = logging.getLogger(__name__)
+
+
+@router.get("/settings", response_model=ProcurementSettings)
+async def get_procurement_settings(
+    user: UserResponse = Depends(require_employer),
+):
+    try:
+        return ProcurementService.get_procurement_settings(user)
+    except Exception as exc:
+        if isinstance(exc, ProcurementServiceError) or isinstance(exc, PermissionError):
+            _raise_procurement_error(exc)
+        logger.exception("Procurement settings load failed: user_id=%s", user.id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="PROCUREMENT_SETTINGS_LOAD_FAILED",
+        ) from exc
+
+
+@router.put("/settings", response_model=ProcurementSettings)
+async def update_procurement_settings(
+    request: ProcurementSettingsUpdate,
+    user: UserResponse = Depends(require_employer),
+):
+    try:
+        return ProcurementService.update_procurement_settings(user, request)
+    except Exception as exc:
+        if isinstance(exc, ProcurementServiceError) or isinstance(exc, PermissionError):
+            _raise_procurement_error(exc)
+        logger.exception("Procurement settings save failed: user_id=%s", user.id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="PROCUREMENT_SETTINGS_SAVE_FAILED",
+        ) from exc
 
 
 def _raise_procurement_error(exc: Exception) -> None:
@@ -231,6 +267,30 @@ async def get_procurement_request(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="PROCUREMENT_REQUEST_LOAD_FAILED",
+        ) from exc
+
+
+@router.get(
+    "/requests/{request_id}/matches",
+    response_model=ProcurementSupplierDiscoveryResponse,
+)
+async def discover_suppliers_for_request(
+    request_id: UUID,
+    user: UserResponse = Depends(require_employer),
+):
+    try:
+        return ProcurementService.discover_supplier_offerings(user, request_id)
+    except Exception as exc:
+        if isinstance(exc, ProcurementServiceError) or isinstance(exc, PermissionError):
+            _raise_procurement_error(exc)
+        logger.exception(
+            "Supplier discovery failed: user_id=%s request_id=%s",
+            user.id,
+            request_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="SUPPLIER_DISCOVERY_FAILED",
         ) from exc
 
 
