@@ -52,7 +52,7 @@ function getPostOnboardingRoute(employerType: string | undefined): string {
   const requestedNext = new URLSearchParams(window.location.search).get("next");
   return employerType !== "INDIVIDUAL" && requestedNext === "/procurement"
     ? "/procurement"
-    : "/employer/dashboard";
+    : "/";
 }
 
 type VerificationRecord = {
