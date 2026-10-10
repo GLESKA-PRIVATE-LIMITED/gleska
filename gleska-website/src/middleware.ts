@@ -17,6 +17,7 @@ const WORKER_PROTECTED_PREFIXES = [
 ];
 const EMPLOYER_PROTECTED_PREFIXES = ["/employer/dashboard", "/employer/onboarding", "/employer/company-profile", "/employer/director-profile", "/employer/security", "/employer/workers", "/employer/attendance", "/employer/subscription"];
 const ADMIN_PROTECTED_PREFIXES = ["/admin"];
+const SUPPLIER_PROTECTED_PREFIXES = ["/supplier"];
 
 export function middleware(request: NextRequest) {
   const { pathname, searchParams } = request.nextUrl;
@@ -32,11 +33,12 @@ export function middleware(request: NextRequest) {
   const isWorkerProtected = WORKER_PROTECTED_PREFIXES.some((prefix) => pathname.startsWith(prefix));
   const isEmployerProtected = EMPLOYER_PROTECTED_PREFIXES.some((prefix) => pathname.startsWith(prefix));
   const isAdminProtected = ADMIN_PROTECTED_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+  const isSupplierProtected = SUPPLIER_PROTECTED_PREFIXES.some((prefix) => pathname.startsWith(prefix));
 
   // Exclude /admin/login from protection (it's a public login page for unauthenticated users)
   const isAdminLoginPage = pathname === "/admin/login";
 
-  if (!isWorkerProtected && !isEmployerProtected && !isAdminProtected) {
+  if (!isWorkerProtected && !isEmployerProtected && !isAdminProtected && !isSupplierProtected) {
     return NextResponse.next();
   }
 
@@ -97,6 +99,6 @@ export const config = {
     "/financial/:path*",
     "/tender-tracking/:path*",
     "/admin/:path*",
+    "/supplier/:path*",
   ],
 };
-

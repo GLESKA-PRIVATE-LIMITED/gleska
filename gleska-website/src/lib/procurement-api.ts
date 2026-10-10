@@ -39,9 +39,75 @@ export interface ProcurementMaterialRequest extends MaterialRequestDraft {
   updated_at: string;
 }
 
+export interface ProcurementSupplierOfferingMatch {
+  supplier_company_id: string;
+  supplier_name: string;
+  offering_id: string;
+  name: string;
+  specification: string | null;
+  unit: string;
+  indicative_price: string | number | null;
+  currency_code: string | null;
+  minimum_order_quantity: string | number | null;
+  service_coverage: string[];
+  specification_match: "MATCHED" | "PARTIAL" | "NO_MATCH" | "NOT_LISTED" | "NOT_REQUESTED";
+  coverage_match: "MATCHED" | "NOT_SPECIFIED" | "NOT_REQUESTED";
+  minimum_order_compatible: boolean | null;
+  match_reasons: string[];
+}
+
+export interface ProcurementSupplierDiscovery {
+  request_id: string;
+  item_name: string;
+  specification: string | null;
+  quantity: string | number;
+  unit: string;
+  delivery_location: string | null;
+  matches: ProcurementSupplierOfferingMatch[];
+  search_limit_reached: boolean;
+}
+
+export type ProcurementUnit =
+  | "MT"
+  | "Bags"
+  | "Pieces"
+  | "Kg"
+  | "Tons"
+  | "Meters"
+  | "Sq. ft"
+  | "Boxes"
+  | "Liters";
+
+export interface ProcurementSettings {
+  default_delivery_location: string | null;
+  preferred_units: ProcurementUnit[];
+  specification_match_policy: "REVIEW_DIFFERENCES" | "REQUIRE_OVERLAP";
+  delivery_coverage_policy: "ALLOW_UNSPECIFIED" | "REQUIRE_MATCH";
+  updated_at: string | null;
+}
+
+export type ProcurementSettingsUpdate = Omit<ProcurementSettings, "updated_at">;
+
 const basePath = "/api/v1/procurement";
 
 export const procurementApi = {
+  async getSettings() {
+    const response = await apiClient.get<ProcurementSettings>(
+      `${basePath}/settings`,
+      { withCredentials: true },
+    );
+    return response.data;
+  },
+
+  async updateSettings(settings: ProcurementSettingsUpdate) {
+    const response = await apiClient.put<ProcurementSettings>(
+      `${basePath}/settings`,
+      settings,
+      { withCredentials: true },
+    );
+    return response.data;
+  },
+
   async listConversations() {
     const response = await apiClient.get<ProcurementConversation[]>(
       `${basePath}/conversations`,
@@ -114,6 +180,14 @@ export const procurementApi = {
   async getRequest(id: string) {
     const response = await apiClient.get<ProcurementMaterialRequest>(
       `${basePath}/requests/${encodeURIComponent(id)}`,
+      { withCredentials: true },
+    );
+    return response.data;
+  },
+
+  async discoverSuppliers(requestId: string) {
+    const response = await apiClient.get<ProcurementSupplierDiscovery>(
+      `${basePath}/requests/${encodeURIComponent(requestId)}/matches`,
       { withCredentials: true },
     );
     return response.data;

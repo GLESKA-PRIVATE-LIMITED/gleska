@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timezone
-from typing import Any
+from decimal import Decimal
+from typing import Any, Literal
 from uuid import UUID, uuid4
 
 from pydantic import ValidationError
@@ -25,11 +27,43 @@ from app.schemas.procurement import (
     ProcurementMaterialRequestPatch,
     ProcurementMaterialRequestResponse,
     ProcurementSaveRequest,
+    ProcurementSettings,
+    ProcurementSettingsUpdate,
+    ProcurementSupplierDiscoveryResponse,
+    ProcurementSupplierOfferingMatch,
 )
 
 logger = logging.getLogger(__name__)
 HISTORY_LIMIT = 80
 LIST_LIMIT = 100
+DISCOVERY_SCAN_LIMIT = 1000
+DISCOVERY_RESULT_LIMIT = 100
+DISCOVERY_COMPANY_BATCH_SIZE = 100
+
+
+def _search_tokens(value: str | None) -> set[str]:
+    return set(re.findall(r"\w+", value.casefold())) if value else set()
+
+
+def _coverage_matches(delivery_location: str, service_coverage: list[str]) -> bool:
+    location_parts = [
+        tokens
+        for part in re.split(r"[,;]", delivery_location)
+        if (tokens := _search_tokens(part))
+    ]
+    coverage_parts = [
+        tokens
+        for area in service_coverage
+        for part in re.split(r"[,;]", area)
+        if (tokens := _search_tokens(part))
+    ]
+    return any(
+        location_part == coverage_part
+        or location_part <= coverage_part
+        or coverage_part <= location_part
+        for location_part in location_parts
+        for coverage_part in coverage_parts
+    )
 
 
 class ProcurementServiceError(ValueError):
@@ -78,6 +112,84 @@ class ProcurementService:
         if employer.get("onboarding_status") != "COMPLETED":
             raise PermissionError("EMPLOYER_ONBOARDING_INCOMPLETE")
         return str(employer["id"])
+
+    @staticmethod
+    def _procurement_settings(user: UserResponse) -> ProcurementSettings:
+        try:
+            response = (
+                supabase.table("employer_preferences")
+                .select(
+                    "procurement_default_delivery_location, procurement_preferred_units, "
+                    "procurement_specification_match_policy, "
+                    "procurement_delivery_coverage_policy, updated_at"
+                )
+                .eq("user_id", str(user.id))
+                .maybe_single()
+                .execute()
+            )
+        except Exception as exc:
+            logger.exception(
+                "Procurement settings lookup failed: user_id=%s",
+                user.id,
+            )
+            raise ProcurementServiceError("PROCUREMENT_SETTINGS_LOAD_FAILED") from exc
+
+        row = ProcurementService._row(response)
+        if not row:
+            return ProcurementSettings()
+        try:
+            return ProcurementSettings(
+                default_delivery_location=row.get("procurement_default_delivery_location"),
+                preferred_units=row.get("procurement_preferred_units") or [],
+                specification_match_policy=row.get("procurement_specification_match_policy")
+                or "REVIEW_DIFFERENCES",
+                delivery_coverage_policy=row.get("procurement_delivery_coverage_policy")
+                or "ALLOW_UNSPECIFIED",
+                updated_at=row.get("updated_at"),
+            )
+        except ValidationError as exc:
+            logger.exception(
+                "Procurement settings row is invalid: user_id=%s",
+                user.id,
+            )
+            raise ProcurementServiceError("PROCUREMENT_SETTINGS_INVALID") from exc
+
+    @classmethod
+    def get_procurement_settings(cls, user: UserResponse) -> ProcurementSettings:
+        cls._employer_id(user)
+        return cls._procurement_settings(user)
+
+    @classmethod
+    def update_procurement_settings(
+        cls,
+        user: UserResponse,
+        settings: ProcurementSettingsUpdate,
+    ) -> ProcurementSettings:
+        cls._employer_id(user)
+        payload = settings.model_dump(mode="json")
+        try:
+            response = (
+                supabase.table("employer_preferences")
+                .upsert(
+                    {
+                        "user_id": str(user.id),
+                        "procurement_default_delivery_location": payload["default_delivery_location"],
+                        "procurement_preferred_units": payload["preferred_units"],
+                        "procurement_specification_match_policy": payload["specification_match_policy"],
+                        "procurement_delivery_coverage_policy": payload["delivery_coverage_policy"],
+                    },
+                    on_conflict="user_id",
+                )
+                .execute()
+            )
+        except Exception as exc:
+            logger.exception(
+                "Procurement settings update failed: user_id=%s",
+                user.id,
+            )
+            raise ProcurementServiceError("PROCUREMENT_SETTINGS_SAVE_FAILED") from exc
+
+        return cls._procurement_settings(user)
 
     @staticmethod
     def _history(value: Any) -> list[ProcurementConversationMessage]:
@@ -168,7 +280,11 @@ class ProcurementService:
     ) -> ProcurementConversationCreateResponse:
         employer_id = cls._employer_id(user)
         now = datetime.now(timezone.utc).isoformat()
-        initial_draft = MaterialRequestDraft()
+        settings = cls._procurement_settings(user)
+        initial_draft = MaterialRequestDraft(
+            delivery_location=settings.default_delivery_location,
+            unit=settings.preferred_units[0] if settings.preferred_units else None,
+        )
         response = (
             supabase.table("procurement_conversations")
             .insert({
@@ -395,6 +511,221 @@ class ProcurementService:
         employer_id = cls._employer_id(user)
         return cls._material_request_response(
             cls._owned_request(request_id, user, employer_id)
+        )
+
+    @classmethod
+    def discover_supplier_offerings(
+        cls,
+        user: UserResponse,
+        request_id: UUID,
+    ) -> ProcurementSupplierDiscoveryResponse:
+        employer_id = cls._employer_id(user)
+        request = cls._owned_request(request_id, user, employer_id)
+        settings = cls._procurement_settings(user)
+
+        try:
+            offerings_response = (
+                supabase.table("supplier_material_offerings")
+                .select(
+                    "id, company_id, name, specification, unit, indicative_price, "
+                    "currency_code, minimum_order_quantity, service_coverage, updated_at"
+                )
+                .eq("is_available", True)
+                .is_("archived_at", "null")
+                .order("updated_at", desc=True)
+                .limit(DISCOVERY_SCAN_LIMIT)
+                .execute()
+            )
+            offering_rows = cls._rows(offerings_response)
+            company_ids = list(dict.fromkeys(
+                str(row["company_id"]) for row in offering_rows if row.get("company_id")
+            ))
+
+            eligible_companies: dict[str, str] = {}
+            for start in range(0, len(company_ids), DISCOVERY_COMPANY_BATCH_SIZE):
+                company_batch = company_ids[start:start + DISCOVERY_COMPANY_BATCH_SIZE]
+                companies_response = (
+                    supabase.table("supplier_companies")
+                    .select("id, name")
+                    .in_("id", company_batch)
+                    .eq("operational_status", "ACTIVE")
+                    .eq("verification_status", "VERIFIED")
+                    .execute()
+                )
+                eligible_companies.update({
+                    str(company["id"]): str(company["name"])
+                    for company in cls._rows(companies_response)
+                })
+        except Exception as exc:
+            logger.exception(
+                "Supplier discovery query failed: user_id=%s request_id=%s",
+                user.id,
+                request_id,
+            )
+            raise ProcurementServiceError("SUPPLIER_DISCOVERY_FAILED") from exc
+
+        requested_item_tokens = _search_tokens(str(request.get("item_name") or ""))
+        requested_spec_tokens = _search_tokens(request.get("specification"))
+        requested_listing_tokens = requested_item_tokens | requested_spec_tokens
+        requested_quantity = Decimal(str(request["quantity"]))
+        requested_unit = str(request["unit"]).strip().casefold()
+        delivery_location = request.get("delivery_location")
+        ranked_matches: list[
+            tuple[float, float, float, int, ProcurementSupplierOfferingMatch]
+        ] = []
+
+        for offering in offering_rows:
+            company_id = str(offering.get("company_id") or "")
+            supplier_name = eligible_companies.get(company_id)
+            if not supplier_name:
+                continue
+
+            offering_tokens = _search_tokens(str(offering.get("name") or ""))
+            offering_spec_tokens = _search_tokens(offering.get("specification"))
+            offering_listing_tokens = offering_tokens | offering_spec_tokens
+            material_overlap = (
+                len(requested_item_tokens & offering_tokens)
+                / max(len(requested_item_tokens), 1)
+            )
+            listing_overlap = (
+                len(requested_listing_tokens & offering_listing_tokens)
+                / max(len(requested_listing_tokens), 1)
+            )
+            if material_overlap < 0.5 and listing_overlap < 0.5:
+                continue
+
+            coverage = offering.get("service_coverage") or []
+            coverage_match = False
+            if delivery_location and coverage:
+                coverage_match = _coverage_matches(str(delivery_location), coverage)
+                if not coverage_match:
+                    continue
+
+            offering_unit = str(offering.get("unit") or "").strip().casefold()
+            units_match = offering_unit == requested_unit
+            minimum_order = offering.get("minimum_order_quantity")
+            minimum_order_compatible: bool | None = None
+            if minimum_order is not None and units_match:
+                minimum_order_compatible = (
+                    requested_quantity >= Decimal(str(minimum_order))
+                )
+                if not minimum_order_compatible:
+                    continue
+
+            spec_overlap = (
+                len(requested_spec_tokens & offering_spec_tokens)
+                / max(len(requested_spec_tokens), 1)
+                if requested_spec_tokens and offering_spec_tokens
+                else 0.0
+            )
+            specification_match: Literal[
+                "MATCHED", "PARTIAL", "NO_MATCH", "NOT_LISTED", "NOT_REQUESTED"
+            ]
+            if not requested_spec_tokens:
+                specification_match = "NOT_REQUESTED"
+            elif not offering_spec_tokens:
+                specification_match = "NOT_LISTED"
+            elif spec_overlap == 1:
+                specification_match = "MATCHED"
+            elif spec_overlap > 0:
+                specification_match = "PARTIAL"
+            else:
+                specification_match = "NO_MATCH"
+            if (
+                requested_spec_tokens
+                and settings.specification_match_policy == "REQUIRE_OVERLAP"
+                and specification_match not in {"MATCHED", "PARTIAL"}
+            ):
+                continue
+
+            coverage_match_status: Literal[
+                "MATCHED", "NOT_SPECIFIED", "NOT_REQUESTED"
+            ]
+            if not delivery_location:
+                coverage_match_status = "NOT_REQUESTED"
+            elif not coverage:
+                coverage_match_status = "NOT_SPECIFIED"
+            else:
+                coverage_match_status = "MATCHED"
+            if (
+                settings.delivery_coverage_policy == "REQUIRE_MATCH"
+                and delivery_location
+                and coverage_match_status != "MATCHED"
+            ):
+                continue
+
+            reasons = ["Material name text matches the saved requirement."]
+            if specification_match == "MATCHED":
+                reasons.append("Listed specification text matches the requirement.")
+            elif specification_match == "PARTIAL":
+                reasons.append("Listed specification text overlaps; confirm exact compatibility.")
+            elif specification_match == "NO_MATCH":
+                reasons.append("Listed specification text does not match; confirm compatibility.")
+            elif specification_match == "NOT_LISTED":
+                reasons.append("The supplier has not listed a specification.")
+
+            if material_overlap < 0.5 and listing_overlap >= 0.5:
+                reasons[0] = (
+                    "The offering name and listed specification text together "
+                    "match the saved requirement."
+                )
+
+            if coverage_match_status == "MATCHED":
+                reasons.append("Listed service coverage matches a delivery-location component.")
+            elif coverage_match_status == "NOT_SPECIFIED":
+                reasons.append("Service coverage is not listed, so delivery coverage is unconfirmed.")
+
+            if minimum_order_compatible is True:
+                reasons.append("Requested quantity meets the listed minimum order quantity.")
+            elif minimum_order is None:
+                reasons.append("No minimum order quantity is listed.")
+            elif not units_match:
+                reasons.append("Minimum order quantity could not be compared because units differ.")
+
+            match = ProcurementSupplierOfferingMatch(
+                supplier_company_id=company_id,
+                supplier_name=supplier_name,
+                offering_id=offering["id"],
+                name=offering["name"],
+                specification=offering.get("specification"),
+                unit=offering["unit"],
+                indicative_price=offering.get("indicative_price"),
+                currency_code=offering.get("currency_code"),
+                minimum_order_quantity=minimum_order,
+                service_coverage=coverage,
+                specification_match=specification_match,
+                coverage_match=coverage_match_status,
+                minimum_order_compatible=minimum_order_compatible,
+                match_reasons=reasons,
+            )
+            ranked_matches.append((
+                listing_overlap,
+                material_overlap,
+                spec_overlap,
+                int(coverage_match_status == "MATCHED"),
+                match,
+            ))
+
+        ranked_matches.sort(
+            key=lambda row: (
+                -row[0],
+                -row[1],
+                -row[2],
+                -row[3],
+                row[4].supplier_name.casefold(),
+                row[4].name.casefold(),
+            )
+        )
+        return ProcurementSupplierDiscoveryResponse(
+            request_id=request_id,
+            item_name=str(request["item_name"]),
+            specification=request.get("specification"),
+            quantity=requested_quantity,
+            unit=str(request["unit"]),
+            delivery_location=delivery_location,
+            matches=[row[4] for row in ranked_matches[:DISCOVERY_RESULT_LIMIT]],
+            search_limit_reached=len(offering_rows) >= DISCOVERY_SCAN_LIMIT
+            or len(ranked_matches) > DISCOVERY_RESULT_LIMIT,
         )
 
     @classmethod

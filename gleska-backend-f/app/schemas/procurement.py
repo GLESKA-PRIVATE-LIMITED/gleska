@@ -2,10 +2,10 @@
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
 
 
 PROCUREMENT_DRAFT_FIELDS = (
@@ -20,9 +20,60 @@ PROCUREMENT_DRAFT_FIELDS = (
     "notes",
 )
 
+ProcurementUnit = Literal[
+    "MT", "Bags", "Pieces", "Kg", "Tons", "Meters", "Sq. ft", "Boxes", "Liters"
+]
+SpecificationMatchPolicy = Literal["REVIEW_DIFFERENCES", "REQUIRE_OVERLAP"]
+DeliveryCoveragePolicy = Literal["ALLOW_UNSPECIFIED", "REQUIRE_MATCH"]
+
 
 class ProcurementModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+
+class ProcurementSettings(ProcurementModel):
+    default_delivery_location: Annotated[str, StringConstraints(min_length=1, max_length=500)] | None = None
+    preferred_units: list[ProcurementUnit] = Field(default_factory=list, max_length=9)
+    specification_match_policy: SpecificationMatchPolicy = "REVIEW_DIFFERENCES"
+    delivery_coverage_policy: DeliveryCoveragePolicy = "ALLOW_UNSPECIFIED"
+    updated_at: datetime | None = None
+
+    @field_validator("default_delivery_location", mode="before")
+    @classmethod
+    def normalize_default_delivery_location(cls, value):
+        if not isinstance(value, str):
+            return value
+        normalized = " ".join(value.split())
+        return normalized or None
+
+    @field_validator("preferred_units")
+    @classmethod
+    def validate_preferred_units(cls, values: list[ProcurementUnit]) -> list[ProcurementUnit]:
+        if len(values) != len(set(values)):
+            raise ValueError("Preferred purchasing units must be unique.")
+        return values
+
+
+class ProcurementSettingsUpdate(ProcurementModel):
+    default_delivery_location: Annotated[str, StringConstraints(min_length=1, max_length=500)] | None = None
+    preferred_units: list[ProcurementUnit] = Field(default_factory=list, max_length=9)
+    specification_match_policy: SpecificationMatchPolicy = "REVIEW_DIFFERENCES"
+    delivery_coverage_policy: DeliveryCoveragePolicy = "ALLOW_UNSPECIFIED"
+
+    @field_validator("default_delivery_location", mode="before")
+    @classmethod
+    def normalize_default_delivery_location(cls, value):
+        if not isinstance(value, str):
+            return value
+        normalized = " ".join(value.split())
+        return normalized or None
+
+    @field_validator("preferred_units")
+    @classmethod
+    def validate_preferred_units(cls, values: list[ProcurementUnit]) -> list[ProcurementUnit]:
+        if len(values) != len(set(values)):
+            raise ValueError("Preferred purchasing units must be unique.")
+        return values
 
 
 class MaterialRequestDraft(ProcurementModel):
@@ -184,3 +235,33 @@ class ProcurementMaterialRequestResponse(ProcurementModel):
     revision: int
     created_at: datetime
     updated_at: datetime
+
+
+class ProcurementSupplierOfferingMatch(ProcurementModel):
+    supplier_company_id: UUID
+    supplier_name: str
+    offering_id: UUID
+    name: str
+    specification: str | None = None
+    unit: str
+    indicative_price: Decimal | None = None
+    currency_code: str | None = None
+    minimum_order_quantity: Decimal | None = None
+    service_coverage: list[str]
+    specification_match: Literal[
+        "MATCHED", "PARTIAL", "NO_MATCH", "NOT_LISTED", "NOT_REQUESTED"
+    ]
+    coverage_match: Literal["MATCHED", "NOT_SPECIFIED", "NOT_REQUESTED"]
+    minimum_order_compatible: bool | None
+    match_reasons: list[str]
+
+
+class ProcurementSupplierDiscoveryResponse(ProcurementModel):
+    request_id: UUID
+    item_name: str
+    specification: str | None = None
+    quantity: Decimal
+    unit: str
+    delivery_location: str | None = None
+    matches: list[ProcurementSupplierOfferingMatch]
+    search_limit_reached: bool = False

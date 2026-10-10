@@ -17,6 +17,7 @@ import {
   User,
   X,
   Shield,
+  BadgeCheck,
 } from "lucide-react";
 
 interface AdminShellProps {
@@ -30,6 +31,7 @@ const adminNavItems = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
   { href: "/admin/workers", label: "Workers", icon: Users },
   { href: "/admin/employers", label: "Employers", icon: Building2 },
+  { href: "/admin/suppliers", label: "Supplier Review", icon: BadgeCheck },
   { href: "/admin/jobs", label: "Jobs", icon: Briefcase },
   { href: "/admin/payments", label: "Payments", icon: CreditCard },
   { href: "/admin/locations", label: "Locations", icon: MapPin },

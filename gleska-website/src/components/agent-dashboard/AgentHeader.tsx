@@ -7,9 +7,10 @@ import AgentActionButton from "./AgentActionButton";
 
 interface AgentHeaderProps {
   config: AgentConfig;
+  onOptionClick?: (optionId: string) => void;
 }
 
-export default function AgentHeader({ config }: AgentHeaderProps) {
+export default function AgentHeader({ config, onOptionClick }: AgentHeaderProps) {
   const HeaderActionIcon = config.headerAction?.icon;
 
   if (config.variant === "compact-centered") {
@@ -72,6 +73,7 @@ export default function AgentHeader({ config }: AgentHeaderProps) {
                 <button
                   key={option.id}
                   type="button"
+                  onClick={() => onOptionClick?.(option.id)}
                   className={`flex items-center gap-2 rounded-full px-5 py-2 text-xs sm:text-sm font-semibold transition-all duration-200 cursor-pointer ${
                     isFirst
                       ? activeOptionStyle

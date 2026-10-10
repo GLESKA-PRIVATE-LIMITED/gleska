@@ -15,6 +15,7 @@ import {
   LogOut,
   PanelLeft,
   ShieldCheck,
+  ShoppingCart,
   User,
   Users,
   X,
@@ -98,6 +99,8 @@ export default function AccountManagementShell({
   const employerNav = [
     { href: "/employer/dashboard", label: "Dashboard", icon: LayoutDashboard, isPage: true },
     { href: "/employer/dashboard#create-job", label: "Post a Job & Sites", icon: Briefcase, isPage: false },
+    { href: "/procurement", label: "Procurement Agent", icon: ShoppingCart, isPage: true },
+    { href: "/supplier", label: "Supplier Workspace", icon: Building2, isPage: true },
     { href: "/employer/workers", label: "Workers", icon: Users, isPage: true },
     { href: "/employer/attendance", label: "Attendance", icon: Clock, isPage: true },
     { href: "/employer/subscription", label: "Subscription", icon: CreditCard, isPage: true },
@@ -111,6 +114,7 @@ export default function AccountManagementShell({
     { href: "/worker/documents", label: "Documents", icon: FileText, isPage: true },
     { href: "/worker/subscription", label: "Subscription", icon: CreditCard, isPage: true },
     { href: "/worker/settings-security", label: "Settings & Security", icon: ShieldCheck, isPage: true },
+    { href: "/supplier", label: "Supplier Workspace", icon: Building2, isPage: true },
   ];
 
   const helpHref = employer ? "/employer/help" : "/worker/help";

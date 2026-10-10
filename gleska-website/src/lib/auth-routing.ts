@@ -37,6 +37,9 @@ export function getRouteForAuthenticatedUser(
   try {
     const parsed = new URL(requestedNext, window.location.origin);
     if (parsed.origin !== window.location.origin || parsed.pathname.startsWith("//")) return fallback;
+    if (parsed.pathname === "/supplier" || parsed.pathname.startsWith("/supplier/")) {
+      return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+    }
     if (role === "EMPLOYER" && parsed.pathname === "/procurement") {
       return nextStep === "DASHBOARD"
         ? `${parsed.pathname}${parsed.search}${parsed.hash}`
