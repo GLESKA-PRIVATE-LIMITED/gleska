@@ -210,6 +210,7 @@ export default function FinancialDashboard() {
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [executedSearchQuery, setExecutedSearchQuery] = useState<string>("");
   const [isPlusMenuOpen, setIsPlusMenuOpen] = useState<boolean>(false);
+  const [menuPlacement, setMenuPlacement] = useState<"top" | "bottom">("top");
   const [isListening, setIsListening] = useState<boolean>(false);
   const [attachedFile, setAttachedFile] = useState<AttachedDocument | null>(null);
 
@@ -248,6 +249,7 @@ export default function FinancialDashboard() {
 
   // Refs
   const plusMenuRef = useRef<HTMLDivElement>(null);
+  const plusButtonRef = useRef<HTMLButtonElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -261,18 +263,39 @@ export default function FinancialDashboard() {
     }, 4000);
   };
 
-  // Close plus dropdown menu when clicking outside
+  // Close plus dropdown menu when clicking outside or pressing Escape
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (plusMenuRef.current && !plusMenuRef.current.contains(event.target as Node)) {
         setIsPlusMenuOpen(false);
       }
     }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setIsPlusMenuOpen(false);
+      }
+    }
     document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleKeyDown);
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleKeyDown);
     };
   }, []);
+
+  // Smart placement for the plus menu
+  const handleTogglePlusMenu = () => {
+    if (!isPlusMenuOpen && plusButtonRef.current) {
+      const rect = plusButtonRef.current.getBoundingClientRect();
+      // If there is >= 160px available above the button, position above to avoid overlapping cards below
+      if (rect.top >= 160) {
+        setMenuPlacement("top");
+      } else {
+        setMenuPlacement("bottom");
+      }
+    }
+    setIsPlusMenuOpen((prev) => !prev);
+  };
 
   // Sync camera stream to video tag
   useEffect(() => {
@@ -724,7 +747,7 @@ export default function FinancialDashboard() {
       {/* ========================================================================= */}
       {/* SECTION 2 & 3: UPWARD FREED SPACE SELECTOR + COMPACT FUNCTIONAL SEARCH BAR */}
       {/* ========================================================================= */}
-      <div className="flex flex-col items-center justify-center space-y-6 pt-2">
+      <div className="relative z-30 flex flex-col items-center justify-center space-y-3 sm:space-y-5 pt-0 sm:pt-1">
         {/* Compact Segmented Control (Create Invoice / Scan Invoice) */}
         <div className="inline-flex items-center rounded-full border border-slate-200/90 bg-white/95 p-1.5 shadow-sm backdrop-blur-md dark:border-slate-800/90 dark:bg-slate-900/95">
           <button
@@ -754,16 +777,17 @@ export default function FinancialDashboard() {
         </div>
 
         {/* Compact Functional Search Bar Directly Below Selector */}
-        <div className="relative mx-auto w-full max-w-2xl">
+        <div className="relative z-40 mx-auto w-full max-w-2xl">
           <div className="relative flex items-center rounded-full border border-slate-200/90 bg-white/95 p-1.5 shadow-sm backdrop-blur-md transition-all focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20 dark:border-slate-800 dark:bg-slate-900/95">
             {/* Left: Plus (+) Button & Dropdown Menu */}
             <div className="relative" ref={plusMenuRef}>
               <button
+                ref={plusButtonRef}
                 type="button"
-                onClick={() => setIsPlusMenuOpen(!isPlusMenuOpen)}
+                onClick={handleTogglePlusMenu}
                 className={`flex h-9 w-9 items-center justify-center rounded-full transition-all cursor-pointer ${
                   isPlusMenuOpen
-                    ? "bg-indigo-600 text-white rotate-45"
+                    ? "bg-indigo-600 text-white rotate-45 shadow-md shadow-indigo-600/30"
                     : "bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 dark:hover:text-white"
                 }`}
                 title="Add Document, Photo, or File"
@@ -774,14 +798,20 @@ export default function FinancialDashboard() {
 
               {/* Plus Menu Popup */}
               {isPlusMenuOpen && (
-                <div className="absolute left-0 top-12 z-50 w-56 rounded-2xl border border-slate-200/90 bg-white/95 p-1.5 shadow-2xl backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/95 animate-in fade-in zoom-in-95 duration-150">
+                <div
+                  className={`absolute left-0 z-50 w-60 max-w-[calc(100vw-32px)] rounded-2xl border border-slate-200/90 bg-white/95 p-1.5 shadow-2xl backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/95 animate-in fade-in zoom-in-95 duration-150 ${
+                    menuPlacement === "top"
+                      ? "bottom-full mb-2.5 origin-bottom-left"
+                      : "top-full mt-2.5 origin-top-left"
+                  }`}
+                >
                   <button
                     type="button"
                     onClick={() => {
                       setIsPlusMenuOpen(false);
                       fileInputRef.current?.click();
                     }}
-                    className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800 transition text-left cursor-pointer"
+                    className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800 transition text-left cursor-pointer"
                   >
                     <Upload size={16} className="text-indigo-600 dark:text-indigo-400 shrink-0" />
                     <div>
@@ -793,7 +823,7 @@ export default function FinancialDashboard() {
                   <button
                     type="button"
                     onClick={triggerTakePhoto}
-                    className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800 transition text-left cursor-pointer"
+                    className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800 transition text-left cursor-pointer"
                   >
                     <Camera size={16} className="text-purple-600 dark:text-purple-400 shrink-0" />
                     <div>
@@ -808,7 +838,7 @@ export default function FinancialDashboard() {
                       setIsPlusMenuOpen(false);
                       photoInputRef.current?.click();
                     }}
-                    className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800 transition text-left cursor-pointer"
+                    className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800 transition text-left cursor-pointer"
                   >
                     <ImageIcon size={16} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
                     <div>
@@ -995,7 +1025,7 @@ export default function FinancialDashboard() {
 
       {/* VIEW: DASHBOARD OVERVIEW */}
       {activeTab === "dashboard" && (
-        <div className="space-y-8">
+        <div className="space-y-6 sm:space-y-8 mt-3 sm:mt-6 md:mt-8 lg:mt-10">
           {/* Quick Metrics Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="rounded-2xl border border-slate-200/80 bg-white/95 p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/95">
@@ -1119,7 +1149,7 @@ export default function FinancialDashboard() {
 
       {/* VIEW: CREATE INVOICE */}
       {activeTab === "create-invoice" && (
-        <div className="space-y-6 rounded-3xl border border-slate-200/80 bg-white/95 p-6 sm:p-8 shadow-xl backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/95">
+        <div className="space-y-6 rounded-3xl border border-slate-200/80 bg-white/95 p-4 sm:p-6 sm:p-8 shadow-xl backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/95 mt-3 sm:mt-6 md:mt-8 lg:mt-10">
           <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-5 dark:border-slate-800">
             <div>
               <div className="inline-flex items-center gap-2 rounded-full bg-indigo-50 px-3 py-1 text-xs font-bold text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-400">
@@ -1349,38 +1379,38 @@ export default function FinancialDashboard() {
 
       {/* VIEW: SCAN INVOICE */}
       {activeTab === "scan-invoice" && (
-        <div className="space-y-6 rounded-3xl border border-slate-200/80 bg-white/95 p-6 sm:p-8 shadow-xl backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/95">
-          <div className="border-b border-slate-100 pb-5 dark:border-slate-800">
-            <div className="inline-flex items-center gap-2 rounded-full bg-purple-50 px-3 py-1 text-xs font-bold text-purple-600 dark:bg-purple-950/60 dark:text-purple-400">
-              <Scan size={14} />
+        <div className="space-y-3.5 sm:space-y-6 rounded-3xl border border-slate-200/80 bg-white/95 p-3.5 sm:p-6 lg:p-8 shadow-xl backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/95 mt-3 sm:mt-6 md:mt-8 lg:mt-10">
+          <div className="border-b border-slate-100 pb-2.5 sm:pb-4 dark:border-slate-800">
+            <div className="inline-flex items-center gap-1.5 sm:gap-2 rounded-full bg-purple-50 px-2.5 py-0.5 sm:px-3 sm:py-1 text-[10px] sm:text-xs font-bold text-purple-600 dark:bg-purple-950/60 dark:text-purple-400">
+              <Scan size={13} className="sm:w-3.5 sm:h-3.5" />
               <span>INTELLIGENT OCR SCANNER</span>
             </div>
-            <h2 className="mt-2 text-xl font-bold text-slate-900 dark:text-white">
+            <h2 className="mt-1 sm:mt-2 text-sm sm:text-xl font-bold text-slate-900 dark:text-white">
               Scan & Process Vendor Bills
             </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
+            <p className="mt-0.5 text-[10px] sm:text-xs text-slate-500 dark:text-slate-400">
               Upload documents, take camera photos, or drag & drop vendor invoices to automatically extract data.
             </p>
           </div>
 
           {/* Document Dropzone & Capture Actions */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-5">
             <div
               onClick={() => fileInputRef.current?.click()}
-              className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50/60 p-8 text-center transition hover:border-indigo-400 hover:bg-indigo-50/30 dark:border-slate-700 dark:bg-slate-800/40 dark:hover:border-indigo-500 cursor-pointer"
+              className="group flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50/60 p-3 sm:p-6 lg:p-8 text-center transition hover:border-indigo-400 hover:bg-indigo-50/30 dark:border-slate-700 dark:bg-slate-800/40 dark:hover:border-indigo-500 cursor-pointer"
             >
-              <div className="rounded-full bg-indigo-50 p-3 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-400">
-                <Upload size={24} />
+              <div className="rounded-full bg-indigo-50 p-1.5 sm:p-3 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-400 group-hover:scale-110 transition-transform">
+                <Upload size={16} className="sm:w-6 sm:h-6" />
               </div>
-              <h4 className="mt-3 text-sm font-bold text-slate-900 dark:text-white">
+              <h4 className="mt-1 sm:mt-3 text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
                 Upload Invoice File
               </h4>
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              <p className="mt-0.5 text-[10px] sm:text-xs text-slate-500 dark:text-slate-400">
                 PDF, DOCX, XLSX, CSV, or Image (up to 25MB)
               </p>
               <button
                 type="button"
-                className="mt-4 rounded-xl bg-slate-200/70 px-4 py-1.5 text-xs font-bold text-slate-700 dark:bg-slate-700 dark:text-slate-200"
+                className="mt-1.5 sm:mt-4 rounded-lg sm:rounded-xl bg-slate-200/70 px-3 py-1 sm:px-4 sm:py-1.5 text-[10px] sm:text-xs font-semibold sm:font-bold text-slate-700 dark:bg-slate-700 dark:text-slate-200 hover:bg-indigo-600 hover:text-white dark:hover:bg-indigo-600 transition"
               >
                 Browse Document
               </button>
@@ -1388,20 +1418,20 @@ export default function FinancialDashboard() {
 
             <div
               onClick={triggerTakePhoto}
-              className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50/60 p-8 text-center transition hover:border-purple-400 hover:bg-purple-50/30 dark:border-slate-700 dark:bg-slate-800/40 dark:hover:border-purple-500 cursor-pointer"
+              className="group flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50/60 p-3 sm:p-6 lg:p-8 text-center transition hover:border-purple-400 hover:bg-purple-50/30 dark:border-slate-700 dark:bg-slate-800/40 dark:hover:border-purple-500 cursor-pointer"
             >
-              <div className="rounded-full bg-purple-50 p-3 text-purple-600 dark:bg-purple-950/60 dark:text-purple-400">
-                <Camera size={24} />
+              <div className="rounded-full bg-purple-50 p-1.5 sm:p-3 text-purple-600 dark:bg-purple-950/60 dark:text-purple-400 group-hover:scale-110 transition-transform">
+                <Camera size={16} className="sm:w-6 sm:h-6" />
               </div>
-              <h4 className="mt-3 text-sm font-bold text-slate-900 dark:text-white">
+              <h4 className="mt-1 sm:mt-3 text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
                 Capture via Camera
               </h4>
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              <p className="mt-0.5 text-[10px] sm:text-xs text-slate-500 dark:text-slate-400">
                 Take a direct photo of physical bills or receipts
               </p>
               <button
                 type="button"
-                className="mt-4 rounded-xl bg-slate-200/70 px-4 py-1.5 text-xs font-bold text-slate-700 dark:bg-slate-700 dark:text-slate-200"
+                className="mt-1.5 sm:mt-4 rounded-lg sm:rounded-xl bg-slate-200/70 px-3 py-1 sm:px-4 sm:py-1.5 text-[10px] sm:text-xs font-semibold sm:font-bold text-slate-700 dark:bg-slate-700 dark:text-slate-200 hover:bg-purple-600 hover:text-white dark:hover:bg-purple-600 transition"
               >
                 Open Camera
               </button>
@@ -1464,7 +1494,7 @@ export default function FinancialDashboard() {
 
       {/* VIEW: AUDITS TILL DATE */}
       {activeTab === "audits" && (
-        <div className="space-y-6 rounded-3xl border border-slate-200/80 bg-white/95 p-6 sm:p-8 shadow-xl backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/95">
+        <div className="space-y-6 rounded-3xl border border-slate-200/80 bg-white/95 p-4 sm:p-6 sm:p-8 shadow-xl backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/95 mt-3 sm:mt-6 md:mt-8 lg:mt-10">
           <div className="border-b border-slate-100 pb-5 dark:border-slate-800">
             <div className="inline-flex items-center gap-2 rounded-full bg-cyan-50 px-3 py-1 text-xs font-bold text-cyan-600 dark:bg-cyan-950/60 dark:text-cyan-400">
               <ShieldCheck size={14} />
@@ -1513,7 +1543,7 @@ export default function FinancialDashboard() {
 
       {/* VIEW: SETTINGS */}
       {activeTab === "settings" && (
-        <div className="space-y-6 rounded-3xl border border-slate-200/80 bg-white/95 p-6 sm:p-8 shadow-xl backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/95">
+        <div className="space-y-6 rounded-3xl border border-slate-200/80 bg-white/95 p-4 sm:p-6 sm:p-8 shadow-xl backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/95 mt-3 sm:mt-6 md:mt-8 lg:mt-10">
           <div className="border-b border-slate-100 pb-5 dark:border-slate-800">
             <h2 className="text-xl font-bold text-slate-900 dark:text-white">Financial Agent Settings</h2>
             <p className="text-xs text-slate-500 dark:text-slate-400">
