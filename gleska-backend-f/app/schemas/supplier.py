@@ -90,6 +90,7 @@ class SupplierCompanyMembershipResponse(BaseModel):
     status: SupplierMembershipStatus
     created_at: datetime
     expires_at: Optional[datetime] = None
+    operational_status: Optional[SupplierCompanyOperationalStatus] = None
     verification_status: Optional[SupplierVerificationStatus] = None
 
 

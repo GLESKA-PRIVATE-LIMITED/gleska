@@ -58,7 +58,7 @@ export default function AgentSidebar({
                     {config.agentName}
                   </span>
                   <span className="block text-[10px] font-bold uppercase tracking-widest text-emerald-600 dark:text-emerald-400">
-                    Autonomous AI
+                    {config.sidebarSubtitle || "Autonomous AI"}
                   </span>
                 </div>
               )}

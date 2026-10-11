@@ -25,6 +25,7 @@ ProcurementUnit = Literal[
 ]
 SpecificationMatchPolicy = Literal["REVIEW_DIFFERENCES", "REQUIRE_OVERLAP"]
 DeliveryCoveragePolicy = Literal["ALLOW_UNSPECIFIED", "REQUIRE_MATCH"]
+ProcurementWorkspaceKind = Literal["BUYER", "SUPPLIER"]
 
 
 class ProcurementModel(BaseModel):
@@ -74,6 +75,23 @@ class ProcurementSettingsUpdate(ProcurementModel):
         if len(values) != len(set(values)):
             raise ValueError("Preferred purchasing units must be unique.")
         return values
+
+
+class ProcurementWorkspaceOption(ProcurementModel):
+    id: str
+    kind: ProcurementWorkspaceKind
+    name: str
+    company_id: str | None = None
+    verification_status: str | None = None
+
+
+class ProcurementWorkspacesResponse(ProcurementModel):
+    available_workspaces: list[ProcurementWorkspaceOption]
+    preferred_workspace: ProcurementWorkspaceKind | None = None
+
+
+class ProcurementWorkspacePreferenceUpdate(ProcurementModel):
+    preferred_workspace: ProcurementWorkspaceKind
 
 
 class MaterialRequestDraft(ProcurementModel):

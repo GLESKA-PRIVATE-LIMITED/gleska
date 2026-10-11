@@ -99,8 +99,7 @@ export default function AccountManagementShell({
   const employerNav = [
     { href: "/employer/dashboard", label: "Dashboard", icon: LayoutDashboard, isPage: true },
     { href: "/employer/dashboard#create-job", label: "Post a Job & Sites", icon: Briefcase, isPage: false },
-    { href: "/procurement", label: "Procurement Agent", icon: ShoppingCart, isPage: true },
-    { href: "/supplier", label: "Supplier Workspace", icon: Building2, isPage: true },
+    { href: "/procurement/workspaces", label: "Procurement", icon: ShoppingCart, isPage: true },
     { href: "/employer/workers", label: "Workers", icon: Users, isPage: true },
     { href: "/employer/attendance", label: "Attendance", icon: Clock, isPage: true },
     { href: "/employer/subscription", label: "Subscription", icon: CreditCard, isPage: true },

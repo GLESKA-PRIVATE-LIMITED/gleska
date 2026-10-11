@@ -30,6 +30,7 @@ export interface HeaderAction {
 export interface AgentConfig {
   agentId: string;
   agentName: string;
+  sidebarSubtitle?: string;
   badgeText?: string;
   title?: string;
   sidebarItems: SidebarNavItem[];

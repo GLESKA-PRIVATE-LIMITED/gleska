@@ -9,7 +9,8 @@ import { Archive, Building2, CheckCircle2, ClipboardList, Clock3, FileText, Load
 import { useAuth } from "@/context/AuthContext";
 import apiClient from "@/lib/api";
 import AgentSidebar from "@/components/agent-dashboard/AgentSidebar";
-import { procurementConfig } from "@/components/agents/procurement/procurementConfig";
+import ProcurementWorkspaceSwitch from "@/components/procurement/ProcurementWorkspaceSwitch";
+import { supplierWorkspaceConfig } from "@/components/agents/procurement/supplierWorkspaceConfig";
 import {
   ProcurementUnit,
   ProcurementPurchaseOrder,
@@ -23,6 +24,7 @@ import {
 type CompanyRole = "OWNER" | "ADMIN" | "MEMBER";
 type MembershipStatus = "ACTIVE" | "PENDING" | "REVOKED";
 type VerificationStatus = "NOT_SUBMITTED" | "PENDING_REVIEW" | "VERIFIED" | "REJECTED" | "SUSPENDED";
+type SupplierSection = "rfqs" | "orders" | "history" | "company" | "offerings";
 type FulfillmentDraft = Omit<PurchaseOrderFulfillmentUpdate, "idempotency_key">;
 type PendingFulfillmentSubmission = {
   orderId: string;
@@ -65,6 +67,7 @@ interface CompanyMembership {
   role: CompanyRole;
   status: MembershipStatus;
   created_at: string;
+  operational_status?: SupplierCompany["operational_status"] | null;
   verification_status?: VerificationStatus | null;
 }
 
@@ -284,9 +287,12 @@ function errorMessage(error: unknown): string {
 export default function SupplierWorkspacePage() {
   const router = useRouter();
   const { user, isLoading } = useAuth();
+  const [section, setSection] = useState<SupplierSection>("rfqs");
   const [companies, setCompanies] = useState<CompanyMembership[]>([]);
   const [invitations, setInvitations] = useState<CompanyMembership[]>([]);
+  const [invitationsError, setInvitationsError] = useState("");
   const [company, setCompany] = useState<SupplierCompany | null>(null);
+  const [companyDataId, setCompanyDataId] = useState("");
   const [members, setMembers] = useState<SupplierMember[]>([]);
   const [verificationDocuments, setVerificationDocuments] = useState<VerificationDocument[]>([]);
   const [offerings, setOfferings] = useState<SupplierMaterialOffering[]>([]);
@@ -296,6 +302,9 @@ export default function SupplierWorkspacePage() {
   const [purchaseOrdersLoading, setPurchaseOrdersLoading] = useState(false);
   const [purchaseOrdersLoaded, setPurchaseOrdersLoaded] = useState(false);
   const [purchaseOrdersError, setPurchaseOrdersError] = useState("");
+  const [companyError, setCompanyError] = useState("");
+  const [membersError, setMembersError] = useState("");
+  const [verificationError, setVerificationError] = useState("");
   const [purchaseOrdersSuccess, setPurchaseOrdersSuccess] = useState("");
   const [purchaseOrderBusyId, setPurchaseOrderBusyId] = useState("");
   const [fulfillmentOrderId, setFulfillmentOrderId] = useState("");
@@ -319,6 +328,13 @@ export default function SupplierWorkspacePage() {
   const [offeringError, setOfferingError] = useState("");
   const [offeringSuccess, setOfferingSuccess] = useState("");
   const [selectedCompanyId, setSelectedCompanyId] = useState("");
+  const companiesRef = useRef(companies);
+  companiesRef.current = companies;
+  const includeArchivedOfferingsRef = useRef(includeArchivedOfferings);
+  includeArchivedOfferingsRef.current = includeArchivedOfferings;
+  const selectedCompanyIdRef = useRef(selectedCompanyId);
+  selectedCompanyIdRef.current = selectedCompanyId;
+  const companyRequestId = useRef(0);
   const [companyDraft, setCompanyDraft] = useState<CompanyDraft>(emptyCompanyDraft);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<"ADMIN" | "MEMBER">("MEMBER");
@@ -333,103 +349,144 @@ export default function SupplierWorkspacePage() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   const loadMemberships = useCallback(async () => {
-    const [companyResponse, invitationResponse] = await Promise.all([
-      apiClient.get<CompanyMembership[]>("/api/v1/suppliers/companies"),
-      apiClient.get<CompanyMembership[]>("/api/v1/suppliers/invitations"),
-    ]);
-    const nextCompanies = companyResponse.data;
-    setCompanies(nextCompanies);
-    setInvitations(invitationResponse.data);
-    setSelectedCompanyId((current) =>
-      nextCompanies.some((entry) => entry.company_id === current)
-        ? current
-        : nextCompanies[0]?.company_id || "",
-    );
+    const companyRequest = apiClient.get<CompanyMembership[]>("/api/v1/suppliers/companies")
+      .then((response) => {
+        const nextCompanies = response.data;
+        setCompanies(nextCompanies);
+        setSelectedCompanyId((current) =>
+          nextCompanies.some((entry) => entry.company_id === current)
+            ? current
+            : nextCompanies[0]?.company_id || "",
+        );
+      })
+      .catch((loadError: unknown) => setError(errorMessage(loadError)));
+    const invitationRequest = apiClient.get<CompanyMembership[]>("/api/v1/suppliers/invitations")
+      .then((response) => {
+        setInvitations(response.data);
+        setInvitationsError("");
+      })
+      .catch((loadError: unknown) => setInvitationsError(errorMessage(loadError)));
+    await Promise.all([companyRequest, invitationRequest]);
   }, []);
 
   const loadCompany = useCallback(async (companyId: string) => {
-    if (!companyId) {
-      setCompany(null);
-      setMembers([]);
-      setVerificationDocuments([]);
-      setOfferings([]);
-      setOfferingsLoaded(false);
-      setRfqs([]);
-      setPurchaseOrders([]);
-      setPurchaseOrdersLoading(false);
-      setPurchaseOrdersLoaded(false);
-      setSelectedRfqId("");
-      setRfqsError("");
-      setPurchaseOrdersError("");
-      setPurchaseOrdersSuccess("");
-      setOfferingError("");
-      return;
-    }
-    setPurchaseOrders([]);
-    setPurchaseOrdersLoaded(false);
-    setPurchaseOrdersError("");
-    setPurchaseOrdersSuccess("");
+    const requestId = ++companyRequestId.current;
+    const isCurrentRequest = () =>
+      companyRequestId.current === requestId
+      && selectedCompanyIdRef.current === companyId;
+
+    setCompany(null);
+    setCompanyDataId(companyId);
+    setMembers([]);
+    setVerificationDocuments([]);
     setOfferings([]);
     setOfferingsLoaded(false);
-    const [companyResponse, membersResponse] = await Promise.all([
-      apiClient.get<SupplierCompany>(`/api/v1/suppliers/companies/${companyId}`),
-      apiClient.get<SupplierMember[]>(`/api/v1/suppliers/companies/${companyId}/members`),
-    ]);
-    setCompany(companyResponse.data);
-    setMembers(membersResponse.data);
-    if (companyResponse.data.role === "OWNER" || companyResponse.data.role === "ADMIN") {
-      const documentsResponse = await apiClient.get<VerificationDocument[]>(
-        `/api/v1/suppliers/companies/${companyId}/verification/documents`,
-      );
-      setVerificationDocuments(documentsResponse.data);
-    } else {
-      setVerificationDocuments([]);
-    }
-    setOfferingsLoading(true);
+    setRfqs([]);
+    setPurchaseOrders([]);
+    setSelectedRfqId("");
+    setCompanyError("");
+    setMembersError("");
+    setVerificationError("");
     setOfferingError("");
-    try {
-      const includeArchived = companyResponse.data.role === "OWNER" || companyResponse.data.role === "ADMIN";
-      const offeringsResponse = await apiClient.get<SupplierMaterialOffering[]>(
-        `/api/v1/suppliers/companies/${companyId}/offerings`,
-        { params: { include_archived: includeArchived } },
-      );
-      setOfferings(offeringsResponse.data);
-      setOfferingsLoaded(true);
-    } catch (offeringLoadError) {
-      setOfferings([]);
-      setOfferingsLoaded(false);
-      setOfferingError(errorMessage(offeringLoadError));
-    } finally {
-      setOfferingsLoading(false);
-    }
-    setRfqsLoading(true);
     setRfqsError("");
-    try {
-      const nextRfqs = await procurementApi.listSupplierRFQs(companyId);
-      setRfqs(nextRfqs);
-      setSelectedRfqId((current) =>
-        nextRfqs.some((rfq) => rfq.id === current) ? current : nextRfqs[0]?.id || "",
-      );
-    } catch (rfqLoadError) {
-      setRfqs([]);
-      setSelectedRfqId("");
-      setRfqsError(errorMessage(rfqLoadError));
-    } finally {
-      setRfqsLoading(false);
-    }
-    setPurchaseOrdersLoading(true);
-    setPurchaseOrdersLoaded(false);
     setPurchaseOrdersError("");
     setPurchaseOrdersSuccess("");
-    try {
-      setPurchaseOrders(await procurementApi.listSupplierPurchaseOrders(companyId));
-      setPurchaseOrdersLoaded(true);
-    } catch (purchaseOrderLoadError) {
-      setPurchaseOrders([]);
-      setPurchaseOrdersError(errorMessage(purchaseOrderLoadError));
-    } finally {
+    setOfferingsLoading(Boolean(companyId));
+    setRfqsLoading(Boolean(companyId));
+    setPurchaseOrdersLoading(Boolean(companyId));
+    setPurchaseOrdersLoaded(false);
+
+    if (!companyId) {
       setPurchaseOrdersLoading(false);
+      setRfqsLoading(false);
+      setOfferingsLoading(false);
+      return;
     }
+
+    const membership = companiesRef.current.find((entry) => entry.company_id === companyId);
+    const canManageCompany = membership?.role === "OWNER" || membership?.role === "ADMIN";
+    const requests = [
+      (async () => {
+        try {
+          const response = await apiClient.get<SupplierCompany>(`/api/v1/suppliers/companies/${companyId}`);
+          if (isCurrentRequest()) setCompany(response.data);
+        } catch (loadError) {
+          if (isCurrentRequest()) setCompanyError(errorMessage(loadError));
+        }
+      })(),
+      (async () => {
+        try {
+          const response = await apiClient.get<SupplierMember[]>(`/api/v1/suppliers/companies/${companyId}/members`);
+          if (isCurrentRequest()) setMembers(response.data);
+        } catch (loadError) {
+          if (isCurrentRequest()) setMembersError(errorMessage(loadError));
+        }
+      })(),
+      (async () => {
+        if (!canManageCompany) return;
+        try {
+          const response = await apiClient.get<VerificationDocument[]>(
+            `/api/v1/suppliers/companies/${companyId}/verification/documents`,
+          );
+          if (isCurrentRequest()) setVerificationDocuments(response.data);
+        } catch (loadError) {
+          if (isCurrentRequest()) setVerificationError(errorMessage(loadError));
+        }
+      })(),
+      (async () => {
+        try {
+          const response = await apiClient.get<SupplierMaterialOffering[]>(
+            `/api/v1/suppliers/companies/${companyId}/offerings`,
+            { params: { include_archived: Boolean(canManageCompany) && includeArchivedOfferingsRef.current } },
+          );
+          if (isCurrentRequest()) {
+            setOfferings(response.data);
+            setOfferingsLoaded(true);
+          }
+        } catch (loadError) {
+          if (isCurrentRequest()) {
+            setOfferings([]);
+            setOfferingsLoaded(false);
+            setOfferingError(errorMessage(loadError));
+          }
+        } finally {
+          if (isCurrentRequest()) setOfferingsLoading(false);
+        }
+      })(),
+      (async () => {
+        try {
+          const nextRfqs = await procurementApi.listSupplierRFQs(companyId);
+          if (isCurrentRequest()) {
+            setRfqs(nextRfqs);
+            setSelectedRfqId(nextRfqs[0]?.id || "");
+          }
+        } catch (loadError) {
+          if (isCurrentRequest()) {
+            setRfqs([]);
+            setRfqsError(errorMessage(loadError));
+          }
+        } finally {
+          if (isCurrentRequest()) setRfqsLoading(false);
+        }
+      })(),
+      (async () => {
+        try {
+          const nextOrders = await procurementApi.listSupplierPurchaseOrders(companyId);
+          if (isCurrentRequest()) {
+            setPurchaseOrders(nextOrders);
+            setPurchaseOrdersLoaded(true);
+          }
+        } catch (loadError) {
+          if (isCurrentRequest()) {
+            setPurchaseOrders([]);
+            setPurchaseOrdersError(errorMessage(loadError));
+          }
+        } finally {
+          if (isCurrentRequest()) setPurchaseOrdersLoading(false);
+        }
+      })(),
+    ];
+    await Promise.all(requests);
   }, []);
 
   useEffect(() => {
@@ -503,17 +560,77 @@ export default function SupplierWorkspacePage() {
 
   const refreshPurchaseOrders = async () => {
     if (!selectedCompanyId) return;
+    const companyId = selectedCompanyId;
+    const requestId = companyRequestId.current;
     setPurchaseOrdersLoading(true);
     setPurchaseOrdersLoaded(false);
     setPurchaseOrdersError("");
     try {
-      setPurchaseOrders(await procurementApi.listSupplierPurchaseOrders(selectedCompanyId));
-      setPurchaseOrdersLoaded(true);
+      const nextOrders = await procurementApi.listSupplierPurchaseOrders(companyId);
+      if (companyRequestId.current === requestId && selectedCompanyIdRef.current === companyId) {
+        setPurchaseOrders(nextOrders);
+        setPurchaseOrdersLoaded(true);
+      }
     } catch (loadError) {
-      setPurchaseOrders([]);
-      setPurchaseOrdersError(errorMessage(loadError));
+      if (companyRequestId.current === requestId && selectedCompanyIdRef.current === companyId) {
+        setPurchaseOrders([]);
+        setPurchaseOrdersError(errorMessage(loadError));
+      }
     } finally {
-      setPurchaseOrdersLoading(false);
+      if (companyRequestId.current === requestId && selectedCompanyIdRef.current === companyId) {
+        setPurchaseOrdersLoading(false);
+      }
+    }
+  };
+
+  const refreshRFQs = async () => {
+    if (!selectedCompanyId) return;
+    const companyId = selectedCompanyId;
+    const requestId = companyRequestId.current;
+    setRfqsLoading(true);
+    setRfqsError("");
+    try {
+      const nextRfqs = await procurementApi.listSupplierRFQs(companyId);
+      if (companyRequestId.current === requestId && selectedCompanyIdRef.current === companyId) {
+        setRfqs(nextRfqs);
+        setSelectedRfqId((current) => nextRfqs.some((rfq) => rfq.id === current) ? current : nextRfqs[0]?.id || "");
+      }
+    } catch (loadError) {
+      if (companyRequestId.current === requestId && selectedCompanyIdRef.current === companyId) {
+        setRfqsError(errorMessage(loadError));
+      }
+    } finally {
+      if (companyRequestId.current === requestId && selectedCompanyIdRef.current === companyId) {
+        setRfqsLoading(false);
+      }
+    }
+  };
+
+  const refreshOfferings = async () => {
+    if (!selectedCompanyId) return;
+    const companyId = selectedCompanyId;
+    const requestId = companyRequestId.current;
+    const membership = companiesRef.current.find((entry) => entry.company_id === companyId);
+    const canManage = membership?.role === "OWNER" || membership?.role === "ADMIN";
+    setOfferingsLoading(true);
+    setOfferingError("");
+    try {
+      const response = await apiClient.get<SupplierMaterialOffering[]>(
+        `/api/v1/suppliers/companies/${companyId}/offerings`,
+        { params: { include_archived: Boolean(canManage) && includeArchivedOfferingsRef.current } },
+      );
+      if (companyRequestId.current === requestId && selectedCompanyIdRef.current === companyId) {
+        setOfferings(response.data);
+        setOfferingsLoaded(true);
+      }
+    } catch (loadError) {
+      if (companyRequestId.current === requestId && selectedCompanyIdRef.current === companyId) {
+        setOfferingError(errorMessage(loadError));
+      }
+    } finally {
+      if (companyRequestId.current === requestId && selectedCompanyIdRef.current === companyId) {
+        setOfferingsLoading(false);
+      }
     }
   };
 
@@ -981,6 +1098,13 @@ export default function SupplierWorkspacePage() {
   const visibleOfferings = offerings.filter(
     (offering) => includeArchivedOfferings || !offering.archived_at,
   );
+  const selectedMembership = companies.find((entry) => entry.company_id === selectedCompanyId);
+  const historicalOrderStatuses = ["REJECTED", "CANCELLED", "DELIVERED"];
+  const sectionOrders = purchaseOrders.filter((order) =>
+    section === "history"
+      ? historicalOrderStatuses.includes(order.status)
+      : !historicalOrderStatuses.includes(order.status),
+  );
 
   return (
     <div className="min-h-screen bg-[#eef1fb] font-sans text-slate-900 dark:bg-slate-950 dark:text-slate-100 flex">
@@ -989,7 +1113,7 @@ export default function SupplierWorkspacePage() {
         <Link href="/" className="flex items-center gap-2">
           <img src="/favicon.ico" alt="GO LESKA" className="h-7 w-7 rounded-md" />
           <span className="font-[var(--font-anton)] text-lg uppercase tracking-wide text-slate-900 dark:text-white">
-            {procurementConfig.agentName}
+            {supplierWorkspaceConfig.agentName}
           </span>
         </Link>
         <button
@@ -1001,11 +1125,10 @@ export default function SupplierWorkspacePage() {
         </button>
       </div>
 
-      {/* Sidebar — same component as Procurement dashboard, active item = provide-procurement */}
       <AgentSidebar
-        config={procurementConfig}
-        activeTab="provide-procurement"
-        setActiveTab={() => undefined}
+        config={supplierWorkspaceConfig}
+        activeTab={section}
+        setActiveTab={(tab) => setSection(tab as SupplierSection)}
         isCollapsed={isCollapsed}
         setIsCollapsed={setIsCollapsed}
         mobileSidebarOpen={mobileSidebarOpen}
@@ -1027,7 +1150,7 @@ export default function SupplierWorkspacePage() {
               </div>
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-widest text-purple-600 dark:text-purple-400">
-                  Provide Procurement
+                  Supplier operations
                 </p>
                 <h1 className="text-lg font-bold leading-tight text-slate-900 dark:text-white">
                   Supplier Workspace
@@ -1035,14 +1158,7 @@ export default function SupplierWorkspacePage() {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              {user.role === "EMPLOYER" && (
-                <Link
-                  href="/procurement"
-                  className="inline-flex min-h-9 items-center rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold transition hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
-                >
-                  Procurement Dashboard
-                </Link>
-              )}
+              <ProcurementWorkspaceSwitch />
               {user.role === "EMPLOYER" && (
                 <Link
                   href="/employer/dashboard"
@@ -1068,6 +1184,12 @@ export default function SupplierWorkspacePage() {
         {error && (
           <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/50 dark:text-red-200">
             {error}
+          </div>
+        )}
+        {invitationsError && (
+          <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/50 dark:text-red-200">
+            <span>Company invitations could not be loaded: {invitationsError}</span>
+            <button type="button" onClick={() => void refreshWorkspace()} className="font-semibold underline">Retry</button>
           </div>
         )}
 
@@ -1113,10 +1235,57 @@ export default function SupplierWorkspacePage() {
                 </option>
               ))}
             </select>
+            {selectedMembership && (
+              <>
+                <div className="mt-4 flex flex-wrap gap-2 text-xs">
+                  <span className="rounded-full bg-slate-100 px-3 py-1.5 font-semibold dark:bg-slate-800">
+                    {selectedMembership.company_name} · {selectedMembership.role}
+                  </span>
+                  <span className="rounded-full bg-slate-100 px-3 py-1.5 font-semibold dark:bg-slate-800">
+                    Operations: {selectedMembership.operational_status || "Status unavailable"}
+                  </span>
+                  <span className="rounded-full bg-slate-100 px-3 py-1.5 font-semibold dark:bg-slate-800">
+                    Verification: {selectedMembership.verification_status?.replaceAll("_", " ") || "Status unavailable"}
+                  </span>
+                </div>
+                <p className="mt-3 text-xs text-slate-600 dark:text-slate-400">
+                  {selectedMembership.operational_status == null
+                    ? "The company's operational status is unavailable. Refresh the workspace before attempting company-scoped actions."
+                    : selectedMembership.operational_status !== "ACTIVE"
+                    ? "This company is not operationally active. Contact a company owner/admin; suspended or archived companies require GLESKA support."
+                    : selectedMembership.verification_status !== "VERIFIED"
+                      ? selectedMembership.verification_status == null
+                        ? "The company's verification status is unavailable. Refresh the workspace before assuming it is eligible."
+                        : selectedMembership.role === "OWNER" || selectedMembership.role === "ADMIN"
+                        ? "Verification is not confirmed. A company owner/admin can manage evidence and submit it for GLESKA review in Company & Verification."
+                        : "Verification is not confirmed. Ask a company owner/admin to manage evidence and submit it for GLESKA review."
+                      : "The company is active and verified. The backend still checks eligibility and authorization for each transaction."}
+                </p>
+              </>
+            )}
           </section>
         )}
 
-        {selectedCompanyId && (
+        {selectedCompanyId && companyDataId === selectedCompanyId && !company && companyError && (
+          <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/50 dark:text-red-200">
+            <span>Company details could not be loaded: {companyError}</span>
+            <button type="button" onClick={() => void loadCompany(selectedCompanyId)} className="font-semibold underline">
+              Retry company details
+            </button>
+          </div>
+        )}
+        {selectedCompanyId && companyDataId === selectedCompanyId && !company && !companyError && (
+          <div role="status" className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+            <Loader2 size={16} className="animate-spin" /> Loading selected company details…
+          </div>
+        )}
+        {selectedCompanyId && companyDataId !== selectedCompanyId && (
+          <div role="status" className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+            <Loader2 size={16} className="animate-spin" /> Switching supplier company…
+          </div>
+        )}
+
+        {selectedCompanyId && companyDataId === selectedCompanyId && section === "rfqs" && (
           <section className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
@@ -1130,7 +1299,7 @@ export default function SupplierWorkspacePage() {
               </div>
               <button
                 type="button"
-                onClick={() => void loadCompany(selectedCompanyId)}
+                onClick={() => void refreshRFQs()}
                 disabled={rfqsLoading}
                 className="inline-flex min-h-9 items-center gap-2 rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:hover:bg-slate-800"
               >
@@ -1139,8 +1308,9 @@ export default function SupplierWorkspacePage() {
             </div>
 
             {rfqsError && (
-              <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/50 dark:text-red-200">
-                {rfqsError}
+              <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/50 dark:text-red-200">
+                <span>{rfqsError}</span>
+                <button type="button" onClick={() => void refreshRFQs()} disabled={rfqsLoading} className="font-semibold underline disabled:opacity-60">Retry RFQs</button>
                 {rfqsError.includes("migration 076") && (
                   <p className="mt-1">Apply the forward-only migration through your normal database workflow, then refresh.</p>
                 )}
@@ -1409,14 +1579,16 @@ export default function SupplierWorkspacePage() {
           </section>
         )}
 
-        {company && (
+        {company && companyDataId === selectedCompanyId && (section === "orders" || section === "history") && (
           <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <p className="text-xs font-bold uppercase tracking-wider text-purple-700 dark:text-purple-300">Supplier Workspace</p>
-                <h2 className="mt-1 text-lg font-bold">Purchase orders</h2>
+                <h2 className="mt-1 text-lg font-bold">{section === "history" ? "Order history" : "Purchase orders & fulfilment"}</h2>
                 <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-                  Orders addressed to {company.name}. An issued order can be accepted or rejected by your company. Accepted orders can be updated with dispatch and delivery progress.
+                  {section === "history"
+                    ? `Completed, rejected, or cancelled orders addressed to ${company.name}. The API returns up to 100 records; older history may not be included.`
+                    : `Orders addressed to ${company.name}. An issued order can be accepted or rejected by your company. Accepted orders can be updated with dispatch and delivery progress.`}
                 </p>
               </div>
               <button
@@ -1445,13 +1617,13 @@ export default function SupplierWorkspacePage() {
               <div role="status" className="flex items-center gap-2 py-5 text-sm text-slate-500">
                 <Loader2 size={16} className="animate-spin" /> Loading purchase orders…
               </div>
-            ) : purchaseOrdersLoaded && purchaseOrders.length === 0 ? (
+            ) : purchaseOrdersLoaded && sectionOrders.length === 0 ? (
               <div className="rounded-xl border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500 dark:border-slate-700">
-                No purchase orders have been issued to this company.
+                {section === "history" ? "No completed, rejected, or cancelled orders are in the available history." : "No active purchase orders are available for this company."}
               </div>
             ) : purchaseOrdersLoaded ? (
               <ul className="space-y-3">
-                {purchaseOrders.map((order) => (
+                {sectionOrders.map((order) => (
                   <li key={order.id} className="rounded-xl border border-slate-200 p-4 dark:border-slate-700">
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
@@ -1599,7 +1771,7 @@ export default function SupplierWorkspacePage() {
           </section>
         )}
 
-        {company && (
+        {company && companyDataId === selectedCompanyId && section === "company" && (
           <section className="grid gap-6 lg:grid-cols-[1fr_1.15fr]">
             <div className="space-y-6">
               <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
@@ -1631,7 +1803,7 @@ export default function SupplierWorkspacePage() {
                   </div>
                 )}
                 <p className="mt-5 rounded-xl bg-purple-50 px-3 py-2 text-xs leading-relaxed text-purple-900 dark:bg-purple-950/50 dark:text-purple-200">
-                  Buyer discovery requires the company to be active and verified and the offering to be available. Discovery shows catalogue listings only; it does not start procurement transactions.
+                  Buyers may see available, non-archived offerings only when this company is active and verified. Catalogue discovery does not start procurement transactions.
                 </p>
               </article>
               <article className="rounded-2xl border border-indigo-200 bg-white p-5 shadow-sm dark:border-indigo-900 dark:bg-slate-900">
@@ -1644,6 +1816,12 @@ export default function SupplierWorkspacePage() {
                 <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
                   Submit company evidence for an authorized GLESKA administrator to review. This status is independent of operational status.
                 </p>
+                {verificationError && (
+                  <div role="alert" className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/50 dark:text-red-200">
+                    <span>Verification documents could not be loaded: {verificationError}</span>
+                    <button type="button" onClick={() => void loadCompany(selectedCompanyId)} className="font-semibold underline">Retry</button>
+                  </div>
+                )}
                 {["NOT_SUBMITTED", "REJECTED"].includes(company.verification_status) && canManageMembers && (
                   <p className="mt-2 rounded-lg bg-indigo-50 px-3 py-2 text-xs leading-relaxed text-indigo-900 dark:bg-indigo-950/50 dark:text-indigo-200">
                     Uploading a document saves the evidence but does not submit it. After uploading at least one required document, select <strong>Submit for review</strong> to request verification.
@@ -1759,6 +1937,12 @@ export default function SupplierWorkspacePage() {
                 <h2 className="text-lg font-bold">Company members</h2>
               </div>
               <p className="mt-1 text-sm text-slate-500">Active membership is required for company-scoped access.</p>
+              {membersError && (
+                <div role="alert" className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/50 dark:text-red-200">
+                  <span>Company members could not be loaded: {membersError}</span>
+                  <button type="button" onClick={() => void loadCompany(selectedCompanyId)} className="font-semibold underline">Retry</button>
+                </div>
+              )}
               <div className="mt-4 divide-y divide-slate-200 dark:divide-slate-800">
                 {members.map((member) => (
                   <div key={member.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
@@ -1818,7 +2002,7 @@ export default function SupplierWorkspacePage() {
           </section>
         )}
 
-        {!company && companies.length === 0 && (
+        {!company && companies.length === 0 && section === "company" && (
           <section className="grid gap-6 lg:grid-cols-[0.8fr_1.2fr]">
             <div className="rounded-2xl border border-purple-200 bg-purple-50 p-6 dark:border-purple-900 dark:bg-purple-950/30">
               <Building2 className="text-purple-700 dark:text-purple-300" size={24} />
@@ -1881,13 +2065,13 @@ export default function SupplierWorkspacePage() {
           </section>
         )}
 
-        {company && (
+        {company && companyDataId === selectedCompanyId && section === "offerings" && (
           <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h2 className="text-lg font-bold">Material offerings</h2>
                 <p className="mt-1 max-w-3xl text-sm text-slate-600 dark:text-slate-400">
-                  Manage the materials and service areas your company can provide. Available, non-archived offerings from active, verified companies may appear as catalogue matches in Get Procurement. Buyers are not contacting suppliers or requesting quotes through discovery.
+                  Manage materials and service areas your company can provide. Buyers may see available, non-archived listings when your company is active and verified; catalogue discovery does not start a transaction.
                 </p>
               </div>
               {canManageMembers && (
@@ -1903,8 +2087,9 @@ export default function SupplierWorkspacePage() {
             </div>
 
             {offeringError && (
-              <div role="alert" className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/50 dark:text-red-200">
+              <div role="alert" className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/50 dark:text-red-200">
                 {offeringError}
+                <button type="button" onClick={() => void refreshOfferings()} disabled={offeringsLoading} className="font-semibold underline disabled:opacity-60">Retry offerings</button>
               </div>
             )}
             {offeringSuccess && (
@@ -2084,14 +2269,14 @@ export default function SupplierWorkspacePage() {
           </section>
         )}
 
-        {companies.length > 0 && !company && !error && (
+        {companies.length > 0 && !company && !error && section === "company" && (
           <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900">
             Select an operational company or refresh the workspace. Inactive company access must be restored by an authorized operator.
           </div>
         )}
 
           <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-5 text-xs text-slate-500 dark:border-slate-800">
-            <span>Supplier material offerings, catalogue discovery, RFQs, quotations, and purchase orders are available in Get Procurement.</span>
+            <span>Manage supplier RFQs, quotations, purchase orders, fulfilment, and company information from this workspace.</span>
             <Link href="/" className="font-semibold hover:text-purple-700 dark:hover:text-purple-300">
               Back to GLESKA
             </Link>

@@ -5,7 +5,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
-from app.core.security import require_employer
+from app.core.security import get_current_user, require_employer
 from app.schemas.auth import UserResponse
 from app.schemas.procurement import (
     ProcurementConversationCreateResponse,
@@ -17,6 +17,8 @@ from app.schemas.procurement import (
     ProcurementSettings,
     ProcurementSettingsUpdate,
     ProcurementSupplierDiscoveryResponse,
+    ProcurementWorkspacePreferenceUpdate,
+    ProcurementWorkspacesResponse,
 )
 from app.schemas.rfq import (
     ProcurementQuotationSelectionRequest,
@@ -32,9 +34,48 @@ from app.services.procurement_service import (
     ProcurementService,
     ProcurementServiceError,
 )
+from app.services.procurement_workspace_service import ProcurementWorkspaceService
 
 router = APIRouter(prefix="/procurement", tags=["procurement"])
 logger = logging.getLogger(__name__)
+
+
+@router.get("/workspaces", response_model=ProcurementWorkspacesResponse)
+async def get_procurement_workspaces(
+    user: UserResponse = Depends(get_current_user),
+):
+    try:
+        return ProcurementWorkspaceService.get_workspaces(user)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Procurement workspace load failed: user_id=%s", user.id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="PROCUREMENT_WORKSPACES_LOAD_FAILED",
+        ) from exc
+
+
+@router.put("/workspaces/preference", response_model=ProcurementWorkspacesResponse)
+async def update_procurement_workspace_preference(
+    request: ProcurementWorkspacePreferenceUpdate,
+    user: UserResponse = Depends(get_current_user),
+):
+    try:
+        return ProcurementWorkspaceService.update_preference(user, request)
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Procurement workspace preference update failed: user_id=%s", user.id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="PROCUREMENT_WORKSPACE_PREFERENCE_UPDATE_FAILED",
+        ) from exc
 
 
 @router.get("/settings", response_model=ProcurementSettings)

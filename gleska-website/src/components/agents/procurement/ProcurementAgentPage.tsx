@@ -27,6 +27,7 @@ import {
 import AgentLayout from "@/components/agent-dashboard/AgentLayout";
 import AgentHeader from "@/components/agent-dashboard/AgentHeader";
 import AgentSearchBar from "@/components/agent-dashboard/AgentSearchBar";
+import ProcurementWorkspaceSwitch from "@/components/procurement/ProcurementWorkspaceSwitch";
 import {
   MaterialRequestDraft,
   ProcurementConversation,
@@ -37,7 +38,7 @@ import {
   ProcurementUnit,
   procurementApi,
 } from "@/lib/procurement-api";
-import { procurementConfig, supplierWorkspacePath } from "./procurementConfig";
+import { procurementConfig, procurementWorkspacesPath } from "./procurementConfig";
 import ProcurementRFQPanel from "./ProcurementRFQPanel";
 
 type Section =
@@ -1260,13 +1261,13 @@ export default function ProcurementAgentPage() {
                 {section === "get-procurement"
                   ? "Review active listings from verified suppliers against one of your saved material requirements. Discovery does not contact suppliers."
                   : section === "rfqs"
-                    ? "Create persistent RFQs from saved requirements and review supplier acknowledgements or declines."
+                    ? "Create RFQs, compare supplier quotations, issue purchase orders, and review fulfillment history."
                   : section === "material-details"
                     ? requirementView === "create"
                       ? "Create and confirm a material requirement with AI or the manual form."
                       : "Find, review, edit, or delete material requirements you have saved."
                     : section === "status"
-                      ? "See saved requirements, RFQs, and recipient response statuses. Quotations and fulfillment progress are not available yet."
+                        ? "Review saved requirement and conversation status here; manage RFQ quotations, purchase orders, and fulfillment in Requests for Quote."
                       : section === "settings"
                         ? "Manage employer-specific defaults and supported supplier-matching preferences."
                         : "Review the material specifications and delivery details currently saved in your Procurement workspace."}
@@ -1341,13 +1342,16 @@ export default function ProcurementAgentPage() {
             <AgentHeader
               config={procurementConfig}
               onOptionClick={(optionId) => {
-                if (optionId === "provide") {
-                  router.push(supplierWorkspacePath);
+                if (optionId === "workspaces") {
+                  router.push(procurementWorkspacesPath);
                 } else if (optionId === "get") {
                   onSectionChange("get-procurement");
                 }
               }}
             />
+            <div className="flex justify-center">
+              <ProcurementWorkspaceSwitch />
+            </div>
             <AgentSearchBar
               title={procurementConfig.searchTitle}
               subtitle={procurementConfig.searchSubtitle}
@@ -2369,7 +2373,7 @@ export default function ProcurementAgentPage() {
             <div>
               <h2 className="text-base font-bold text-slate-900 dark:text-white">Recorded requirement status</h2>
               <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-                Saved requirements and RFQ invitations have persistent status. RFQ recipients can acknowledge or decline; price quotations, supplier selection, purchase orders, and fulfillment tracking belong to later phases.
+                Review saved requirements and AI conversations here. Requests for Quote includes invited suppliers, quotation comparison, purchase orders, and fulfillment history.
               </p>
             </div>
             <div className="grid gap-4 md:grid-cols-2">
@@ -2822,7 +2826,7 @@ export default function ProcurementAgentPage() {
                 This Procurement view is not available
               </h2>
               <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-400">
-                You can create and save material requirements, match eligible supplier offerings, and create persistent RFQs. Price quotations, supplier selection, purchase orders, and fulfillment tracking are not part of this phase.
+                Use the Buyer workspace navigation to create material requests, discover eligible suppliers, manage RFQs and quotations, and track purchase orders and fulfillment.
               </p>
             </div>
           </section>

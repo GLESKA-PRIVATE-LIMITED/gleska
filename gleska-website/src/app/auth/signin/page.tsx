@@ -16,20 +16,19 @@ export default function SignInSelectionPage() {
   const { user, isLoading: authLoading, nextStep } = useAuth();
   const router = useRouter();
   const [showCreateAccount, setShowCreateAccount] = React.useState(false);
-  const [procurementRequested, setProcurementRequested] = React.useState(false);
+  const [requestedNext, setRequestedNext] = React.useState("");
 
   useEffect(() => {
-    setProcurementRequested(
-      new URLSearchParams(window.location.search).get("next") === "/procurement",
-    );
+    setRequestedNext(new URLSearchParams(window.location.search).get("next") || "");
   }, []);
 
   useEffect(() => {
     if (!authLoading && user) {
-      const requestedNext = user.role === "EMPLOYER" && user.employer_type !== "INDIVIDUAL"
-        ? new URLSearchParams(window.location.search).get("next")
-        : null;
-      router.replace(getRouteForAuthenticatedUser(user.role, nextStep, requestedNext));
+      router.replace(getRouteForAuthenticatedUser(
+        user.role,
+        nextStep,
+        new URLSearchParams(window.location.search).get("next"),
+      ));
     }
   }, [authLoading, user, nextStep, router]);
 
@@ -72,7 +71,7 @@ export default function SignInSelectionPage() {
           ) : (
             <div className="grid grid-cols-1 gap-6 text-left md:grid-cols-3">
             <Link
-              href={`/employer/auth?mode=signup${procurementRequested ? "&next=%2Fprocurement" : ""}`}
+              href={`/employer/auth?mode=signup${requestedNext ? `&next=${encodeURIComponent(requestedNext)}` : ""}`}
               className="group relative flex flex-col justify-between rounded-3xl border border-slate-200/80 bg-white/80 p-6 sm:p-8 shadow-2xl shadow-slate-900/5 backdrop-blur-xl transition-all duration-300 hover:-translate-y-1.5 hover:border-blue-500/60 hover:shadow-xl dark:border-slate-800/80 dark:bg-slate-900/90"
             >
               <div className="space-y-4">
@@ -95,7 +94,7 @@ export default function SignInSelectionPage() {
             </Link>
 
             <Link
-              href="/employer/auth?account=individual&mode=signup"
+              href={`/employer/auth?account=individual&mode=signup${requestedNext ? `&next=${encodeURIComponent(requestedNext)}` : ""}`}
               className="group relative flex flex-col justify-between rounded-3xl border border-slate-200/80 bg-white/80 p-6 sm:p-8 shadow-2xl shadow-slate-900/5 backdrop-blur-xl transition-all duration-300 hover:-translate-y-1.5 hover:border-amber-500/60 hover:shadow-xl dark:border-slate-800/80 dark:bg-slate-900/90"
             >
               <div className="space-y-4">
@@ -118,7 +117,7 @@ export default function SignInSelectionPage() {
             </Link>
 
             <Link
-              href="/worker/auth?mode=signup"
+              href={`/worker/auth?mode=signup${requestedNext ? `&next=${encodeURIComponent(requestedNext)}` : ""}`}
               className="group relative flex flex-col justify-between rounded-3xl border border-slate-200/80 bg-white/80 p-6 shadow-2xl shadow-slate-900/5 backdrop-blur-xl transition-all duration-300 hover:-translate-y-1.5 hover:border-amber-500/60 hover:shadow-xl dark:border-slate-800/80 dark:bg-slate-900/90"
             >
               <div className="space-y-4">

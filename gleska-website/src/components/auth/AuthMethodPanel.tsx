@@ -180,9 +180,7 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS", initia
         const authenticatedUser = await signInWithEmail(email, password, role);
         const nextStep = await refreshUser();
         toast.success(t('auth.welcomeBack'));
-        const requestedNext = authenticatedUser.role === "EMPLOYER" && authenticatedUser.employer_type !== "INDIVIDUAL"
-          ? new URLSearchParams(window.location.search).get("next")
-          : null;
+        const requestedNext = new URLSearchParams(window.location.search).get("next");
         router.replace(getRouteForAuthenticatedUser(authenticatedUser.role, nextStep, requestedNext));
       }
     } catch (error: unknown) {
@@ -228,18 +226,14 @@ export default function AuthMethodPanel({ role, accountType = "BUSINESS", initia
         const { user: authenticatedUser, nextStep } = await loginWithMobile(otpTransaction.mobile, otp);
         clearOtpTransaction();
         toast.success(t('auth.welcomeBack'));
-        const requestedNext = authenticatedUser.role === "EMPLOYER" && authenticatedUser.employer_type !== "INDIVIDUAL"
-          ? new URLSearchParams(window.location.search).get("next")
-          : null;
+        const requestedNext = new URLSearchParams(window.location.search).get("next");
         router.replace(getRouteForAuthenticatedUser(authenticatedUser.role, nextStep, requestedNext));
         return;
       }
       const nextStep = await refreshUser(otpPurpose === "signup");
       clearOtpTransaction();
       toast.success(t('auth.accountCreated'));
-      const requestedNext = role === "EMPLOYER" && accountType === "BUSINESS"
-        ? new URLSearchParams(window.location.search).get("next")
-        : null;
+      const requestedNext = new URLSearchParams(window.location.search).get("next");
       router.replace(getRouteForAuthenticatedUser(role, nextStep, requestedNext));
     } catch (error: unknown) {
       if (otpPurpose === "signup") setOtp("");

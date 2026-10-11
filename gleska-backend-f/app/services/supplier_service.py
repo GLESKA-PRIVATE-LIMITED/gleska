@@ -126,7 +126,7 @@ class SupplierService:
                 return []
             companies = SupplierService._rows(
                 supabase.table("supplier_companies")
-                .select("id, name, verification_status")
+                .select("id, name, operational_status, verification_status")
                 .in_("id", company_ids)
                 .execute()
             )
@@ -139,6 +139,9 @@ class SupplierService:
                     role=membership["role"],
                     status=membership["status"],
                     created_at=membership["created_at"],
+                    operational_status=company_data[str(membership["company_id"])].get(
+                        "operational_status"
+                    ),
                     verification_status=company_data[str(membership["company_id"])].get(
                         "verification_status", "NOT_SUBMITTED"
                     ),

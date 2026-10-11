@@ -40,6 +40,7 @@ import { toast } from "sonner";
 import Link from "next/link";
 import LocationPicker, { LocationSelection } from "@/components/LocationPicker";
 import Navbar from "@/components/landing/Navbar";
+import { getRouteForAuthenticatedUser } from "@/lib/auth-routing";
 
 type EmployerType =
   | "REGISTERED_INDUSTRY"
@@ -48,11 +49,12 @@ type EmployerType =
 
 type OnboardingFormData = Record<string, string>;
 
-function getPostOnboardingRoute(employerType: string | undefined): string {
+function getPostOnboardingRoute(employerType?: string): string {
   const requestedNext = new URLSearchParams(window.location.search).get("next");
-  return employerType !== "INDIVIDUAL" && requestedNext === "/procurement"
-    ? "/procurement"
-    : "/";
+  const route = getRouteForAuthenticatedUser("EMPLOYER", "DASHBOARD", requestedNext);
+  return employerType === "INDIVIDUAL" && route.startsWith("/employer/onboarding")
+    ? "/"
+    : route;
 }
 
 type VerificationRecord = {

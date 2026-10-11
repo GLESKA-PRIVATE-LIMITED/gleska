@@ -34,11 +34,18 @@ export function middleware(request: NextRequest) {
   const isEmployerProtected = EMPLOYER_PROTECTED_PREFIXES.some((prefix) => pathname.startsWith(prefix));
   const isAdminProtected = ADMIN_PROTECTED_PREFIXES.some((prefix) => pathname.startsWith(prefix));
   const isSupplierProtected = SUPPLIER_PROTECTED_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+  const isProcurementProtected = pathname === "/procurement" || pathname.startsWith("/procurement/");
 
   // Exclude /admin/login from protection (it's a public login page for unauthenticated users)
   const isAdminLoginPage = pathname === "/admin/login";
 
-  if (!isWorkerProtected && !isEmployerProtected && !isAdminProtected && !isSupplierProtected) {
+  if (
+    !isWorkerProtected
+    && !isEmployerProtected
+    && !isAdminProtected
+    && !isSupplierProtected
+    && !isProcurementProtected
+  ) {
     return NextResponse.next();
   }
 

@@ -87,6 +87,20 @@ export interface ProcurementSettings {
 }
 
 export type ProcurementSettingsUpdate = Omit<ProcurementSettings, "updated_at">;
+export type ProcurementWorkspaceKind = "BUYER" | "SUPPLIER";
+
+export interface ProcurementWorkspaceOption {
+  id: string;
+  kind: ProcurementWorkspaceKind;
+  name: string;
+  company_id: string | null;
+  verification_status: string | null;
+}
+
+export interface ProcurementWorkspaces {
+  available_workspaces: ProcurementWorkspaceOption[];
+  preferred_workspace: ProcurementWorkspaceKind | null;
+}
 
 export type ProcurementRFQRecipientStatus = "INVITED" | "ACKNOWLEDGED" | "DECLINED";
 export type ProcurementRFQStatus = "OPEN" | "CLOSED";
@@ -253,6 +267,23 @@ export interface ProcurementRFQCreate {
 const basePath = "/api/v1/procurement";
 
 export const procurementApi = {
+  async getWorkspaces() {
+    const response = await apiClient.get<ProcurementWorkspaces>(
+      `${basePath}/workspaces`,
+      { withCredentials: true },
+    );
+    return response.data;
+  },
+
+  async updateWorkspacePreference(preferredWorkspace: ProcurementWorkspaceKind) {
+    const response = await apiClient.put<ProcurementWorkspaces>(
+      `${basePath}/workspaces/preference`,
+      { preferred_workspace: preferredWorkspace },
+      { withCredentials: true },
+    );
+    return response.data;
+  },
+
   async getSettings() {
     const response = await apiClient.get<ProcurementSettings>(
       `${basePath}/settings`,

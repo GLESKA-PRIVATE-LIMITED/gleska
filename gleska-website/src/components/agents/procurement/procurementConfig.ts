@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { AgentConfig } from "@/components/agent-dashboard/types";
 
-export const supplierWorkspacePath = "/supplier";
+export const procurementWorkspacesPath = "/procurement/workspaces?switch=1";
 
 export const procurementConfig: AgentConfig = {
   agentId: "procurement",
@@ -26,7 +26,7 @@ export const procurementConfig: AgentConfig = {
     { id: "material-details", label: "Requirement Details", icon: Boxes, isTab: true },
     { id: "details", label: "Procurement Details", icon: FileText, isTab: true },
     { id: "status", label: "Current Status", icon: Activity, isTab: true },
-    { id: "provide-procurement", label: "Provide Procurement", icon: Package, href: supplierWorkspacePath },
+    { id: "workspaces", label: "Workspaces", icon: Package, href: procurementWorkspacesPath },
     { id: "get-procurement", label: "Get Procurement", icon: ShoppingCart, isTab: true },
     { id: "rfqs", label: "Requests for Quote", icon: ClipboardList, isTab: true },
     { id: "settings", label: "Settings", icon: Settings, isTab: true },
@@ -34,10 +34,10 @@ export const procurementConfig: AgentConfig = {
   ],
   actionOptions: [
     {
-      id: "provide",
+      id: "workspaces",
       optionNumber: "OPTION 01",
-      title: "Provide Procurement",
-      description: "Open Supplier Workspace to manage company setup, members, verification and offerings.",
+      title: "Choose a Procurement Workspace",
+      description: "Open the Buyer or Supplier workspace available to your account.",
       icon: Package,
       badgeColor: "text-purple-600 dark:text-purple-400",
       iconBg: "bg-purple-50 text-purple-600 border-purple-100 dark:bg-purple-950/60 dark:text-purple-400 dark:border-purple-800",
