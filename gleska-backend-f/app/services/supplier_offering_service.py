@@ -19,6 +19,8 @@ from app.schemas.supplier_offering import (
 
 logger = logging.getLogger(__name__)
 
+_SCHEMA_UNAVAILABLE_CODES = {"42P01", "42703", "PGRST204", "PGRST205"}
+
 
 class SupplierOfferingService:
     @staticmethod
@@ -45,14 +47,25 @@ class SupplierOfferingService:
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="SUPPLIER_OFFERING_WRITE_NOT_ALLOWED",
             ) from exc
+        error_code = str(getattr(exc, "code", "") or "").upper()
+        detail = (
+            "SUPPLIER_OFFERING_SCHEMA_UNAVAILABLE"
+            if error_code in _SCHEMA_UNAVAILABLE_CODES
+            else f"SUPPLIER_OFFERING_{operation.upper()}_FAILED"
+        )
         logger.exception(
-            "Supplier offering %s failed: company_id=%s",
+            "Supplier offering %s failed: company_id=%s database_error_code=%s",
             operation,
             company_id,
+            error_code or "unknown",
         )
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"SUPPLIER_OFFERING_{operation.upper()}_FAILED",
+            status_code=(
+                status.HTTP_503_SERVICE_UNAVAILABLE
+                if detail == "SUPPLIER_OFFERING_SCHEMA_UNAVAILABLE"
+                else status.HTTP_500_INTERNAL_SERVER_ERROR
+            ),
+            detail=detail,
         ) from exc
 
     @classmethod
@@ -99,13 +112,14 @@ class SupplierOfferingService:
                     "currency_code, minimum_order_quantity, is_available, "
                     "service_coverage, revision, archived_at, created_at, updated_at"
                 )
-                .single()
                 .execute()
             )
-            row = cls._row(response)
-            if not row:
-                raise RuntimeError("Offering insert returned no record.")
-            return cls._response(row)
+            rows = cls._rows(response)
+            if len(rows) != 1:
+                raise RuntimeError(
+                    f"Offering insert returned {len(rows)} records; expected exactly one."
+                )
+            return cls._response(rows[0])
         except Exception as exc:
             cls._database_error("create", company_id, exc)
 

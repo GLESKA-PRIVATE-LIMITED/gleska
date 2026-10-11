@@ -55,11 +55,11 @@ export function middleware(request: NextRequest) {
     (c) => (c.name.startsWith("sb-") && Boolean(c.value)) || c.name === "sb-auth-token"
   );
 
-  // The Supabase token may live only in browser storage, so middleware cannot
-  // see it on client-side navigation. This hint only avoids redirect loops;
-  // client route guards and backend authorization remain authoritative.
+  // Supabase may keep its token only in browser storage, which middleware
+  // cannot inspect. The client-auth hint permits navigation only; client role
+  // guards and backend authorization remain authoritative, including for admin.
   const isAuthenticated =
-    hasGoleskaSession || hasSupabaseAuthToken || (!isAdminProtected && hasClientAuthHint);
+    hasGoleskaSession || hasSupabaseAuthToken || hasClientAuthHint;
 
   if (!isAuthenticated) {
     const targetAuth = isAdminProtected ? "/admin/login" : "/auth/signin";

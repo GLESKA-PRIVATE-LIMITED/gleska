@@ -72,6 +72,120 @@ class SupplierQuotationResponse(BaseModel):
     updated_at: datetime
 
 
+PurchaseOrderStatus = Literal[
+    "ISSUED",
+    "ACCEPTED",
+    "REJECTED",
+    "CANCELLED",
+    "PREPARING",
+    "DISPATCHED",
+    "PARTIALLY_DELIVERED",
+    "DELIVERED",
+]
+
+PurchaseOrderFulfillmentStatus = Literal[
+    "PREPARING",
+    "DISPATCHED",
+    "PARTIALLY_DELIVERED",
+    "DELIVERED",
+]
+
+
+class PurchaseOrderFulfillmentEventResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: UUID
+    status: PurchaseOrderFulfillmentStatus
+    dispatched_quantity: Decimal
+    delivered_quantity: Decimal
+    unit: str
+    dispatch_date: date | None = None
+    carrier: str | None = None
+    tracking_reference: str | None = None
+    estimated_delivery_date: date | None = None
+    delivery_date: date | None = None
+    delivery_notes: str | None = None
+    created_at: datetime
+
+
+class PurchaseOrderResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: UUID
+    order_reference: str
+    rfq_id: UUID
+    quotation_id: UUID
+    supplier_company_id: UUID
+    supplier_company_name: str
+    item_name: str
+    specification: str | None = None
+    quantity: Decimal
+    unit: str
+    unit_price: Decimal
+    currency: Literal["INR", "USD", "EUR", "GBP", "AED"]
+    quantity_offered: Decimal
+    offered_unit: str
+    estimated_delivery_lead_time_days: int
+    quotation_valid_until: date
+    delivery_location: str
+    delivery_terms: str
+    supplier_notes: str | None = None
+    status: PurchaseOrderStatus
+    dispatched_quantity: Decimal
+    delivered_quantity: Decimal
+    fulfillment_unit: str
+    dispatch_date: date | None = None
+    carrier: str | None = None
+    tracking_reference: str | None = None
+    estimated_delivery_date: date | None = None
+    delivery_date: date | None = None
+    delivery_notes: str | None = None
+    fulfillment_events: list[PurchaseOrderFulfillmentEventResponse] = Field(default_factory=list)
+    created_at: datetime
+    updated_at: datetime
+
+
+class ProcurementQuotationSelectionRequest(RFQModel):
+    quotation_id: UUID
+
+
+class PurchaseOrderStatusUpdateRequest(RFQModel):
+    status: Literal["ACCEPTED", "REJECTED"]
+
+
+class PurchaseOrderFulfillmentUpdateRequest(RFQModel):
+    idempotency_key: UUID
+    status: PurchaseOrderFulfillmentStatus
+    dispatched_quantity: Decimal = Field(
+        default=Decimal("0"),
+        ge=0,
+        le=1_000_000_000,
+        max_digits=18,
+        decimal_places=4,
+    )
+    delivered_quantity: Decimal = Field(
+        default=Decimal("0"),
+        ge=0,
+        le=1_000_000_000,
+        max_digits=18,
+        decimal_places=4,
+    )
+    unit: Annotated[str, StringConstraints(min_length=1, max_length=48)]
+    dispatch_date: date | None = None
+    carrier: Annotated[str, StringConstraints(max_length=200)] | None = None
+    tracking_reference: Annotated[str, StringConstraints(max_length=200)] | None = None
+    estimated_delivery_date: date | None = None
+    delivery_date: date | None = None
+    delivery_notes: Annotated[str, StringConstraints(max_length=2000)] | None = None
+
+    @field_validator("carrier", "tracking_reference", "delivery_notes", mode="before")
+    @classmethod
+    def normalize_fulfillment_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise ValueError("Fulfillment details must be text.")
+        return " ".join(value.split()) or None
+
+
 class ProcurementRFQRecipient(BaseModel):
     model_config = ConfigDict(extra="ignore")
     company_id: UUID

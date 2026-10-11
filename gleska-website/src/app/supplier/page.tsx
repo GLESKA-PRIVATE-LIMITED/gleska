@@ -1,17 +1,20 @@
 "use client";
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { isAxiosError } from "axios";
-import { Archive, Building2, CheckCircle2, ClipboardList, Clock3, FileText, Loader2, Menu, Package, Pencil, Plus, RefreshCw, UserPlus, Users, X } from "lucide-react";
+import { Archive, Building2, CheckCircle2, ClipboardList, Clock3, FileText, Loader2, Menu, Package, Pencil, Plus, RefreshCw, Truck, UserPlus, Users, X } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import apiClient from "@/lib/api";
 import AgentSidebar from "@/components/agent-dashboard/AgentSidebar";
 import { procurementConfig } from "@/components/agents/procurement/procurementConfig";
 import {
   ProcurementUnit,
+  ProcurementPurchaseOrder,
+  PurchaseOrderFulfillmentStatus,
+  PurchaseOrderFulfillmentUpdate,
   SupplierQuotation,
   SupplierRFQ,
   procurementApi,
@@ -20,6 +23,40 @@ import {
 type CompanyRole = "OWNER" | "ADMIN" | "MEMBER";
 type MembershipStatus = "ACTIVE" | "PENDING" | "REVOKED";
 type VerificationStatus = "NOT_SUBMITTED" | "PENDING_REVIEW" | "VERIFIED" | "REJECTED" | "SUSPENDED";
+type FulfillmentDraft = Omit<PurchaseOrderFulfillmentUpdate, "idempotency_key">;
+type PendingFulfillmentSubmission = {
+  orderId: string;
+  signature: string;
+  idempotencyKey: string;
+};
+
+function emptyFulfillmentDraft(
+  order: ProcurementPurchaseOrder,
+): FulfillmentDraft {
+  const allowedStatus: PurchaseOrderFulfillmentStatus =
+    order.status === "ACCEPTED" || order.status === "PREPARING"
+      ? "PREPARING"
+      : order.status === "DISPATCHED"
+        ? "DISPATCHED"
+        : order.status === "PARTIALLY_DELIVERED"
+          ? "PARTIALLY_DELIVERED"
+          : "PREPARING";
+  return {
+    status: allowedStatus,
+    dispatched_quantity: "",
+    delivered_quantity: "",
+    unit: order.unit,
+    dispatch_date: "",
+    carrier: order.carrier || "",
+    tracking_reference: order.tracking_reference || "",
+    estimated_delivery_date:
+      order.estimated_delivery_date && order.estimated_delivery_date >= localDateString()
+        ? order.estimated_delivery_date
+        : "",
+    delivery_date: "",
+    delivery_notes: "",
+  };
+}
 
 interface CompanyMembership {
   id: string;
@@ -195,6 +232,7 @@ function errorMessage(error: unknown): string {
       SUPPLIER_MEMBERSHIP_CONFLICT: "That account already has a company invitation or membership.",
       SUPPLIER_DOCUMENT_UPLOAD_NOT_ALLOWED: "Documents cannot be changed while this verification is under review.",
       SUPPLIER_VERIFICATION_DOCUMENT_REQUIRED: "Upload at least one verification document before submitting.",
+      SUPPLIER_VERIFICATION_SUBMISSION_FAILED: "Your verification request could not be submitted. Check your connection and retry; the status will remain unchanged unless submission succeeds.",
       SUPPLIER_VERIFICATION_SUBMISSION_NOT_ALLOWED: "This verification cannot be submitted in its current status.",
       SUPPLIER_VERIFICATION_SUBMISSION_FORBIDDEN: "Only an active company owner or admin can submit verification.",
       SUPPLIER_VERIFICATION_MANAGEMENT_FORBIDDEN: "Only active company owners and admins can manage verification documents.",
@@ -207,14 +245,15 @@ function errorMessage(error: unknown): string {
       SUPPLIER_OFFERING_NOT_FOUND: "That material offering was not found in this company.",
       SUPPLIER_OFFERING_ARCHIVED: "That material offering is archived and cannot be edited.",
       SUPPLIER_OFFERING_STALE: "This material offering changed on the server. Refresh the list before editing it.",
-      SUPPLIER_OFFERING_LIST_FAILED: "Material offerings could not be loaded. Check that migration 074 is applied, then refresh.",
+      SUPPLIER_OFFERING_SCHEMA_UNAVAILABLE: "The supplier-offering schema is not visible to this API. Confirm migration 074 is applied to the configured Supabase project and refresh its schema cache if needed.",
+      SUPPLIER_OFFERING_LIST_FAILED: "Material offerings could not be loaded. Please refresh and try again.",
       SUPPLIER_OFFERING_CREATE_FAILED: "The material offering could not be created.",
       SUPPLIER_OFFERING_UPDATE_FAILED: "The material offering could not be updated.",
       SUPPLIER_OFFERING_ARCHIVE_FAILED: "The material offering could not be archived.",
       RFQ_LIST_FAILED: "The RFQ inbox could not be loaded. Check that migrations 076 and 077 are applied, then refresh.",
       RFQ_LOAD_FAILED: "The RFQ could not be loaded. Refresh the Supplier Workspace.",
       RFQ_NOT_FOUND: "This RFQ is no longer available to this company.",
-      RFQ_CLOSED: "This RFQ deadline has passed; responses are closed.",
+      RFQ_CLOSED: "This RFQ is closed because its deadline passed or it was awarded; responses are closed.",
       RFQ_ALREADY_RESPONDED: "Your company has already responded to this invitation.",
       RFQ_RESPONSE_FAILED: "Your response could not be saved. Please retry; if this persists, confirm migration 076 has been applied.",
       RFQ_INVITATION_DECLINED: "Your company declined this invitation and can no longer submit a quotation.",
@@ -222,6 +261,20 @@ function errorMessage(error: unknown): string {
       QUOTATION_VALIDITY_INVALID: "The quotation validity date cannot be in the past.",
       QUOTATION_INVALID: "Check the price, currency, quantity, unit, dates, and text lengths.",
       QUOTATION_SUBMISSION_FAILED: "Your quotation could not be saved. Please try again.",
+      PURCHASE_ORDER_LIST_FAILED: "Purchase orders could not be loaded. Confirm migration 078 and migration 079 are applied, then refresh.",
+      PURCHASE_ORDER_NOT_FOUND: "This purchase order is no longer available to this company.",
+      PURCHASE_ORDER_TRANSITION_INVALID: "This order has already changed and can no longer be updated. Refresh the order list.",
+      PURCHASE_ORDER_UPDATE_FAILED: "Your purchase order response could not be saved. Please retry.",
+      PURCHASE_ORDER_FULFILLMENT_NOT_ALLOWED: "Fulfillment updates are available only after your company accepts the order.",
+      FULFILLMENT_UPDATE_INVALID: "Check the fulfillment quantities, unit, and text fields.",
+      FULFILLMENT_UPDATE_FAILED: "The fulfillment update could not be saved. Confirm migrations 078 and 079 are applied, then retry.",
+      FULFILLMENT_IDEMPOTENCY_CONFLICT: "This update key was already used for different details. Reopen the form and submit again.",
+      FULFILLMENT_DISPATCH_QUANTITY_EXCEEDED: "Cumulative dispatched quantity cannot exceed the order quantity.",
+      FULFILLMENT_DELIVERY_QUANTITY_EXCEEDED: "Delivered quantity cannot exceed the dispatched or ordered quantity.",
+      FULFILLMENT_STATUS_QUANTITY_INVALID: "The selected status requires a valid quantity increment and consistent cumulative quantities.",
+      FULFILLMENT_DISPATCH_DATE_REQUIRED: "Enter a dispatch date when recording dispatched quantity.",
+      FULFILLMENT_DELIVERY_DATE_REQUIRED: "Enter a delivery date when recording delivered quantity.",
+      FULFILLMENT_DATE_INVALID: "Dispatch and actual delivery dates cannot be in the future, delivery cannot precede dispatch, and an estimated delivery date cannot be in the past.",
     };
     return (detail && messages[detail]) || detail || "The supplier workspace could not complete that request.";
   }
@@ -237,7 +290,17 @@ export default function SupplierWorkspacePage() {
   const [members, setMembers] = useState<SupplierMember[]>([]);
   const [verificationDocuments, setVerificationDocuments] = useState<VerificationDocument[]>([]);
   const [offerings, setOfferings] = useState<SupplierMaterialOffering[]>([]);
+  const [offeringsLoaded, setOfferingsLoaded] = useState(false);
   const [rfqs, setRfqs] = useState<SupplierRFQ[]>([]);
+  const [purchaseOrders, setPurchaseOrders] = useState<ProcurementPurchaseOrder[]>([]);
+  const [purchaseOrdersLoading, setPurchaseOrdersLoading] = useState(false);
+  const [purchaseOrdersLoaded, setPurchaseOrdersLoaded] = useState(false);
+  const [purchaseOrdersError, setPurchaseOrdersError] = useState("");
+  const [purchaseOrdersSuccess, setPurchaseOrdersSuccess] = useState("");
+  const [purchaseOrderBusyId, setPurchaseOrderBusyId] = useState("");
+  const [fulfillmentOrderId, setFulfillmentOrderId] = useState("");
+  const [fulfillmentDraft, setFulfillmentDraft] = useState<FulfillmentDraft | null>(null);
+  const pendingFulfillmentSubmission = useRef<PendingFulfillmentSubmission | null>(null);
   const [rfqsLoading, setRfqsLoading] = useState(false);
   const [rfqsError, setRfqsError] = useState("");
   const [rfqsSuccess, setRfqsSuccess] = useState("");
@@ -290,12 +353,24 @@ export default function SupplierWorkspacePage() {
       setMembers([]);
       setVerificationDocuments([]);
       setOfferings([]);
+      setOfferingsLoaded(false);
       setRfqs([]);
+      setPurchaseOrders([]);
+      setPurchaseOrdersLoading(false);
+      setPurchaseOrdersLoaded(false);
       setSelectedRfqId("");
       setRfqsError("");
+      setPurchaseOrdersError("");
+      setPurchaseOrdersSuccess("");
       setOfferingError("");
       return;
     }
+    setPurchaseOrders([]);
+    setPurchaseOrdersLoaded(false);
+    setPurchaseOrdersError("");
+    setPurchaseOrdersSuccess("");
+    setOfferings([]);
+    setOfferingsLoaded(false);
     const [companyResponse, membersResponse] = await Promise.all([
       apiClient.get<SupplierCompany>(`/api/v1/suppliers/companies/${companyId}`),
       apiClient.get<SupplierMember[]>(`/api/v1/suppliers/companies/${companyId}/members`),
@@ -319,8 +394,10 @@ export default function SupplierWorkspacePage() {
         { params: { include_archived: includeArchived } },
       );
       setOfferings(offeringsResponse.data);
+      setOfferingsLoaded(true);
     } catch (offeringLoadError) {
       setOfferings([]);
+      setOfferingsLoaded(false);
       setOfferingError(errorMessage(offeringLoadError));
     } finally {
       setOfferingsLoading(false);
@@ -339,6 +416,19 @@ export default function SupplierWorkspacePage() {
       setRfqsError(errorMessage(rfqLoadError));
     } finally {
       setRfqsLoading(false);
+    }
+    setPurchaseOrdersLoading(true);
+    setPurchaseOrdersLoaded(false);
+    setPurchaseOrdersError("");
+    setPurchaseOrdersSuccess("");
+    try {
+      setPurchaseOrders(await procurementApi.listSupplierPurchaseOrders(companyId));
+      setPurchaseOrdersLoaded(true);
+    } catch (purchaseOrderLoadError) {
+      setPurchaseOrders([]);
+      setPurchaseOrdersError(errorMessage(purchaseOrderLoadError));
+    } finally {
+      setPurchaseOrdersLoading(false);
     }
   }, []);
 
@@ -360,7 +450,13 @@ export default function SupplierWorkspacePage() {
       setCompany(null);
       setMembers([]);
       setOfferings([]);
+      setOfferingsLoaded(false);
       setRfqs([]);
+      setPurchaseOrders([]);
+      setPurchaseOrdersLoading(false);
+      setPurchaseOrdersLoaded(false);
+      setPurchaseOrdersError("");
+      setPurchaseOrdersSuccess("");
       setRfqsLoading(false);
       setRfqsError("");
       setRfqsSuccess("");
@@ -382,6 +478,7 @@ export default function SupplierWorkspacePage() {
       setCompany(null);
       setMembers([]);
       setOfferingsLoading(false);
+      setPurchaseOrdersLoading(false);
       setError(errorMessage(loadError));
     });
   }, [loadCompany, selectedCompanyId, user]);
@@ -401,6 +498,22 @@ export default function SupplierWorkspacePage() {
       if (selectedCompanyId) await loadCompany(selectedCompanyId);
     } catch (loadError) {
       setError(errorMessage(loadError));
+    }
+  };
+
+  const refreshPurchaseOrders = async () => {
+    if (!selectedCompanyId) return;
+    setPurchaseOrdersLoading(true);
+    setPurchaseOrdersLoaded(false);
+    setPurchaseOrdersError("");
+    try {
+      setPurchaseOrders(await procurementApi.listSupplierPurchaseOrders(selectedCompanyId));
+      setPurchaseOrdersLoaded(true);
+    } catch (loadError) {
+      setPurchaseOrders([]);
+      setPurchaseOrdersError(errorMessage(loadError));
+    } finally {
+      setPurchaseOrdersLoading(false);
     }
   };
 
@@ -677,6 +790,106 @@ export default function SupplierWorkspacePage() {
     }
   };
 
+  const respondToPurchaseOrder = async (
+    order: ProcurementPurchaseOrder,
+    orderStatus: "ACCEPTED" | "REJECTED",
+  ) => {
+    if (!selectedCompanyId || order.status !== "ISSUED" || purchaseOrderBusyId) return;
+    setPurchaseOrderBusyId(order.id);
+    setPurchaseOrdersError("");
+    setPurchaseOrdersSuccess("");
+    try {
+      const updated = await procurementApi.respondToSupplierPurchaseOrder(
+        selectedCompanyId,
+        order.id,
+        orderStatus,
+      );
+      setPurchaseOrders((current) => current.map((item) => item.id === updated.id ? updated : item));
+      setPurchaseOrdersSuccess(`${updated.order_reference} was ${orderStatus.toLowerCase()}.`);
+    } catch (responseError) {
+      setPurchaseOrdersError(errorMessage(responseError));
+    } finally {
+      setPurchaseOrderBusyId("");
+    }
+  };
+
+  const updatePurchaseOrderFulfillment = async (
+    event: FormEvent<HTMLFormElement>,
+    order: ProcurementPurchaseOrder,
+  ) => {
+    event.preventDefault();
+    if (!selectedCompanyId || !fulfillmentDraft || purchaseOrderBusyId) return;
+    setPurchaseOrderBusyId(order.id);
+    setPurchaseOrdersError("");
+    setPurchaseOrdersSuccess("");
+    const payload = {
+      ...fulfillmentDraft,
+      dispatched_quantity: fulfillmentDraft.dispatched_quantity || "0",
+      delivered_quantity: fulfillmentDraft.delivered_quantity || "0",
+      unit: order.unit,
+      dispatch_date: fulfillmentDraft.dispatch_date || null,
+      carrier: fulfillmentDraft.carrier?.trim() || null,
+      tracking_reference: fulfillmentDraft.tracking_reference?.trim() || null,
+      estimated_delivery_date: fulfillmentDraft.estimated_delivery_date || null,
+      delivery_date: fulfillmentDraft.delivery_date || null,
+      delivery_notes: fulfillmentDraft.delivery_notes?.trim() || null,
+    };
+    const signature = JSON.stringify(payload);
+    let pendingSubmission = pendingFulfillmentSubmission.current;
+    if (
+      !pendingSubmission
+      || pendingSubmission.orderId !== order.id
+      || pendingSubmission.signature !== signature
+    ) {
+      pendingSubmission = {
+        orderId: order.id,
+        signature,
+        idempotencyKey: crypto.randomUUID(),
+      };
+      pendingFulfillmentSubmission.current = pendingSubmission;
+    }
+    const update: PurchaseOrderFulfillmentUpdate = {
+      ...payload,
+      idempotency_key: pendingSubmission.idempotencyKey,
+    };
+    try {
+      const updated = await procurementApi.updateSupplierPurchaseOrderFulfillment(
+        selectedCompanyId,
+        order.id,
+        update,
+      );
+      setPurchaseOrders((current) => current.map((item) => item.id === updated.id ? updated : item));
+      setFulfillmentOrderId("");
+      setFulfillmentDraft(null);
+      pendingFulfillmentSubmission.current = null;
+      setPurchaseOrdersSuccess(`${updated.order_reference} fulfillment progress was recorded.`);
+    } catch (updateError) {
+      setPurchaseOrdersError(errorMessage(updateError));
+    } finally {
+      setPurchaseOrderBusyId("");
+    }
+  };
+
+  const changeFulfillmentDraft = (updates: Partial<FulfillmentDraft>) => {
+    pendingFulfillmentSubmission.current = null;
+    setFulfillmentDraft((draft) => draft ? { ...draft, ...updates } : draft);
+  };
+
+  const fulfillmentStatusesFor = (
+    status: ProcurementPurchaseOrder["status"],
+  ): PurchaseOrderFulfillmentStatus[] => {
+    if (status === "ACCEPTED" || status === "PREPARING") {
+      return ["PREPARING", "DISPATCHED"];
+    }
+    if (status === "DISPATCHED") {
+      return ["DISPATCHED", "PARTIALLY_DELIVERED", "DELIVERED"];
+    }
+    if (status === "PARTIALLY_DELIVERED") {
+      return ["PARTIALLY_DELIVERED", "DELIVERED"];
+    }
+    return [];
+  };
+
   const reviewQuotation = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!selectedRfq || !quotationDraft || !canSubmitQuotation) return;
@@ -912,7 +1125,7 @@ export default function SupplierWorkspacePage() {
                   <h2 className="text-lg font-bold">RFQ inbox</h2>
                 </div>
                 <p className="mt-1 max-w-3xl text-sm text-slate-600 dark:text-slate-400">
-                  Invitations addressed to this supplier company. You can acknowledge or decline; price quotations are not part of this phase.
+                  Invitations addressed to this supplier company. Acknowledge or decline, then submit a quotation from an open RFQ. Awarded quotations appear as purchase orders below.
                 </p>
               </div>
               <button
@@ -1186,13 +1399,203 @@ export default function SupplierWorkspacePage() {
                       </div>
                     ) : selectedRfq.recipient_status === "INVITED" && selectedRfq.status === "CLOSED" ? (
                       <p className="mt-4 rounded-lg bg-slate-100 p-3 text-sm text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                        The quotation deadline has passed. Responses are closed.
+                        This RFQ is closed. Its response window has ended or it has been awarded.
                       </p>
                     ) : null}
                   </article>
                 )}
               </div>
             )}
+          </section>
+        )}
+
+        {company && (
+          <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-purple-700 dark:text-purple-300">Supplier Workspace</p>
+                <h2 className="mt-1 text-lg font-bold">Purchase orders</h2>
+                <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+                  Orders addressed to {company.name}. An issued order can be accepted or rejected by your company. Accepted orders can be updated with dispatch and delivery progress.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => void refreshPurchaseOrders()}
+                disabled={purchaseOrdersLoading}
+                className="inline-flex min-h-9 items-center gap-2 rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold disabled:opacity-60 dark:border-slate-700"
+              >
+                <RefreshCw size={14} className={purchaseOrdersLoading ? "animate-spin" : ""} /> Refresh
+              </button>
+            </div>
+            {purchaseOrdersError && (
+              <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/50 dark:text-red-200">
+                {purchaseOrdersError}
+                {purchaseOrdersError.includes("migration 078") && (
+                  <p className="mt-1">Apply the forward-only migration through your normal database workflow, then refresh the workspace.</p>
+                )}
+              </div>
+            )}
+            {purchaseOrdersSuccess && (
+              <div role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200">
+                {purchaseOrdersSuccess}
+              </div>
+            )}
+            {purchaseOrdersLoading ? (
+              <div role="status" className="flex items-center gap-2 py-5 text-sm text-slate-500">
+                <Loader2 size={16} className="animate-spin" /> Loading purchase orders…
+              </div>
+            ) : purchaseOrdersLoaded && purchaseOrders.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500 dark:border-slate-700">
+                No purchase orders have been issued to this company.
+              </div>
+            ) : purchaseOrdersLoaded ? (
+              <ul className="space-y-3">
+                {purchaseOrders.map((order) => (
+                  <li key={order.id} className="rounded-xl border border-slate-200 p-4 dark:border-slate-700">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-bold text-slate-900 dark:text-white">{order.order_reference} · {order.item_name}</p>
+                        <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+                          {order.quantity} {order.unit} · {order.currency} {order.unit_price} / {order.offered_unit}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-500">Your quotation covered {order.quantity_offered} {order.offered_unit}</p>
+                      </div>
+                      <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${
+                        ["ACCEPTED", "PARTIALLY_DELIVERED", "DELIVERED"].includes(order.status)
+                          ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300"
+                          : ["PREPARING", "DISPATCHED"].includes(order.status)
+                            ? "bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300"
+                          : order.status === "ISSUED"
+                            ? "bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300"
+                            : "bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                      }`}>{order.status}</span>
+                    </div>
+                    <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
+                      <div><dt className="text-xs font-semibold text-slate-500">Delivery location</dt><dd className="mt-1">{order.delivery_location}</dd></div>
+                      <div><dt className="text-xs font-semibold text-slate-500">Lead time</dt><dd className="mt-1">{order.estimated_delivery_lead_time_days} days</dd></div>
+                      <div><dt className="text-xs font-semibold text-slate-500">Quotation valid until</dt><dd className="mt-1">{order.quotation_valid_until}</dd></div>
+                      <div><dt className="text-xs font-semibold text-slate-500">Created</dt><dd className="mt-1">{new Date(order.created_at).toLocaleString()}</dd></div>
+                      <div><dt className="text-xs font-semibold text-slate-500">Ordered quantity</dt><dd className="mt-1">{order.quantity} {order.unit}</dd></div>
+                      <div><dt className="text-xs font-semibold text-slate-500">Fulfillment progress</dt><dd className="mt-1">{order.dispatched_quantity} {order.fulfillment_unit} dispatched · {order.delivered_quantity} {order.fulfillment_unit} delivered</dd></div>
+                      <div><dt className="text-xs font-semibold text-slate-500">Estimated delivery</dt><dd className="mt-1">{order.estimated_delivery_date || "Not provided"}</dd></div>
+                      <div><dt className="text-xs font-semibold text-slate-500">Latest tracking</dt><dd className="mt-1 break-words">{order.carrier ? `${order.carrier} · ` : ""}{order.tracking_reference || "Not provided"}</dd></div>
+                      {order.delivery_date && <div><dt className="text-xs font-semibold text-slate-500">Last delivery date</dt><dd className="mt-1">{order.delivery_date}</dd></div>}
+                      <div className="sm:col-span-2"><dt className="text-xs font-semibold text-slate-500">Delivery terms</dt><dd className="mt-1 whitespace-pre-wrap">{order.delivery_terms}</dd></div>
+                      {order.supplier_notes && <div className="sm:col-span-2"><dt className="text-xs font-semibold text-slate-500">Your quotation notes</dt><dd className="mt-1 whitespace-pre-wrap">{order.supplier_notes}</dd></div>}
+                      {order.delivery_notes && <div className="sm:col-span-2"><dt className="text-xs font-semibold text-slate-500">Latest delivery notes</dt><dd className="mt-1 whitespace-pre-wrap">{order.delivery_notes}</dd></div>}
+                    </dl>
+                    <details className="mt-4 border-t border-slate-100 pt-3 dark:border-slate-800">
+                      <summary className="cursor-pointer text-sm font-semibold text-slate-700 dark:text-slate-200">Fulfillment history ({order.fulfillment_events.length})</summary>
+                      {order.fulfillment_events.length === 0 ? (
+                        <p className="mt-3 text-sm text-slate-500">No fulfillment updates have been recorded yet.</p>
+                      ) : (
+                        <ol className="mt-3 space-y-3">
+                          {order.fulfillment_events.map((event) => (
+                            <li key={event.id} className="border-l-2 border-purple-200 pl-3 dark:border-purple-900">
+                              <p className="font-semibold">{event.status.replaceAll("_", " ")} · {new Date(event.created_at).toLocaleString()}</p>
+                              <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">+{event.dispatched_quantity} {event.unit} dispatched · +{event.delivered_quantity} {event.unit} delivered</p>
+                              {(event.dispatch_date || event.carrier || event.tracking_reference) && <p className="mt-1 text-xs text-slate-500">{event.dispatch_date || ""}{event.carrier ? ` · ${event.carrier}` : ""}{event.tracking_reference ? ` · ${event.tracking_reference}` : ""}</p>}
+                              {event.estimated_delivery_date && <p className="mt-1 text-xs text-slate-500">Estimated delivery {event.estimated_delivery_date}</p>}
+                              {event.delivery_date && <p className="mt-1 text-xs text-slate-500">Delivered {event.delivery_date}</p>}
+                              {event.delivery_notes && <p className="mt-1 whitespace-pre-wrap text-sm text-slate-600 dark:text-slate-400">{event.delivery_notes}</p>}
+                            </li>
+                          ))}
+                        </ol>
+                      )}
+                    </details>
+                    {order.status === "ISSUED" && (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          disabled={Boolean(purchaseOrderBusyId)}
+                          onClick={() => void respondToPurchaseOrder(order, "ACCEPTED")}
+                          className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-emerald-700 px-3 py-1.5 text-sm font-bold text-white hover:bg-emerald-800 disabled:opacity-60"
+                        >
+                          {purchaseOrderBusyId === order.id ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                          Accept order
+                        </button>
+                        <button
+                          type="button"
+                          disabled={Boolean(purchaseOrderBusyId)}
+                          onClick={() => {
+                            if (window.confirm(`Reject ${order.order_reference}? This decision cannot be reversed.`)) {
+                              void respondToPurchaseOrder(order, "REJECTED");
+                            }
+                          }}
+                          className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-rose-300 px-3 py-1.5 text-sm font-bold text-rose-700 hover:bg-rose-50 disabled:opacity-60 dark:border-rose-800 dark:text-rose-300 dark:hover:bg-rose-950/40"
+                        >
+                          <X size={14} /> Reject order
+                        </button>
+                      </div>
+                    )}
+                    {fulfillmentStatusesFor(order.status).length > 0 && (
+                      <div className="mt-4 border-t border-slate-100 pt-4 dark:border-slate-800">
+                        {fulfillmentOrderId !== order.id ? (
+                          <button
+                            type="button"
+                            disabled={Boolean(purchaseOrderBusyId)}
+                            onClick={() => {
+                              setFulfillmentOrderId(order.id);
+                              setFulfillmentDraft(emptyFulfillmentDraft(order));
+                              pendingFulfillmentSubmission.current = null;
+                              setPurchaseOrdersError("");
+                            }}
+                            className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-purple-700 px-3 py-1.5 text-sm font-bold text-white hover:bg-purple-800 disabled:opacity-60"
+                          >
+                            <Truck size={14} /> Update fulfillment
+                          </button>
+                        ) : fulfillmentDraft && (
+                          <form className="space-y-3" onSubmit={(formEvent) => void updatePurchaseOrderFulfillment(formEvent, order)}>
+                            <h3 className="font-semibold">Record fulfillment progress</h3>
+                            <fieldset disabled={Boolean(purchaseOrderBusyId)} className="grid gap-3 sm:grid-cols-2">
+                              <label className="text-sm font-medium">Delivery status
+                                <select required value={fulfillmentDraft.status} onChange={(changeEvent) => changeFulfillmentDraft({ status: changeEvent.target.value as PurchaseOrderFulfillmentStatus })} className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2 dark:border-slate-700 dark:bg-slate-950">
+                                  {fulfillmentStatusesFor(order.status).map((status) => <option key={status} value={status}>{status.replaceAll("_", " ")}</option>)}
+                                </select>
+                              </label>
+                              <label className="text-sm font-medium">Estimated delivery date
+                                <input type="date" min={localDateString()} value={fulfillmentDraft.estimated_delivery_date || ""} onChange={(changeEvent) => changeFulfillmentDraft({ estimated_delivery_date: changeEvent.target.value })} className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2 dark:border-slate-700 dark:bg-slate-950" />
+                                <span className="mt-1 block text-xs font-normal text-slate-500">Forecast date only. A past saved estimate is retained if left blank; enter today or a future date to revise it.</span>
+                              </label>
+                              <label className="text-sm font-medium">Additional dispatched quantity ({order.unit})
+                                <input type="number" min={fulfillmentDraft.status === "DISPATCHED" ? "0.0001" : "0"} max={fulfillmentDraft.status === "PREPARING" ? "0" : undefined} step="any" required={fulfillmentDraft.status === "DISPATCHED"} value={fulfillmentDraft.dispatched_quantity} onChange={(changeEvent) => changeFulfillmentDraft({ dispatched_quantity: changeEvent.target.value })} className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2 dark:border-slate-700 dark:bg-slate-950" />
+                              </label>
+                              <label className="text-sm font-medium">Dispatch date
+                                <input type="date" max={localDateString()} required={Boolean(fulfillmentDraft.dispatched_quantity && Number(fulfillmentDraft.dispatched_quantity) > 0)} value={fulfillmentDraft.dispatch_date || ""} onChange={(changeEvent) => changeFulfillmentDraft({ dispatch_date: changeEvent.target.value })} className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2 dark:border-slate-700 dark:bg-slate-950" />
+                                <span className="mt-1 block text-xs font-normal text-slate-500">Actual dispatch date; cannot be in the future.</span>
+                              </label>
+                              <label className="text-sm font-medium">Carrier / transporter
+                                <input maxLength={200} value={fulfillmentDraft.carrier || ""} onChange={(changeEvent) => changeFulfillmentDraft({ carrier: changeEvent.target.value })} className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2 dark:border-slate-700 dark:bg-slate-950" />
+                              </label>
+                              <label className="text-sm font-medium">Tracking / reference number
+                                <input maxLength={200} value={fulfillmentDraft.tracking_reference || ""} onChange={(changeEvent) => changeFulfillmentDraft({ tracking_reference: changeEvent.target.value })} className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2 dark:border-slate-700 dark:bg-slate-950" />
+                              </label>
+                              <label className="text-sm font-medium">Additional delivered quantity ({order.unit})
+                                <input type="number" min={fulfillmentDraft.status === "PARTIALLY_DELIVERED" || fulfillmentDraft.status === "DELIVERED" ? "0.0001" : "0"} max={fulfillmentDraft.status === "PREPARING" ? "0" : undefined} step="any" required={fulfillmentDraft.status === "PARTIALLY_DELIVERED" || fulfillmentDraft.status === "DELIVERED"} value={fulfillmentDraft.delivered_quantity} onChange={(changeEvent) => changeFulfillmentDraft({ delivered_quantity: changeEvent.target.value })} className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2 dark:border-slate-700 dark:bg-slate-950" />
+                              </label>
+                              <label className="text-sm font-medium">Delivery date
+                                <input type="date" max={localDateString()} required={Boolean(fulfillmentDraft.delivered_quantity && Number(fulfillmentDraft.delivered_quantity) > 0)} value={fulfillmentDraft.delivery_date || ""} onChange={(changeEvent) => changeFulfillmentDraft({ delivery_date: changeEvent.target.value })} className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2 dark:border-slate-700 dark:bg-slate-950" />
+                                <span className="mt-1 block text-xs font-normal text-slate-500">Actual delivery date; cannot be in the future. Use estimated delivery above for a forecast.</span>
+                              </label>
+                              <label className="text-sm font-medium sm:col-span-2">Delivery notes
+                                <textarea maxLength={2000} rows={3} value={fulfillmentDraft.delivery_notes || ""} onChange={(changeEvent) => changeFulfillmentDraft({ delivery_notes: changeEvent.target.value })} className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2 dark:border-slate-700 dark:bg-slate-950" />
+                              </label>
+                            </fieldset>
+                            <div className="flex flex-wrap gap-2">
+                              <button type="submit" disabled={Boolean(purchaseOrderBusyId)} className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-purple-700 px-3 py-1.5 text-sm font-bold text-white hover:bg-purple-800 disabled:opacity-60">
+                                {purchaseOrderBusyId === order.id ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />} Save fulfillment update
+                              </button>
+                              <button type="button" disabled={Boolean(purchaseOrderBusyId)} onClick={() => { setFulfillmentOrderId(""); setFulfillmentDraft(null); pendingFulfillmentSubmission.current = null; }} className="min-h-9 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold dark:border-slate-700">Cancel</button>
+                            </div>
+                          </form>
+                        )}
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
           </section>
         )}
 
@@ -1241,6 +1644,11 @@ export default function SupplierWorkspacePage() {
                 <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
                   Submit company evidence for an authorized GLESKA administrator to review. This status is independent of operational status.
                 </p>
+                {["NOT_SUBMITTED", "REJECTED"].includes(company.verification_status) && canManageMembers && (
+                  <p className="mt-2 rounded-lg bg-indigo-50 px-3 py-2 text-xs leading-relaxed text-indigo-900 dark:bg-indigo-950/50 dark:text-indigo-200">
+                    Uploading a document saves the evidence but does not submit it. After uploading at least one required document, select <strong>Submit for review</strong> to request verification.
+                  </p>
+                )}
                 {company.verification_reason && (
                   <div className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-950 dark:bg-amber-950/40 dark:text-amber-100">
                     <strong>Review feedback:</strong> {company.verification_reason}
@@ -1619,15 +2027,13 @@ export default function SupplierWorkspacePage() {
             <div className="mt-5 border-t border-slate-200 pt-5 dark:border-slate-800">
               {offeringsLoading ? (
                 <div className="flex items-center gap-2 py-5 text-sm text-slate-500"><Loader2 className="animate-spin" size={16} /> Loading offerings...</div>
-              ) : visibleOfferings.length === 0 ? (
+              ) : offeringsLoaded && visibleOfferings.length === 0 ? (
                 <p className="py-5 text-sm text-slate-500">
-                  {offeringError
-                    ? "Offerings are unavailable until the required database migration is applied."
-                    : offerings.length > 0
-                      ? "No active offerings. Turn on “Show archived” to view archived records."
-                      : "No material offerings have been added yet."}
+                  {offerings.length > 0
+                    ? "No active offerings. Turn on “Show archived” to view archived records."
+                    : "No material offerings have been added yet."}
                 </p>
-              ) : (
+              ) : offeringsLoaded ? (
                 <ul className="space-y-3">
                   {visibleOfferings.map((offering) => (
                       <li key={offering.id} className="rounded-xl border border-slate-200 p-4 dark:border-slate-700">
@@ -1673,7 +2079,7 @@ export default function SupplierWorkspacePage() {
                       </li>
                     ))}
                 </ul>
-              )}
+              ) : null}
             </div>
           </section>
         )}
@@ -1685,7 +2091,7 @@ export default function SupplierWorkspacePage() {
         )}
 
           <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-5 text-xs text-slate-500 dark:border-slate-800">
-            <span>Supplier discovery, RFQs, quotations, and orders are not available in this phase.</span>
+            <span>Supplier material offerings, catalogue discovery, RFQs, quotations, and purchase orders are available in Get Procurement.</span>
             <Link href="/" className="font-semibold hover:text-purple-700 dark:hover:text-purple-300">
               Back to GLESKA
             </Link>

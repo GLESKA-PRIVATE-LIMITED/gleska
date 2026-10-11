@@ -100,6 +100,8 @@ class SupplierVerificationService:
         safe_filename, normalized_mime = SupplierVerificationService.validate_document(
             filename, mime_type, content
         )
+        stage = "supplier status lookup"
+        storage_path: str | None = None
         try:
             company = SupplierVerificationService._row(
                 supabase.table("supplier_companies")
@@ -120,6 +122,7 @@ class SupplierVerificationService:
             storage_path = (
                 f"companies/{company_id}/verification/{uuid.uuid4().hex}{extension}"
             )
+            stage = "private storage upload"
             supabase.storage.from_(SUPPLIER_VERIFICATION_BUCKET).upload(
                 storage_path,
                 content,
@@ -129,6 +132,7 @@ class SupplierVerificationService:
                     "upsert": "false",
                 },
             )
+            stage = "document metadata insert"
             try:
                 response = (
                     supabase.table("supplier_verification_documents")
@@ -142,15 +146,27 @@ class SupplierVerificationService:
                         "uploaded_by": user_id,
                     })
                     .select("id, company_id, document_type, original_filename, mime_type, file_size_bytes, uploaded_at")
-                    .single()
                     .execute()
                 )
-                row = SupplierVerificationService._row(response)
-                if not row:
-                    raise RuntimeError("Supplier document metadata insert returned no record")
-                return SupplierVerificationService._document_response(row)
+                rows = SupplierVerificationService._rows(response)
+                if len(rows) != 1:
+                    raise RuntimeError(
+                        "Supplier document metadata insert did not return exactly one record."
+                    )
+                return SupplierVerificationService._document_response(rows[0])
             except Exception:
-                supabase.storage.from_(SUPPLIER_VERIFICATION_BUCKET).remove([storage_path])
+                try:
+                    supabase.storage.from_(SUPPLIER_VERIFICATION_BUCKET).remove([storage_path])
+                except Exception as cleanup_exc:
+                    cleanup_message = str(cleanup_exc).replace(storage_path, "[redacted]")
+                    logger.error(
+                        "Supplier verification file cleanup failed after metadata persistence error: "
+                        "company_id=%s user_id=%s exception_type=%s error=%s",
+                        company_id,
+                        user_id,
+                        type(cleanup_exc).__name__,
+                        cleanup_message,
+                    )
                 raise
         except HTTPException:
             raise
@@ -161,10 +177,17 @@ class SupplierVerificationService:
                     status_code=status.HTTP_409_CONFLICT,
                     detail="SUPPLIER_DOCUMENT_UPLOAD_NOT_ALLOWED",
                 ) from exc
-            logger.exception(
-                "Supplier verification document upload failed: company_id=%s user_id=%s",
+            safe_message = str(exc)
+            if storage_path:
+                safe_message = safe_message.replace(storage_path, "[redacted]")
+            logger.error(
+                "Supplier verification document upload failed: company_id=%s user_id=%s "
+                "stage=%s exception_type=%s error=%s",
                 company_id,
                 user_id,
+                stage,
+                type(exc).__name__,
+                safe_message,
             )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

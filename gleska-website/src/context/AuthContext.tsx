@@ -1,6 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState } from "react";
+import { isAxiosError } from "axios";
 import apiClient from "@/lib/api";
 import { supabase } from "@/lib/supabase";
 import { initializeMSG91Widget, otpUserMessage, retryOTP, runWithOtpOperationLock, sendOTP, verifyOTP } from "@/lib/msg91";
@@ -53,8 +54,8 @@ interface AuthContextType {
   resendOTP: (mobile: string, requestId: string | null, channel: "SMS" | "EMAIL") => Promise<string | null>;
   signInWithEmail: (email: string, password: string, role?: "WORKER" | "EMPLOYER" | "ADMIN") => Promise<AuthUser>;
   signInWithGoogle: (role?: "WORKER" | "EMPLOYER" | "ADMIN", accountType?: "BUSINESS" | "INDIVIDUAL") => Promise<void>;
-  provisionSession: (role?: "WORKER" | "EMPLOYER" | "ADMIN", name?: string, accountType?: "BUSINESS" | "INDIVIDUAL", intent?: "login" | "provision") => Promise<{ user: AuthUser; nextStep: NextStep | null }>;
-  checkLoginAccount: (identifier: { email: string } | { mobile: string }) => Promise<void>;
+  provisionSession: (role?: "WORKER" | "EMPLOYER" | "ADMIN", name?: string, accountType?: "BUSINESS" | "INDIVIDUAL", intent?: "login" | "provision", timeoutMs?: number) => Promise<{ user: AuthUser; nextStep: NextStep | null }>;
+  checkLoginAccount: (identifier: { email: string } | { mobile: string }, timeoutMs?: number) => Promise<void>;
   completeEmailSignup: (email: string, password: string, name: string, mobile: string, otp: string, role: "WORKER" | "EMPLOYER" | "ADMIN", termsAccepted?: boolean, accountType?: "BUSINESS" | "INDIVIDUAL") => Promise<void>;
   requestPasswordReset: (phone: string) => Promise<number | null>;
   verifyPasswordResetOTP: (phone: string, msg91AccessToken: string) => Promise<string>;
@@ -115,9 +116,13 @@ const notifyAuthStateChange = () => {
   }
 };
 
-const clearBackendSession = async () => {
+const clearBackendSession = async (timeoutMs?: number) => {
   try {
-    await apiClient.post("/api/v1/auth/logout", {}, { skipSupabaseAuth: true, withCredentials: true });
+    await apiClient.post("/api/v1/auth/logout", {}, {
+      skipSupabaseAuth: true,
+      withCredentials: true,
+      ...(timeoutMs ? { timeout: timeoutMs } : {}),
+    });
   } catch {
     // The backend may already consider the session expired.
   }
@@ -193,12 +198,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  const checkLoginAccount = async (identifier: { email: string } | { mobile: string }) => {
+  const checkLoginAccount = async (
+    identifier: { email: string } | { mobile: string },
+    timeoutMs?: number,
+  ) => {
     const payload = "email" in identifier
       ? { email: identifier.email.trim().toLowerCase() }
       : identifier;
     try {
-      await apiClient.post("/api/v1/auth/login-preflight", payload, { skipSupabaseAuth: true });
+      await apiClient.post("/api/v1/auth/login-preflight", payload, {
+        skipSupabaseAuth: true,
+        ...(timeoutMs ? { timeout: timeoutMs } : {}),
+      });
     } catch (err: any) {
       const detail = err.response?.data?.detail;
       const message = detail === "Email not found. Please register first."
@@ -284,18 +295,30 @@ const resendOTP = async (mobile: string, requestId: string | null, channel: "SMS
     });
   };
 
-  const provisionSession = async (role?: "WORKER" | "EMPLOYER" | "ADMIN", name = "", accountType: "BUSINESS" | "INDIVIDUAL" = "BUSINESS", intent: "login" | "provision" = "provision") => {
+  const provisionSession = async (
+    role?: "WORKER" | "EMPLOYER" | "ADMIN",
+    name = "",
+    accountType: "BUSINESS" | "INDIVIDUAL" = "BUSINESS",
+    intent: "login" | "provision" = "provision",
+    timeoutMs?: number,
+  ) => {
     const { data: { session } } = await supabase.auth.getSession();
-    if (!session) throw new Error("Authentication session was not created");
-    await apiClient.post(`/api/v1/auth/provision?intent=${intent}`, {
+    if (!session?.access_token) throw new Error("Authentication session was not created");
+    const provisioned = await apiClient.post<AuthUser>(`/api/v1/auth/provision?intent=${intent}`, {
       ...(role ? { role } : {}),
       name,
       mobile: session.user.phone || undefined,
-    });
-    await registerSession();
-    let state = await apiClient.get("/api/v1/auth/me");
+    }, timeoutMs ? { timeout: timeoutMs } : undefined);
+    if (role === "ADMIN" && provisioned.data?.role !== "ADMIN") {
+      throw new Error("ADMIN_ROLE_UNAUTHORIZED");
+    }
+    await registerSession(timeoutMs);
+    let state = await apiClient.get("/api/v1/auth/me", timeoutMs ? { timeout: timeoutMs } : undefined);
     if (!state.data?.user) {
       throw new Error("Backend authentication could not be confirmed");
+    }
+    if (role === "ADMIN" && state.data.user.role !== "ADMIN") {
+      throw new Error("ADMIN_ROLE_UNAUTHORIZED");
     }
     if (role === "EMPLOYER" && accountType === "INDIVIDUAL" && !state.data.user.employer_type) {
       await apiClient.post("/api/v1/employers/onboarding/type", { employer_type: "INDIVIDUAL" });
@@ -312,8 +335,9 @@ const resendOTP = async (mobile: string, requestId: string | null, channel: "SMS
     setError(null);
     setIsLoading(true);
     try {
-      await checkLoginAccount({ email });
-      await clearBackendSession();
+      const timeoutMs = role === "ADMIN" ? 15000 : undefined;
+      await checkLoginAccount({ email }, timeoutMs);
+      await clearBackendSession(timeoutMs);
       clearSessionKey();
       const { error: signInError } = await supabase.auth.signInWithPassword({
         email: email.trim().toLowerCase(),
@@ -321,23 +345,54 @@ const resendOTP = async (mobile: string, requestId: string | null, channel: "SMS
       });
       if (signInError) throw signInError;
       // provisionSession already calls registerSession internally
-      const provisioned = await provisionSession(role, "", "BUSINESS", "login");
+      const provisioned = await provisionSession(role, "", "BUSINESS", "login", timeoutMs);
       return provisioned.user;
-    } catch (err: any) {
-      let message = err.message || "Email login failed";
-      
-      // Handle specific ADMIN authorization error
-      if (role === "ADMIN" && err.response?.data?.detail === "ADMIN_ROLE_UNAUTHORIZED") {
-        message = "This account is not authorized for admin access.";
-      } else if (err.response?.data?.detail) {
-        message = err.response.data.detail;
+    } catch (err: unknown) {
+      const responseDetail = isAxiosError<{ detail?: unknown }>(err)
+        ? err.response?.data?.detail
+        : undefined;
+      const responseStatus = isAxiosError(err) ? err.response?.status : undefined;
+      const rawMessage = err instanceof Error ? err.message : "";
+      let message = rawMessage || "Email login failed";
+
+      if (role === "ADMIN") {
+        const detail = typeof responseDetail === "string" ? responseDetail : undefined;
+        if (detail === "ADMIN_ROLE_UNAUTHORIZED" || rawMessage === "ADMIN_ROLE_UNAUTHORIZED") {
+          message = "You are not authorized to access the admin dashboard.";
+        } else if (
+          detail === "Email not found. Please register first."
+          || rawMessage === "Email not found. Please register first."
+        ) {
+          message = "No account was found for that email address.";
+        } else if (
+          rawMessage === "Invalid login credentials"
+          || detail === "Invalid login credentials"
+        ) {
+          message = "The email or password is incorrect.";
+        } else if (
+          rawMessage === "Authentication session was not created"
+          || responseStatus === 401
+        ) {
+          message = "Your sign-in session is missing or expired. Please try again.";
+        } else {
+          message = "Unable to verify admin access right now. Please try again.";
+        }
+      } else if (typeof responseDetail === "string") {
+        message = responseDetail;
       }
       
       setError(message);
-      await supabase.auth.signOut();
-      setUser(null);
-      setNextStep(null);
-      clearClientAuthCookie();
+      try {
+        await supabase.auth.signOut({ scope: "local" });
+      } catch {
+        // Clear application-side state even if Supabase sign-out cannot complete.
+      } finally {
+        setUser(null);
+        setNextStep(null);
+        clearClientAuthCookie();
+        clearSessionKey();
+        notifyAuthStateChange();
+      }
       throw new Error(message);
     } finally {
       setIsLoading(false);

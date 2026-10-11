@@ -7,11 +7,13 @@ import {
   Clock3,
   FileText,
   Loader2,
+  Package,
   RefreshCw,
   Send,
 } from "lucide-react";
 import {
   ProcurementMaterialRequest,
+  ProcurementPurchaseOrder,
   ProcurementRFQ,
   ProcurementRFQRecipient,
   ProcurementSupplierOfferingMatch,
@@ -19,7 +21,7 @@ import {
   procurementApi,
 } from "@/lib/procurement-api";
 
-type View = "list" | "compose" | "review" | "detail";
+type View = "list" | "compose" | "review" | "detail" | "orders";
 type DiscoverySupplier = {
   companyId: string;
   name: string;
@@ -128,6 +130,7 @@ function rfqErrorMessage(error: unknown): string {
     RFQ_LIST_FAILED: "We couldn’t load your RFQs. Please try again shortly.",
     RFQ_LOAD_FAILED: "This RFQ could not be loaded. Refresh the list and try again.",
     RFQ_NOT_FOUND: "This RFQ is no longer available to your account.",
+    RFQ_CLOSED: "The RFQ deadline passed or the RFQ was already awarded. Refresh the RFQ list.",
     MATERIAL_REQUEST_NOT_FOUND: "That saved requirement is no longer available. Refresh the requirements and try again.",
     RFQ_SUPPLIER_INELIGIBLE: "One or more suppliers are no longer eligible for this requirement. Refresh matching results and choose again.",
     RFQ_DEADLINE_INVALID: "The quotation deadline must be in the future.",
@@ -137,6 +140,19 @@ function rfqErrorMessage(error: unknown): string {
     EMPLOYER_ONBOARDING_INCOMPLETE: "Complete employer onboarding before creating an RFQ.",
     EMPLOYER_NOT_FOUND: "An onboarded employer profile is required to use RFQs.",
     PROCUREMENT_SETTINGS_LOAD_FAILED: "Procurement Settings could not be loaded.",
+    RFQ_ALREADY_AWARDED: "A purchase order has already been created for this RFQ. Refresh to see it.",
+    QUOTATION_NOT_FOUND: "That quotation is no longer available. Refresh the RFQ before selecting it.",
+    QUOTATION_EXPIRED: "This quotation has expired and cannot be selected.",
+    QUOTATION_NOT_COMPARABLE: "The quotation must cover the requested quantity in the requested unit before it can be selected.",
+    SUPPLIER_COMPANY_INELIGIBLE: "This supplier company is no longer active and verified, so its quotation cannot be awarded.",
+    QUOTATION_SELECTION_FAILED: "The purchase order could not be created. Please retry.",
+    PURCHASE_ORDER_LOAD_FAILED: "The purchase order was created, but its details could not be loaded. Refresh purchase orders before trying another selection.",
+    PURCHASE_ORDER_LIST_FAILED: "Purchase orders could not be loaded. Confirm migration 078 and migration 079 are applied, then refresh.",
+    PURCHASE_ORDER_FULFILLMENT_NOT_ALLOWED: "Fulfillment tracking is available only for accepted purchase orders.",
+    FULFILLMENT_UPDATE_FAILED: "Fulfillment progress could not be loaded. Confirm migrations 078 and 079 are applied, then refresh.",
+    PURCHASE_ORDER_SUPPLIER_NOT_FOUND: "The supplier details for a purchase order could not be loaded. Refresh and retry.",
+    PURCHASE_ORDER_TRANSITION_INVALID: "This purchase order has already changed and can no longer be updated.",
+    PURCHASE_ORDER_UPDATE_FAILED: "The purchase order could not be updated. Please refresh and retry.",
   };
   if (detail && messages[detail]) return messages[detail];
   if (detail === "MATERIAL_REQUEST_NOT_FOUND") return messages.MATERIAL_REQUEST_NOT_FOUND;
@@ -153,6 +169,26 @@ function statusClass(status: string): string {
   return "bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300";
 }
 
+function purchaseOrderStatusClass(status: string): string {
+  if (status === "ACCEPTED" || status === "PARTIALLY_DELIVERED" || status === "DELIVERED") return "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300";
+  if (status === "REJECTED" || status === "CANCELLED") return "bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300";
+  return "bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300";
+}
+
+function purchaseOrderDeliveryStatus(order: ProcurementPurchaseOrder): string {
+  const latestFulfillment = order.fulfillment_events[0];
+  if (latestFulfillment) return latestFulfillment.status;
+  if (
+    order.status === "PREPARING"
+    || order.status === "DISPATCHED"
+    || order.status === "PARTIALLY_DELIVERED"
+    || order.status === "DELIVERED"
+  ) {
+    return order.status;
+  }
+  return "Not started";
+}
+
 export default function ProcurementRFQPanel({
   requests,
 }: {
@@ -161,6 +197,13 @@ export default function ProcurementRFQPanel({
   const [view, setView] = useState<View>("list");
   const [rfqs, setRfqs] = useState<ProcurementRFQ[]>([]);
   const [selectedRFQ, setSelectedRFQ] = useState<ProcurementRFQ | null>(null);
+  const [purchaseOrders, setPurchaseOrders] = useState<ProcurementPurchaseOrder[]>([]);
+  const [purchaseOrdersLoading, setPurchaseOrdersLoading] = useState(false);
+  const [purchaseOrdersLoaded, setPurchaseOrdersLoaded] = useState(false);
+  const [purchaseOrdersError, setPurchaseOrdersError] = useState("");
+  const [purchaseOrderActionId, setPurchaseOrderActionId] = useState("");
+  const [selectedQuotationRecipient, setSelectedQuotationRecipient] = useState<ProcurementRFQRecipient | null>(null);
+  const [selectionBusy, setSelectionBusy] = useState(false);
   const [selectedRequestId, setSelectedRequestId] = useState("");
   const [discovery, setDiscovery] = useState<ProcurementSupplierDiscovery | null>(null);
   const [selectedCompanies, setSelectedCompanies] = useState<string[]>([]);
@@ -225,15 +268,69 @@ export default function ProcurementRFQPanel({
     setLoading(true);
     setRfqListLoaded(false);
     setError("");
-    try {
-      setRfqs(await procurementApi.listRFQs());
+    setPurchaseOrdersLoading(true);
+    setPurchaseOrdersLoaded(false);
+    setPurchaseOrdersError("");
+    const [rfqResult, purchaseOrderResult] = await Promise.allSettled([
+      procurementApi.listRFQs(),
+      procurementApi.listPurchaseOrders(),
+    ]);
+    if (rfqResult.status === "fulfilled") {
+      setRfqs(rfqResult.value);
       setRfqListLoaded(true);
+    } else {
+      setError(rfqErrorMessage(rfqResult.reason));
+    }
+    if (purchaseOrderResult.status === "fulfilled") {
+      setPurchaseOrders(purchaseOrderResult.value);
+      setPurchaseOrdersLoaded(true);
+    } else {
+      setPurchaseOrders([]);
+      setPurchaseOrdersError(rfqErrorMessage(purchaseOrderResult.reason));
+    }
+    setLoading(false);
+    setPurchaseOrdersLoading(false);
+  }, []);
+
+  const refreshPurchaseOrders = useCallback(async () => {
+    setPurchaseOrdersLoading(true);
+    setPurchaseOrdersLoaded(false);
+    setPurchaseOrdersError("");
+    try {
+      setPurchaseOrders(await procurementApi.listPurchaseOrders());
+      setPurchaseOrdersLoaded(true);
     } catch (loadError) {
-      setError(rfqErrorMessage(loadError));
+      setPurchaseOrdersError(rfqErrorMessage(loadError));
     } finally {
-      setLoading(false);
+      setPurchaseOrdersLoading(false);
     }
   }, []);
+
+  const refreshSelectionState = async (rfqId: string): Promise<ProcurementPurchaseOrder[] | null> => {
+    setPurchaseOrdersLoading(true);
+    setPurchaseOrdersLoaded(false);
+    setPurchaseOrdersError("");
+    const [rfqResult, ordersResult] = await Promise.allSettled([
+      procurementApi.getRFQ(rfqId),
+      procurementApi.listPurchaseOrders(),
+    ]);
+    if (rfqResult.status === "fulfilled") {
+      setSelectedRFQ(rfqResult.value);
+      setRfqs((current) => current.map((rfq) => (
+        rfq.id === rfqResult.value.id ? rfqResult.value : rfq
+      )));
+    } else {
+      setError(rfqErrorMessage(rfqResult.reason));
+    }
+    if (ordersResult.status === "fulfilled") {
+      setPurchaseOrders(ordersResult.value);
+      setPurchaseOrdersLoaded(true);
+    } else {
+      setPurchaseOrdersError(rfqErrorMessage(ordersResult.reason));
+    }
+    setPurchaseOrdersLoading(false);
+    return ordersResult.status === "fulfilled" ? ordersResult.value : null;
+  };
 
   useEffect(() => {
     void refreshRFQs();
@@ -285,13 +382,67 @@ export default function ProcurementRFQPanel({
   const openDetails = async (id: string) => {
     setError("");
     try {
-      setSelectedRFQ(await procurementApi.getRFQ(id));
+      const rfq = await procurementApi.getRFQ(id);
+      setSelectedRFQ(rfq);
       setRecipientFilter("ALL");
       setRecipientCurrency("ALL");
       setRecipientSort("SUPPLIER");
+      setSelectedQuotationRecipient(null);
       setView("detail");
+      setPurchaseOrdersError("");
+      await refreshPurchaseOrders();
     } catch (loadError) {
       setError(rfqErrorMessage(loadError));
+    }
+  };
+
+  const selectQuotation = async (recipient: ProcurementRFQRecipient) => {
+    if (!selectedRFQ || selectionBusy || !recipient.quotation) return;
+    const rfqId = selectedRFQ.id;
+    const quotationId = recipient.quotation.id;
+    setSelectionBusy(true);
+    setError("");
+    setSuccess("");
+    try {
+      const order = await procurementApi.selectQuotation(rfqId, quotationId);
+      setPurchaseOrders((current) => [order, ...current.filter((item) => item.id !== order.id)]);
+      setSelectedQuotationRecipient(null);
+      setSuccess(`Purchase order ${order.order_reference} was created for ${order.supplier_company_name}.`);
+      await refreshSelectionState(rfqId);
+    } catch (selectionError) {
+      const refreshedOrders = await refreshSelectionState(rfqId);
+      const recoveredOrder = refreshedOrders?.find(
+        (order) => order.rfq_id === rfqId && order.quotation_id === quotationId,
+      );
+      if (recoveredOrder) {
+        setSelectedQuotationRecipient(null);
+        setError("");
+        setSuccess(`Purchase order ${recoveredOrder.order_reference} was created for ${recoveredOrder.supplier_company_name}.`);
+      } else {
+        setError(rfqErrorMessage(selectionError));
+      }
+    } finally {
+      setSelectionBusy(false);
+    }
+  };
+
+  const cancelPurchaseOrder = async (order: ProcurementPurchaseOrder) => {
+    if (
+      order.status !== "ISSUED"
+      || purchaseOrderActionId
+      || !window.confirm(`Cancel ${order.order_reference}? The order cannot be reopened.`)
+    ) return;
+    setPurchaseOrderActionId(order.id);
+    setPurchaseOrdersError("");
+    setSuccess("");
+    try {
+      const updated = await procurementApi.cancelPurchaseOrder(order.id);
+      setPurchaseOrders((current) => current.map((item) => item.id === updated.id ? updated : item));
+      setSuccess(`${updated.order_reference} was cancelled.`);
+    } catch (cancelError) {
+      setPurchaseOrdersError(rfqErrorMessage(cancelError));
+    } finally {
+      setPurchaseOrderActionId("");
     }
   };
 
@@ -364,7 +515,13 @@ export default function ProcurementRFQPanel({
             Procurement
           </p>
           <h2 className="mt-1 text-lg font-bold text-slate-900 dark:text-white">
-            {view === "compose" || view === "review" ? "Create a request for quotation" : view === "detail" ? "RFQ details" : "Your RFQs"}
+            {view === "compose" || view === "review"
+              ? "Create a request for quotation"
+              : view === "detail"
+                ? "RFQ details"
+                : view === "orders"
+                  ? "Purchase orders"
+                  : "Your RFQs"}
           </h2>
           <p className="mt-1 max-w-3xl text-sm text-slate-600 dark:text-slate-400">
             Request quotations from eligible suppliers and track their responses.
@@ -388,11 +545,21 @@ export default function ProcurementRFQPanel({
             <>
               <button
                 type="button"
+                onClick={() => {
+                  setView("orders");
+                  void refreshPurchaseOrders();
+                }}
+                className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
+              >
+                <Package size={15} /> Purchase orders
+              </button>
+              <button
+                type="button"
                 onClick={() => void refreshRFQs()}
-                disabled={loading}
+                disabled={loading || purchaseOrdersLoading}
                 className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:hover:bg-slate-800"
               >
-                <RefreshCw size={15} className={loading ? "animate-spin" : ""} /> Refresh
+                <RefreshCw size={15} className={loading || purchaseOrdersLoading ? "animate-spin" : ""} /> Refresh
               </button>
               <button
                 type="button"
@@ -425,6 +592,19 @@ export default function ProcurementRFQPanel({
 
       {view === "list" && (
         <>
+          {purchaseOrdersError && (
+            <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+              <span>Purchase-order delivery status could not be loaded: {purchaseOrdersError}</span>
+              <button
+                type="button"
+                onClick={() => void refreshRFQs()}
+                disabled={loading || purchaseOrdersLoading}
+                className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-amber-300 px-3 py-1.5 text-sm font-semibold disabled:opacity-60 dark:border-amber-800"
+              >
+                <RefreshCw size={14} className={purchaseOrdersLoading ? "animate-spin" : ""} /> Retry
+              </button>
+            </div>
+          )}
           {requests.length === 0 && (
             <div className="rounded-xl border border-dashed border-slate-300 p-6 text-center dark:border-slate-700">
               <p className="text-sm font-semibold">Save a material requirement before creating an RFQ.</p>
@@ -452,7 +632,17 @@ export default function ProcurementRFQPanel({
                         <p className="font-semibold text-slate-900 dark:text-white">{rfq.item_name}</p>
                         <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">{rfq.quantity} {rfq.unit} · {rfq.delivery_location}</p>
                       </div>
-                      <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${statusClass(rfq.status)}`}>{rfq.status}</span>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${statusClass(rfq.status)}`}>RFQ status: {rfq.status}</span>
+                        {purchaseOrdersLoaded && (() => {
+                          const order = purchaseOrders.find((item) => item.rfq_id === rfq.id);
+                          return order ? (
+                            <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold ${purchaseOrderStatusClass(purchaseOrderDeliveryStatus(order))}`}>
+                              <Package size={12} /> Delivery status: {purchaseOrderDeliveryStatus(order)}
+                            </span>
+                          ) : null;
+                        })()}
+                      </div>
                     </div>
                     <p className="mt-3 text-xs text-slate-500">
                       Deadline {formatDate(rfq.quotation_deadline)} · {rfq.recipients.length} supplier{rfq.recipients.length === 1 ? "" : "s"} · {rfq.recipients.filter((recipient) => recipient.status !== "INVITED").length} responded
@@ -463,6 +653,107 @@ export default function ProcurementRFQPanel({
             </ul>
           ) : null}
         </>
+      )}
+
+      {view === "orders" && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm text-slate-600 dark:text-slate-400">
+              Before the supplier responds, an issued order may be accepted, rejected, or cancelled. Accepted orders continue through fulfillment and delivery. Rejected, cancelled, and fully delivered orders are terminal.
+            </p>
+            <button
+              type="button"
+              onClick={() => void refreshPurchaseOrders()}
+              disabled={purchaseOrdersLoading}
+              className="inline-flex min-h-9 items-center gap-2 rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold disabled:opacity-60 dark:border-slate-700"
+            >
+              <RefreshCw size={14} className={purchaseOrdersLoading ? "animate-spin" : ""} /> Refresh
+            </button>
+          </div>
+          {purchaseOrdersError && (
+            <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200">
+              {purchaseOrdersError}
+            </div>
+          )}
+          {purchaseOrdersLoading ? (
+            <div role="status" className="flex items-center gap-2 py-6 text-sm text-slate-500">
+              <Loader2 size={17} className="animate-spin" /> Loading purchase orders…
+            </div>
+          ) : purchaseOrdersLoaded && purchaseOrders.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 dark:border-slate-700">
+              No purchase orders have been created yet. Select an eligible submitted quotation from an RFQ to create one.
+            </div>
+          ) : purchaseOrdersLoaded ? (
+            <ul className="space-y-3">
+              {purchaseOrders.map((order) => (
+                <li key={order.id} className="rounded-xl border border-slate-200 p-4 dark:border-slate-700">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="font-bold text-slate-900 dark:text-white">{order.order_reference} · {order.item_name}</p>
+                      <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+                        {order.supplier_company_name} · {order.quantity} {order.unit} · {order.currency} {order.unit_price} / {order.offered_unit}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">Supplier offered {order.quantity_offered} {order.offered_unit}</p>
+                    </div>
+                    <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${purchaseOrderStatusClass(order.status)}`}>{order.status}</span>
+                  </div>
+                  <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
+                    <div><dt className="text-xs font-semibold text-slate-500">Ordered quantity</dt><dd className="mt-1">{order.quantity} {order.unit}</dd></div>
+                    <div><dt className="text-xs font-semibold text-slate-500">Fulfillment progress</dt><dd className="mt-1">{order.dispatched_quantity} {order.fulfillment_unit} dispatched · {order.delivered_quantity} {order.fulfillment_unit} delivered</dd></div>
+                    <div><dt className="text-xs font-semibold text-slate-500">Delivery</dt><dd className="mt-1">{order.delivery_location} · {order.estimated_delivery_lead_time_days} day lead time</dd></div>
+                    <div><dt className="text-xs font-semibold text-slate-500">Estimated delivery</dt><dd className="mt-1">{order.estimated_delivery_date || "Not provided"}</dd></div>
+                    <div><dt className="text-xs font-semibold text-slate-500">Latest dispatch</dt><dd className="mt-1">{order.dispatch_date || "Not dispatched"}{order.carrier ? ` · ${order.carrier}` : ""}</dd></div>
+                    <div><dt className="text-xs font-semibold text-slate-500">Tracking / reference</dt><dd className="mt-1 break-words">{order.tracking_reference || "Not provided"}</dd></div>
+                    {order.delivery_date && <div><dt className="text-xs font-semibold text-slate-500">Last delivery date</dt><dd className="mt-1">{order.delivery_date}</dd></div>}
+                    <div><dt className="text-xs font-semibold text-slate-500">Order created</dt><dd className="mt-1">{formatDate(order.created_at)}</dd></div>
+                    <div className="sm:col-span-2"><dt className="text-xs font-semibold text-slate-500">Delivery terms</dt><dd className="mt-1 whitespace-pre-wrap">{order.delivery_terms}</dd></div>
+                    {order.delivery_notes && <div className="sm:col-span-2"><dt className="text-xs font-semibold text-slate-500">Latest supplier delivery notes</dt><dd className="mt-1 whitespace-pre-wrap">{order.delivery_notes}</dd></div>}
+                    {order.supplier_notes && <div className="sm:col-span-2"><dt className="text-xs font-semibold text-slate-500">Supplier quotation notes</dt><dd className="mt-1 whitespace-pre-wrap">{order.supplier_notes}</dd></div>}
+                  </dl>
+                  <details className="mt-4 border-t border-slate-100 pt-3 dark:border-slate-800">
+                    <summary className="cursor-pointer text-sm font-semibold text-slate-700 dark:text-slate-200">
+                      Delivery history ({order.fulfillment_events.length})
+                    </summary>
+                    {order.fulfillment_events.length === 0 ? (
+                      <p className="mt-3 text-sm text-slate-500">No fulfillment updates have been recorded yet.</p>
+                    ) : (
+                      <ol className="mt-3 space-y-3">
+                        {order.fulfillment_events.map((event) => (
+                          <li key={event.id} className="border-l-2 border-purple-200 pl-3 dark:border-purple-900">
+                            <p className="font-semibold text-slate-800 dark:text-slate-200">{event.status.replaceAll("_", " ")} · {formatDate(event.created_at)}</p>
+                            <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+                              +{event.dispatched_quantity} {event.unit} dispatched · +{event.delivered_quantity} {event.unit} delivered
+                            </p>
+                            {(event.dispatch_date || event.carrier || event.tracking_reference) && (
+                              <p className="mt-1 text-xs text-slate-500">
+                                {event.dispatch_date || "Dispatch date not stated"}
+                                {event.carrier ? ` · ${event.carrier}` : ""}
+                                {event.tracking_reference ? ` · ${event.tracking_reference}` : ""}
+                              </p>
+                            )}
+                            {event.estimated_delivery_date && <p className="mt-1 text-xs text-slate-500">Estimated delivery {event.estimated_delivery_date}</p>}
+                            {event.delivery_date && <p className="mt-1 text-xs text-slate-500">Delivered {event.delivery_date}</p>}
+                            {event.delivery_notes && <p className="mt-1 whitespace-pre-wrap text-sm text-slate-600 dark:text-slate-400">{event.delivery_notes}</p>}
+                          </li>
+                        ))}
+                      </ol>
+                    )}
+                  </details>
+                  {order.status === "ISSUED" && (
+                    <button
+                      type="button"
+                      onClick={() => void cancelPurchaseOrder(order)}
+                      disabled={Boolean(purchaseOrderActionId)}
+                      className="mt-3 min-h-9 rounded-lg border border-rose-300 px-3 py-1.5 text-sm font-semibold text-rose-700 hover:bg-rose-50 dark:border-rose-800 dark:text-rose-300 dark:hover:bg-rose-950/40"
+                    >
+                      {purchaseOrderActionId === order.id ? "Cancelling…" : "Cancel order"}
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
       )}
 
       {view === "compose" && (
@@ -642,6 +933,25 @@ export default function ProcurementRFQPanel({
 
       {view === "detail" && selectedRFQ && (
         <div className="space-y-5">
+          {purchaseOrdersError && (
+            <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+              Purchase-order state could not be loaded: {purchaseOrdersError} Refresh the RFQ details before awarding a quotation.
+            </div>
+          )}
+          {(() => {
+            const existingOrder = purchaseOrders.find((order) => order.rfq_id === selectedRFQ.id);
+            return existingOrder ? (
+              <div className="rounded-xl border border-purple-200 bg-purple-50/60 p-4 dark:border-purple-900 dark:bg-purple-950/20">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="font-bold text-slate-900 dark:text-white">Awarded · {existingOrder.order_reference}</h3>
+                  <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${purchaseOrderStatusClass(existingOrder.status)}`}>{existingOrder.status}</span>
+                </div>
+                <p className="mt-1 text-sm text-slate-700 dark:text-slate-300">
+                  {existingOrder.supplier_company_name} · {existingOrder.currency} {existingOrder.unit_price} / {existingOrder.offered_unit}
+                </p>
+              </div>
+            ) : null;
+          })()}
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h3 className="text-xl font-bold text-slate-900 dark:text-white">{selectedRFQ.item_name}</h3>
@@ -657,6 +967,35 @@ export default function ProcurementRFQPanel({
             <div><dt className="text-xs font-semibold text-slate-500">Created</dt><dd className="mt-1">{formatDate(selectedRFQ.created_at)}</dd></div>
             {selectedRFQ.buyer_notes && <div className="sm:col-span-2"><dt className="text-xs font-semibold text-slate-500">Buyer notes</dt><dd className="mt-1 whitespace-pre-wrap">{selectedRFQ.buyer_notes}</dd></div>}
           </dl>
+          {selectedQuotationRecipient?.quotation && (
+            <div className="space-y-3 rounded-xl border border-amber-300 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/30">
+              <div>
+                <h3 className="font-bold text-slate-900 dark:text-white">Confirm quotation selection</h3>
+                <p className="mt-1 text-sm text-slate-700 dark:text-slate-300">
+                  This creates a purchase order and closes the RFQ to further quotation activity.
+                </p>
+              </div>
+              <dl className="grid gap-3 text-sm sm:grid-cols-2">
+                <div><dt className="text-xs font-semibold text-slate-500">Supplier</dt><dd className="mt-1 font-semibold">{selectedQuotationRecipient.company_name}</dd></div>
+                <div><dt className="text-xs font-semibold text-slate-500">Agreed price</dt><dd className="mt-1">{selectedQuotationRecipient.quotation.currency} {selectedQuotationRecipient.quotation.unit_price} / {selectedQuotationRecipient.quotation.unit}</dd></div>
+                <div><dt className="text-xs font-semibold text-slate-500">Requested quantity</dt><dd className="mt-1">{selectedRFQ.quantity} {selectedRFQ.unit}</dd></div>
+                <div><dt className="text-xs font-semibold text-slate-500">Supplier quantity offered</dt><dd className="mt-1">{selectedQuotationRecipient.quotation.quantity_offered} {selectedQuotationRecipient.quotation.unit}</dd></div>
+                <div><dt className="text-xs font-semibold text-slate-500">Estimated total for requested quantity</dt><dd className="mt-1">{selectedQuotationRecipient.quotation.currency} {estimatedTotal(selectedQuotationRecipient.quotation.unit_price, selectedRFQ.quantity) ?? "Unavailable"}</dd></div>
+                <div><dt className="text-xs font-semibold text-slate-500">Lead time</dt><dd className="mt-1">{selectedQuotationRecipient.quotation.estimated_delivery_lead_time_days} days</dd></div>
+                <div><dt className="text-xs font-semibold text-slate-500">Quotation valid until</dt><dd className="mt-1">{selectedQuotationRecipient.quotation.quotation_valid_until}</dd></div>
+                <div className="sm:col-span-2"><dt className="text-xs font-semibold text-slate-500">Delivery terms</dt><dd className="mt-1 whitespace-pre-wrap">{selectedQuotationRecipient.quotation.delivery_terms}</dd></div>
+                {selectedQuotationRecipient.quotation.notes && <div className="sm:col-span-2"><dt className="text-xs font-semibold text-slate-500">Supplier notes</dt><dd className="mt-1 whitespace-pre-wrap">{selectedQuotationRecipient.quotation.notes}</dd></div>}
+                <p className="text-xs text-slate-500 sm:col-span-2">Estimated total excludes taxes, freight, and charges not stated in the quotation. No currency conversion is applied.</p>
+              </dl>
+              <div className="flex flex-wrap justify-end gap-2">
+                <button type="button" onClick={() => setSelectedQuotationRecipient(null)} disabled={selectionBusy} className="min-h-10 rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold dark:border-slate-700">Back</button>
+                <button type="button" onClick={() => void selectQuotation(selectedQuotationRecipient)} disabled={selectionBusy} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-purple-700 px-4 py-2 text-sm font-bold text-white hover:bg-purple-800 disabled:opacity-60">
+                  {selectionBusy ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
+                  {selectionBusy ? "Creating purchase order…" : "Confirm selection & create order"}
+                </button>
+              </div>
+            </div>
+          )}
           <div>
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div>
@@ -717,6 +1056,20 @@ export default function ProcurementRFQPanel({
                 const total = quote && unitMatches && enoughQuantity
                   ? estimatedTotal(quote.unit_price, selectedRFQ.quantity)
                   : null;
+                const existingOrder = purchaseOrders.find((order) => order.rfq_id === selectedRFQ.id);
+                const quoteExpired = Boolean(quote && quote.quotation_valid_until < localDateString());
+                const canSelectQuote = Boolean(
+                  quote
+                  && state === "SUBMITTED"
+                  && selectedRFQ.status === "OPEN"
+                  && new Date(selectedRFQ.quotation_deadline).getTime() > Date.now()
+                  && !existingOrder
+                  && !purchaseOrdersError
+                  && !quoteExpired
+                  && unitMatches
+                  && enoughQuantity
+                  && recipient.status !== "DECLINED",
+                );
                 const stateLabel = {
                   NOT_RESPONDED: "Not responded",
                   ACKNOWLEDGED: "Acknowledged · no quotation",
@@ -756,6 +1109,29 @@ export default function ProcurementRFQPanel({
                         <p className="mt-1 text-xs text-slate-500">Taxes, freight and other costs not represented in the quotation are excluded.</p>
                       </div>
                     </dl>
+                  )}
+                  {quote && !existingOrder && (
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                      {!canSelectQuote && state === "SUBMITTED" && selectedRFQ.status === "OPEN" && (
+                        <p className="text-xs text-amber-800 dark:text-amber-300">
+                          {quoteExpired
+                            ? "Expired quotations cannot be selected."
+                            : !unitMatches
+                              ? "Cannot select: the offered unit differs from the requested unit."
+                              : !enoughQuantity
+                                ? "Cannot select: the offered quantity is below the requested quantity."
+                                : ""}
+                        </p>
+                      )}
+                      <button
+                        type="button"
+                        disabled={!canSelectQuote || selectionBusy}
+                        onClick={() => setSelectedQuotationRecipient(recipient)}
+                        className="ml-auto inline-flex min-h-9 items-center gap-2 rounded-lg border border-purple-300 px-3 py-1.5 text-sm font-semibold text-purple-800 hover:bg-purple-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-purple-800 dark:text-purple-300 dark:hover:bg-purple-950/40"
+                      >
+                        <CheckCircle2 size={14} /> Select & create purchase order
+                      </button>
+                    </div>
                   )}
                 </li>
                 );

@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from app.core.security import require_admin
 from app.schemas.auth import UserResponse
@@ -10,7 +10,7 @@ from app.schemas.supplier import SupplierVerificationStatus
 from app.schemas.supplier_verification import (
     SupplierVerificationAdminDetail,
     SupplierVerificationDecisionRequest,
-    SupplierVerificationQueueItem,
+    SupplierVerificationQueueResponse,
 )
 from app.services.admin_supplier_verification_service import (
     AdminSupplierVerificationService,
@@ -22,14 +22,22 @@ router = APIRouter(prefix="/admin/suppliers", tags=["admin-suppliers"])
 
 @router.get(
     "/verification",
-    response_model=list[SupplierVerificationQueueItem],
+    response_model=SupplierVerificationQueueResponse,
 )
 async def list_supplier_verification_queue(
-    verification_status: SupplierVerificationStatus = SupplierVerificationStatus.PENDING_REVIEW,
+    verification_status: SupplierVerificationStatus | None = None,
+    search: str | None = Query(default=None, max_length=160),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=25, ge=1, le=100),
     admin: UserResponse = Depends(require_admin),
 ):
     del admin
-    return AdminSupplierVerificationService.list_queue(verification_status)
+    return AdminSupplierVerificationService.list_queue(
+        verification_status,
+        search=search,
+        page=page,
+        page_size=page_size,
+    )
 
 
 @router.get(

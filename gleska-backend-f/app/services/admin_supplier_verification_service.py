@@ -14,7 +14,9 @@ from app.schemas.supplier_verification import (
     SupplierVerificationAdminDetail,
     SupplierVerificationAdminDocument,
     SupplierVerificationAdminEvent,
+    SupplierVerificationOwnerMembership,
     SupplierVerificationQueueItem,
+    SupplierVerificationQueueResponse,
 )
 from app.services.supplier_verification_service import (
     SIGNED_URL_TTL_SECONDS,
@@ -41,18 +43,29 @@ class AdminSupplierVerificationService:
 
     @staticmethod
     def list_queue(
-        verification_status: SupplierVerificationStatus = SupplierVerificationStatus.PENDING_REVIEW,
-    ) -> list[SupplierVerificationQueueItem]:
+        verification_status: SupplierVerificationStatus | None = None,
+        *,
+        search: str | None = None,
+        page: int = 1,
+        page_size: int = 25,
+    ) -> SupplierVerificationQueueResponse:
         try:
+            query = supabase.table("supplier_companies").select(
+                "id, name, verification_status, verification_submitted_at, created_at",
+                count="exact",
+            )
+            if verification_status is not None:
+                query = query.eq("verification_status", verification_status.value)
+            search_term = search.strip() if search and search.strip() else None
+            if search_term:
+                query = query.ilike("name", f"%{search_term}%")
+            offset = (page - 1) * page_size
             response = (
-                supabase.table("supplier_companies")
-                .select("id, name, verification_status, verification_submitted_at, created_at")
-                .eq("verification_status", verification_status.value)
-                .order("verification_submitted_at", desc=True)
-                .limit(100)
+                query.order("created_at", desc=True)
+                .range(offset, offset + page_size - 1)
                 .execute()
             )
-            return [
+            items = [
                 SupplierVerificationQueueItem(
                     id=str(row["id"]),
                     name=row["name"],
@@ -62,6 +75,15 @@ class AdminSupplierVerificationService:
                 )
                 for row in AdminSupplierVerificationService._rows(response)
             ]
+            total = int(response.count or 0)
+            total_pages = (total + page_size - 1) // page_size if total else 0
+            return SupplierVerificationQueueResponse(
+                items=items,
+                total=total,
+                page=page,
+                page_size=page_size,
+                total_pages=total_pages,
+            )
         except Exception as exc:
             logger.exception("Admin supplier verification queue failed")
             raise HTTPException(
@@ -92,6 +114,27 @@ class AdminSupplierVerificationService:
                 .maybe_single()
                 .execute()
             )
+            owner_membership = AdminSupplierVerificationService._row(
+                supabase.table("supplier_company_memberships")
+                .select("user_id, role, status, created_at")
+                .eq("company_id", str(company_id))
+                .eq("role", "OWNER")
+                .eq("status", "ACTIVE")
+                .order("created_at", desc=True)
+                .limit(1)
+                .execute()
+            )
+            owner_user = (
+                AdminSupplierVerificationService._row(
+                    supabase.table("users")
+                    .select("name")
+                    .eq("id", str(owner_membership["user_id"]))
+                    .maybe_single()
+                    .execute()
+                )
+                if owner_membership.get("user_id")
+                else {}
+            )
             documents = AdminSupplierVerificationService._rows(
                 supabase.table("supplier_verification_documents")
                 .select("id, document_type, original_filename, mime_type, file_size_bytes, uploaded_at")
@@ -121,6 +164,16 @@ class AdminSupplierVerificationService:
             return SupplierVerificationAdminDetail(
                 **company,
                 **private_profile,
+                owner_membership=(
+                    SupplierVerificationOwnerMembership(
+                        name=owner_user.get("name"),
+                        role=owner_membership["role"],
+                        status=owner_membership["status"],
+                        created_at=owner_membership["created_at"],
+                    )
+                    if owner_membership
+                    else None
+                ),
                 documents=[
                     SupplierVerificationAdminDocument(**document)
                     for document in documents

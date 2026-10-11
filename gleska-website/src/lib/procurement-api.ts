@@ -131,6 +131,83 @@ export interface ProcurementRFQ {
   recipients: ProcurementRFQRecipient[];
 }
 
+export type PurchaseOrderFulfillmentStatus =
+  | "PREPARING"
+  | "DISPATCHED"
+  | "PARTIALLY_DELIVERED"
+  | "DELIVERED";
+
+export type PurchaseOrderStatus =
+  | "ISSUED"
+  | "ACCEPTED"
+  | "REJECTED"
+  | "CANCELLED"
+  | PurchaseOrderFulfillmentStatus;
+
+export interface PurchaseOrderFulfillmentEvent {
+  id: string;
+  status: PurchaseOrderFulfillmentStatus;
+  dispatched_quantity: string | number;
+  delivered_quantity: string | number;
+  unit: string;
+  dispatch_date: string | null;
+  carrier: string | null;
+  tracking_reference: string | null;
+  estimated_delivery_date: string | null;
+  delivery_date: string | null;
+  delivery_notes: string | null;
+  created_at: string;
+}
+
+export interface PurchaseOrderFulfillmentUpdate {
+  idempotency_key: string;
+  status: PurchaseOrderFulfillmentStatus;
+  dispatched_quantity: string;
+  delivered_quantity: string;
+  unit: string;
+  dispatch_date: string | null;
+  carrier: string | null;
+  tracking_reference: string | null;
+  estimated_delivery_date: string | null;
+  delivery_date: string | null;
+  delivery_notes: string | null;
+}
+
+export interface ProcurementPurchaseOrder {
+  id: string;
+  order_reference: string;
+  rfq_id: string;
+  quotation_id: string;
+  supplier_company_id: string;
+  supplier_company_name: string;
+  item_name: string;
+  specification: string | null;
+  quantity: string | number;
+  unit: string;
+  unit_price: string | number;
+  currency: SupplierQuotation["currency"];
+  quantity_offered: string | number;
+  offered_unit: string;
+  estimated_delivery_lead_time_days: number;
+  quotation_valid_until: string;
+  delivery_location: string;
+  delivery_terms: string;
+  supplier_notes: string | null;
+  status: PurchaseOrderStatus;
+  dispatched_quantity: string | number;
+  delivered_quantity: string | number;
+  fulfillment_unit: string;
+  dispatch_date: string | null;
+  carrier: string | null;
+  tracking_reference: string | null;
+  estimated_delivery_date: string | null;
+  delivery_date: string | null;
+  delivery_notes: string | null;
+  fulfillment_events: PurchaseOrderFulfillmentEvent[];
+  created_at: string;
+  updated_at: string;
+}
+
 export interface SupplierRFQ {
   id: string;
   item_name: string;
@@ -326,9 +403,69 @@ export const procurementApi = {
     return response.data;
   },
 
+  async listPurchaseOrders() {
+    const response = await apiClient.get<ProcurementPurchaseOrder[]>(
+      `${basePath}/purchase-orders`,
+      { withCredentials: true },
+    );
+    return response.data;
+  },
+
+  async selectQuotation(rfqId: string, quotationId: string) {
+    const response = await apiClient.post<ProcurementPurchaseOrder>(
+      `${basePath}/rfqs/${encodeURIComponent(rfqId)}/select-quotation`,
+      { quotation_id: quotationId },
+      { withCredentials: true },
+    );
+    return response.data;
+  },
+
+  async cancelPurchaseOrder(orderId: string) {
+    const response = await apiClient.post<ProcurementPurchaseOrder>(
+      `${basePath}/purchase-orders/${encodeURIComponent(orderId)}/cancel`,
+      {},
+      { withCredentials: true },
+    );
+    return response.data;
+  },
+
   async listSupplierRFQs(companyId: string) {
     const response = await apiClient.get<SupplierRFQ[]>(
       `/api/v1/suppliers/companies/${encodeURIComponent(companyId)}/rfqs`,
+      { withCredentials: true },
+    );
+    return response.data;
+  },
+
+  async listSupplierPurchaseOrders(companyId: string) {
+    const response = await apiClient.get<ProcurementPurchaseOrder[]>(
+      `/api/v1/suppliers/companies/${encodeURIComponent(companyId)}/purchase-orders`,
+      { withCredentials: true },
+    );
+    return response.data;
+  },
+
+  async respondToSupplierPurchaseOrder(
+    companyId: string,
+    orderId: string,
+    orderStatus: "ACCEPTED" | "REJECTED",
+  ) {
+    const response = await apiClient.post<ProcurementPurchaseOrder>(
+      `/api/v1/suppliers/companies/${encodeURIComponent(companyId)}/purchase-orders/${encodeURIComponent(orderId)}/response`,
+      { status: orderStatus },
+      { withCredentials: true },
+    );
+    return response.data;
+  },
+
+  async updateSupplierPurchaseOrderFulfillment(
+    companyId: string,
+    orderId: string,
+    update: PurchaseOrderFulfillmentUpdate,
+  ) {
+    const response = await apiClient.post<ProcurementPurchaseOrder>(
+      `/api/v1/suppliers/companies/${encodeURIComponent(companyId)}/purchase-orders/${encodeURIComponent(orderId)}/fulfillment`,
+      update,
       { withCredentials: true },
     );
     return response.data;

@@ -18,7 +18,12 @@ from app.schemas.procurement import (
     ProcurementSettingsUpdate,
     ProcurementSupplierDiscoveryResponse,
 )
-from app.schemas.rfq import ProcurementRFQCreateRequest, ProcurementRFQResponse
+from app.schemas.rfq import (
+    ProcurementQuotationSelectionRequest,
+    ProcurementRFQCreateRequest,
+    ProcurementRFQResponse,
+    PurchaseOrderResponse,
+)
 from app.services.rfq_service import RFQService, RFQServiceError
 from app.services.procurement_service import (
     ProcurementAgentError,
@@ -149,6 +154,75 @@ async def get_procurement_rfq(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="RFQ_LOAD_FAILED",
+        ) from exc
+
+
+@router.get(
+    "/purchase-orders",
+    response_model=list[PurchaseOrderResponse],
+)
+async def list_procurement_purchase_orders(
+    user: UserResponse = Depends(require_employer),
+):
+    try:
+        return RFQService.list_purchase_orders_buyer(user)
+    except RFQServiceError as exc:
+        _raise_rfq_error(exc)
+    except Exception as exc:
+        logger.exception("Purchase order list failed: user_id=%s", user.id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="PURCHASE_ORDER_LIST_FAILED",
+        ) from exc
+
+
+@router.post(
+    "/rfqs/{rfq_id}/select-quotation",
+    response_model=PurchaseOrderResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def select_procurement_quotation(
+    rfq_id: UUID,
+    request: ProcurementQuotationSelectionRequest,
+    user: UserResponse = Depends(require_employer),
+):
+    try:
+        return RFQService.select_quotation(user, rfq_id, request)
+    except RFQServiceError as exc:
+        _raise_rfq_error(exc)
+    except Exception as exc:
+        logger.exception(
+            "Procurement quotation selection failed: user_id=%s rfq_id=%s",
+            user.id,
+            rfq_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="QUOTATION_SELECTION_FAILED",
+        ) from exc
+
+
+@router.post(
+    "/purchase-orders/{order_id}/cancel",
+    response_model=PurchaseOrderResponse,
+)
+async def cancel_procurement_purchase_order(
+    order_id: UUID,
+    user: UserResponse = Depends(require_employer),
+):
+    try:
+        return RFQService.cancel_purchase_order(user, order_id)
+    except RFQServiceError as exc:
+        _raise_rfq_error(exc)
+    except Exception as exc:
+        logger.exception(
+            "Purchase order cancellation failed: user_id=%s order_id=%s",
+            user.id,
+            order_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="PURCHASE_ORDER_UPDATE_FAILED",
         ) from exc
 
 

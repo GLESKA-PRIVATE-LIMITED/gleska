@@ -9,26 +9,27 @@ import Navbar from "@/components/landing/Navbar";
 
 export default function AdminLoginPage() {
   const router = useRouter();
-  const { user, isLoading, signInWithEmail, refreshUser } = useAuth();
+  const { user, isLoading, signInWithEmail } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
   useEffect(() => {
-    if (!isLoading && user) {
-      if (user.role === "ADMIN") {
-        router.replace("/admin");
-      } else {
-        router.replace("/");
-      }
+    if (isLoading || submitting || success) return;
+    if (user?.role === "ADMIN") {
+      router.replace("/admin");
+    } else if (user) {
+      setError("You are not authorized to access the admin dashboard.");
     }
-  }, [isLoading, router, user]);
+  }, [isLoading, router, submitting, success, user]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setError("");
+    setSuccess("");
 
     if (!email.trim() || !password) {
       setError("Enter the admin email and password.");
@@ -37,17 +38,23 @@ export default function AdminLoginPage() {
 
     setSubmitting(true);
     try {
-      await signInWithEmail(email.trim().toLowerCase(), password, "ADMIN");
-      await refreshUser();
-      router.replace("/admin");
-    } catch (err: any) {
-      setError(err?.message || "Admin login failed.");
+      const authenticatedUser = await signInWithEmail(email.trim().toLowerCase(), password, "ADMIN");
+      if (authenticatedUser.role !== "ADMIN") {
+        setError("You are not authorized to access the admin dashboard.");
+        return;
+      }
+      setSuccess("Admin access confirmed. Redirecting to the dashboard…");
+      window.setTimeout(() => router.replace("/admin"), 500);
+    } catch (err: unknown) {
+      setError(err instanceof Error
+        ? err.message
+        : "Unable to verify admin access right now. Please try again.");
     } finally {
       setSubmitting(false);
     }
   };
 
-  if (isLoading) {
+  if (isLoading && !submitting) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#f8fafc] text-slate-700 dark:bg-slate-950 dark:text-slate-200">
         <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-6 py-4 text-sm font-medium shadow-xs dark:border-slate-800 dark:bg-slate-900">
@@ -144,14 +151,19 @@ export default function AdminLoginPage() {
               </div>
 
               {error && (
-                <div className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-semibold text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/50 dark:text-rose-300">
+                <div role="alert" aria-live="assertive" className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-semibold text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/50 dark:text-rose-300">
                   <span>{error}</span>
+                </div>
+              )}
+              {success && (
+                <div role="status" aria-live="polite" className="flex items-start gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs font-semibold text-emerald-800 dark:border-emerald-900/50 dark:bg-emerald-950/50 dark:text-emerald-300">
+                  <span>{success}</span>
                 </div>
               )}
 
               <button
                 type="submit"
-                disabled={submitting}
+                disabled={submitting || isLoading}
                 className="w-full inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 py-2.5 text-sm font-bold text-white shadow-md transition hover:bg-blue-700 active:scale-[0.99] disabled:opacity-50 cursor-pointer"
               >
                 {submitting ? <Loader2 size={16} className="animate-spin" /> : <ArrowRight size={16} />}

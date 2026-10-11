@@ -199,7 +199,7 @@ export async function getGeoInfo(): Promise<GeoInfo> {
  * Registers/upserts the current browser session in user_sessions.
  * Called after each successful login through the backend auth authority.
  */
-export async function registerSession(): Promise<void> {
+export async function registerSession(timeoutMs?: number): Promise<void> {
   const sessionKey = getOrCreateSessionKey();
   if (!sessionKey) throw new Error("Unable to create browser session key");
 
@@ -212,7 +212,10 @@ export async function registerSession(): Promise<void> {
     os: deviceInfo.os,
     city: geo.city,
     country: geo.country,
-  }, { withCredentials: true });
+  }, {
+    withCredentials: true,
+    ...(timeoutMs ? { timeout: timeoutMs } : {}),
+  });
 }
 
 /**

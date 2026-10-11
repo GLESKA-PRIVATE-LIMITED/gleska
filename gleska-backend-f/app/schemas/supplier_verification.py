@@ -5,7 +5,11 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
-from app.schemas.supplier import SupplierVerificationStatus
+from app.schemas.supplier import (
+    SupplierCompanyRole,
+    SupplierMembershipStatus,
+    SupplierVerificationStatus,
+)
 
 
 class SupplierVerificationQueueItem(BaseModel):
@@ -13,6 +17,21 @@ class SupplierVerificationQueueItem(BaseModel):
     name: str
     verification_status: SupplierVerificationStatus
     verification_submitted_at: Optional[datetime] = None
+    created_at: datetime
+
+
+class SupplierVerificationQueueResponse(BaseModel):
+    items: list[SupplierVerificationQueueItem]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+
+
+class SupplierVerificationOwnerMembership(BaseModel):
+    name: Optional[str] = None
+    role: SupplierCompanyRole
+    status: SupplierMembershipStatus
     created_at: datetime
 
 
@@ -52,6 +71,7 @@ class SupplierVerificationAdminDetail(BaseModel):
     contact_email: Optional[str] = None
     contact_phone: Optional[str] = None
     registered_address: Optional[str] = None
+    owner_membership: Optional[SupplierVerificationOwnerMembership] = None
     documents: list[SupplierVerificationAdminDocument]
     events: list[SupplierVerificationAdminEvent]
 

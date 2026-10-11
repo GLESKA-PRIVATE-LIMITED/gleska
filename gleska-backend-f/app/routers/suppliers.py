@@ -27,6 +27,9 @@ from app.schemas.supplier_offering import (
     SupplierMaterialOfferingResponse,
 )
 from app.schemas.rfq import (
+    PurchaseOrderFulfillmentUpdateRequest,
+    PurchaseOrderResponse,
+    PurchaseOrderStatusUpdateRequest,
     SupplierQuotationRequest,
     SupplierQuotationResult,
     SupplierRFQResponse,
@@ -350,6 +353,87 @@ async def submit_supplier_quotation(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="QUOTATION_SUBMISSION_FAILED",
+        ) from exc
+
+
+@router.get(
+    "/companies/{company_id}/purchase-orders",
+    response_model=list[PurchaseOrderResponse],
+)
+async def list_supplier_purchase_orders(
+    company_id: UUID,
+    membership: dict = Depends(require_supplier_company_membership),
+):
+    try:
+        return RFQService.list_purchase_orders_supplier(company_id)
+    except RFQServiceError as exc:
+        _raise_rfq_error(exc)
+    except Exception as exc:
+        logger.exception("Supplier purchase order list failed: company_id=%s", company_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="PURCHASE_ORDER_LIST_FAILED",
+        ) from exc
+
+
+@router.post(
+    "/companies/{company_id}/purchase-orders/{order_id}/response",
+    response_model=PurchaseOrderResponse,
+)
+async def respond_to_supplier_purchase_order(
+    company_id: UUID,
+    order_id: UUID,
+    request: PurchaseOrderStatusUpdateRequest,
+    user: UserResponse = Depends(get_current_user),
+    membership: dict = Depends(require_supplier_company_membership),
+):
+    try:
+        return RFQService.respond_purchase_order(user, company_id, order_id, request)
+    except RFQServiceError as exc:
+        _raise_rfq_error(exc)
+    except Exception as exc:
+        logger.exception(
+            "Supplier purchase order response failed: user_id=%s company_id=%s order_id=%s",
+            user.id,
+            company_id,
+            order_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="PURCHASE_ORDER_UPDATE_FAILED",
+        ) from exc
+
+
+@router.post(
+    "/companies/{company_id}/purchase-orders/{order_id}/fulfillment",
+    response_model=PurchaseOrderResponse,
+)
+async def update_supplier_purchase_order_fulfillment(
+    company_id: UUID,
+    order_id: UUID,
+    request: PurchaseOrderFulfillmentUpdateRequest,
+    user: UserResponse = Depends(get_current_user),
+    membership: dict = Depends(require_supplier_company_membership),
+):
+    try:
+        return RFQService.update_purchase_order_fulfillment(
+            user,
+            company_id,
+            order_id,
+            request,
+        )
+    except RFQServiceError as exc:
+        _raise_rfq_error(exc)
+    except Exception as exc:
+        logger.exception(
+            "Supplier purchase order fulfillment update failed: user_id=%s company_id=%s order_id=%s",
+            user.id,
+            company_id,
+            order_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="FULFILLMENT_UPDATE_FAILED",
         ) from exc
 
 

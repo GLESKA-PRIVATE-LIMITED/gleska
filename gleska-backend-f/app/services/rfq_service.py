@@ -15,9 +15,14 @@ from fastapi import status
 from app.core.supabase import supabase
 from app.schemas.auth import UserResponse
 from app.schemas.rfq import (
+    ProcurementQuotationSelectionRequest,
     ProcurementRFQCreateRequest,
     ProcurementRFQRecipient,
     ProcurementRFQResponse,
+    PurchaseOrderResponse,
+    PurchaseOrderFulfillmentEventResponse,
+    PurchaseOrderFulfillmentUpdateRequest,
+    PurchaseOrderStatusUpdateRequest,
     SupplierQuotationRequest,
     SupplierQuotationResponse,
     SupplierQuotationResult,
@@ -75,6 +80,393 @@ class RFQService:
         if deadline <= datetime.now(timezone.utc):
             result["status"] = "CLOSED"
         return result
+
+    @classmethod
+    def _purchase_order_responses(
+        cls,
+        rows: list[dict[str, Any]],
+    ) -> list[PurchaseOrderResponse]:
+        if not rows:
+            return []
+        order_ids = list(dict.fromkeys(str(row["id"]) for row in rows))
+        company_ids = list(dict.fromkeys(
+            str(row["supplier_company_id"]) for row in rows if row.get("supplier_company_id")
+        ))
+        companies: dict[str, str] = {}
+        for start in range(0, len(company_ids), RFQ_COMPANY_QUERY_BATCH_SIZE):
+            companies.update({
+                str(company["id"]): str(company["name"])
+                for company in cls._rows(
+                    supabase.table("supplier_companies")
+                    .select("id, name")
+                    .in_("id", company_ids[start:start + RFQ_COMPANY_QUERY_BATCH_SIZE])
+                    .execute()
+                )
+            })
+        if any(company_id not in companies for company_id in company_ids):
+            logger.error(
+                "Purchase order supplier company lookup incomplete: supplier_company_ids=%s",
+                [company_id for company_id in company_ids if company_id not in companies],
+            )
+            raise RFQServiceError("PURCHASE_ORDER_SUPPLIER_NOT_FOUND")
+        events_by_order: dict[str, list[PurchaseOrderFulfillmentEventResponse]] = {}
+        for start in range(0, len(order_ids), RFQ_RECIPIENT_QUERY_BATCH_SIZE):
+            event_rows = cls._rows(
+                supabase.table("procurement_purchase_order_fulfillment_events")
+                .select(
+                    "id, purchase_order_id, status, dispatched_quantity, delivered_quantity, "
+                    "unit, dispatch_date, carrier, tracking_reference, estimated_delivery_date, "
+                    "delivery_date, delivery_notes, created_at"
+                )
+                .in_("purchase_order_id", order_ids[start:start + RFQ_RECIPIENT_QUERY_BATCH_SIZE])
+                .order("created_at", desc=True)
+                .execute()
+            )
+            for event in event_rows:
+                events_by_order.setdefault(str(event["purchase_order_id"]), []).append(
+                    PurchaseOrderFulfillmentEventResponse.model_validate(event)
+                )
+        return [
+            PurchaseOrderResponse.model_validate({
+                **row,
+                "supplier_company_name": companies[str(row["supplier_company_id"])],
+                "fulfillment_events": events_by_order.get(str(row["id"]), []),
+            })
+            for row in rows
+        ]
+
+    @staticmethod
+    def _purchase_order_columns() -> str:
+        return (
+            "id, order_reference, rfq_id, quotation_id, supplier_company_id, "
+            "item_name, specification, quantity, unit, unit_price, currency, "
+            "quantity_offered, offered_unit, estimated_delivery_lead_time_days, "
+            "quotation_valid_until, delivery_location, delivery_terms, supplier_notes, "
+            "dispatched_quantity, delivered_quantity, fulfillment_unit, dispatch_date, "
+            "carrier, tracking_reference, estimated_delivery_date, delivery_date, delivery_notes, "
+            "status, created_at, updated_at"
+        )
+
+    @classmethod
+    def _selected_purchase_order(
+        cls,
+        user: UserResponse,
+        employer_id: str,
+        rfq_id: UUID,
+        quotation_id: UUID,
+    ) -> PurchaseOrderResponse | None:
+        row = cls._row(
+            supabase.table("procurement_purchase_orders")
+            .select(cls._purchase_order_columns())
+            .eq("rfq_id", str(rfq_id))
+            .eq("quotation_id", str(quotation_id))
+            .eq("buyer_user_id", str(user.id))
+            .eq("employer_id", employer_id)
+            .maybe_single()
+            .execute()
+        )
+        return cls._purchase_order_responses([row])[0] if row else None
+
+    @classmethod
+    def list_purchase_orders_buyer(
+        cls,
+        user: UserResponse,
+    ) -> list[PurchaseOrderResponse]:
+        employer_id = cls._employer_id(user)
+        rows = cls._rows(
+            supabase.table("procurement_purchase_orders")
+            .select(cls._purchase_order_columns())
+            .eq("buyer_user_id", str(user.id))
+            .eq("employer_id", employer_id)
+            .order("created_at", desc=True)
+            .limit(RFQ_LIST_LIMIT)
+            .execute()
+        )
+        return cls._purchase_order_responses(rows)
+
+    @classmethod
+    def list_purchase_orders_supplier(
+        cls,
+        company_id: UUID,
+    ) -> list[PurchaseOrderResponse]:
+        rows = cls._rows(
+            supabase.table("procurement_purchase_orders")
+            .select(cls._purchase_order_columns())
+            .eq("supplier_company_id", str(company_id))
+            .order("created_at", desc=True)
+            .limit(RFQ_LIST_LIMIT)
+            .execute()
+        )
+        return cls._purchase_order_responses(rows)
+
+    @classmethod
+    def select_quotation(
+        cls,
+        user: UserResponse,
+        rfq_id: UUID,
+        request: ProcurementQuotationSelectionRequest,
+    ) -> PurchaseOrderResponse:
+        employer_id = cls._employer_id(user)
+        try:
+            result = cls._row(
+                supabase.rpc(
+                    "select_procurement_quotation",
+                    {
+                        "p_user_id": str(user.id),
+                        "p_employer_id": employer_id,
+                        "p_rfq_id": str(rfq_id),
+                        "p_quotation_id": str(request.quotation_id),
+                    },
+                ).execute()
+            )
+        except Exception as exc:
+            logger.exception(
+                "Procurement quotation selection failed: user_id=%s rfq_id=%s",
+                user.id,
+                rfq_id,
+            )
+            try:
+                existing_order = cls._selected_purchase_order(
+                    user,
+                    employer_id,
+                    rfq_id,
+                    request.quotation_id,
+                )
+            except Exception:
+                logger.exception(
+                    "Procurement quotation selection recovery failed: user_id=%s rfq_id=%s",
+                    user.id,
+                    rfq_id,
+                )
+                raise RFQServiceError("QUOTATION_SELECTION_FAILED") from exc
+            if existing_order:
+                return existing_order
+            raise RFQServiceError("QUOTATION_SELECTION_FAILED") from exc
+
+        if result.get("ok") is not True:
+            code = str(result.get("error_code") or "QUOTATION_SELECTION_FAILED")
+            if code in {"RFQ_CLOSED", "RFQ_ALREADY_AWARDED"}:
+                existing_order = cls._selected_purchase_order(
+                    user,
+                    employer_id,
+                    rfq_id,
+                    request.quotation_id,
+                )
+                if existing_order:
+                    return existing_order
+            errors = {
+                "PROCUREMENT_FORBIDDEN": (code, status.HTTP_403_FORBIDDEN),
+                "RFQ_NOT_FOUND": (code, status.HTTP_404_NOT_FOUND),
+                "RFQ_CLOSED": (code, status.HTTP_409_CONFLICT),
+                "RFQ_ALREADY_AWARDED": (code, status.HTTP_409_CONFLICT),
+                "QUOTATION_NOT_FOUND": (code, status.HTTP_404_NOT_FOUND),
+                "RFQ_INVITATION_NOT_FOUND": (code, status.HTTP_409_CONFLICT),
+                "RFQ_INVITATION_DECLINED": (code, status.HTTP_409_CONFLICT),
+                "QUOTATION_EXPIRED": (code, status.HTTP_409_CONFLICT),
+                "QUOTATION_NOT_COMPARABLE": (code, status.HTTP_409_CONFLICT),
+                "SUPPLIER_COMPANY_INELIGIBLE": (code, status.HTTP_409_CONFLICT),
+            }
+            error_code, http_status = errors.get(
+                code,
+                (code, status.HTTP_500_INTERNAL_SERVER_ERROR),
+            )
+            raise RFQServiceError(error_code, http_status)
+
+        order_id = result.get("purchase_order_id")
+        try:
+            row = cls._row(
+                supabase.table("procurement_purchase_orders")
+                .select(cls._purchase_order_columns())
+                .eq("id", str(order_id))
+                .eq("buyer_user_id", str(user.id))
+                .eq("employer_id", employer_id)
+                .maybe_single()
+                .execute()
+            )
+            if not row:
+                raise RFQServiceError("PURCHASE_ORDER_LOAD_FAILED")
+            return cls._purchase_order_responses([row])[0]
+        except Exception as exc:
+            logger.exception(
+                "Purchase order committed but response loading failed: user_id=%s rfq_id=%s order_id=%s",
+                user.id,
+                rfq_id,
+                order_id,
+            )
+            raise RFQServiceError("PURCHASE_ORDER_LOAD_FAILED") from exc
+
+    @classmethod
+    def respond_purchase_order(
+        cls,
+        user: UserResponse,
+        company_id: UUID,
+        order_id: UUID,
+        request: PurchaseOrderStatusUpdateRequest,
+    ) -> PurchaseOrderResponse:
+        try:
+            result = cls._row(
+                supabase.rpc(
+                    "respond_to_procurement_purchase_order",
+                    {
+                        "p_user_id": str(user.id),
+                        "p_company_id": str(company_id),
+                        "p_order_id": str(order_id),
+                        "p_status": request.status,
+                    },
+                ).execute()
+            )
+        except Exception as exc:
+            logger.exception(
+                "Supplier purchase order response failed: user_id=%s company_id=%s order_id=%s",
+                user.id,
+                company_id,
+                order_id,
+            )
+            raise RFQServiceError("PURCHASE_ORDER_UPDATE_FAILED") from exc
+        cls._raise_purchase_order_rpc_error(result)
+        row = cls._row(
+            supabase.table("procurement_purchase_orders")
+            .select(cls._purchase_order_columns())
+            .eq("id", str(order_id))
+            .eq("supplier_company_id", str(company_id))
+            .maybe_single()
+            .execute()
+        )
+        if not row:
+            raise RFQServiceError("PURCHASE_ORDER_NOT_FOUND", status.HTTP_404_NOT_FOUND)
+        return cls._purchase_order_responses([row])[0]
+
+    @classmethod
+    def cancel_purchase_order(
+        cls,
+        user: UserResponse,
+        order_id: UUID,
+    ) -> PurchaseOrderResponse:
+        employer_id = cls._employer_id(user)
+        try:
+            result = cls._row(
+                supabase.rpc(
+                    "cancel_procurement_purchase_order",
+                    {
+                        "p_user_id": str(user.id),
+                        "p_employer_id": employer_id,
+                        "p_order_id": str(order_id),
+                    },
+                ).execute()
+            )
+        except Exception as exc:
+            logger.exception(
+                "Buyer purchase order cancellation failed: user_id=%s order_id=%s",
+                user.id,
+                order_id,
+            )
+            raise RFQServiceError("PURCHASE_ORDER_UPDATE_FAILED") from exc
+        cls._raise_purchase_order_rpc_error(result)
+        row = cls._row(
+            supabase.table("procurement_purchase_orders")
+            .select(cls._purchase_order_columns())
+            .eq("id", str(order_id))
+            .eq("buyer_user_id", str(user.id))
+            .eq("employer_id", employer_id)
+            .maybe_single()
+            .execute()
+        )
+        if not row:
+            raise RFQServiceError("PURCHASE_ORDER_NOT_FOUND", status.HTTP_404_NOT_FOUND)
+        return cls._purchase_order_responses([row])[0]
+
+    @classmethod
+    def update_purchase_order_fulfillment(
+        cls,
+        user: UserResponse,
+        company_id: UUID,
+        order_id: UUID,
+        request: PurchaseOrderFulfillmentUpdateRequest,
+    ) -> PurchaseOrderResponse:
+        try:
+            result = cls._row(
+                supabase.rpc(
+                    "update_procurement_purchase_order_fulfillment",
+                    {
+                        "p_user_id": str(user.id),
+                        "p_company_id": str(company_id),
+                        "p_order_id": str(order_id),
+                        "p_idempotency_key": str(request.idempotency_key),
+                        "p_status": request.status,
+                        "p_dispatched_quantity": str(request.dispatched_quantity),
+                        "p_delivered_quantity": str(request.delivered_quantity),
+                        "p_unit": request.unit,
+                        "p_dispatch_date": request.dispatch_date.isoformat()
+                        if request.dispatch_date else None,
+                        "p_carrier": request.carrier,
+                        "p_tracking_reference": request.tracking_reference,
+                        "p_estimated_delivery_date": request.estimated_delivery_date.isoformat()
+                        if request.estimated_delivery_date else None,
+                        "p_delivery_date": request.delivery_date.isoformat()
+                        if request.delivery_date else None,
+                        "p_delivery_notes": request.delivery_notes,
+                    },
+                ).execute()
+            )
+        except Exception as exc:
+            logger.exception(
+                "Supplier purchase order fulfillment update failed: user_id=%s company_id=%s order_id=%s",
+                user.id,
+                company_id,
+                order_id,
+            )
+            raise RFQServiceError("FULFILLMENT_UPDATE_FAILED") from exc
+        if result.get("ok") is not True:
+            code = str(result.get("error_code") or "FULFILLMENT_UPDATE_FAILED")
+            errors = {
+                "SUPPLIER_COMPANY_MEMBERSHIP_NOT_FOUND": (code, status.HTTP_404_NOT_FOUND),
+                "PURCHASE_ORDER_NOT_FOUND": (code, status.HTTP_404_NOT_FOUND),
+                "PURCHASE_ORDER_FULFILLMENT_NOT_ALLOWED": (code, status.HTTP_409_CONFLICT),
+                "PURCHASE_ORDER_TRANSITION_INVALID": (code, status.HTTP_409_CONFLICT),
+                "FULFILLMENT_IDEMPOTENCY_CONFLICT": (code, status.HTTP_409_CONFLICT),
+                "FULFILLMENT_DISPATCH_QUANTITY_EXCEEDED": (code, status.HTTP_409_CONFLICT),
+                "FULFILLMENT_DELIVERY_QUANTITY_EXCEEDED": (code, status.HTTP_409_CONFLICT),
+                "FULFILLMENT_STATUS_QUANTITY_INVALID": (code, status.HTTP_409_CONFLICT),
+                "FULFILLMENT_DISPATCH_DATE_REQUIRED": (code, status.HTTP_422_UNPROCESSABLE_ENTITY),
+                "FULFILLMENT_DELIVERY_DATE_REQUIRED": (code, status.HTTP_422_UNPROCESSABLE_ENTITY),
+                "FULFILLMENT_DATE_INVALID": (code, status.HTTP_422_UNPROCESSABLE_ENTITY),
+                "FULFILLMENT_UPDATE_INVALID": (code, status.HTTP_422_UNPROCESSABLE_ENTITY),
+            }
+            error_code, http_status = errors.get(
+                code,
+                (code, status.HTTP_500_INTERNAL_SERVER_ERROR),
+            )
+            raise RFQServiceError(error_code, http_status)
+
+        row = cls._row(
+            supabase.table("procurement_purchase_orders")
+            .select(cls._purchase_order_columns())
+            .eq("id", str(order_id))
+            .eq("supplier_company_id", str(company_id))
+            .maybe_single()
+            .execute()
+        )
+        if not row:
+            raise RFQServiceError("PURCHASE_ORDER_NOT_FOUND", status.HTTP_404_NOT_FOUND)
+        return cls._purchase_order_responses([row])[0]
+
+    @staticmethod
+    def _raise_purchase_order_rpc_error(result: dict[str, Any]) -> None:
+        if result.get("ok") is True:
+            return
+        code = str(result.get("error_code") or "PURCHASE_ORDER_UPDATE_FAILED")
+        errors = {
+            "PROCUREMENT_FORBIDDEN": (code, status.HTTP_403_FORBIDDEN),
+            "SUPPLIER_COMPANY_MEMBERSHIP_NOT_FOUND": (code, status.HTTP_404_NOT_FOUND),
+            "PURCHASE_ORDER_NOT_FOUND": (code, status.HTTP_404_NOT_FOUND),
+            "PURCHASE_ORDER_STATUS_INVALID": (code, status.HTTP_422_UNPROCESSABLE_ENTITY),
+            "PURCHASE_ORDER_TRANSITION_INVALID": (code, status.HTTP_409_CONFLICT),
+        }
+        error_code, http_status = errors.get(
+            code,
+            (code, status.HTTP_500_INTERNAL_SERVER_ERROR),
+        )
+        raise RFQServiceError(error_code, http_status)
 
     @classmethod
     def _buyer_response(cls, row: dict[str, Any]) -> ProcurementRFQResponse:
