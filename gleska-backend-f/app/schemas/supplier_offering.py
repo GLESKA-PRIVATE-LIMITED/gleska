@@ -6,7 +6,17 @@ import re
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    condecimal,
+    field_validator,
+    model_validator,
+)
+
+
+_OfferingDecimal = condecimal(gt=0, max_digits=18, decimal_places=4)
 
 
 def _normalize_service_coverage(values: list[str]) -> list[str]:
@@ -28,11 +38,9 @@ class SupplierMaterialOfferingFields(BaseModel):
     name: str = Field(min_length=2, max_length=240)
     specification: str | None = Field(default=None, max_length=2000)
     unit: str = Field(min_length=1, max_length=48)
-    indicative_price: Decimal | None = Field(default=None, gt=0, max_digits=18, decimal_places=4)
+    indicative_price: _OfferingDecimal | None = None
     currency_code: str | None = Field(default=None, min_length=3, max_length=3)
-    minimum_order_quantity: Decimal | None = Field(
-        default=None, gt=0, max_digits=18, decimal_places=4
-    )
+    minimum_order_quantity: _OfferingDecimal | None = None
     is_available: bool = True
     service_coverage: list[str] = Field(default_factory=list, max_length=50)
 
@@ -83,13 +91,9 @@ class SupplierMaterialOfferingPatchRequest(BaseModel):
     name: str | None = Field(default=None, min_length=2, max_length=240)
     specification: str | None = Field(default=None, max_length=2000)
     unit: str | None = Field(default=None, min_length=1, max_length=48)
-    indicative_price: Decimal | None = Field(
-        default=None, gt=0, max_digits=18, decimal_places=4
-    )
+    indicative_price: _OfferingDecimal | None = None
     currency_code: str | None = Field(default=None, min_length=3, max_length=3)
-    minimum_order_quantity: Decimal | None = Field(
-        default=None, gt=0, max_digits=18, decimal_places=4
-    )
+    minimum_order_quantity: _OfferingDecimal | None = None
     is_available: bool | None = None
     service_coverage: list[str] | None = Field(default=None, max_length=50)
     expected_revision: int = Field(ge=0)
