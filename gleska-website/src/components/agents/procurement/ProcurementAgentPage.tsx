@@ -1145,7 +1145,23 @@ export default function ProcurementAgentPage() {
     void enterManualRequirementMode();
   };
 
-  const onSectionChange = (id: string) => {
+  const onSectionChange = async (id: string) => {
+    if (id === "switch-workspace") {
+      try {
+        const ws = await procurementApi.getWorkspaces();
+        const hasSupplier = ws.available_workspaces.some((w) => w.kind === "SUPPLIER");
+        if (hasSupplier) {
+          await procurementApi.updateWorkspacePreference("SUPPLIER");
+          router.push("/supplier");
+          return;
+        }
+      } catch {
+        // Fall back to selector
+      }
+      router.push("/procurement/workspaces?switch=1");
+      return;
+    }
+
     const destinations: Record<string, Section> = {
       dashboard: "dashboard",
       details: "details",
@@ -1349,9 +1365,6 @@ export default function ProcurementAgentPage() {
                 }
               }}
             />
-            <div className="flex justify-center">
-              <ProcurementWorkspaceSwitch />
-            </div>
             <AgentSearchBar
               title={procurementConfig.searchTitle}
               subtitle={procurementConfig.searchSubtitle}

@@ -14,6 +14,9 @@ interface AgentSidebarProps {
   setIsCollapsed: (collapsed: boolean) => void;
   mobileSidebarOpen: boolean;
   setMobileSidebarOpen: (open: boolean) => void;
+  profileHref?: string;
+  onProfileClick?: () => void;
+  profileRoleLabel?: string;
 }
 
 export default function AgentSidebar({
@@ -24,6 +27,9 @@ export default function AgentSidebar({
   setIsCollapsed,
   mobileSidebarOpen,
   setMobileSidebarOpen,
+  profileHref,
+  onProfileClick,
+  profileRoleLabel,
 }: AgentSidebarProps) {
   return (
     <>
@@ -88,11 +94,20 @@ export default function AgentSidebar({
                     href={item.href}
                     onClick={() => setMobileSidebarOpen(false)}
                     title={isCollapsed ? item.label : undefined}
-                    className={`flex items-center gap-3 rounded-xl py-3 text-sm font-semibold text-slate-600 transition-all hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white ${
-                      isCollapsed ? "justify-center px-0" : "px-4"
-                    }`}
+                    className={`flex items-center gap-3 rounded-xl py-2.5 text-sm font-semibold transition-all ${
+                      isSelected
+                        ? "bg-blue-600 text-white shadow-xs"
+                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
+                    } ${isCollapsed ? "justify-center px-0" : "px-3"}`}
                   >
-                    <Icon size={18} className="shrink-0 text-slate-500 dark:text-slate-400" />
+                    <Icon
+                      size={18}
+                      className={`shrink-0 ${
+                        isSelected
+                          ? "text-white"
+                          : "text-slate-500 dark:text-slate-400"
+                      }`}
+                    />
                     {!isCollapsed && <span className="truncate">{item.label}</span>}
                   </Link>
                 );
@@ -102,15 +117,19 @@ export default function AgentSidebar({
                 <button
                   key={item.id}
                   onClick={() => {
-                    setActiveTab(item.id);
+                    if (item.onClick) {
+                      item.onClick();
+                    } else {
+                      setActiveTab(item.id);
+                    }
                     setMobileSidebarOpen(false);
                   }}
                   title={isCollapsed ? item.label : undefined}
-                  className={`flex w-full items-center rounded-xl py-3 text-sm font-semibold transition-all ${
-                    isCollapsed ? "justify-center px-0" : "justify-between px-4"
+                  className={`flex w-full items-center rounded-xl py-2.5 text-sm font-semibold transition-all ${
+                    isCollapsed ? "justify-center px-0" : "justify-between px-3"
                   } ${
                     isSelected
-                      ? "bg-indigo-50 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-400 font-bold"
+                      ? "bg-blue-600 text-white shadow-xs"
                       : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
                   }`}
                 >
@@ -119,14 +138,14 @@ export default function AgentSidebar({
                       size={18}
                       className={`shrink-0 ${
                         isSelected
-                          ? "text-indigo-600 dark:text-indigo-400"
+                          ? "text-white"
                           : "text-slate-500 dark:text-slate-400"
                       }`}
                     />
                     {!isCollapsed && <span className="truncate">{item.label}</span>}
                   </div>
                   {!isCollapsed && isSelected && (
-                    <ChevronRight size={16} className="shrink-0 text-indigo-600 dark:text-indigo-400" />
+                    <ChevronRight size={16} className="shrink-0 text-white" />
                   )}
                 </button>
               );
@@ -135,7 +154,13 @@ export default function AgentSidebar({
         </div>
 
         {/* Profile Component at Bottom */}
-        <AgentProfile isCollapsed={isCollapsed} />
+        <AgentProfile
+          isCollapsed={isCollapsed}
+          closeMobile={() => setMobileSidebarOpen(false)}
+          profileHref={profileHref}
+          onProfileClick={onProfileClick}
+          roleLabel={profileRoleLabel}
+        />
       </aside>
     </>
   );

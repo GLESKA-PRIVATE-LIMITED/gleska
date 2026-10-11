@@ -1,13 +1,14 @@
 import {
-  Home,
   LayoutDashboard,
   FileText,
   Activity,
   ShoppingCart,
   Boxes,
-  Package,
   ClipboardList,
   Settings,
+  ArrowLeftRight,
+  Briefcase,
+  Package,
 } from "lucide-react";
 import { AgentConfig } from "@/components/agent-dashboard/types";
 
@@ -21,16 +22,15 @@ export const procurementConfig: AgentConfig = {
   variant: "compact-centered",
   accentColor: "purple",
   sidebarItems: [
-    { id: "home", label: "Home", icon: Home, href: "/#services" },
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, isTab: true },
     { id: "material-details", label: "Requirement Details", icon: Boxes, isTab: true },
     { id: "details", label: "Procurement Details", icon: FileText, isTab: true },
     { id: "status", label: "Current Status", icon: Activity, isTab: true },
-    { id: "workspaces", label: "Workspaces", icon: Package, href: procurementWorkspacesPath },
     { id: "get-procurement", label: "Get Procurement", icon: ShoppingCart, isTab: true },
     { id: "rfqs", label: "Requests for Quote", icon: ClipboardList, isTab: true },
     { id: "settings", label: "Settings", icon: Settings, isTab: true },
-    { id: "employer-dashboard", label: "Employer Dashboard", icon: LayoutDashboard, href: "/employer/dashboard" },
+    { id: "switch-workspace", label: "Switch Workspace", icon: ArrowLeftRight, isTab: false },
+    { id: "employer-dashboard", label: "Employer Dashboard", icon: Briefcase, href: "/employer/dashboard" },
   ],
   actionOptions: [
     {

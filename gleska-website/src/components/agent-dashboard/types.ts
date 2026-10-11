@@ -6,6 +6,7 @@ export interface SidebarNavItem {
   icon: LucideIcon;
   href?: string;
   isTab?: boolean;
+  onClick?: () => void;
 }
 
 export interface ActionOption {
