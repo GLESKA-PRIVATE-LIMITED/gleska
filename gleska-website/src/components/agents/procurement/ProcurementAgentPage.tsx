@@ -1,6 +1,6 @@
 "use client";
 
-import React, { FormEvent, useEffect, useRef, useState } from "react";
+import React, { FormEvent, Suspense, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   AlertCircle,
@@ -378,9 +378,21 @@ export default function ProcurementAgentPage() {
   const [actionSuccess, setActionSuccess] = useState("");
   const [staleRequestId, setStaleRequestId] = useState<string | null>(null);
   const [conversationNeedsReload, setConversationNeedsReload] = useState(false);
+  const [conversationHistoryCursor, setConversationHistoryCursor] = useState<string | null>(null);
+  const [conversationHistoryHasMore, setConversationHistoryHasMore] = useState(false);
+  const [conversationHistoryLoading, setConversationHistoryLoading] = useState(false);
+  const [conversationHistoryError, setConversationHistoryError] = useState("");
   const [conversations, setConversations] = useState<ProcurementConversation[]>([]);
+  const [conversationsPage, setConversationsPage] = useState(1);
+  const [conversationsCursor, setConversationsCursor] = useState<string | null>(null);
+  const [conversationsHasMore, setConversationsHasMore] = useState(false);
+  const [conversationsLoadingMore, setConversationsLoadingMore] = useState(false);
   const [conversation, setConversation] = useState<ProcurementConversation | null>(null);
   const [requests, setRequests] = useState<ProcurementMaterialRequest[]>([]);
+  const [requestsPage, setRequestsPage] = useState(1);
+  const [requestsCursor, setRequestsCursor] = useState<string | null>(null);
+  const [requestsHasMore, setRequestsHasMore] = useState(false);
+  const [requestsLoadingMore, setRequestsLoadingMore] = useState(false);
   const [discoveryRequestId, setDiscoveryRequestId] = useState("");
   const [discoveryResults, setDiscoveryResults] = useState<ProcurementSupplierDiscovery | null>(null);
   const [discoveryLoading, setDiscoveryLoading] = useState(false);
@@ -409,6 +421,8 @@ export default function ProcurementAgentPage() {
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const discoveryRunRef = useRef(0);
   const settingsRequestRef = useRef<Promise<ProcurementSettings> | null>(null);
+  const conversationHistoryRequestRef = useRef(0);
+  const preserveHistoryScrollRef = useRef(false);
 
   const formErrors = validateRequestDraft(draft);
   const isFormReady = Object.keys(formErrors).length === 0;
@@ -439,6 +453,10 @@ export default function ProcurementAgentPage() {
 
   useEffect(() => {
     if (creationMode === "ai" && section === "material-details" && requirementView === "create") {
+      if (preserveHistoryScrollRef.current) {
+        preserveHistoryScrollRef.current = false;
+        return;
+      }
       scrollToBottom();
     }
   }, [conversation?.history, busy, creationMode, requirementView, section]);
@@ -450,8 +468,61 @@ export default function ProcurementAgentPage() {
     setConversationNeedsReload(false);
   };
 
+  const loadConversationHistory = async (
+    conversationId: string,
+    cursor: string | null = null,
+  ) => {
+    const requestId = ++conversationHistoryRequestRef.current;
+    preserveHistoryScrollRef.current = Boolean(
+      cursor && creationMode === "ai" && section === "material-details" && requirementView === "create",
+    );
+    setConversationHistoryLoading(true);
+    setConversationHistoryError("");
+    try {
+      const page = await procurementApi.listConversationHistory(conversationId, cursor);
+      if (conversationHistoryRequestRef.current !== requestId) return;
+      setConversation((current) => {
+        if (!current || current.conversation_id !== conversationId) return current;
+        const merged = cursor
+          ? [...page.items, ...current.history]
+          : page.items;
+        const seen = new Set<number>();
+        const history = merged.filter((item) => {
+          if (item.message_id == null) return true;
+          if (seen.has(item.message_id)) return false;
+          seen.add(item.message_id);
+          return true;
+        });
+        return {
+          ...current,
+          history,
+          history_cursor: page.next_cursor,
+          history_limit_reached: page.has_more,
+        };
+      });
+      setConversationHistoryCursor(page.next_cursor);
+      setConversationHistoryHasMore(page.has_more);
+    } catch (error) {
+      if (conversationHistoryRequestRef.current !== requestId) return;
+      preserveHistoryScrollRef.current = false;
+      setConversationHistoryError(
+        errorMessage(error, "Conversation history could not be loaded. Retry to view archived messages."),
+      );
+    } finally {
+      if (conversationHistoryRequestRef.current === requestId) {
+        setConversationHistoryLoading(false);
+      }
+    }
+  };
+
   const selectConversation = (value: ProcurementConversation) => {
+    conversationHistoryRequestRef.current += 1;
     applyConversationState(value);
+    setConversationHistoryCursor(null);
+    setConversationHistoryHasMore(false);
+    setConversationHistoryError("");
+    setConversationHistoryLoading(false);
+    void loadConversationHistory(value.conversation_id);
     setConversations((current) => [
       value,
       ...current.filter((item) => item.conversation_id !== value.conversation_id),
@@ -463,11 +534,57 @@ export default function ProcurementAgentPage() {
   const refreshRequests = async () => {
     try {
       const latest = await procurementApi.listRequests();
-      setRequests(latest);
-      return latest;
+      setRequests(latest.items);
+      setRequestsPage(latest.page);
+      setRequestsCursor(latest.next_cursor ?? null);
+      setRequestsHasMore(latest.has_more);
+      return latest.items;
     } catch (err) {
       setActionError(errorMessage(err, "Failed to refresh saved requests."));
       return [];
+    }
+  };
+
+  const loadMoreRequests = async () => {
+    if (!requestsHasMore || requestsLoadingMore) return;
+    setRequestsLoadingMore(true);
+    setActionError("");
+    try {
+      const nextPage = await procurementApi.listRequests(requestsCursor);
+      setRequests((current) => {
+        const knownIds = new Set(current.map((item) => item.id));
+        return [...current, ...nextPage.items.filter((item) => !knownIds.has(item.id))];
+      });
+      setRequestsPage(nextPage.page);
+      setRequestsCursor(nextPage.next_cursor ?? null);
+      setRequestsHasMore(nextPage.has_more);
+    } catch (err) {
+      setActionError(errorMessage(err, "Failed to load more saved requirements."));
+    } finally {
+      setRequestsLoadingMore(false);
+    }
+  };
+
+  const loadMoreConversations = async () => {
+    if (!conversationsHasMore || conversationsLoadingMore) return;
+    setConversationsLoadingMore(true);
+    setActionError("");
+    try {
+      const nextPage = await procurementApi.listConversations(conversationsCursor);
+      setConversations((current) => {
+        const knownIds = new Set(current.map((item) => item.conversation_id));
+        return [
+          ...current,
+          ...nextPage.items.filter((item) => !knownIds.has(item.conversation_id)),
+        ];
+      });
+      setConversationsPage(nextPage.page);
+      setConversationsCursor(nextPage.next_cursor ?? null);
+      setConversationsHasMore(nextPage.has_more);
+    } catch (err) {
+      setActionError(errorMessage(err, "Failed to load more conversations."));
+    } finally {
+      setConversationsLoadingMore(false);
     }
   };
 
@@ -487,15 +604,21 @@ export default function ProcurementAgentPage() {
       ]);
 
       if (convosResult.status === "fulfilled") {
-        loadedConversations = convosResult.value;
+        loadedConversations = convosResult.value.items;
         setConversations(loadedConversations);
+        setConversationsPage(convosResult.value.page);
+        setConversationsCursor(convosResult.value.next_cursor ?? null);
+        setConversationsHasMore(convosResult.value.has_more);
       } else {
         errors.push(`Conversations: ${errorMessage(convosResult.reason, "Failed to load conversations.")}`);
       }
 
       if (requestsResult.status === "fulfilled") {
-        loadedRequests = requestsResult.value;
+        loadedRequests = requestsResult.value.items;
         setRequests(loadedRequests);
+        setRequestsPage(requestsResult.value.page);
+        setRequestsCursor(requestsResult.value.next_cursor ?? null);
+        setRequestsHasMore(requestsResult.value.has_more);
       } else {
         errors.push(`Saved requests: ${errorMessage(requestsResult.reason, "Failed to load saved requests.")}`);
       }
@@ -508,14 +631,14 @@ export default function ProcurementAgentPage() {
         if (activeConvo) {
           try {
             const latest = await procurementApi.getConversation(activeConvo.conversation_id);
-            applyConversationState(latest);
+            selectConversation(latest);
           } catch (err) {
             errors.push(`Active conversation: ${errorMessage(err, "Failed to load active conversation.")}`);
           }
         } else if (loadedConversations.length > 0) {
           try {
             const latest = await procurementApi.getConversation(loadedConversations[0].conversation_id);
-            applyConversationState(latest);
+            selectConversation(latest);
           } catch {
             // Non-critical if last conversation cannot be loaded
           }
@@ -768,6 +891,7 @@ export default function ProcurementAgentPage() {
       const latest = await procurementApi.getConversation(conversationId);
       if (isDraftDirty) {
         setConversation(latest);
+        void loadConversationHistory(conversationId);
       } else {
         selectConversation(latest);
       }
@@ -834,8 +958,11 @@ export default function ProcurementAgentPage() {
       procurementApi.getConversation(conversationId),
       procurementApi.listRequests(),
     ]);
-    setRequests(latestRequests);
-    const saved = latestRequests.find((item) => item.origin_conversation_id === conversationId);
+    setRequests(latestRequests.items);
+    setRequestsPage(latestRequests.page);
+    setRequestsCursor(latestRequests.next_cursor ?? null);
+    setRequestsHasMore(latestRequests.has_more);
+    const saved = latestRequests.items.find((item) => item.origin_conversation_id === conversationId);
     if (saved) {
       displaySavedRequest(saved);
       selectConversation(latestConversation);
@@ -1130,7 +1257,10 @@ export default function ProcurementAgentPage() {
 
       try {
         const latestRequests = await procurementApi.listRequests();
-        setRequests(latestRequests);
+        setRequests(latestRequests.items);
+        setRequestsPage(latestRequests.page);
+        setRequestsCursor(latestRequests.next_cursor ?? null);
+        setRequestsHasMore(latestRequests.has_more);
       } catch {
         setActionError(`"${requestTitle}" was deleted, but the saved-request list could not refresh. Reload the page to confirm the latest list.`);
       }
@@ -1379,7 +1509,9 @@ export default function ProcurementAgentPage() {
                 <p className="text-2xl font-bold text-slate-900 dark:text-white">
                   {workspaceSummaryAvailable ? requests.length : "—"}
                 </p>
-                <p className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">Saved material requirements</p>
+                <p className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                  {requestsHasMore ? "Loaded saved material requirements" : "Saved material requirements"}
+                </p>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-white/90 p-4 text-center shadow-sm dark:border-slate-800 dark:bg-slate-900/90">
                 <p className="text-2xl font-bold text-slate-900 dark:text-white">
@@ -1387,7 +1519,9 @@ export default function ProcurementAgentPage() {
                     ? conversations.filter((item) => item.status === "ACTIVE").length
                     : "—"}
                 </p>
-                <p className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">Active AI conversations</p>
+                <p className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                  {conversationsHasMore ? "Active conversations in loaded results" : "Active AI conversations"}
+                </p>
               </div>
             </div>
           </div>
@@ -1456,7 +1590,7 @@ export default function ProcurementAgentPage() {
                     {isFormReady ? "Ready to save" : `Incomplete (${Object.keys(formErrors).length} required)`}
                   </span>
                 ) : conversations.length > 1 ? (
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className="text-xs text-slate-500 dark:text-slate-400 hidden sm:inline">Previous:</span>
                     <select
                       value={conversation?.conversation_id || ""}
@@ -1474,6 +1608,16 @@ export default function ProcurementAgentPage() {
                         </option>
                       ))}
                     </select>
+                    {conversationsHasMore && (
+                      <button
+                        type="button"
+                        onClick={() => void loadMoreConversations()}
+                        disabled={conversationsLoadingMore}
+                        className="text-xs font-semibold text-purple-700 underline disabled:opacity-50 dark:text-purple-300"
+                      >
+                        {conversationsLoadingMore ? "Loading…" : "Load older"}
+                      </button>
+                    )}
                   </div>
                 ) : null}
               </div>
@@ -1532,6 +1676,30 @@ export default function ProcurementAgentPage() {
                     </div>
                   )}
 
+                  {conversationHistoryError && (
+                    <div role="alert" className="mt-3 flex-none rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-200">
+                      {conversationHistoryError}
+                    </div>
+                  )}
+                  {(conversationHistoryHasMore || (conversation?.history.length ?? 0) >= 80) && (
+                    <p role="status" className="mt-3 flex-none rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+                      Older messages can be loaded when retained in the archive. Messages pruned before archiving was enabled cannot be recovered.
+                    </p>
+                  )}
+                  {conversationHistoryHasMore && (
+                    <button
+                      type="button"
+                      onClick={() => void loadConversationHistory(
+                        conversation!.conversation_id,
+                        conversationHistoryCursor,
+                      )}
+                      disabled={conversationHistoryLoading}
+                      className="mt-3 flex-none self-center text-xs font-semibold text-purple-700 underline disabled:opacity-50 dark:text-purple-300"
+                    >
+                      {conversationHistoryLoading ? "Loading older messages…" : "Load older messages"}
+                    </button>
+                  )}
+
                   {/* Messages Thread */}
                   <div
                     className="my-3 min-h-0 flex-1 space-y-3.5 overflow-y-auto overscroll-contain pr-1.5 custom-scrollbar"
@@ -1552,7 +1720,7 @@ export default function ProcurementAgentPage() {
                     ) : (
                       conversation.history.map((entry, index) => (
                         <div
-                          key={`${index}-${entry.role}`}
+                          key={entry.message_id ?? `${entry.created_at}-${index}-${entry.role}`}
                           className={`flex ${entry.role === "user" ? "justify-end" : "justify-start items-start gap-2.5"}`}
                         >
                           {entry.role === "assistant" && (
@@ -2107,9 +2275,14 @@ export default function ProcurementAgentPage() {
               <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-3 dark:border-slate-800">
                 <h2 className="text-base font-bold text-slate-900 dark:text-white">Your Saved Requests</h2>
                 <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                  {requests.length} total
+                  {requests.length}{requestsHasMore ? " loaded" : " total"}
                 </span>
               </div>
+              {requestsHasMore && (
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Search currently covers the {requests.length} loaded requirements.
+                </p>
+              )}
 
               {/* Search filter */}
               <div className="relative">
@@ -2133,7 +2306,9 @@ export default function ProcurementAgentPage() {
                 </div>
               ) : filteredRequests.length === 0 ? (
                 <p className="rounded-xl border border-dashed border-slate-200 p-5 text-center text-xs text-slate-500">
-                  No requests matching “{savedRequestSearch}”.
+                  {requestsHasMore
+                    ? `No loaded requests match “${savedRequestSearch}”. Load more requirements to search further.`
+                    : `No requests matching “${savedRequestSearch}”.`}
                 </p>
               ) : (
                 <ul className="space-y-2 max-h-[540px] overflow-y-auto custom-scrollbar pr-1">
@@ -2169,6 +2344,16 @@ export default function ProcurementAgentPage() {
                     </li>
                   ))}
                 </ul>
+              )}
+              {requestsHasMore && (
+                <button
+                  type="button"
+                  onClick={() => void loadMoreRequests()}
+                  disabled={requestsLoadingMore}
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-purple-700 disabled:opacity-50 dark:border-slate-700 dark:text-purple-300"
+                >
+                  {requestsLoadingMore ? "Loading requirements…" : "Load more saved requirements"}
+                </button>
               )}
             </section>
 
@@ -2391,7 +2576,9 @@ export default function ProcurementAgentPage() {
             </div>
             <div className="grid gap-4 md:grid-cols-2">
               <div className="rounded-xl border border-slate-200 p-4 dark:border-slate-700">
-                <h3 className="font-semibold text-slate-900 dark:text-white">Saved requirements ({requests.length})</h3>
+                <h3 className="font-semibold text-slate-900 dark:text-white">
+                  Saved requirements ({requests.length}{requestsHasMore ? " loaded" : ""})
+                </h3>
                 {requests.length ? (
                   <ul className="mt-3 space-y-2">
                     {requests.map((request) => (
@@ -2406,9 +2593,21 @@ export default function ProcurementAgentPage() {
                 ) : (
                   <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">No saved requirements.</p>
                 )}
+                {requestsHasMore && (
+                  <button
+                    type="button"
+                    onClick={() => void loadMoreRequests()}
+                    disabled={requestsLoadingMore}
+                    className="mt-3 text-sm font-semibold text-purple-700 underline disabled:opacity-50 dark:text-purple-300"
+                  >
+                    {requestsLoadingMore ? "Loading…" : "Load more requirements"}
+                  </button>
+                )}
               </div>
               <div className="rounded-xl border border-slate-200 p-4 dark:border-slate-700">
-                <h3 className="font-semibold text-slate-900 dark:text-white">AI conversations ({conversations.length})</h3>
+                <h3 className="font-semibold text-slate-900 dark:text-white">
+                  AI conversations ({conversations.length}{conversationsHasMore ? " loaded" : ""})
+                </h3>
                 {conversations.length ? (
                   <ul className="mt-3 space-y-2">
                     {conversations.map((item) => (
@@ -2425,11 +2624,28 @@ export default function ProcurementAgentPage() {
                 ) : (
                   <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">No AI conversations.</p>
                 )}
+                {conversationsHasMore && (
+                  <button
+                    type="button"
+                    onClick={() => void loadMoreConversations()}
+                    disabled={conversationsLoadingMore}
+                    className="mt-3 text-sm font-semibold text-purple-700 underline disabled:opacity-50 dark:text-purple-300"
+                  >
+                    {conversationsLoadingMore ? "Loading…" : "Load older conversations"}
+                  </button>
+                )}
               </div>
             </div>
           </section>
         ) : section === "rfqs" ? (
-          <ProcurementRFQPanel requests={requests} />
+          <Suspense fallback={<div role="status" className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900">Loading RFQ workspace…</div>}>
+            <ProcurementRFQPanel
+              requests={requests}
+              requestsHasMore={requestsHasMore}
+              requestsLoadingMore={requestsLoadingMore}
+              onLoadMoreRequests={() => void loadMoreRequests()}
+            />
+          </Suspense>
         ) : section === "get-procurement" ? (
           <section className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900 sm:p-6">
             <div>
@@ -2484,6 +2700,16 @@ export default function ProcurementAgentPage() {
                 </button>
               </div>
             )}
+            {requestsHasMore && (
+              <button
+                type="button"
+                onClick={() => void loadMoreRequests()}
+                disabled={requestsLoadingMore}
+                className="text-sm font-semibold text-purple-700 underline disabled:opacity-50 dark:text-purple-300"
+              >
+                {requestsLoadingMore ? "Loading requirements…" : "Load more saved requirements"}
+              </button>
+            )}
 
             {discoveryError && (
               <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200">
@@ -2514,7 +2740,7 @@ export default function ProcurementAgentPage() {
 
                 {discoveryResults.search_limit_reached && (
                   <p role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
-                    The search reached its result limit. Additional matching listings may exist.
+                    Showing up to 100 top-ranked matching listings; additional matching listings or suppliers may exist.
                   </p>
                 )}
 

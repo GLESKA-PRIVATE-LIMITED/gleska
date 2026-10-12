@@ -1,6 +1,7 @@
 """Authenticated Procurement Phase 1 endpoints."""
 
 import logging
+from typing import Union
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -9,8 +10,11 @@ from app.core.security import get_current_user, require_employer
 from app.schemas.auth import UserResponse
 from app.schemas.procurement import (
     ProcurementConversationCreateResponse,
+    ProcurementConversationHistoryPage,
+    ProcurementConversationListResponse,
     ProcurementConversationMessageRequest,
     ProcurementDraftUpdateRequest,
+    ProcurementMaterialRequestListResponse,
     ProcurementMaterialRequestPatch,
     ProcurementMaterialRequestResponse,
     ProcurementSaveRequest,
@@ -23,11 +27,16 @@ from app.schemas.procurement import (
 from app.schemas.rfq import (
     ProcurementQuotationSelectionRequest,
     ProcurementRFQCreateRequest,
+    ProcurementRFQListResponse,
     ProcurementRFQResponse,
+    ProcurementRFQUpdateRequest,
+    PurchaseOrderListResponse,
     PurchaseOrderResponse,
 )
 from app.services.rfq_service import RFQService, RFQServiceError
 from app.services.procurement_service import (
+    DEFAULT_PAGE_SIZE,
+    MAX_PAGE_SIZE,
     ProcurementAgentError,
     ProcurementConflict,
     ProcurementNotFound,
@@ -49,7 +58,11 @@ async def get_procurement_workspaces(
     except HTTPException:
         raise
     except Exception as exc:
-        logger.exception("Procurement workspace load failed: user_id=%s", user.id)
+        logger.error(
+            "Procurement workspace load failed: user_id=%s exception_type=%s",
+            user.id,
+            type(exc).__name__,
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="PROCUREMENT_WORKSPACES_LOAD_FAILED",
@@ -71,7 +84,11 @@ async def update_procurement_workspace_preference(
     except HTTPException:
         raise
     except Exception as exc:
-        logger.exception("Procurement workspace preference update failed: user_id=%s", user.id)
+        logger.error(
+            "Procurement workspace preference update failed: user_id=%s exception_type=%s",
+            user.id,
+            type(exc).__name__,
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="PROCUREMENT_WORKSPACE_PREFERENCE_UPDATE_FAILED",
@@ -87,7 +104,11 @@ async def get_procurement_settings(
     except Exception as exc:
         if isinstance(exc, ProcurementServiceError) or isinstance(exc, PermissionError):
             _raise_procurement_error(exc)
-        logger.exception("Procurement settings load failed: user_id=%s", user.id)
+        logger.error(
+            "Procurement settings load failed: user_id=%s exception_type=%s",
+            user.id,
+            type(exc).__name__,
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="PROCUREMENT_SETTINGS_LOAD_FAILED",
@@ -104,7 +125,11 @@ async def update_procurement_settings(
     except Exception as exc:
         if isinstance(exc, ProcurementServiceError) or isinstance(exc, PermissionError):
             _raise_procurement_error(exc)
-        logger.exception("Procurement settings save failed: user_id=%s", user.id)
+        logger.error(
+            "Procurement settings save failed: user_id=%s exception_type=%s",
+            user.id,
+            type(exc).__name__,
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="PROCUREMENT_SETTINGS_SAVE_FAILED",
@@ -132,6 +157,11 @@ def _raise_procurement_error(exc: Exception) -> None:
     if isinstance(exc, PermissionError):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     if isinstance(exc, ProcurementServiceError):
+        if str(exc) == "PAGINATION_CURSOR_INVALID":
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(exc),
+            ) from exc
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
     raise exc
 
@@ -154,23 +184,91 @@ async def create_procurement_rfq(
     except RFQServiceError as exc:
         _raise_rfq_error(exc)
     except Exception as exc:
-        logger.exception("Procurement RFQ create failed: user_id=%s", user.id)
+        logger.error(
+            "Procurement RFQ create failed: user_id=%s exception_type=%s",
+            user.id,
+            type(exc).__name__,
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="RFQ_CREATE_FAILED",
         ) from exc
 
 
-@router.get("/rfqs", response_model=list[ProcurementRFQResponse])
-async def list_procurement_rfqs(
+@router.put("/rfqs/{rfq_id}", response_model=ProcurementRFQResponse)
+async def update_procurement_rfq(
+    rfq_id: UUID,
+    request: ProcurementRFQUpdateRequest,
     user: UserResponse = Depends(require_employer),
 ):
     try:
-        return RFQService.list_buyer(user)
+        return RFQService.update_buyer(user, rfq_id, request)
     except RFQServiceError as exc:
         _raise_rfq_error(exc)
     except Exception as exc:
-        logger.exception("Procurement RFQ list failed: user_id=%s", user.id)
+        logger.error(
+            "Procurement RFQ update failed: user_id=%s rfq_id=%s exception_type=%s",
+            user.id,
+            rfq_id,
+            type(exc).__name__,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="RFQ_UPDATE_FAILED",
+        ) from exc
+
+
+@router.post("/rfqs/{rfq_id}/close", response_model=ProcurementRFQResponse)
+async def close_procurement_rfq(
+    rfq_id: UUID,
+    user: UserResponse = Depends(require_employer),
+):
+    try:
+        return RFQService.close_buyer(user, rfq_id)
+    except RFQServiceError as exc:
+        _raise_rfq_error(exc)
+    except Exception as exc:
+        logger.error(
+            "Procurement RFQ close failed: user_id=%s rfq_id=%s exception_type=%s",
+            user.id,
+            rfq_id,
+            type(exc).__name__,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="RFQ_CLOSE_FAILED",
+        ) from exc
+
+
+@router.get(
+    "/rfqs",
+    response_model=Union[list[ProcurementRFQResponse], ProcurementRFQListResponse],
+)
+async def list_procurement_rfqs(
+    response: Response,
+    page: int | None = Query(default=None, ge=1),
+    page_size: int | None = Query(default=None, ge=1, le=MAX_PAGE_SIZE),
+    user: UserResponse = Depends(require_employer),
+):
+    try:
+        legacy_response = page is None and page_size is None
+        result = RFQService.list_buyer(
+            user,
+            page or 1,
+            MAX_PAGE_SIZE if legacy_response else page_size or DEFAULT_PAGE_SIZE,
+        )
+        if legacy_response:
+            response.headers["X-Results-Truncated"] = str(result.has_more).lower()
+            return result.items
+        return result
+    except RFQServiceError as exc:
+        _raise_rfq_error(exc)
+    except Exception as exc:
+        logger.error(
+            "Procurement RFQ list failed: user_id=%s exception_type=%s",
+            user.id,
+            type(exc).__name__,
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="RFQ_LIST_FAILED",
@@ -187,10 +285,11 @@ async def get_procurement_rfq(
     except RFQServiceError as exc:
         _raise_rfq_error(exc)
     except Exception as exc:
-        logger.exception(
-            "Procurement RFQ load failed: user_id=%s rfq_id=%s",
+        logger.error(
+            "Procurement RFQ load failed: user_id=%s rfq_id=%s exception_type=%s",
             user.id,
             rfq_id,
+            type(exc).__name__,
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -200,17 +299,33 @@ async def get_procurement_rfq(
 
 @router.get(
     "/purchase-orders",
-    response_model=list[PurchaseOrderResponse],
+    response_model=Union[list[PurchaseOrderResponse], PurchaseOrderListResponse],
 )
 async def list_procurement_purchase_orders(
+    response: Response,
+    page: int | None = Query(default=None, ge=1),
+    page_size: int | None = Query(default=None, ge=1, le=MAX_PAGE_SIZE),
     user: UserResponse = Depends(require_employer),
 ):
     try:
-        return RFQService.list_purchase_orders_buyer(user)
+        legacy_response = page is None and page_size is None
+        result = RFQService.list_purchase_orders_buyer(
+            user,
+            page or 1,
+            MAX_PAGE_SIZE if legacy_response else page_size or DEFAULT_PAGE_SIZE,
+        )
+        if legacy_response:
+            response.headers["X-Results-Truncated"] = str(result.has_more).lower()
+            return result.items
+        return result
     except RFQServiceError as exc:
         _raise_rfq_error(exc)
     except Exception as exc:
-        logger.exception("Purchase order list failed: user_id=%s", user.id)
+        logger.error(
+            "Purchase order list failed: user_id=%s exception_type=%s",
+            user.id,
+            type(exc).__name__,
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="PURCHASE_ORDER_LIST_FAILED",
@@ -232,10 +347,11 @@ async def select_procurement_quotation(
     except RFQServiceError as exc:
         _raise_rfq_error(exc)
     except Exception as exc:
-        logger.exception(
-            "Procurement quotation selection failed: user_id=%s rfq_id=%s",
+        logger.error(
+            "Procurement quotation selection failed: user_id=%s rfq_id=%s exception_type=%s",
             user.id,
             rfq_id,
+            type(exc).__name__,
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -256,10 +372,11 @@ async def cancel_procurement_purchase_order(
     except RFQServiceError as exc:
         _raise_rfq_error(exc)
     except Exception as exc:
-        logger.exception(
-            "Purchase order cancellation failed: user_id=%s order_id=%s",
+        logger.error(
+            "Purchase order cancellation failed: user_id=%s order_id=%s exception_type=%s",
             user.id,
             order_id,
+            type(exc).__name__,
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -280,7 +397,11 @@ async def create_procurement_conversation(
     except Exception as exc:
         if isinstance(exc, ProcurementServiceError) or isinstance(exc, PermissionError):
             _raise_procurement_error(exc)
-        logger.exception("Procurement conversation create failed: user_id=%s", user.id)
+        logger.error(
+            "Procurement conversation create failed: user_id=%s exception_type=%s",
+            user.id,
+            type(exc).__name__,
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="PROCUREMENT_CONVERSATION_CREATE_FAILED",
@@ -289,17 +410,38 @@ async def create_procurement_conversation(
 
 @router.get(
     "/conversations",
-    response_model=list[ProcurementConversationCreateResponse],
+    response_model=Union[
+        list[ProcurementConversationCreateResponse],
+        ProcurementConversationListResponse,
+    ],
 )
 async def list_procurement_conversations(
+    response: Response,
+    page: int | None = Query(default=None, ge=1),
+    page_size: int | None = Query(default=None, ge=1, le=MAX_PAGE_SIZE),
+    cursor: str | None = Query(default=None, max_length=300),
     user: UserResponse = Depends(require_employer),
 ):
     try:
-        return ProcurementService.list_conversations(user)
+        legacy_response = page is None and page_size is None
+        result = ProcurementService.list_conversations(
+            user,
+            page or 1,
+            MAX_PAGE_SIZE if legacy_response else page_size or DEFAULT_PAGE_SIZE,
+            cursor,
+        )
+        if legacy_response:
+            response.headers["X-Results-Truncated"] = str(result.has_more).lower()
+            return result.items
+        return result
     except Exception as exc:
         if isinstance(exc, ProcurementServiceError) or isinstance(exc, PermissionError):
             _raise_procurement_error(exc)
-        logger.exception("Procurement conversation list failed: user_id=%s", user.id)
+        logger.error(
+            "Procurement conversation list failed: user_id=%s exception_type=%s",
+            user.id,
+            type(exc).__name__,
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="PROCUREMENT_CONVERSATION_LIST_FAILED",
@@ -319,14 +461,47 @@ async def get_procurement_conversation(
     except Exception as exc:
         if isinstance(exc, ProcurementServiceError) or isinstance(exc, PermissionError):
             _raise_procurement_error(exc)
-        logger.exception(
-            "Procurement conversation load failed: user_id=%s conversation_id=%s",
+        logger.error(
+            "Procurement conversation load failed: user_id=%s conversation_id=%s exception_type=%s",
             user.id,
             conversation_id,
+            type(exc).__name__,
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="PROCUREMENT_CONVERSATION_LOAD_FAILED",
+        ) from exc
+
+
+@router.get(
+    "/conversations/{conversation_id}/history",
+    response_model=ProcurementConversationHistoryPage,
+)
+async def list_procurement_conversation_history(
+    conversation_id: UUID,
+    page_size: int = Query(default=80, ge=1, le=MAX_PAGE_SIZE),
+    cursor: str | None = Query(default=None, max_length=100),
+    user: UserResponse = Depends(require_employer),
+):
+    try:
+        return ProcurementService.list_conversation_history(
+            user,
+            conversation_id,
+            page_size,
+            cursor,
+        )
+    except Exception as exc:
+        if isinstance(exc, ProcurementServiceError) or isinstance(exc, PermissionError):
+            _raise_procurement_error(exc)
+        logger.error(
+            "Procurement conversation history load failed: user_id=%s conversation_id=%s exception_type=%s",
+            user.id,
+            conversation_id,
+            type(exc).__name__,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="PROCUREMENT_CONVERSATION_HISTORY_LOAD_FAILED",
         ) from exc
 
 
@@ -344,10 +519,11 @@ async def send_procurement_message(
     except Exception as exc:
         if isinstance(exc, ProcurementServiceError) or isinstance(exc, PermissionError):
             _raise_procurement_error(exc)
-        logger.exception(
-            "Procurement message processing failed: user_id=%s conversation_id=%s",
+        logger.error(
+            "Procurement message processing failed: user_id=%s conversation_id=%s exception_type=%s",
             user.id,
             conversation_id,
+            type(exc).__name__,
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -369,10 +545,11 @@ async def update_procurement_draft(
     except Exception as exc:
         if isinstance(exc, ProcurementServiceError) or isinstance(exc, PermissionError):
             _raise_procurement_error(exc)
-        logger.exception(
-            "Procurement draft update failed: user_id=%s conversation_id=%s",
+        logger.error(
+            "Procurement draft update failed: user_id=%s conversation_id=%s exception_type=%s",
             user.id,
             conversation_id,
+            type(exc).__name__,
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -395,10 +572,11 @@ async def save_procurement_request(
     except Exception as exc:
         if isinstance(exc, ProcurementServiceError) or isinstance(exc, PermissionError):
             _raise_procurement_error(exc)
-        logger.exception(
-            "Procurement request save failed: user_id=%s conversation_id=%s",
+        logger.error(
+            "Procurement request save failed: user_id=%s conversation_id=%s exception_type=%s",
             user.id,
             conversation_id,
+            type(exc).__name__,
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -408,17 +586,38 @@ async def save_procurement_request(
 
 @router.get(
     "/requests",
-    response_model=list[ProcurementMaterialRequestResponse],
+    response_model=Union[
+        list[ProcurementMaterialRequestResponse],
+        ProcurementMaterialRequestListResponse,
+    ],
 )
 async def list_procurement_requests(
+    response: Response,
+    page: int | None = Query(default=None, ge=1),
+    page_size: int | None = Query(default=None, ge=1, le=MAX_PAGE_SIZE),
+    cursor: str | None = Query(default=None, max_length=300),
     user: UserResponse = Depends(require_employer),
 ):
     try:
-        return ProcurementService.list_material_requests(user)
+        legacy_response = page is None and page_size is None
+        result = ProcurementService.list_material_requests(
+            user,
+            page or 1,
+            MAX_PAGE_SIZE if legacy_response else page_size or DEFAULT_PAGE_SIZE,
+            cursor,
+        )
+        if legacy_response:
+            response.headers["X-Results-Truncated"] = str(result.has_more).lower()
+            return result.items
+        return result
     except Exception as exc:
         if isinstance(exc, ProcurementServiceError) or isinstance(exc, PermissionError):
             _raise_procurement_error(exc)
-        logger.exception("Procurement request list failed: user_id=%s", user.id)
+        logger.error(
+            "Procurement request list failed: user_id=%s exception_type=%s",
+            user.id,
+            type(exc).__name__,
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="PROCUREMENT_REQUEST_LIST_FAILED",
@@ -438,10 +637,11 @@ async def get_procurement_request(
     except Exception as exc:
         if isinstance(exc, ProcurementServiceError) or isinstance(exc, PermissionError):
             _raise_procurement_error(exc)
-        logger.exception(
-            "Procurement request load failed: user_id=%s request_id=%s",
+        logger.error(
+            "Procurement request load failed: user_id=%s request_id=%s exception_type=%s",
             user.id,
             request_id,
+            type(exc).__name__,
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -467,10 +667,11 @@ async def discover_suppliers_for_request(
     except Exception as exc:
         if isinstance(exc, ProcurementServiceError) or isinstance(exc, PermissionError):
             _raise_procurement_error(exc)
-        logger.exception(
-            "Supplier discovery failed: user_id=%s request_id=%s",
+        logger.error(
+            "Supplier discovery failed: user_id=%s request_id=%s exception_type=%s",
             user.id,
             request_id,
+            type(exc).__name__,
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -492,10 +693,11 @@ async def update_procurement_request(
     except Exception as exc:
         if isinstance(exc, ProcurementServiceError) or isinstance(exc, PermissionError):
             _raise_procurement_error(exc)
-        logger.exception(
-            "Procurement request update failed: user_id=%s request_id=%s",
+        logger.error(
+            "Procurement request update failed: user_id=%s request_id=%s exception_type=%s",
             user.id,
             request_id,
+            type(exc).__name__,
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -518,10 +720,11 @@ async def delete_procurement_request(
     except Exception as exc:
         if isinstance(exc, ProcurementServiceError) or isinstance(exc, PermissionError):
             _raise_procurement_error(exc)
-        logger.exception(
-            "Procurement request deletion failed: user_id=%s request_id=%s",
+        logger.error(
+            "Procurement request deletion failed: user_id=%s request_id=%s exception_type=%s",
             user.id,
             request_id,
+            type(exc).__name__,
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

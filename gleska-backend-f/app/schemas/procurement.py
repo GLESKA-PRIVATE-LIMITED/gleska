@@ -136,6 +136,7 @@ class MaterialRequestDraft(ProcurementModel):
 
 class ProcurementConversationMessage(ProcurementModel):
     model_config = ConfigDict(extra="ignore")
+    message_id: int | None = None
     role: Literal["user", "assistant"]
     content: str = Field(min_length=1, max_length=4000)
     created_at: datetime
@@ -146,6 +147,8 @@ class ProcurementConversationCreateResponse(ProcurementModel):
     conversation_id: UUID
     status: Literal["ACTIVE", "COMPLETED"]
     history: list[ProcurementConversationMessage]
+    history_limit_reached: bool = False
+    history_cursor: str | None = None
     draft: MaterialRequestDraft
     confirmed_fields: list[str] = Field(default_factory=list)
     revision: int
@@ -253,6 +256,29 @@ class ProcurementMaterialRequestResponse(ProcurementModel):
     revision: int
     created_at: datetime
     updated_at: datetime
+
+
+class ProcurementConversationListResponse(ProcurementModel):
+    items: list[ProcurementConversationCreateResponse]
+    page: int
+    page_size: int
+    has_more: bool
+    next_cursor: str | None = None
+
+
+class ProcurementMaterialRequestListResponse(ProcurementModel):
+    items: list[ProcurementMaterialRequestResponse]
+    page: int
+    page_size: int
+    has_more: bool
+    next_cursor: str | None = None
+
+
+class ProcurementConversationHistoryPage(ProcurementModel):
+    items: list[ProcurementConversationMessage]
+    page_size: int
+    has_more: bool
+    next_cursor: str | None = None
 
 
 class ProcurementSupplierOfferingMatch(ProcurementModel):

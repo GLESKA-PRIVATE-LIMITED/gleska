@@ -54,6 +54,36 @@ class ProcurementRFQCreateRequest(RFQModel):
         return value.astimezone(timezone.utc)
 
 
+class ProcurementRFQUpdateRequest(RFQModel):
+    delivery_location: Annotated[str, StringConstraints(min_length=1, max_length=500)]
+    quotation_deadline: datetime
+    buyer_notes: Annotated[str, StringConstraints(max_length=4000)] | None = None
+
+    @field_validator("delivery_location")
+    @classmethod
+    def normalize_delivery_location(cls, value: str) -> str:
+        normalized = " ".join(value.split())
+        if not normalized:
+            raise ValueError("A delivery location is required.")
+        return normalized
+
+    @field_validator("buyer_notes")
+    @classmethod
+    def normalize_buyer_notes(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return " ".join(value.split()) or None
+
+    @field_validator("quotation_deadline")
+    @classmethod
+    def require_future_deadline(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("Quotation deadline must include a timezone.")
+        if value <= datetime.now(timezone.utc):
+            raise ValueError("Quotation deadline must be in the future.")
+        return value.astimezone(timezone.utc)
+
+
 class SupplierQuotationResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: UUID
@@ -213,6 +243,20 @@ class ProcurementRFQResponse(BaseModel):
     recipients: list[ProcurementRFQRecipient] = Field(default_factory=list)
 
 
+class ProcurementRFQListResponse(BaseModel):
+    items: list[ProcurementRFQResponse]
+    page: int
+    page_size: int
+    has_more: bool
+
+
+class PurchaseOrderListResponse(BaseModel):
+    items: list[PurchaseOrderResponse]
+    page: int
+    page_size: int
+    has_more: bool
+
+
 class SupplierRFQResponseRequest(RFQModel):
     status: Literal["ACKNOWLEDGED", "DECLINED"]
     response_note: Annotated[str, StringConstraints(max_length=2000)] | None = None
@@ -237,10 +281,18 @@ class SupplierRFQResponse(BaseModel):
     buyer_notes: str | None = None
     status: Literal["OPEN", "CLOSED"]
     created_at: datetime
+    updated_at: datetime
     recipient_status: Literal["INVITED", "ACKNOWLEDGED", "DECLINED"]
     response_note: str | None = None
     responded_at: datetime | None = None
     quotation: SupplierQuotationResponse | None = None
+
+
+class SupplierRFQListResponse(BaseModel):
+    items: list[SupplierRFQResponse]
+    page_size: int
+    has_more: bool
+    next_cursor: str | None = None
 
 
 class SupplierRFQResponseResult(BaseModel):
@@ -251,6 +303,7 @@ class SupplierRFQResponseResult(BaseModel):
 
 
 class SupplierQuotationRequest(RFQModel):
+    expected_rfq_updated_at: datetime
     unit_price: Decimal = Field(ge=0, le=1_000_000_000_000, max_digits=18, decimal_places=4)
     currency: Literal["INR", "USD", "EUR", "GBP", "AED"]
     quantity_offered: Decimal = Field(gt=0, le=1_000_000_000, max_digits=18, decimal_places=4)

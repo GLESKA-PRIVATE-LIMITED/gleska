@@ -344,6 +344,8 @@ export function errorMessage(error: unknown): string {
         "Your company declined this invitation and can no longer submit a quotation.",
       QUOTATION_STALE:
         "This quotation changed since you opened it. Refresh the RFQ before editing.",
+      RFQ_STALE:
+        "The buyer updated this RFQ. Refresh it and review the latest terms before submitting your quotation.",
       QUOTATION_VALIDITY_INVALID:
         "The quotation validity date cannot be in the past.",
       QUOTATION_INVALID:
@@ -409,11 +411,15 @@ interface SupplierContextValue {
   // RFQs
   rfqs: SupplierRFQ[];
   rfqsLoading: boolean;
+  rfqsHasMore: boolean;
+  rfqsLoadingMore: boolean;
   rfqsError: string;
   rfqsSuccess: string;
   setRfqsError: (msg: string) => void;
   setRfqsSuccess: (msg: string) => void;
   refreshRFQs: () => Promise<void>;
+  loadMoreRFQs: () => Promise<void>;
+  loadSupplierRFQ: (rfqId: string) => Promise<void>;
   respondToRfq: (
     rfqId: string,
     status: "ACKNOWLEDGED" | "DECLINED",
@@ -524,6 +530,9 @@ export function SupplierProvider({ children }: { children: React.ReactNode }) {
   const [offerings, setOfferings] = useState<SupplierMaterialOffering[]>([]);
   const [offeringsLoaded, setOfferingsLoaded] = useState(false);
   const [rfqs, setRfqs] = useState<SupplierRFQ[]>([]);
+  const [rfqsCursor, setRfqsCursor] = useState<string | null>(null);
+  const [rfqsHasMore, setRfqsHasMore] = useState(false);
+  const [rfqsLoadingMore, setRfqsLoadingMore] = useState(false);
   const [purchaseOrders, setPurchaseOrders] = useState<
     ProcurementPurchaseOrder[]
   >([]);
@@ -641,6 +650,12 @@ export function SupplierProvider({ children }: { children: React.ReactNode }) {
     setOfferings([]);
     setOfferingsLoaded(false);
     setRfqs([]);
+    setRfqsCursor(null);
+    setRfqsHasMore(false);
+    setRfqsLoadingMore(false);
+    setRfqsCursor(null);
+    setRfqsHasMore(false);
+    setRfqsLoadingMore(false);
     setPurchaseOrders([]);
     setCompanyError("");
     setMembersError("");
@@ -775,7 +790,9 @@ export function SupplierProvider({ children }: { children: React.ReactNode }) {
         try {
           const nextRfqs = await procurementApi.listSupplierRFQs(companyId);
           if (isCurrentRequest()) {
-            setRfqs(nextRfqs);
+            setRfqs(nextRfqs.items);
+            setRfqsCursor(nextRfqs.next_cursor);
+            setRfqsHasMore(nextRfqs.has_more);
           }
         } catch (loadError) {
           if (isCurrentRequest()) {
@@ -916,7 +933,77 @@ export function SupplierProvider({ children }: { children: React.ReactNode }) {
         companyRequestId.current === requestId &&
         selectedCompanyIdRef.current === companyId
       ) {
-        setRfqs(nextRfqs);
+        setRfqs(nextRfqs.items);
+        setRfqsCursor(nextRfqs.next_cursor);
+        setRfqsHasMore(nextRfqs.has_more);
+      }
+    } catch (loadError) {
+      if (
+        companyRequestId.current === requestId &&
+        selectedCompanyIdRef.current === companyId
+      ) {
+        setRfqsError(errorMessage(loadError));
+      }
+    } finally {
+      if (
+        companyRequestId.current === requestId &&
+        selectedCompanyIdRef.current === companyId
+      ) {
+        setRfqsLoading(false);
+      }
+    }
+  };
+
+  const loadMoreRFQs = async () => {
+    if (!selectedCompanyId || !rfqsHasMore || rfqsLoadingMore) return;
+    const companyId = selectedCompanyId;
+    const requestId = companyRequestId.current;
+    setRfqsLoadingMore(true);
+    setRfqsError("");
+    try {
+      const nextPage = await procurementApi.listSupplierRFQs(companyId, rfqsCursor);
+      if (
+        companyRequestId.current === requestId &&
+        selectedCompanyIdRef.current === companyId
+      ) {
+        setRfqs((current) => {
+          const knownIds = new Set(current.map((item) => item.id));
+          return [...current, ...nextPage.items.filter((item) => !knownIds.has(item.id))];
+        });
+        setRfqsCursor(nextPage.next_cursor);
+        setRfqsHasMore(nextPage.has_more);
+      }
+    } catch (loadError) {
+      if (
+        companyRequestId.current === requestId &&
+        selectedCompanyIdRef.current === companyId
+      ) {
+        setRfqsError(errorMessage(loadError));
+      }
+    } finally {
+      if (
+        companyRequestId.current === requestId &&
+        selectedCompanyIdRef.current === companyId
+      ) {
+        setRfqsLoadingMore(false);
+      }
+    }
+  };
+
+  const loadSupplierRFQ = async (rfqId: string) => {
+    if (!selectedCompanyId) return;
+    const companyId = selectedCompanyId;
+    const requestId = companyRequestId.current;
+    setRfqsLoading(true);
+    try {
+      const rfq = await procurementApi.getSupplierRFQ(companyId, rfqId);
+      if (
+        companyRequestId.current === requestId &&
+        selectedCompanyIdRef.current === companyId
+      ) {
+        setRfqs((current) => current.some((item) => item.id === rfq.id)
+          ? current
+          : [...current, rfq]);
       }
     } catch (loadError) {
       if (
@@ -1053,6 +1140,11 @@ export function SupplierProvider({ children }: { children: React.ReactNode }) {
     if (!selectedCompanyId) return false;
     setRfqsError("");
     setRfqsSuccess("");
+    const currentRfq = rfqs.find((rfq) => rfq.id === rfqId);
+    if (!currentRfq) {
+      setRfqsError("This RFQ is no longer loaded. Refresh the RFQ list before submitting.");
+      return false;
+    }
     try {
       const response = await procurementApi.respondToSupplierRFQ(
         selectedCompanyId,
@@ -1093,6 +1185,7 @@ export function SupplierProvider({ children }: { children: React.ReactNode }) {
         selectedCompanyId,
         rfqId,
         {
+          expected_rfq_updated_at: currentRfq.updated_at,
           unit_price: draft.unit_price,
           currency: draft.currency,
           quantity_offered: draft.quantity_offered,
@@ -1545,11 +1638,15 @@ export function SupplierProvider({ children }: { children: React.ReactNode }) {
         loadCompany,
         rfqs,
         rfqsLoading,
+        rfqsHasMore,
+        rfqsLoadingMore,
         rfqsError,
         rfqsSuccess,
         setRfqsError,
         setRfqsSuccess,
         refreshRFQs,
+        loadMoreRFQs,
+        loadSupplierRFQ,
         respondToRfq,
         submitQuotation,
         purchaseOrders,

@@ -6,7 +6,7 @@ import logging
 import re
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import Any, Literal
+from typing import Any, Iterator, Literal
 from uuid import UUID, uuid4
 
 from pydantic import ValidationError
@@ -17,15 +17,23 @@ from app.agents.shared.task import AgentTask, TaskState
 from app.core.supabase import supabase
 from app.llm.providers import GeminiLLMProvider, LLMProviderError
 from app.schemas.auth import UserResponse
+from app.services.pagination import (
+    decode_created_cursor,
+    decode_numeric_cursor,
+    encode_created_cursor,
+)
 from app.schemas.procurement import (
     MaterialRequestDraft,
     PROCUREMENT_DRAFT_FIELDS,
     ProcurementConversationCreateResponse,
+    ProcurementConversationHistoryPage,
+    ProcurementConversationListResponse,
     ProcurementConversationMessage,
     ProcurementConversationMessageRequest,
     ProcurementDraftUpdateRequest,
     ProcurementMaterialRequestPatch,
     ProcurementMaterialRequestResponse,
+    ProcurementMaterialRequestListResponse,
     ProcurementSaveRequest,
     ProcurementSettings,
     ProcurementSettingsUpdate,
@@ -35,8 +43,9 @@ from app.schemas.procurement import (
 
 logger = logging.getLogger(__name__)
 HISTORY_LIMIT = 80
-LIST_LIMIT = 100
-DISCOVERY_SCAN_LIMIT = 1000
+DEFAULT_PAGE_SIZE = 25
+MAX_PAGE_SIZE = 100
+DISCOVERY_SCAN_PAGE_SIZE = 500
 DISCOVERY_RESULT_LIMIT = 100
 DISCOVERY_COMPANY_BATCH_SIZE = 100
 
@@ -147,9 +156,10 @@ class ProcurementService:
                 .execute()
             )
         except Exception as exc:
-            logger.exception(
-                "Procurement settings lookup failed: user_id=%s",
+            logger.error(
+                "Procurement settings lookup failed: user_id=%s exception_type=%s",
                 user.id,
+                type(exc).__name__,
             )
             raise ProcurementServiceError("PROCUREMENT_SETTINGS_LOAD_FAILED") from exc
 
@@ -167,9 +177,10 @@ class ProcurementService:
                 updated_at=row.get("updated_at"),
             )
         except ValidationError as exc:
-            logger.exception(
-                "Procurement settings row is invalid: user_id=%s",
+            logger.warning(
+                "Procurement settings row is invalid: user_id=%s exception_type=%s",
                 user.id,
+                type(exc).__name__,
             )
             raise ProcurementServiceError("PROCUREMENT_SETTINGS_INVALID") from exc
 
@@ -202,16 +213,21 @@ class ProcurementService:
                 .execute()
             )
         except Exception as exc:
-            logger.exception(
-                "Procurement settings update failed: user_id=%s",
+            logger.error(
+                "Procurement settings update failed: user_id=%s exception_type=%s",
                 user.id,
+                type(exc).__name__,
             )
             raise ProcurementServiceError("PROCUREMENT_SETTINGS_SAVE_FAILED") from exc
 
         return cls._procurement_settings(user)
 
     @staticmethod
-    def _history(value: Any) -> list[ProcurementConversationMessage]:
+    def _history(
+        value: Any,
+        conversation_id: str | None = None,
+        user_id: str | None = None,
+    ) -> list[ProcurementConversationMessage]:
         if not isinstance(value, list):
             raise ProcurementServiceError("CONVERSATION_HISTORY_INVALID")
         try:
@@ -220,18 +236,28 @@ class ProcurementService:
                 for item in value[-HISTORY_LIMIT:]
             ]
         except ValidationError as exc:
-            logger.exception("Failed to validate conversation history: %s", value)
+            logger.warning(
+                "Failed to validate conversation history: conversation_id=%s user_id=%s exception_type=%s",
+                conversation_id,
+                user_id,
+                type(exc).__name__,
+            )
             raise ProcurementServiceError("CONVERSATION_HISTORY_INVALID") from exc
 
     @staticmethod
     def _conversation_response(row: dict[str, Any]) -> ProcurementConversationCreateResponse:
         try:
             draft = MaterialRequestDraft.model_validate(row.get("draft") or {})
-            history = ProcurementService._history(row.get("history") or [])
+            history = ProcurementService._history(
+                row.get("history") or [],
+                conversation_id=str(row.get("id") or ""),
+                user_id=str(row.get("user_id") or ""),
+            )
             return ProcurementConversationCreateResponse(
                 conversation_id=row["id"],
                 status=row["status"],
                 history=history,
+                history_limit_reached=False,
                 draft=draft,
                 confirmed_fields=row.get("confirmed_fields") or [],
                 revision=int(row.get("revision") or 0),
@@ -241,7 +267,12 @@ class ProcurementService:
         except (KeyError, ValidationError, TypeError, ValueError) as exc:
             if isinstance(exc, ProcurementServiceError):
                 raise
-            logger.exception("Failed to validate conversation row: %s", row)
+            logger.warning(
+                "Failed to validate conversation row: conversation_id=%s user_id=%s exception_type=%s",
+                row.get("id"),
+                row.get("user_id"),
+                type(exc).__name__,
+            )
             raise ProcurementServiceError("CONVERSATION_STATE_INVALID") from exc
 
     @staticmethod
@@ -249,7 +280,12 @@ class ProcurementService:
         try:
             return ProcurementMaterialRequestResponse.model_validate(row)
         except (ValidationError, TypeError, ValueError) as exc:
-            logger.exception("Failed to validate material request row: %s", row)
+            logger.warning(
+                "Failed to validate material request row: request_id=%s user_id=%s exception_type=%s",
+                row.get("id"),
+                row.get("user_id"),
+                type(exc).__name__,
+            )
             raise ProcurementServiceError("MATERIAL_REQUEST_STATE_INVALID") from exc
 
     @staticmethod
@@ -329,24 +365,48 @@ class ProcurementService:
     def list_conversations(
         cls,
         user: UserResponse,
-    ) -> list[ProcurementConversationCreateResponse]:
+        page: int = 1,
+        page_size: int = DEFAULT_PAGE_SIZE,
+        cursor: str | None = None,
+    ) -> ProcurementConversationListResponse:
         employer_id = cls._employer_id(user)
-        response = (
+        query = (
             supabase.table("procurement_conversations")
             .select("*")
             .eq("user_id", str(user.id))
             .eq("employer_id", employer_id)
-            .order("updated_at", desc=True)
-            .limit(LIST_LIMIT)
-            .execute()
+            .order("created_at", desc=True)
+            .order("id", desc=True)
         )
+        if cursor:
+            try:
+                created_at, row_id = decode_created_cursor(cursor)
+            except ValueError as exc:
+                raise ProcurementServiceError("PAGINATION_CURSOR_INVALID") from exc
+            query = query.or_(f"created_at.lt.{created_at},and(created_at.eq.{created_at},id.lt.{row_id})")
+        rows = cls._rows(query.range(0, page_size).execute())
+        page_rows = rows[:page_size]
         conversations: list[ProcurementConversationCreateResponse] = []
-        for row in cls._rows(response):
+        for row in page_rows:
             try:
                 conversations.append(cls._conversation_response(row))
             except Exception as exc:
-                logger.warning("Skipping unparseable conversation row id=%s: %s", row.get("id"), exc)
-        return conversations
+                logger.warning(
+                    "Skipping unparseable conversation row: conversation_id=%s user_id=%s exception_type=%s",
+                    row.get("id"),
+                    row.get("user_id"),
+                    type(exc).__name__,
+                )
+        return ProcurementConversationListResponse(
+            items=conversations,
+            page=page,
+            page_size=page_size,
+            has_more=len(rows) > page_size,
+            next_cursor=(
+                encode_created_cursor(str(page_rows[-1]["created_at"]), str(page_rows[-1]["id"]))
+                if len(rows) > page_size and page_rows else None
+            ),
+        )
 
     @classmethod
     def get_conversation(
@@ -441,26 +501,77 @@ class ProcurementService:
                 created_at=now,
             ),
         ][-HISTORY_LIMIT:]
-        update = (
-            supabase.table("procurement_conversations")
-            .update({
-                "history": [item.model_dump(mode="json") for item in next_history],
-                "draft": validated_draft.model_dump(mode="json"),
-                "confirmed_fields": confirmed_fields,
-                "revision": revision + 1,
-                "updated_at": now.isoformat(),
-            })
-            .eq("id", str(conversation_id))
+        result = cls._row(
+            supabase.rpc(
+                "append_procurement_conversation_turn",
+                {
+                    "p_conversation_id": str(conversation_id),
+                    "p_user_id": str(user.id),
+                    "p_employer_id": employer_id,
+                    "p_expected_revision": revision,
+                    "p_user_message": request.message,
+                    "p_assistant_message": response.assistant_message,
+                    "p_history": [
+                        item.model_dump(mode="json", exclude_none=True)
+                        for item in next_history
+                    ],
+                    "p_draft": validated_draft.model_dump(mode="json"),
+                    "p_confirmed_fields": confirmed_fields,
+                },
+            ).execute()
+        )
+        if result.get("ok") is not True:
+            error_code = str(result.get("error_code") or "CONVERSATION_STATE_INVALID")
+            if error_code in {"STALE_CONVERSATION_STATE", "CONVERSATION_NOT_ACTIVE"}:
+                raise ProcurementConflict(error_code)
+            raise ProcurementServiceError(error_code)
+        row = result.get("conversation")
+        if not isinstance(row, dict):
+            raise ProcurementServiceError("CONVERSATION_STATE_INVALID")
+        return cls._conversation_response(row)
+
+    @classmethod
+    def list_conversation_history(
+        cls,
+        user: UserResponse,
+        conversation_id: UUID,
+        page_size: int = HISTORY_LIMIT,
+        cursor: str | None = None,
+    ) -> ProcurementConversationHistoryPage:
+        employer_id = cls._employer_id(user)
+        cls._owned_conversation(conversation_id, user, employer_id)
+        query = (
+            supabase.table("procurement_conversation_messages")
+            .select("id, role, content, created_at")
+            .eq("conversation_id", str(conversation_id))
             .eq("user_id", str(user.id))
             .eq("employer_id", employer_id)
-            .eq("revision", revision)
-            .eq("status", "ACTIVE")
-            .execute()
+            .order("id", desc=True)
         )
-        row = cls._row(update)
-        if not row:
-            raise ProcurementConflict("STALE_CONVERSATION_STATE")
-        return cls._conversation_response(row)
+        if cursor:
+            try:
+                before_id = decode_numeric_cursor(cursor)
+            except ValueError as exc:
+                raise ProcurementServiceError("PAGINATION_CURSOR_INVALID") from exc
+            query = query.lt("id", before_id)
+        rows = cls._rows(query.range(0, page_size).execute())
+        page_rows = rows[:page_size]
+        items = [
+            ProcurementConversationMessage(
+                message_id=int(row["id"]),
+                role=row["role"],
+                content=row["content"],
+                created_at=row["created_at"],
+            )
+            for row in reversed(page_rows)
+        ]
+        has_more = len(rows) > page_size
+        return ProcurementConversationHistoryPage(
+            items=items,
+            page_size=page_size,
+            has_more=has_more,
+            next_cursor=str(page_rows[-1]["id"]) if has_more and page_rows else None,
+        )
 
     @classmethod
     def update_draft(
@@ -502,24 +613,48 @@ class ProcurementService:
     def list_material_requests(
         cls,
         user: UserResponse,
-    ) -> list[ProcurementMaterialRequestResponse]:
+        page: int = 1,
+        page_size: int = DEFAULT_PAGE_SIZE,
+        cursor: str | None = None,
+    ) -> ProcurementMaterialRequestListResponse:
         employer_id = cls._employer_id(user)
-        response = (
+        query = (
             supabase.table("procurement_material_requests")
             .select("*")
             .eq("user_id", str(user.id))
             .eq("employer_id", employer_id)
-            .order("updated_at", desc=True)
-            .limit(LIST_LIMIT)
-            .execute()
+            .order("created_at", desc=True)
+            .order("id", desc=True)
         )
+        if cursor:
+            try:
+                created_at, row_id = decode_created_cursor(cursor)
+            except ValueError as exc:
+                raise ProcurementServiceError("PAGINATION_CURSOR_INVALID") from exc
+            query = query.or_(f"created_at.lt.{created_at},and(created_at.eq.{created_at},id.lt.{row_id})")
+        rows = cls._rows(query.range(0, page_size).execute())
+        page_rows = rows[:page_size]
         requests: list[ProcurementMaterialRequestResponse] = []
-        for row in cls._rows(response):
+        for row in page_rows:
             try:
                 requests.append(cls._material_request_response(row))
             except Exception as exc:
-                logger.warning("Skipping unparseable material request row id=%s: %s", row.get("id"), exc)
-        return requests
+                logger.warning(
+                    "Skipping unparseable material request row: request_id=%s user_id=%s exception_type=%s",
+                    row.get("id"),
+                    row.get("user_id"),
+                    type(exc).__name__,
+                )
+        return ProcurementMaterialRequestListResponse(
+            items=requests,
+            page=page,
+            page_size=page_size,
+            has_more=len(rows) > page_size,
+            next_cursor=(
+                encode_created_cursor(str(page_rows[-1]["created_at"]), str(page_rows[-1]["id"]))
+                if len(rows) > page_size and page_rows else None
+            ),
+        )
 
     @classmethod
     def get_material_request(
@@ -543,47 +678,6 @@ class ProcurementService:
         request = cls._owned_request(request_id, user, employer_id)
         settings = cls._procurement_settings(user)
 
-        try:
-            offerings_response = (
-                supabase.table("supplier_material_offerings")
-                .select(
-                    "id, company_id, name, specification, unit, indicative_price, "
-                    "currency_code, minimum_order_quantity, service_coverage, updated_at"
-                )
-                .eq("is_available", True)
-                .is_("archived_at", "null")
-                .order("updated_at", desc=True)
-                .limit(DISCOVERY_SCAN_LIMIT)
-                .execute()
-            )
-            offering_rows = cls._rows(offerings_response)
-            company_ids = list(dict.fromkeys(
-                str(row["company_id"]) for row in offering_rows if row.get("company_id")
-            ))
-
-            eligible_companies: dict[str, str] = {}
-            for start in range(0, len(company_ids), DISCOVERY_COMPANY_BATCH_SIZE):
-                company_batch = company_ids[start:start + DISCOVERY_COMPANY_BATCH_SIZE]
-                companies_response = (
-                    supabase.table("supplier_companies")
-                    .select("id, name")
-                    .in_("id", company_batch)
-                    .eq("operational_status", "ACTIVE")
-                    .eq("verification_status", "VERIFIED")
-                    .execute()
-                )
-                eligible_companies.update({
-                    str(company["id"]): str(company["name"])
-                    for company in cls._rows(companies_response)
-                })
-        except Exception as exc:
-            logger.exception(
-                "Supplier discovery query failed: user_id=%s request_id=%s",
-                user.id,
-                request_id,
-            )
-            raise ProcurementServiceError("SUPPLIER_DISCOVERY_FAILED") from exc
-
         requested_item_tokens = _material_tokens(str(request.get("item_name") or ""))
         requested_spec_tokens = _search_tokens(request.get("specification"))
         requested_listing_tokens = requested_item_tokens | requested_spec_tokens
@@ -594,11 +688,70 @@ class ProcurementService:
             tuple[float, float, float, int, ProcurementSupplierOfferingMatch]
         ] = []
 
-        for offering in offering_rows:
+        def iter_eligible_offerings() -> Iterator[tuple[dict[str, Any], str]]:
+            cursor: tuple[str, str] | None = None
+            while True:
+                try:
+                    query = (
+                        supabase.table("supplier_material_offerings")
+                        .select(
+                            "id, company_id, name, specification, unit, indicative_price, "
+                            "currency_code, minimum_order_quantity, service_coverage, created_at"
+                        )
+                        .eq("is_available", True)
+                        .is_("archived_at", "null")
+                        .order("created_at", desc=True)
+                        .order("id", desc=True)
+                    )
+                    if cursor:
+                        created_at, row_id = cursor
+                        query = query.or_(
+                            f"created_at.lt.{created_at},and(created_at.eq.{created_at},id.lt.{row_id})"
+                        )
+                    offering_rows = cls._rows(
+                        query.range(0, DISCOVERY_SCAN_PAGE_SIZE - 1).execute()
+                    )
+                    company_ids = list(dict.fromkeys(
+                        str(row["company_id"])
+                        for row in offering_rows
+                        if row.get("company_id")
+                    ))
+                    eligible_companies: dict[str, str] = {}
+                    for start in range(0, len(company_ids), DISCOVERY_COMPANY_BATCH_SIZE):
+                        company_batch = company_ids[start:start + DISCOVERY_COMPANY_BATCH_SIZE]
+                        companies_response = (
+                            supabase.table("supplier_companies")
+                            .select("id, name")
+                            .in_("id", company_batch)
+                            .eq("operational_status", "ACTIVE")
+                            .eq("verification_status", "VERIFIED")
+                            .execute()
+                        )
+                        eligible_companies.update({
+                            str(company["id"]): str(company["name"])
+                            for company in cls._rows(companies_response)
+                        })
+                except Exception as exc:
+                    logger.error(
+                        "Supplier discovery query failed: user_id=%s request_id=%s exception_type=%s",
+                        user.id,
+                        request_id,
+                        type(exc).__name__,
+                    )
+                    raise ProcurementServiceError("SUPPLIER_DISCOVERY_FAILED") from exc
+
+                for offering in offering_rows:
+                    supplier_name = eligible_companies.get(str(offering.get("company_id") or ""))
+                    if supplier_name:
+                        yield offering, supplier_name
+                if len(offering_rows) < DISCOVERY_SCAN_PAGE_SIZE:
+                    break
+                last_offering = offering_rows[-1]
+                cursor = (str(last_offering["created_at"]), str(last_offering["id"]))
+
+        matching_count = 0
+        for offering, supplier_name in iter_eligible_offerings():
             company_id = str(offering.get("company_id") or "")
-            supplier_name = eligible_companies.get(company_id)
-            if not supplier_name:
-                continue
 
             offering_tokens = _material_tokens(str(offering.get("name") or ""))
             offering_spec_tokens = _search_tokens(offering.get("specification"))
@@ -725,6 +878,19 @@ class ProcurementService:
                 int(coverage_match_status == "MATCHED"),
                 match,
             ))
+            matching_count += 1
+            if len(ranked_matches) >= 2 * DISCOVERY_RESULT_LIMIT:
+                ranked_matches.sort(
+                    key=lambda row: (
+                        -row[0],
+                        -row[1],
+                        -row[2],
+                        -row[3],
+                        row[4].supplier_name.casefold(),
+                        row[4].name.casefold(),
+                    )
+                )
+                del ranked_matches[DISCOVERY_RESULT_LIMIT:]
 
         ranked_matches.sort(
             key=lambda row: (
@@ -744,8 +910,7 @@ class ProcurementService:
             unit=str(request["unit"]),
             delivery_location=delivery_location,
             matches=[row[4] for row in ranked_matches[:DISCOVERY_RESULT_LIMIT]],
-            search_limit_reached=len(offering_rows) >= DISCOVERY_SCAN_LIMIT
-            or len(ranked_matches) > DISCOVERY_RESULT_LIMIT,
+            search_limit_reached=matching_count > DISCOVERY_RESULT_LIMIT,
         )
 
     @classmethod
@@ -788,6 +953,7 @@ class ProcurementService:
         saved = result.get("request")
         if not isinstance(saved, dict):
             raise ProcurementServiceError("MATERIAL_REQUEST_SAVE_FAILED")
+        
         return cls._material_request_response(saved)
 
     @classmethod

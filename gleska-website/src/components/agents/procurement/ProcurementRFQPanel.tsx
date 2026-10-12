@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
   CheckCircle2,
@@ -8,8 +9,10 @@ import {
   FileText,
   Loader2,
   Package,
+  Pencil,
   RefreshCw,
   Send,
+  XCircle,
 } from "lucide-react";
 import {
   ProcurementMaterialRequest,
@@ -112,6 +115,12 @@ function localDateTimeAfterDays(days: number): string {
   return local.toISOString().slice(0, 16);
 }
 
+function localDateTimeValue(value: string): string {
+  const date = new Date(value);
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
+}
+
 function formatDate(value: string): string {
   return new Date(value).toLocaleString();
 }
@@ -127,10 +136,16 @@ function rfqErrorMessage(error: unknown): string {
   const detail = errorDetail(error);
   const messages: Record<string, string> = {
     RFQ_CREATE_FAILED: "We couldn’t create your RFQ. Please try again shortly.",
+    RFQ_UPDATE_FAILED: "We couldn’t update this RFQ. Please try again shortly.",
+    RFQ_UPDATE_RESULT_LOAD_FAILED: "The RFQ was updated, but its details could not be refreshed. Reload the RFQ.",
+    RFQ_CLOSE_FAILED: "We couldn’t close this RFQ. Please try again shortly.",
+    RFQ_CLOSE_RESULT_LOAD_FAILED: "The RFQ was closed, but its details could not be refreshed. Reload the RFQ.",
+    RFQ_ACTIVITY_EXISTS: "This RFQ can no longer be edited because a supplier has responded or submitted a quotation.",
+    RFQ_UPDATE_INVALID: "Check that the delivery location and deadline are valid and the notes are within the allowed length.",
     RFQ_LIST_FAILED: "We couldn’t load your RFQs. Please try again shortly.",
     RFQ_LOAD_FAILED: "This RFQ could not be loaded. Refresh the list and try again.",
     RFQ_NOT_FOUND: "This RFQ is no longer available to your account.",
-    RFQ_CLOSED: "The RFQ deadline passed or the RFQ was already awarded. Refresh the RFQ list.",
+    RFQ_CLOSED: "This RFQ is closed or its quotation deadline has passed. Refresh the RFQ list.",
     MATERIAL_REQUEST_NOT_FOUND: "That saved requirement is no longer available. Refresh the requirements and try again.",
     RFQ_SUPPLIER_INELIGIBLE: "One or more suppliers are no longer eligible for this requirement. Refresh matching results and choose again.",
     RFQ_DEADLINE_INVALID: "The quotation deadline must be in the future.",
@@ -191,13 +206,28 @@ function purchaseOrderDeliveryStatus(order: ProcurementPurchaseOrder): string {
 
 export default function ProcurementRFQPanel({
   requests,
+  requestsHasMore,
+  requestsLoadingMore,
+  onLoadMoreRequests,
 }: {
   requests: ProcurementMaterialRequest[];
+  requestsHasMore: boolean;
+  requestsLoadingMore: boolean;
+  onLoadMoreRequests: () => void;
 }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [view, setView] = useState<View>("list");
   const [rfqs, setRfqs] = useState<ProcurementRFQ[]>([]);
+  const [rfqsPage, setRfqsPage] = useState(1);
+  const [rfqsHasMore, setRfqsHasMore] = useState(false);
+  const [rfqsLoadingMore, setRfqsLoadingMore] = useState(false);
   const [selectedRFQ, setSelectedRFQ] = useState<ProcurementRFQ | null>(null);
   const [purchaseOrders, setPurchaseOrders] = useState<ProcurementPurchaseOrder[]>([]);
+  const [purchaseOrdersPage, setPurchaseOrdersPage] = useState(1);
+  const [purchaseOrdersHasMore, setPurchaseOrdersHasMore] = useState(false);
+  const [purchaseOrdersLoadingMore, setPurchaseOrdersLoadingMore] = useState(false);
   const [purchaseOrdersLoading, setPurchaseOrdersLoading] = useState(false);
   const [purchaseOrdersLoaded, setPurchaseOrdersLoaded] = useState(false);
   const [purchaseOrdersError, setPurchaseOrdersError] = useState("");
@@ -210,6 +240,11 @@ export default function ProcurementRFQPanel({
   const [deliveryLocation, setDeliveryLocation] = useState("");
   const [deadline, setDeadline] = useState(() => localDateTimeAfterDays(7));
   const [buyerNotes, setBuyerNotes] = useState("");
+  const [editingRFQ, setEditingRFQ] = useState(false);
+  const [editDeliveryLocation, setEditDeliveryLocation] = useState("");
+  const [editDeadline, setEditDeadline] = useState("");
+  const [editBuyerNotes, setEditBuyerNotes] = useState("");
+  const [rfqLifecycleBusy, setRfqLifecycleBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [rfqListLoaded, setRfqListLoaded] = useState(false);
   const [discoveryLoading, setDiscoveryLoading] = useState(false);
@@ -223,6 +258,22 @@ export default function ProcurementRFQPanel({
   const [recipientCurrency, setRecipientCurrency] = useState("ALL");
   const [recipientSort, setRecipientSort] = useState<"SUPPLIER" | "PRICE">("SUPPLIER");
   const submissionKey = useRef<{ signature: string; key: string } | null>(null);
+  const urlLoadRequest = useRef(0);
+  const selectedRFQIdRef = useRef<string | null>(null);
+  selectedRFQIdRef.current = selectedRFQ?.id ?? null;
+
+  const navigateView = useCallback((nextView: View, rfqId?: string, replace = false) => {
+    setView(nextView);
+    if (nextView === "list") setSelectedRFQ(null);
+    const params = new URLSearchParams(window.location.search);
+    params.set("rfqView", nextView);
+    if (nextView === "detail" && rfqId) params.set("rfqId", rfqId);
+    else params.delete("rfqId");
+    const query = params.toString();
+    const href = query ? `${pathname}?${query}` : pathname;
+    if (replace) router.replace(href, { scroll: false });
+    else router.push(href, { scroll: false });
+  }, [pathname, router]);
 
   const selectedRequest = requests.find((item) => item.id === selectedRequestId) || null;
   const suppliers = useMemo<DiscoverySupplier[]>(() => {
@@ -271,18 +322,24 @@ export default function ProcurementRFQPanel({
     setPurchaseOrdersLoading(true);
     setPurchaseOrdersLoaded(false);
     setPurchaseOrdersError("");
+    setRfqsHasMore(false);
+    setPurchaseOrdersHasMore(false);
     const [rfqResult, purchaseOrderResult] = await Promise.allSettled([
       procurementApi.listRFQs(),
       procurementApi.listPurchaseOrders(),
     ]);
     if (rfqResult.status === "fulfilled") {
-      setRfqs(rfqResult.value);
+      setRfqs(rfqResult.value.items);
+      setRfqsPage(rfqResult.value.page);
+      setRfqsHasMore(rfqResult.value.has_more);
       setRfqListLoaded(true);
     } else {
       setError(rfqErrorMessage(rfqResult.reason));
     }
     if (purchaseOrderResult.status === "fulfilled") {
-      setPurchaseOrders(purchaseOrderResult.value);
+      setPurchaseOrders(purchaseOrderResult.value.items);
+      setPurchaseOrdersPage(purchaseOrderResult.value.page);
+      setPurchaseOrdersHasMore(purchaseOrderResult.value.has_more);
       setPurchaseOrdersLoaded(true);
     } else {
       setPurchaseOrders([]);
@@ -292,12 +349,54 @@ export default function ProcurementRFQPanel({
     setPurchaseOrdersLoading(false);
   }, []);
 
+  const loadMoreRFQs = async () => {
+    if (!rfqsHasMore || rfqsLoadingMore) return;
+    setRfqsLoadingMore(true);
+    setError("");
+    try {
+      const nextPage = await procurementApi.listRFQs(rfqsPage + 1);
+      setRfqs((current) => {
+        const knownIds = new Set(current.map((item) => item.id));
+        return [...current, ...nextPage.items.filter((item) => !knownIds.has(item.id))];
+      });
+      setRfqsPage(nextPage.page);
+      setRfqsHasMore(nextPage.has_more);
+    } catch (loadError) {
+      setError(rfqErrorMessage(loadError));
+    } finally {
+      setRfqsLoadingMore(false);
+    }
+  };
+
+  const loadMorePurchaseOrders = async () => {
+    if (!purchaseOrdersHasMore || purchaseOrdersLoadingMore) return;
+    setPurchaseOrdersLoadingMore(true);
+    setPurchaseOrdersError("");
+    try {
+      const nextPage = await procurementApi.listPurchaseOrders(purchaseOrdersPage + 1);
+      setPurchaseOrders((current) => {
+        const knownIds = new Set(current.map((item) => item.id));
+        return [...current, ...nextPage.items.filter((item) => !knownIds.has(item.id))];
+      });
+      setPurchaseOrdersPage(nextPage.page);
+      setPurchaseOrdersHasMore(nextPage.has_more);
+    } catch (loadError) {
+      setPurchaseOrdersError(rfqErrorMessage(loadError));
+    } finally {
+      setPurchaseOrdersLoadingMore(false);
+    }
+  };
+
   const refreshPurchaseOrders = useCallback(async () => {
     setPurchaseOrdersLoading(true);
     setPurchaseOrdersLoaded(false);
     setPurchaseOrdersError("");
+    setPurchaseOrdersHasMore(false);
     try {
-      setPurchaseOrders(await procurementApi.listPurchaseOrders());
+      const result = await procurementApi.listPurchaseOrders();
+      setPurchaseOrders(result.items);
+      setPurchaseOrdersPage(result.page);
+      setPurchaseOrdersHasMore(result.has_more);
       setPurchaseOrdersLoaded(true);
     } catch (loadError) {
       setPurchaseOrdersError(rfqErrorMessage(loadError));
@@ -310,6 +409,7 @@ export default function ProcurementRFQPanel({
     setPurchaseOrdersLoading(true);
     setPurchaseOrdersLoaded(false);
     setPurchaseOrdersError("");
+    setPurchaseOrdersHasMore(false);
     const [rfqResult, ordersResult] = await Promise.allSettled([
       procurementApi.getRFQ(rfqId),
       procurementApi.listPurchaseOrders(),
@@ -323,14 +423,63 @@ export default function ProcurementRFQPanel({
       setError(rfqErrorMessage(rfqResult.reason));
     }
     if (ordersResult.status === "fulfilled") {
-      setPurchaseOrders(ordersResult.value);
+      setPurchaseOrders(ordersResult.value.items);
+      setPurchaseOrdersPage(ordersResult.value.page);
+      setPurchaseOrdersHasMore(ordersResult.value.has_more);
       setPurchaseOrdersLoaded(true);
     } else {
       setPurchaseOrdersError(rfqErrorMessage(ordersResult.reason));
     }
     setPurchaseOrdersLoading(false);
-    return ordersResult.status === "fulfilled" ? ordersResult.value : null;
+    return ordersResult.status === "fulfilled" ? ordersResult.value.items : null;
   };
+
+  useEffect(() => {
+    const params = new URLSearchParams(searchParams.toString());
+    const requestedView = params.get("rfqView");
+    const validViews: View[] = ["list", "compose", "review", "detail", "orders"];
+    const nextView: View = validViews.includes(requestedView as View)
+      ? requestedView as View
+      : params.has("rfqId") ? "detail" : "list";
+    const rfqId = nextView === "detail" ? params.get("rfqId") : null;
+    if (view !== nextView) setView(nextView);
+    if (!requestedView && nextView === "detail" && rfqId) {
+      navigateView("detail", rfqId, true);
+      return;
+    }
+    if (nextView !== "detail" || !rfqId) {
+      if (nextView === "list") setSelectedRFQ(null);
+      if (!requestedView || (nextView === "detail" && !rfqId)) {
+        navigateView("list", undefined, true);
+      }
+      return;
+    }
+    if (selectedRFQIdRef.current === rfqId) return;
+    setSelectedRFQ(null);
+    const requestId = ++urlLoadRequest.current;
+    setLoading(true);
+    setError("");
+    void procurementApi.getRFQ(rfqId)
+      .then((rfq) => {
+        if (
+          urlLoadRequest.current === requestId
+          && new URLSearchParams(window.location.search).get("rfqId") === rfqId
+        ) {
+          setSelectedRFQ(rfq);
+          setRfqs((current) => [rfq, ...current.filter((item) => item.id !== rfq.id)]);
+          setRecipientFilter("ALL");
+          setRecipientCurrency("ALL");
+          setRecipientSort("SUPPLIER");
+          void refreshPurchaseOrders();
+        }
+      })
+      .catch((loadError) => {
+        if (urlLoadRequest.current === requestId) setError(rfqErrorMessage(loadError));
+      })
+      .finally(() => {
+        if (urlLoadRequest.current === requestId) setLoading(false);
+      });
+  }, [navigateView, searchParams]);
 
   useEffect(() => {
     void refreshRFQs();
@@ -388,7 +537,7 @@ export default function ProcurementRFQPanel({
       setRecipientCurrency("ALL");
       setRecipientSort("SUPPLIER");
       setSelectedQuotationRecipient(null);
-      setView("detail");
+      navigateView("detail", id);
       setPurchaseOrdersError("");
       await refreshPurchaseOrders();
     } catch (loadError) {
@@ -398,6 +547,14 @@ export default function ProcurementRFQPanel({
 
   const selectQuotation = async (recipient: ProcurementRFQRecipient) => {
     if (!selectedRFQ || selectionBusy || !recipient.quotation) return;
+    if (!purchaseOrdersLoaded || purchaseOrdersHasMore || purchaseOrdersError) {
+      setError("Load all purchase orders before selecting a quotation.");
+      return;
+    }
+    if (purchaseOrders.some((order) => order.rfq_id === selectedRFQ.id)) {
+      setError("This RFQ already has a purchase order.");
+      return;
+    }
     const rfqId = selectedRFQ.id;
     const quotationId = recipient.quotation.id;
     setSelectionBusy(true);
@@ -423,6 +580,62 @@ export default function ProcurementRFQPanel({
       }
     } finally {
       setSelectionBusy(false);
+    }
+  };
+
+  const startEditingRFQ = () => {
+    if (!selectedRFQ || !selectedRFQCanEdit) return;
+    setEditDeliveryLocation(selectedRFQ.delivery_location);
+    setEditDeadline(localDateTimeValue(selectedRFQ.quotation_deadline));
+    setEditBuyerNotes(selectedRFQ.buyer_notes || "");
+    setEditingRFQ(true);
+    setError("");
+    setSuccess("");
+  };
+
+  const saveRFQEdits = async () => {
+    if (!selectedRFQ || rfqLifecycleBusy) return;
+    const deadlineTimestamp = Date.parse(editDeadline);
+    if (!editDeliveryLocation.trim() || !Number.isFinite(deadlineTimestamp) || deadlineTimestamp <= Date.now()) {
+      setError("Enter a delivery location and a future quotation deadline.");
+      return;
+    }
+    setRfqLifecycleBusy(true);
+    setError("");
+    setSuccess("");
+    try {
+      const updated = await procurementApi.updateRFQ(selectedRFQ.id, {
+        delivery_location: editDeliveryLocation.trim(),
+        quotation_deadline: new Date(editDeadline).toISOString(),
+        buyer_notes: editBuyerNotes.trim() || null,
+      });
+      setRfqs((current) => current.map((rfq) => rfq.id === updated.id ? updated : rfq));
+      setSelectedRFQ(updated);
+      setEditingRFQ(false);
+      setSuccess("RFQ details updated. The latest details are available in supplier inboxes after refresh.");
+    } catch (updateError) {
+      setError(rfqErrorMessage(updateError));
+    } finally {
+      setRfqLifecycleBusy(false);
+    }
+  };
+
+  const closeRFQ = async () => {
+    if (!selectedRFQ || !selectedRFQIsOpen || rfqLifecycleBusy) return;
+    if (!window.confirm("Close this RFQ? Suppliers will no longer be able to respond or submit quotations. Existing records will be kept.")) return;
+    setRfqLifecycleBusy(true);
+    setError("");
+    setSuccess("");
+    try {
+      const closed = await procurementApi.closeRFQ(selectedRFQ.id);
+      setRfqs((current) => current.map((rfq) => rfq.id === closed.id ? closed : rfq));
+      setSelectedRFQ(closed);
+      setEditingRFQ(false);
+      setSuccess("RFQ closed. Suppliers can no longer respond or submit quotations.");
+    } catch (closeError) {
+      setError(rfqErrorMessage(closeError));
+    } finally {
+      setRfqLifecycleBusy(false);
     }
   };
 
@@ -481,7 +694,7 @@ export default function ProcurementRFQPanel({
       submissionKey.current = null;
       setRfqs((current) => [created, ...current.filter((item) => item.id !== created.id)]);
       setSelectedRFQ(created);
-      setView("detail");
+      navigateView("detail", created.id);
       setSuccess("RFQ saved. Invited suppliers can access it in Supplier Workspace. No email or SMS notification was sent.");
     } catch (submitError) {
       setError(rfqErrorMessage(submitError));
@@ -499,13 +712,27 @@ export default function ProcurementRFQPanel({
     setDiscovery(null);
     submissionKey.current = null;
     setSelectedRequestId(requests[0]?.id || "");
-    setView("compose");
+    navigateView("compose");
   };
 
   const selectedSupplierNames = suppliers
     .filter((supplier) => selectedCompanies.includes(supplier.companyId))
     .map((supplier) => supplier.name);
   const deadlineIsValid = Boolean(deadline && new Date(deadline).getTime() > Date.now());
+  const selectedRFQOrder = selectedRFQ
+    ? purchaseOrders.find((order) => order.rfq_id === selectedRFQ.id)
+    : undefined;
+  const selectedRFQHasSupplierActivity = Boolean(selectedRFQ?.recipients.some(
+    (recipient) => recipient.status !== "INVITED" || recipient.quotation,
+  ));
+  const selectedRFQIsOpen = Boolean(
+    selectedRFQ
+    && selectedRFQ.status === "OPEN"
+    && new Date(selectedRFQ.quotation_deadline).getTime() > Date.now(),
+  );
+  const selectedRFQCanEdit = Boolean(
+    selectedRFQIsOpen && !selectedRFQOrder && !selectedRFQHasSupplierActivity,
+  );
 
   return (
     <section className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900 sm:p-6">
@@ -532,7 +759,7 @@ export default function ProcurementRFQPanel({
             <button
               type="button"
               onClick={() => {
-                setView("list");
+                navigateView("list");
                 setError("");
                 setSuccess("");
               }}
@@ -546,7 +773,7 @@ export default function ProcurementRFQPanel({
               <button
                 type="button"
                 onClick={() => {
-                  setView("orders");
+                  navigateView("orders");
                   void refreshPurchaseOrders();
                 }}
                 className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
@@ -605,6 +832,21 @@ export default function ProcurementRFQPanel({
               </button>
             </div>
           )}
+          {purchaseOrdersHasMore && (
+            <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300">
+              <span>Additional purchase orders are available; delivery badges here reflect the loaded orders only.</span>
+              <button
+                type="button"
+                onClick={() => {
+                  navigateView("orders");
+                  void refreshPurchaseOrders();
+                }}
+                className="font-semibold text-purple-700 underline dark:text-purple-300"
+              >
+                Open purchase orders
+              </button>
+            </div>
+          )}
           {requests.length === 0 && (
             <div className="rounded-xl border border-dashed border-slate-300 p-6 text-center dark:border-slate-700">
               <p className="text-sm font-semibold">Save a material requirement before creating an RFQ.</p>
@@ -619,38 +861,50 @@ export default function ProcurementRFQPanel({
               No RFQs have been created yet.
             </div>
           ) : rfqListLoaded ? (
-            <ul className="space-y-3">
-              {rfqs.map((rfq) => (
-                <li key={rfq.id}>
-                  <button
-                    type="button"
-                    onClick={() => void openDetails(rfq.id)}
-                    className="w-full rounded-xl border border-slate-200 p-4 text-left transition hover:border-purple-300 hover:bg-purple-50/40 dark:border-slate-700 dark:hover:border-purple-800 dark:hover:bg-purple-950/20"
-                  >
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <p className="font-semibold text-slate-900 dark:text-white">{rfq.item_name}</p>
-                        <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">{rfq.quantity} {rfq.unit} · {rfq.delivery_location}</p>
+            <div className="space-y-3">
+              <ul className="space-y-3">
+                {rfqs.map((rfq) => (
+                  <li key={rfq.id}>
+                    <button
+                      type="button"
+                      onClick={() => void openDetails(rfq.id)}
+                      className="w-full rounded-xl border border-slate-200 p-4 text-left transition hover:border-purple-300 hover:bg-purple-50/40 dark:border-slate-700 dark:hover:border-purple-800 dark:hover:bg-purple-950/20"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="font-semibold text-slate-900 dark:text-white">{rfq.item_name}</p>
+                          <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">{rfq.quantity} {rfq.unit} · {rfq.delivery_location}</p>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${statusClass(rfq.status)}`}>RFQ status: {rfq.status}</span>
+                          {purchaseOrdersLoaded && (() => {
+                            const order = purchaseOrders.find((item) => item.rfq_id === rfq.id);
+                            return order ? (
+                              <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold ${purchaseOrderStatusClass(purchaseOrderDeliveryStatus(order))}`}>
+                                <Package size={12} /> Delivery status: {purchaseOrderDeliveryStatus(order)}
+                              </span>
+                            ) : null;
+                          })()}
+                        </div>
                       </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${statusClass(rfq.status)}`}>RFQ status: {rfq.status}</span>
-                        {purchaseOrdersLoaded && (() => {
-                          const order = purchaseOrders.find((item) => item.rfq_id === rfq.id);
-                          return order ? (
-                            <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold ${purchaseOrderStatusClass(purchaseOrderDeliveryStatus(order))}`}>
-                              <Package size={12} /> Delivery status: {purchaseOrderDeliveryStatus(order)}
-                            </span>
-                          ) : null;
-                        })()}
-                      </div>
-                    </div>
-                    <p className="mt-3 text-xs text-slate-500">
-                      Deadline {formatDate(rfq.quotation_deadline)} · {rfq.recipients.length} supplier{rfq.recipients.length === 1 ? "" : "s"} · {rfq.recipients.filter((recipient) => recipient.status !== "INVITED").length} responded
-                    </p>
-                  </button>
-                </li>
-              ))}
-            </ul>
+                      <p className="mt-3 text-xs text-slate-500">
+                        Deadline {formatDate(rfq.quotation_deadline)} · {rfq.recipients.length} supplier{rfq.recipients.length === 1 ? "" : "s"} · {rfq.recipients.filter((recipient) => recipient.status !== "INVITED").length} responded
+                      </p>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              {rfqsHasMore && (
+                <button
+                  type="button"
+                  onClick={() => void loadMoreRFQs()}
+                  disabled={rfqsLoadingMore}
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-purple-700 disabled:opacity-50 dark:border-slate-700 dark:text-purple-300"
+                >
+                  {rfqsLoadingMore ? "Loading RFQs…" : "Load more RFQs"}
+                </button>
+              )}
+            </div>
           ) : null}
         </>
       )}
@@ -684,9 +938,10 @@ export default function ProcurementRFQPanel({
               No purchase orders have been created yet. Select an eligible submitted quotation from an RFQ to create one.
             </div>
           ) : purchaseOrdersLoaded ? (
-            <ul className="space-y-3">
-              {purchaseOrders.map((order) => (
-                <li key={order.id} className="rounded-xl border border-slate-200 p-4 dark:border-slate-700">
+            <div className="space-y-3">
+              <ul className="space-y-3">
+                {purchaseOrders.map((order) => (
+                  <li key={order.id} className="rounded-xl border border-slate-200 p-4 dark:border-slate-700">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <p className="font-bold text-slate-900 dark:text-white">{order.order_reference} · {order.item_name}</p>
@@ -749,9 +1004,20 @@ export default function ProcurementRFQPanel({
                       {purchaseOrderActionId === order.id ? "Cancelling…" : "Cancel order"}
                     </button>
                   )}
-                </li>
-              ))}
-            </ul>
+                  </li>
+                ))}
+              </ul>
+              {purchaseOrdersHasMore && (
+                <button
+                  type="button"
+                  onClick={() => void loadMorePurchaseOrders()}
+                  disabled={purchaseOrdersLoadingMore}
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-purple-700 disabled:opacity-50 dark:border-slate-700 dark:text-purple-300"
+                >
+                  {purchaseOrdersLoadingMore ? "Loading purchase orders…" : "Load more purchase orders"}
+                </button>
+              )}
+            </div>
           ) : null}
         </div>
       )}
@@ -782,6 +1048,16 @@ export default function ProcurementRFQPanel({
                   ))}
                 </select>
               </label>
+              {requestsHasMore && (
+                <button
+                  type="button"
+                  onClick={onLoadMoreRequests}
+                  disabled={requestsLoadingMore}
+                  className="text-sm font-semibold text-purple-700 underline disabled:opacity-50 dark:text-purple-300"
+                >
+                  {requestsLoadingMore ? "Loading requirements…" : "Load more saved requirements"}
+                </button>
+              )}
               {selectedRequest && (
                 <div className="rounded-xl border border-slate-200 p-4 dark:border-slate-700">
                   <h3 className="font-semibold text-slate-900 dark:text-white">Requirement snapshot</h3>
@@ -817,6 +1093,11 @@ export default function ProcurementRFQPanel({
               <div>
                 <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200">Eligible suppliers</h3>
                 <p className="mt-1 text-xs text-slate-500">Current matching results are rechecked before submission. Select one or more supplier companies.</p>
+                {discovery?.search_limit_reached && (
+                  <p role="status" className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+                    Showing up to 100 top-ranked matching listings; additional matching listings or suppliers may exist.
+                  </p>
+                )}
                 {discoveryLoading ? (
                   <div role="status" className="flex items-center gap-2 py-5 text-sm text-slate-500">
                     <Loader2 size={16} className="animate-spin" /> Checking verified supplier offerings…
@@ -884,7 +1165,7 @@ export default function ProcurementRFQPanel({
                   type="button"
                   onClick={() => {
                     setError("");
-                    setView("review");
+                    navigateView("review");
                   }}
                   disabled={!selectedRequest || discoveryLoading || selectedCompanies.length === 0 || !deliveryLocation.trim() || !deadlineIsValid || buyerNotes.length > 4000}
                   className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-purple-700 px-5 py-2.5 text-sm font-bold text-white hover:bg-purple-800 disabled:cursor-not-allowed disabled:opacity-50"
@@ -915,7 +1196,7 @@ export default function ProcurementRFQPanel({
             This creates a persistent RFQ and supplier inbox entries. No email or SMS notification will be sent.
           </p>
           <div className="flex flex-wrap justify-between gap-3">
-            <button type="button" onClick={() => setView("compose")} disabled={submitting} className="min-h-10 rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">
+            <button type="button" onClick={() => navigateView("compose")} disabled={submitting} className="min-h-10 rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">
               Edit details
             </button>
             <button
@@ -938,6 +1219,22 @@ export default function ProcurementRFQPanel({
               Purchase-order state could not be loaded: {purchaseOrdersError} Refresh the RFQ details before awarding a quotation.
             </div>
           )}
+          {!purchaseOrdersError
+            && purchaseOrdersLoaded
+            && purchaseOrdersHasMore
+            && !purchaseOrders.some((order) => order.rfq_id === selectedRFQ.id) && (
+              <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+                <span>This RFQ has no order in the loaded results. Load all purchase orders to confirm its status before selecting a quotation.</span>
+                <button
+                  type="button"
+                  onClick={() => void loadMorePurchaseOrders()}
+                  disabled={purchaseOrdersLoadingMore}
+                  className="font-semibold underline disabled:opacity-50"
+                >
+                  {purchaseOrdersLoadingMore ? "Loading…" : "Load more purchase orders"}
+                </button>
+              </div>
+            )}
           {(() => {
             const existingOrder = purchaseOrders.find((order) => order.rfq_id === selectedRFQ.id);
             return existingOrder ? (
@@ -961,6 +1258,92 @@ export default function ProcurementRFQPanel({
             </div>
             <span className={`rounded-full px-3 py-1 text-xs font-bold ${statusClass(selectedRFQ.status)}`}>{selectedRFQ.status}</span>
           </div>
+          {selectedRFQIsOpen && !selectedRFQOrder && (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 p-3 dark:border-slate-700">
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={startEditingRFQ}
+                  disabled={!selectedRFQCanEdit || rfqLifecycleBusy}
+                  className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700"
+                  title={selectedRFQHasSupplierActivity ? "RFQs cannot be edited after a supplier responds or submits a quotation." : undefined}
+                >
+                  <Pencil size={14} /> Edit RFQ
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void closeRFQ()}
+                  disabled={rfqLifecycleBusy}
+                  className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-rose-300 px-3 py-2 text-sm font-semibold text-rose-700 disabled:opacity-50 dark:border-rose-900 dark:text-rose-300"
+                >
+                  {rfqLifecycleBusy ? <Loader2 size={14} className="animate-spin" /> : <XCircle size={14} />}
+                  Close RFQ
+                </button>
+              </div>
+              {selectedRFQHasSupplierActivity && (
+                <p className="text-xs text-slate-500">Editing is unavailable after supplier responses or quotations; closing remains available.</p>
+              )}
+            </div>
+          )}
+          {editingRFQ && (
+            <div className="space-y-3 rounded-xl border border-purple-200 bg-purple-50/50 p-4 dark:border-purple-900 dark:bg-purple-950/20">
+              <div>
+                <h4 className="font-semibold">Edit RFQ details</h4>
+                <p className="mt-1 text-xs text-slate-500">The requested material and invited suppliers remain unchanged. Edits are allowed only before supplier activity.</p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="text-sm font-medium">
+                  Delivery location
+                  <input
+                    value={editDeliveryLocation}
+                    onChange={(event) => setEditDeliveryLocation(event.target.value)}
+                    maxLength={500}
+                    required
+                    className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-950"
+                  />
+                </label>
+                <label className="text-sm font-medium">
+                  Quotation deadline
+                  <input
+                    type="datetime-local"
+                    value={editDeadline}
+                    onChange={(event) => setEditDeadline(event.target.value)}
+                    required
+                    className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-950"
+                  />
+                </label>
+                <label className="text-sm font-medium sm:col-span-2">
+                  Buyer notes
+                  <textarea
+                    value={editBuyerNotes}
+                    onChange={(event) => setEditBuyerNotes(event.target.value)}
+                    maxLength={4000}
+                    rows={3}
+                    className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-950"
+                  />
+                </label>
+              </div>
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingRFQ(false)}
+                  disabled={rfqLifecycleBusy}
+                  className="min-h-9 rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold dark:border-slate-700"
+                >
+                  Discard
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void saveRFQEdits()}
+                  disabled={rfqLifecycleBusy}
+                  className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-purple-700 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                >
+                  {rfqLifecycleBusy && <Loader2 size={14} className="animate-spin" />}
+                  {rfqLifecycleBusy ? "Saving…" : "Save changes"}
+                </button>
+              </div>
+            </div>
+          )}
           <dl className="grid gap-4 rounded-xl border border-slate-200 p-4 text-sm dark:border-slate-700 sm:grid-cols-2">
             <div className="sm:col-span-2"><dt className="text-xs font-semibold text-slate-500">Specification</dt><dd className="mt-1 whitespace-pre-wrap">{selectedRFQ.specification || "Not specified"}</dd></div>
             <div><dt className="text-xs font-semibold text-slate-500">Quotation deadline</dt><dd className="mt-1 flex items-center gap-1.5"><Clock3 size={14} />{formatDate(selectedRFQ.quotation_deadline)}</dd></div>
@@ -989,7 +1372,7 @@ export default function ProcurementRFQPanel({
               </dl>
               <div className="flex flex-wrap justify-end gap-2">
                 <button type="button" onClick={() => setSelectedQuotationRecipient(null)} disabled={selectionBusy} className="min-h-10 rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold dark:border-slate-700">Back</button>
-                <button type="button" onClick={() => void selectQuotation(selectedQuotationRecipient)} disabled={selectionBusy} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-purple-700 px-4 py-2 text-sm font-bold text-white hover:bg-purple-800 disabled:opacity-60">
+                <button type="button" onClick={() => void selectQuotation(selectedQuotationRecipient)} disabled={selectionBusy || !purchaseOrdersLoaded || purchaseOrdersHasMore || Boolean(purchaseOrdersError) || purchaseOrders.some((order) => order.rfq_id === selectedRFQ.id)} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-purple-700 px-4 py-2 text-sm font-bold text-white hover:bg-purple-800 disabled:opacity-60">
                   {selectionBusy ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
                   {selectionBusy ? "Creating purchase order…" : "Confirm selection & create order"}
                 </button>
@@ -1064,6 +1447,8 @@ export default function ProcurementRFQPanel({
                   && selectedRFQ.status === "OPEN"
                   && new Date(selectedRFQ.quotation_deadline).getTime() > Date.now()
                   && !existingOrder
+                  && purchaseOrdersLoaded
+                  && !purchaseOrdersHasMore
                   && !purchaseOrdersError
                   && !quoteExpired
                   && unitMatches

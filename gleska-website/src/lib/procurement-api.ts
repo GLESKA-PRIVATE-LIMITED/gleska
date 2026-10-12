@@ -1,5 +1,7 @@
 import apiClient from "@/lib/api";
 
+const PROCUREMENT_PAGE_SIZE = 25;
+
 export interface MaterialRequestDraft {
   title: string | null;
   item_name: string | null;
@@ -13,15 +15,25 @@ export interface MaterialRequestDraft {
 }
 
 export interface ProcurementConversationMessage {
+  message_id?: number | null;
   role: "user" | "assistant";
   content: string;
   created_at: string;
+}
+
+export interface ProcurementConversationHistoryPage {
+  items: ProcurementConversationMessage[];
+  page_size: number;
+  has_more: boolean;
+  next_cursor: string | null;
 }
 
 export interface ProcurementConversation {
   conversation_id: string;
   status: "ACTIVE" | "COMPLETED";
   history: ProcurementConversationMessage[];
+  history_limit_reached: boolean;
+  history_cursor: string | null;
   draft: MaterialRequestDraft;
   confirmed_fields: string[];
   revision: number;
@@ -37,6 +49,21 @@ export interface ProcurementMaterialRequest extends MaterialRequestDraft {
   revision: number;
   created_at: string;
   updated_at: string;
+}
+
+export interface ProcurementPage<T> {
+  items: T[];
+  page: number;
+  page_size: number;
+  has_more: boolean;
+  next_cursor?: string | null;
+}
+
+export interface SupplierRFQPage {
+  items: SupplierRFQ[];
+  page_size: number;
+  has_more: boolean;
+  next_cursor: string | null;
 }
 
 export interface ProcurementSupplierOfferingMatch {
@@ -269,6 +296,7 @@ export interface SupplierRFQ {
   buyer_notes: string | null;
   status: ProcurementRFQStatus;
   created_at: string;
+  updated_at: string;
   recipient_status: ProcurementRFQRecipientStatus;
   response_note: string | null;
   responded_at: string | null;
@@ -276,6 +304,7 @@ export interface SupplierRFQ {
 }
 
 export interface SupplierQuotationSubmission {
+  expected_rfq_updated_at: string;
   unit_price: string;
   currency: SupplierQuotation["currency"];
   quantity_offered: string;
@@ -296,6 +325,12 @@ export interface ProcurementRFQCreate {
   idempotency_key: string;
   supplier_company_ids: string[];
   delivery_location: string | null;
+  quotation_deadline: string;
+  buyer_notes: string | null;
+}
+
+export interface ProcurementRFQUpdate {
+  delivery_location: string;
   quotation_deadline: string;
   buyer_notes: string | null;
 }
@@ -337,10 +372,10 @@ export const procurementApi = {
     return response.data;
   },
 
-  async listConversations() {
-    const response = await apiClient.get<ProcurementConversation[]>(
+  async listConversations(cursor?: string | null) {
+    const response = await apiClient.get<ProcurementPage<ProcurementConversation>>(
       `${basePath}/conversations`,
-      { withCredentials: true },
+      { params: { page_size: PROCUREMENT_PAGE_SIZE, ...(cursor ? { cursor } : {}) }, withCredentials: true },
     );
     return response.data;
   },
@@ -358,6 +393,14 @@ export const procurementApi = {
     const response = await apiClient.get<ProcurementConversation>(
       `${basePath}/conversations/${encodeURIComponent(id)}`,
       { withCredentials: true },
+    );
+    return response.data;
+  },
+
+  async listConversationHistory(id: string, cursor?: string | null) {
+    const response = await apiClient.get<ProcurementConversationHistoryPage>(
+      `${basePath}/conversations/${encodeURIComponent(id)}/history`,
+      { params: { page_size: 80, ...(cursor ? { cursor } : {}) }, withCredentials: true },
     );
     return response.data;
   },
@@ -398,10 +441,10 @@ export const procurementApi = {
     return response.data;
   },
 
-  async listRequests() {
-    const response = await apiClient.get<ProcurementMaterialRequest[]>(
+  async listRequests(cursor?: string | null) {
+    const response = await apiClient.get<ProcurementPage<ProcurementMaterialRequest>>(
       `${basePath}/requests`,
-      { withCredentials: true },
+      { params: { page_size: PROCUREMENT_PAGE_SIZE, ...(cursor ? { cursor } : {}) }, withCredentials: true },
     );
     return response.data;
   },
@@ -445,10 +488,10 @@ export const procurementApi = {
     );
   },
 
-  async listRFQs() {
-    const response = await apiClient.get<ProcurementRFQ[]>(
+  async listRFQs(page = 1) {
+    const response = await apiClient.get<ProcurementPage<ProcurementRFQ>>(
       `${basePath}/rfqs`,
-      { withCredentials: true },
+      { params: { page, page_size: PROCUREMENT_PAGE_SIZE }, withCredentials: true },
     );
     return response.data;
   },
@@ -470,10 +513,28 @@ export const procurementApi = {
     return response.data;
   },
 
-  async listPurchaseOrders() {
-    const response = await apiClient.get<ProcurementPurchaseOrder[]>(
-      `${basePath}/purchase-orders`,
+  async updateRFQ(id: string, rfq: ProcurementRFQUpdate) {
+    const response = await apiClient.put<ProcurementRFQ>(
+      `${basePath}/rfqs/${encodeURIComponent(id)}`,
+      rfq,
       { withCredentials: true },
+    );
+    return response.data;
+  },
+
+  async closeRFQ(id: string) {
+    const response = await apiClient.post<ProcurementRFQ>(
+      `${basePath}/rfqs/${encodeURIComponent(id)}/close`,
+      {},
+      { withCredentials: true },
+    );
+    return response.data;
+  },
+
+  async listPurchaseOrders(page = 1) {
+    const response = await apiClient.get<ProcurementPage<ProcurementPurchaseOrder>>(
+      `${basePath}/purchase-orders`,
+      { params: { page, page_size: PROCUREMENT_PAGE_SIZE }, withCredentials: true },
     );
     return response.data;
   },
@@ -496,10 +557,10 @@ export const procurementApi = {
     return response.data;
   },
 
-  async listSupplierRFQs(companyId: string) {
-    const response = await apiClient.get<SupplierRFQ[]>(
+  async listSupplierRFQs(companyId: string, cursor?: string | null) {
+    const response = await apiClient.get<SupplierRFQPage>(
       `/api/v1/suppliers/companies/${encodeURIComponent(companyId)}/rfqs`,
-      { withCredentials: true },
+      { params: { page_size: PROCUREMENT_PAGE_SIZE, ...(cursor ? { cursor } : {}) }, withCredentials: true },
     );
     return response.data;
   },

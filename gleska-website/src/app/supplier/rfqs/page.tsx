@@ -1,6 +1,6 @@
 "use client";
 
-import React, { FormEvent, Suspense, useEffect, useState } from "react";
+import React, { FormEvent, Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   CheckCircle2,
@@ -29,11 +29,15 @@ function SupplierRFQsContent() {
     companyDataId,
     rfqs,
     rfqsLoading,
+    rfqsHasMore,
+    rfqsLoadingMore,
     rfqsError,
     rfqsSuccess,
     setRfqsError,
     setRfqsSuccess,
     refreshRFQs,
+    loadMoreRFQs,
+    loadSupplierRFQ,
     respondToRfq,
     submitQuotation,
   } = useSupplier();
@@ -47,8 +51,17 @@ function SupplierRFQsContent() {
   const [quotationFormOpen, setQuotationFormOpen] = useState(false);
   const [quotationReview, setQuotationReview] = useState(false);
   const [quotationBusy, setQuotationBusy] = useState(false);
+  const deepLinkRequestRef = useRef("");
 
   // Sync selected RFQ
+  useEffect(() => {
+    if (!initialRfqId || !selectedCompanyId || rfqsLoading || rfqs.some((r) => r.id === initialRfqId)) return;
+    const requestKey = `${selectedCompanyId}:${initialRfqId}`;
+    if (deepLinkRequestRef.current === requestKey) return;
+    deepLinkRequestRef.current = requestKey;
+    void loadSupplierRFQ(initialRfqId);
+  }, [initialRfqId, loadSupplierRFQ, rfqs, rfqsLoading, selectedCompanyId]);
+
   useEffect(() => {
     if (initialRfqId && rfqs.some((r) => r.id === initialRfqId)) {
       setSelectedRfqId(initialRfqId);
@@ -130,6 +143,15 @@ function SupplierRFQsContent() {
     setQuotationBusy(false);
   };
 
+  const handleRefreshRFQs = () => {
+    if (initialRfqId && !rfqs.some((rfq) => rfq.id === initialRfqId)) {
+      deepLinkRequestRef.current = "";
+      void loadSupplierRFQ(initialRfqId);
+      return;
+    }
+    void refreshRFQs();
+  };
+
   return (
     <section className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4 dark:border-slate-800">
@@ -166,8 +188,8 @@ function SupplierRFQsContent() {
           )}
           <button
             type="button"
-            onClick={() => void refreshRFQs()}
-            disabled={rfqsLoading}
+            onClick={handleRefreshRFQs}
+            disabled={rfqsLoading || rfqsLoadingMore}
             className="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 cursor-pointer"
           >
             <RefreshCw size={13} className={rfqsLoading ? "animate-spin" : ""} />
@@ -184,7 +206,7 @@ function SupplierRFQsContent() {
           <span className="min-w-0 break-words">{rfqsError}</span>
           <button
             type="button"
-            onClick={() => void refreshRFQs()}
+            onClick={handleRefreshRFQs}
             disabled={rfqsLoading}
             className="shrink-0 font-semibold underline disabled:opacity-60"
           >
@@ -216,6 +238,19 @@ function SupplierRFQsContent() {
         </div>
       ) : (
         <div>
+          {rfqsHasMore && (
+            <div className="mb-4 flex justify-center">
+              <button
+                type="button"
+                onClick={() => void loadMoreRFQs()}
+                disabled={rfqsLoadingMore}
+                className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+              >
+                {rfqsLoadingMore && <Loader2 size={14} className="animate-spin" />}
+                {rfqsLoadingMore ? "Loading more RFQs…" : "Load more RFQs"}
+              </button>
+            </div>
+          )}
           {/* RFQ Detail & Quotation Full-Width View */}
           {selectedRfq && (
             <article className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900 sm:p-6 space-y-6">

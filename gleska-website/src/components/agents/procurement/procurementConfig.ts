@@ -7,8 +7,8 @@ import {
   ClipboardList,
   Settings,
   ArrowLeftRight,
-  Briefcase,
   Package,
+  Briefcase,
 } from "lucide-react";
 import { AgentConfig } from "@/components/agent-dashboard/types";
 

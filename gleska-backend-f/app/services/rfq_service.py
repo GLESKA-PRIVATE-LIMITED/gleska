@@ -17,8 +17,11 @@ from app.schemas.auth import UserResponse
 from app.schemas.rfq import (
     ProcurementQuotationSelectionRequest,
     ProcurementRFQCreateRequest,
+    ProcurementRFQListResponse,
     ProcurementRFQRecipient,
     ProcurementRFQResponse,
+    ProcurementRFQUpdateRequest,
+    PurchaseOrderListResponse,
     PurchaseOrderResponse,
     PurchaseOrderFulfillmentEventResponse,
     PurchaseOrderFulfillmentUpdateRequest,
@@ -27,6 +30,7 @@ from app.schemas.rfq import (
     SupplierQuotationResponse,
     SupplierQuotationResult,
     SupplierRFQResponse,
+    SupplierRFQListResponse,
     SupplierRFQResponseRequest,
     SupplierRFQResponseResult,
 )
@@ -35,9 +39,10 @@ from app.services.procurement_service import (
     ProcurementService,
     ProcurementServiceError,
 )
+from app.services.pagination import decode_created_cursor, encode_created_cursor
 
 logger = logging.getLogger(__name__)
-RFQ_LIST_LIMIT = 100
+DEFAULT_PAGE_SIZE = 25
 RFQ_RECIPIENT_QUERY_BATCH_SIZE = 10
 RFQ_COMPANY_QUERY_BATCH_SIZE = 100
 
@@ -105,8 +110,8 @@ class RFQService:
             })
         if any(company_id not in companies for company_id in company_ids):
             logger.error(
-                "Purchase order supplier company lookup incomplete: supplier_company_ids=%s",
-                [company_id for company_id in company_ids if company_id not in companies],
+                "Purchase order supplier company lookup incomplete: missing_company_count=%s",
+                sum(company_id not in companies for company_id in company_ids),
             )
             raise RFQServiceError("PURCHASE_ORDER_SUPPLIER_NOT_FOUND")
         events_by_order: dict[str, list[PurchaseOrderFulfillmentEventResponse]] = {}
@@ -171,18 +176,28 @@ class RFQService:
     def list_purchase_orders_buyer(
         cls,
         user: UserResponse,
-    ) -> list[PurchaseOrderResponse]:
+        page: int = 1,
+        page_size: int = DEFAULT_PAGE_SIZE,
+    ) -> PurchaseOrderListResponse:
         employer_id = cls._employer_id(user)
+        offset = (page - 1) * page_size
         rows = cls._rows(
             supabase.table("procurement_purchase_orders")
             .select(cls._purchase_order_columns())
             .eq("buyer_user_id", str(user.id))
             .eq("employer_id", employer_id)
             .order("created_at", desc=True)
-            .limit(RFQ_LIST_LIMIT)
+            .order("id", desc=True)
+            .range(offset, offset + page_size)
             .execute()
         )
-        return cls._purchase_order_responses(rows)
+        page_rows = rows[:page_size]
+        return PurchaseOrderListResponse(
+            items=cls._purchase_order_responses(page_rows),
+            page=page,
+            page_size=page_size,
+            has_more=len(rows) > page_size,
+        )
 
     @classmethod
     def list_purchase_orders_supplier(
@@ -219,10 +234,11 @@ class RFQService:
                 ).execute()
             )
         except Exception as exc:
-            logger.exception(
-                "Procurement quotation selection failed: user_id=%s rfq_id=%s",
+            logger.error(
+                "Procurement quotation selection failed: user_id=%s rfq_id=%s exception_type=%s",
                 user.id,
                 rfq_id,
+                type(exc).__name__,
             )
             try:
                 existing_order = cls._selected_purchase_order(
@@ -231,11 +247,12 @@ class RFQService:
                     rfq_id,
                     request.quotation_id,
                 )
-            except Exception:
-                logger.exception(
-                    "Procurement quotation selection recovery failed: user_id=%s rfq_id=%s",
+            except Exception as recovery_exc:
+                logger.error(
+                    "Procurement quotation selection recovery failed: user_id=%s rfq_id=%s exception_type=%s",
                     user.id,
                     rfq_id,
+                    type(recovery_exc).__name__,
                 )
                 raise RFQServiceError("QUOTATION_SELECTION_FAILED") from exc
             if existing_order:
@@ -286,11 +303,12 @@ class RFQService:
                 raise RFQServiceError("PURCHASE_ORDER_LOAD_FAILED")
             return cls._purchase_order_responses([row])[0]
         except Exception as exc:
-            logger.exception(
-                "Purchase order committed but response loading failed: user_id=%s rfq_id=%s order_id=%s",
+            logger.error(
+                "Purchase order committed but response loading failed: user_id=%s rfq_id=%s order_id=%s exception_type=%s",
                 user.id,
                 rfq_id,
                 order_id,
+                type(exc).__name__,
             )
             raise RFQServiceError("PURCHASE_ORDER_LOAD_FAILED") from exc
 
@@ -315,11 +333,12 @@ class RFQService:
                 ).execute()
             )
         except Exception as exc:
-            logger.exception(
-                "Supplier purchase order response failed: user_id=%s company_id=%s order_id=%s",
+            logger.error(
+                "Supplier purchase order response failed: user_id=%s company_id=%s order_id=%s exception_type=%s",
                 user.id,
                 company_id,
                 order_id,
+                type(exc).__name__,
             )
             raise RFQServiceError("PURCHASE_ORDER_UPDATE_FAILED") from exc
         cls._raise_purchase_order_rpc_error(result)
@@ -354,10 +373,11 @@ class RFQService:
                 ).execute()
             )
         except Exception as exc:
-            logger.exception(
-                "Buyer purchase order cancellation failed: user_id=%s order_id=%s",
+            logger.error(
+                "Buyer purchase order cancellation failed: user_id=%s order_id=%s exception_type=%s",
                 user.id,
                 order_id,
+                type(exc).__name__,
             )
             raise RFQServiceError("PURCHASE_ORDER_UPDATE_FAILED") from exc
         cls._raise_purchase_order_rpc_error(result)
@@ -408,11 +428,12 @@ class RFQService:
                 ).execute()
             )
         except Exception as exc:
-            logger.exception(
-                "Supplier purchase order fulfillment update failed: user_id=%s company_id=%s order_id=%s",
+            logger.error(
+                "Supplier purchase order fulfillment update failed: user_id=%s company_id=%s order_id=%s exception_type=%s",
                 user.id,
                 company_id,
                 order_id,
+                type(exc).__name__,
             )
             raise RFQServiceError("FULFILLMENT_UPDATE_FAILED") from exc
         if result.get("ok") is not True:
@@ -590,7 +611,11 @@ class RFQService:
                 .execute()
             )
         except Exception as exc:
-            logger.exception("RFQ idempotency lookup failed: user_id=%s", user.id)
+            logger.error(
+                "RFQ idempotency lookup failed: user_id=%s exception_type=%s",
+                user.id,
+                type(exc).__name__,
+            )
             raise RFQServiceError("RFQ_CREATE_FAILED") from exc
         if existing:
             if (
@@ -656,7 +681,11 @@ class RFQService:
                 ).execute()
             )
         except Exception as exc:
-            logger.exception("RFQ create RPC failed: user_id=%s", user.id)
+            logger.error(
+                "RFQ create RPC failed: user_id=%s exception_type=%s",
+                user.id,
+                type(exc).__name__,
+            )
             error_message = str(getattr(exc, "message", None) or exc)
             if "RFQ_SUPPLIER_INELIGIBLE" in error_message:
                 raise RFQServiceError(
@@ -698,8 +727,115 @@ class RFQService:
         return cls._buyer_response(row)
 
     @classmethod
-    def list_buyer(cls, user: UserResponse) -> list[ProcurementRFQResponse]:
+    def update_buyer(
+        cls,
+        user: UserResponse,
+        rfq_id: UUID,
+        request: ProcurementRFQUpdateRequest,
+    ) -> ProcurementRFQResponse:
         employer_id = cls._employer_id(user)
+        try:
+            result = cls._row(
+                supabase.rpc(
+                    "update_procurement_rfq",
+                    {
+                        "p_user_id": str(user.id),
+                        "p_employer_id": employer_id,
+                        "p_rfq_id": str(rfq_id),
+                        "p_delivery_location": request.delivery_location,
+                        "p_quotation_deadline": request.quotation_deadline.isoformat(),
+                        "p_buyer_notes": request.buyer_notes,
+                    },
+                ).execute()
+            )
+        except Exception as exc:
+            logger.error(
+                "Procurement RFQ update failed: user_id=%s rfq_id=%s exception_type=%s",
+                user.id,
+                rfq_id,
+                type(exc).__name__,
+            )
+            raise RFQServiceError("RFQ_UPDATE_FAILED") from exc
+        if result.get("ok") is not True:
+            code = str(result.get("error_code") or "RFQ_UPDATE_FAILED")
+            errors = {
+                "PROCUREMENT_FORBIDDEN": (code, status.HTTP_403_FORBIDDEN),
+                "RFQ_NOT_FOUND": (code, status.HTTP_404_NOT_FOUND),
+                "RFQ_CLOSED": (code, status.HTTP_409_CONFLICT),
+                "RFQ_ALREADY_AWARDED": (code, status.HTTP_409_CONFLICT),
+                "RFQ_ACTIVITY_EXISTS": (code, status.HTTP_409_CONFLICT),
+                "RFQ_DEADLINE_INVALID": (code, status.HTTP_422_UNPROCESSABLE_ENTITY),
+                "RFQ_UPDATE_INVALID": (code, status.HTTP_422_UNPROCESSABLE_ENTITY),
+            }
+            error_code, http_status = errors.get(code, (code, status.HTTP_500_INTERNAL_SERVER_ERROR))
+            raise RFQServiceError(error_code, http_status)
+        try:
+            return cls.get_buyer(user, rfq_id)
+        except Exception as exc:
+            logger.error(
+                "Updated RFQ response loading failed: user_id=%s rfq_id=%s exception_type=%s",
+                user.id,
+                rfq_id,
+                type(exc).__name__,
+            )
+            raise RFQServiceError("RFQ_UPDATE_RESULT_LOAD_FAILED") from exc
+
+    @classmethod
+    def close_buyer(
+        cls,
+        user: UserResponse,
+        rfq_id: UUID,
+    ) -> ProcurementRFQResponse:
+        employer_id = cls._employer_id(user)
+        try:
+            result = cls._row(
+                supabase.rpc(
+                    "close_procurement_rfq",
+                    {
+                        "p_user_id": str(user.id),
+                        "p_employer_id": employer_id,
+                        "p_rfq_id": str(rfq_id),
+                    },
+                ).execute()
+            )
+        except Exception as exc:
+            logger.error(
+                "Procurement RFQ close failed: user_id=%s rfq_id=%s exception_type=%s",
+                user.id,
+                rfq_id,
+                type(exc).__name__,
+            )
+            raise RFQServiceError("RFQ_CLOSE_FAILED") from exc
+        if result.get("ok") is not True:
+            code = str(result.get("error_code") or "RFQ_CLOSE_FAILED")
+            errors = {
+                "PROCUREMENT_FORBIDDEN": (code, status.HTTP_403_FORBIDDEN),
+                "RFQ_NOT_FOUND": (code, status.HTTP_404_NOT_FOUND),
+                "RFQ_CLOSED": (code, status.HTTP_409_CONFLICT),
+                "RFQ_ALREADY_AWARDED": (code, status.HTTP_409_CONFLICT),
+            }
+            error_code, http_status = errors.get(code, (code, status.HTTP_500_INTERNAL_SERVER_ERROR))
+            raise RFQServiceError(error_code, http_status)
+        try:
+            return cls.get_buyer(user, rfq_id)
+        except Exception as exc:
+            logger.error(
+                "Closed RFQ response loading failed: user_id=%s rfq_id=%s exception_type=%s",
+                user.id,
+                rfq_id,
+                type(exc).__name__,
+            )
+            raise RFQServiceError("RFQ_CLOSE_RESULT_LOAD_FAILED") from exc
+
+    @classmethod
+    def list_buyer(
+        cls,
+        user: UserResponse,
+        page: int = 1,
+        page_size: int = DEFAULT_PAGE_SIZE,
+    ) -> ProcurementRFQListResponse:
+        employer_id = cls._employer_id(user)
+        offset = (page - 1) * page_size
         rows = cls._rows(
             supabase.table("procurement_rfqs")
             .select(
@@ -709,10 +845,17 @@ class RFQService:
             .eq("user_id", str(user.id))
             .eq("employer_id", employer_id)
             .order("created_at", desc=True)
-            .limit(RFQ_LIST_LIMIT)
+            .order("id", desc=True)
+            .range(offset, offset + page_size)
             .execute()
         )
-        return cls._buyer_responses(rows)
+        page_rows = rows[:page_size]
+        return ProcurementRFQListResponse(
+            items=cls._buyer_responses(page_rows),
+            page=page,
+            page_size=page_size,
+            has_more=len(rows) > page_size,
+        )
 
     @classmethod
     def get_buyer(cls, user: UserResponse, rfq_id: UUID) -> ProcurementRFQResponse:
@@ -737,25 +880,41 @@ class RFQService:
     def list_supplier(
         cls,
         company_id: UUID,
-    ) -> list[SupplierRFQResponse]:
-        recipient_rows = cls._rows(
+        page_size: int = DEFAULT_PAGE_SIZE,
+        cursor: str | None = None,
+    ) -> SupplierRFQListResponse:
+        query = (
             supabase.table("procurement_rfq_recipients")
-            .select("rfq_id, status, response_note, responded_at, created_at")
+            .select("rfq_id, status, response_note, responded_at, created_at, id")
             .eq("company_id", str(company_id))
             .order("created_at", desc=True)
-            .limit(RFQ_LIST_LIMIT)
-            .execute()
+            .order("id", desc=True)
+        )
+        if cursor:
+            try:
+                created_at, row_id = decode_created_cursor(cursor)
+            except ValueError as exc:
+                raise RFQServiceError(
+                    "PAGINATION_CURSOR_INVALID",
+                    status.HTTP_422_UNPROCESSABLE_ENTITY,
+                ) from exc
+            query = query.or_(
+                f"created_at.lt.{created_at},and(created_at.eq.{created_at},id.lt.{row_id})"
+            )
+        recipient_rows = cls._rows(
+            query.range(0, page_size).execute()
         )
         if not recipient_rows:
-            return []
-        rfq_ids = list(dict.fromkeys(str(row["rfq_id"]) for row in recipient_rows))
+            return SupplierRFQListResponse(items=[], page_size=page_size, has_more=False)
+        page_rows = recipient_rows[:page_size]
+        rfq_ids = list(dict.fromkeys(str(row["rfq_id"]) for row in page_rows))
         rfqs = {
             str(row["id"]): row
             for row in cls._rows(
                 supabase.table("procurement_rfqs")
                 .select(
                     "id, item_name, specification, quantity, unit, delivery_location, "
-                    "quotation_deadline, buyer_notes, status, created_at"
+                    "quotation_deadline, buyer_notes, status, created_at, updated_at"
                 )
                 .in_("id", rfq_ids)
                 .order("created_at", desc=True)
@@ -777,7 +936,7 @@ class RFQService:
             str(row["rfq_id"]): SupplierQuotationResponse.model_validate(row)
             for row in quotation_rows
         }
-        return [
+        items = [
             SupplierRFQResponse.model_validate({
                 **cls._visible_rfq(rfqs[str(row["rfq_id"])]),
                 "recipient_status": row["status"],
@@ -785,9 +944,21 @@ class RFQService:
                 "responded_at": row.get("responded_at"),
                 "quotation": quotations.get(str(row["rfq_id"])),
             })
-            for row in recipient_rows
+            for row in page_rows
             if str(row["rfq_id"]) in rfqs
         ]
+        return SupplierRFQListResponse(
+            items=items,
+            page_size=page_size,
+            has_more=len(recipient_rows) > page_size,
+            next_cursor=(
+                encode_created_cursor(
+                    str(page_rows[-1]["created_at"]),
+                    str(page_rows[-1]["id"]),
+                )
+                if len(recipient_rows) > page_size and page_rows else None
+            ),
+        )
 
     @classmethod
     def get_supplier(
@@ -809,7 +980,7 @@ class RFQService:
             supabase.table("procurement_rfqs")
             .select(
                 "id, item_name, specification, quantity, unit, delivery_location, "
-                "quotation_deadline, buyer_notes, status, created_at"
+                "quotation_deadline, buyer_notes, status, created_at, updated_at"
             )
             .eq("id", str(rfq_id))
             .maybe_single()
@@ -849,11 +1020,12 @@ class RFQService:
         try:
             result = cls._row(
                 supabase.rpc(
-                    "submit_procurement_supplier_quotation",
+                    "submit_procurement_supplier_quotation_v2",
                     {
                         "p_user_id": str(user.id),
                         "p_company_id": str(company_id),
                         "p_rfq_id": str(rfq_id),
+                        "p_expected_rfq_updated_at": request.expected_rfq_updated_at.isoformat(),
                         "p_unit_price": str(request.unit_price),
                         "p_currency": request.currency,
                         "p_quantity_offered": str(request.quantity_offered),
@@ -867,11 +1039,12 @@ class RFQService:
                 ).execute()
             )
         except Exception as exc:
-            logger.exception(
-                "Supplier quotation submission failed: user_id=%s company_id=%s rfq_id=%s",
+            logger.error(
+                "Supplier quotation submission failed: user_id=%s company_id=%s rfq_id=%s exception_type=%s",
                 user.id,
                 company_id,
                 rfq_id,
+                type(exc).__name__,
             )
             raise RFQServiceError("QUOTATION_SUBMISSION_FAILED") from exc
 
@@ -881,6 +1054,7 @@ class RFQService:
                 "SUPPLIER_COMPANY_MEMBERSHIP_NOT_FOUND": (code, status.HTTP_404_NOT_FOUND),
                 "RFQ_NOT_FOUND": (code, status.HTTP_404_NOT_FOUND),
                 "RFQ_CLOSED": (code, status.HTTP_409_CONFLICT),
+                "RFQ_STALE": (code, status.HTTP_409_CONFLICT),
                 "RFQ_INVITATION_DECLINED": (code, status.HTTP_409_CONFLICT),
                 "QUOTATION_STALE": (code, status.HTTP_409_CONFLICT),
                 "QUOTATION_VALIDITY_INVALID": (code, status.HTTP_422_UNPROCESSABLE_ENTITY),
@@ -922,11 +1096,12 @@ class RFQService:
                 ).execute()
             )
         except Exception as exc:
-            logger.exception(
-                "Supplier RFQ response RPC failed: user_id=%s company_id=%s rfq_id=%s",
+            logger.error(
+                "Supplier RFQ response RPC failed: user_id=%s company_id=%s rfq_id=%s exception_type=%s",
                 user.id,
                 company_id,
                 rfq_id,
+                type(exc).__name__,
             )
             raise RFQServiceError("RFQ_RESPONSE_FAILED") from exc
 

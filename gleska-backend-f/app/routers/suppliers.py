@@ -37,6 +37,7 @@ from app.schemas.rfq import (
     SupplierQuotationRequest,
     SupplierQuotationResult,
     SupplierRFQResponse,
+    SupplierRFQListResponse,
     SupplierRFQResponseRequest,
     SupplierRFQResponseResult,
 )
@@ -300,18 +301,34 @@ async def archive_supplier_material_offering(
 
 @router.get(
     "/companies/{company_id}/rfqs",
-    response_model=list[SupplierRFQResponse],
+    response_model=list[SupplierRFQResponse] | SupplierRFQListResponse,
 )
 async def list_supplier_rfqs(
     company_id: UUID,
+    response: Response,
+    page_size: int | None = Query(default=None, ge=1, le=100),
+    cursor: str | None = Query(default=None, max_length=300),
     membership: dict = Depends(require_supplier_company_membership),
 ):
     try:
-        return RFQService.list_supplier(company_id)
+        legacy_response = page_size is None and cursor is None
+        result = RFQService.list_supplier(
+            company_id,
+            page_size=100 if legacy_response else page_size or 25,
+            cursor=cursor,
+        )
+        if legacy_response:
+            response.headers["X-Results-Truncated"] = str(result.has_more).lower()
+            return result.items
+        return result
     except RFQServiceError as exc:
         _raise_rfq_error(exc)
     except Exception as exc:
-        logger.exception("Supplier RFQ inbox load failed: company_id=%s", company_id)
+        logger.error(
+            "Supplier RFQ inbox load failed: company_id=%s exception_type=%s",
+            company_id,
+            type(exc).__name__,
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="RFQ_LIST_FAILED",
@@ -332,10 +349,11 @@ async def get_supplier_rfq(
     except RFQServiceError as exc:
         _raise_rfq_error(exc)
     except Exception as exc:
-        logger.exception(
-            "Supplier RFQ load failed: company_id=%s rfq_id=%s",
+        logger.error(
+            "Supplier RFQ load failed: company_id=%s rfq_id=%s exception_type=%s",
             company_id,
             rfq_id,
+            type(exc).__name__,
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -359,11 +377,12 @@ async def respond_to_supplier_rfq(
     except RFQServiceError as exc:
         _raise_rfq_error(exc)
     except Exception as exc:
-        logger.exception(
-            "Supplier RFQ response failed: user_id=%s company_id=%s rfq_id=%s",
+        logger.error(
+            "Supplier RFQ response failed: user_id=%s company_id=%s rfq_id=%s exception_type=%s",
             user.id,
             company_id,
             rfq_id,
+            type(exc).__name__,
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -387,11 +406,12 @@ async def submit_supplier_quotation(
     except RFQServiceError as exc:
         _raise_rfq_error(exc)
     except Exception as exc:
-        logger.exception(
-            "Supplier quotation submission failed: user_id=%s company_id=%s rfq_id=%s",
+        logger.error(
+            "Supplier quotation submission failed: user_id=%s company_id=%s rfq_id=%s exception_type=%s",
             user.id,
             company_id,
             rfq_id,
+            type(exc).__name__,
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -412,7 +432,11 @@ async def list_supplier_purchase_orders(
     except RFQServiceError as exc:
         _raise_rfq_error(exc)
     except Exception as exc:
-        logger.exception("Supplier purchase order list failed: company_id=%s", company_id)
+        logger.error(
+            "Supplier purchase order list failed: company_id=%s exception_type=%s",
+            company_id,
+            type(exc).__name__,
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="PURCHASE_ORDER_LIST_FAILED",
@@ -435,11 +459,12 @@ async def respond_to_supplier_purchase_order(
     except RFQServiceError as exc:
         _raise_rfq_error(exc)
     except Exception as exc:
-        logger.exception(
-            "Supplier purchase order response failed: user_id=%s company_id=%s order_id=%s",
+        logger.error(
+            "Supplier purchase order response failed: user_id=%s company_id=%s order_id=%s exception_type=%s",
             user.id,
             company_id,
             order_id,
+            type(exc).__name__,
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -468,11 +493,12 @@ async def update_supplier_purchase_order_fulfillment(
     except RFQServiceError as exc:
         _raise_rfq_error(exc)
     except Exception as exc:
-        logger.exception(
-            "Supplier purchase order fulfillment update failed: user_id=%s company_id=%s order_id=%s",
+        logger.error(
+            "Supplier purchase order fulfillment update failed: user_id=%s company_id=%s order_id=%s exception_type=%s",
             user.id,
             company_id,
             order_id,
+            type(exc).__name__,
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

@@ -2,7 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
-import { ChevronRight, ChevronLeft, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { ChevronRight, PanelLeft, PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
 import { AgentConfig } from "./types";
 import AgentProfile from "./AgentProfile";
 
@@ -31,20 +31,25 @@ export default function AgentSidebar({
   onProfileClick,
   profileRoleLabel,
 }: AgentSidebarProps) {
+  const isCompact = isCollapsed && !mobileSidebarOpen;
+
   return (
     <>
       {/* Backdrop for Mobile */}
       {mobileSidebarOpen && (
-        <div
+        <button
+          type="button"
+          aria-label="Close navigation menu"
           onClick={() => setMobileSidebarOpen(false)}
-          className="fixed inset-0 z-40 bg-slate-900/50 backdrop-blur-xs md:hidden"
+          className="fixed inset-0 z-40 border-0 bg-slate-900/50 p-0 backdrop-blur-xs md:hidden"
         />
       )}
 
       {/* SIDEBAR CONTAINER */}
       <aside
-        className={`fixed top-0 bottom-0 left-0 z-50 flex flex-col justify-between border-r border-slate-200/80 bg-white/95 p-4 sm:p-6 shadow-xl backdrop-blur-xl transition-all duration-300 dark:border-slate-800/80 dark:bg-slate-900/95 ${
-          isCollapsed ? "w-20" : "w-64"
+        id="agent-sidebar"
+        className={`fixed top-0 bottom-0 left-0 z-50 flex flex-col justify-between border-r border-slate-200/80 bg-white/95 p-4 sm:p-6 shadow-xl backdrop-blur-xl transition-transform duration-300 dark:border-slate-800/80 dark:bg-slate-900/95 ${
+          isCollapsed ? "w-64 md:w-20" : "w-64"
         } ${
           mobileSidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
         }`}
@@ -58,7 +63,7 @@ export default function AgentSidebar({
                 alt="GO LESKA AI"
                 className="h-8 w-8 shrink-0 rounded-lg object-contain"
               />
-              {!isCollapsed && (
+              {!isCompact && (
                 <div className="min-w-0">
                   <span className="block truncate font-[var(--font-anton)] text-lg uppercase tracking-wider text-slate-900 dark:text-white">
                     {config.agentName}
@@ -79,6 +84,16 @@ export default function AgentSidebar({
             >
               {isCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
             </button>
+
+            {/* Mobile Drawer Close Button */}
+            <button
+              onClick={() => setMobileSidebarOpen(false)}
+              className="flex md:hidden h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white transition"
+              title="Close navigation"
+              aria-label="Close navigation"
+            >
+              <X size={18} />
+            </button>
           </div>
 
           {/* Navigation Items */}
@@ -93,12 +108,12 @@ export default function AgentSidebar({
                     key={item.id}
                     href={item.href}
                     onClick={() => setMobileSidebarOpen(false)}
-                    title={isCollapsed ? item.label : undefined}
+                    title={isCompact ? item.label : undefined}
                     className={`flex items-center gap-3 rounded-xl py-2.5 text-sm font-semibold transition-all ${
                       isSelected
                         ? "bg-blue-600 text-white shadow-xs"
                         : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
-                    } ${isCollapsed ? "justify-center px-0" : "px-3"}`}
+                    } ${isCompact ? "md:justify-center md:px-0" : "px-3"}`}
                   >
                     <Icon
                       size={18}
@@ -108,7 +123,7 @@ export default function AgentSidebar({
                           : "text-slate-500 dark:text-slate-400"
                       }`}
                     />
-                    {!isCollapsed && <span className="truncate">{item.label}</span>}
+                    {!isCompact && <span className="truncate">{item.label}</span>}
                   </Link>
                 );
               }
@@ -124,9 +139,9 @@ export default function AgentSidebar({
                     }
                     setMobileSidebarOpen(false);
                   }}
-                  title={isCollapsed ? item.label : undefined}
+                  title={isCompact ? item.label : undefined}
                   className={`flex w-full items-center rounded-xl py-2.5 text-sm font-semibold transition-all ${
-                    isCollapsed ? "justify-center px-0" : "justify-between px-3"
+                    isCompact ? "md:justify-center md:px-0" : "justify-between px-3"
                   } ${
                     isSelected
                       ? "bg-blue-600 text-white shadow-xs"
@@ -142,9 +157,9 @@ export default function AgentSidebar({
                           : "text-slate-500 dark:text-slate-400"
                       }`}
                     />
-                    {!isCollapsed && <span className="truncate">{item.label}</span>}
+                    {!isCompact && <span className="truncate">{item.label}</span>}
                   </div>
-                  {!isCollapsed && isSelected && (
+                  {!isCompact && isSelected && (
                     <ChevronRight size={16} className="shrink-0 text-white" />
                   )}
                 </button>
@@ -155,7 +170,7 @@ export default function AgentSidebar({
 
         {/* Profile Component at Bottom */}
         <AgentProfile
-          isCollapsed={isCollapsed}
+          isCollapsed={isCompact}
           closeMobile={() => setMobileSidebarOpen(false)}
           profileHref={profileHref}
           onProfileClick={onProfileClick}
