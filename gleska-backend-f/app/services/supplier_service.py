@@ -20,6 +20,8 @@ from app.schemas.supplier import (
     SupplierMemberInviteRequest,
     SupplierMemberResponse,
     SupplierMemberRoleUpdateRequest,
+    SupplierSettingsResponse,
+    SupplierSettingsUpdateRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -28,6 +30,79 @@ SUPPLIER_INVITATION_TTL = timedelta(days=7)
 
 class SupplierService:
     """Persistence boundary for supplier identities and memberships."""
+
+    @staticmethod
+    def _require_active_supplier_membership(user: UserResponse) -> None:
+        try:
+            memberships = supabase.table("supplier_company_memberships").select(
+                "id"
+            ).eq("user_id", str(user.id)).eq("status", "ACTIVE").limit(1).execute()
+        except Exception as exc:
+            logger.exception(
+                "Supplier settings authorization lookup failed: user_id=%s",
+                user.id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="SUPPLIER_SETTINGS_AUTHORIZATION_FAILED",
+            ) from exc
+        if not SupplierService._rows(memberships):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="ACTIVE_SUPPLIER_MEMBERSHIP_REQUIRED",
+            )
+
+    @classmethod
+    def get_settings(cls, user: UserResponse) -> SupplierSettingsResponse:
+        cls._require_active_supplier_membership(user)
+        try:
+            response = (
+                supabase.table("supplier_user_preferences")
+                .select("show_archived_offerings, updated_at")
+                .eq("user_id", str(user.id))
+                .maybe_single()
+                .execute()
+            )
+            row = cls._row(response)
+            return SupplierSettingsResponse(
+                show_archived_offerings=bool(row.get("show_archived_offerings", False)),
+                updated_at=row.get("updated_at"),
+            )
+        except Exception as exc:
+            logger.exception("Supplier settings load failed: user_id=%s", user.id)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="SUPPLIER_SETTINGS_LOAD_FAILED",
+            ) from exc
+
+    @classmethod
+    def update_settings(
+        cls,
+        user: UserResponse,
+        request: SupplierSettingsUpdateRequest,
+    ) -> SupplierSettingsResponse:
+        cls._require_active_supplier_membership(user)
+        try:
+            response = (
+                supabase.table("supplier_user_preferences")
+                .upsert(
+                    {
+                        "user_id": str(user.id),
+                        "show_archived_offerings": request.show_archived_offerings,
+                    },
+                    on_conflict="user_id",
+                )
+                .select("show_archived_offerings, updated_at")
+                .single()
+                .execute()
+            )
+            return SupplierSettingsResponse(**cls._row(response))
+        except Exception as exc:
+            logger.exception("Supplier settings save failed: user_id=%s", user.id)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="SUPPLIER_SETTINGS_SAVE_FAILED",
+            ) from exc
 
     @staticmethod
     def _rows(response: Any) -> list[dict[str, Any]]:

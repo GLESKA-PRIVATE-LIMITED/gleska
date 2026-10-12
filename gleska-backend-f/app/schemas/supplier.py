@@ -41,6 +41,15 @@ class SupplierVerificationDocumentType(str, Enum):
     OTHER = "OTHER"
 
 
+class SupplierSettingsResponse(BaseModel):
+    show_archived_offerings: bool = False
+    updated_at: Optional[datetime] = None
+
+
+class SupplierSettingsUpdateRequest(BaseModel):
+    show_archived_offerings: bool
+
+
 class SupplierCompanyCreateRequest(BaseModel):
     name: str = Field(..., min_length=2, max_length=160)
     description: Optional[str] = Field(default=None, max_length=2000)

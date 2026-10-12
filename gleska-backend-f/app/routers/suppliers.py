@@ -19,6 +19,8 @@ from app.schemas.supplier import (
     SupplierMemberResponse,
     SupplierMemberRoleUpdateRequest,
     SupplierOwnershipTransferRequest,
+    SupplierSettingsResponse,
+    SupplierSettingsUpdateRequest,
     SupplierVerificationDocumentResponse,
     SupplierVerificationDocumentType,
     SupplierVerificationDocumentUrlResponse,
@@ -86,6 +88,19 @@ async def create_supplier_company(
 @router.get("/companies", response_model=list[SupplierCompanyMembershipResponse])
 async def list_supplier_companies(user: UserResponse = Depends(get_current_user)):
     return SupplierService.list_companies(user)
+
+
+@router.get("/settings", response_model=SupplierSettingsResponse)
+async def get_supplier_settings(user: UserResponse = Depends(get_current_user)):
+    return SupplierService.get_settings(user)
+
+
+@router.put("/settings", response_model=SupplierSettingsResponse)
+async def update_supplier_settings(
+    request: SupplierSettingsUpdateRequest,
+    user: UserResponse = Depends(get_current_user),
+):
+    return SupplierService.update_settings(user, request)
 
 
 @router.get(

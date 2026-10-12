@@ -451,7 +451,12 @@ interface SupplierContextValue {
   offeringsError: string;
   offeringsSuccess: string;
   includeArchivedOfferings: boolean;
-  setIncludeArchivedOfferings: (show: boolean) => void;
+  supplierSettingsLoaded: boolean;
+  supplierSettingsLoading: boolean;
+  supplierSettingsSaving: boolean;
+  supplierSettingsError: string;
+  setIncludeArchivedOfferings: (show: boolean) => Promise<boolean>;
+  refreshSupplierSettings: () => Promise<boolean>;
   setOfferingError: (msg: string) => void;
   setOfferingSuccess: (msg: string) => void;
   refreshOfferings: () => Promise<void>;
@@ -533,7 +538,12 @@ export function SupplierProvider({ children }: { children: React.ReactNode }) {
   const [rfqsLoading, setRfqsLoading] = useState(false);
   const [rfqsError, setRfqsError] = useState("");
   const [rfqsSuccess, setRfqsSuccess] = useState("");
-  const [includeArchivedOfferings, setIncludeArchivedOfferings] = useState(true);
+  const [includeArchivedOfferings, setIncludeArchivedOfferingsState] =
+    useState(false);
+  const [supplierSettingsLoaded, setSupplierSettingsLoaded] = useState(false);
+  const [supplierSettingsLoading, setSupplierSettingsLoading] = useState(false);
+  const [supplierSettingsSaving, setSupplierSettingsSaving] = useState(false);
+  const [supplierSettingsError, setSupplierSettingsError] = useState("");
   const [offeringsLoading, setOfferingsLoading] = useState(false);
   const [offeringsError, setOfferingsError] = useState("");
   const [offeringsSuccess, setOfferingsSuccess] = useState("");
@@ -643,8 +653,14 @@ export function SupplierProvider({ children }: { children: React.ReactNode }) {
     setRfqsLoading(Boolean(companyId));
     setPurchaseOrdersLoading(Boolean(companyId));
     setPurchaseOrdersLoaded(false);
+    setSupplierSettingsLoading(Boolean(companyId));
+    setSupplierSettingsLoaded(!companyId);
+    setSupplierSettingsError("");
 
     if (!companyId) {
+      includeArchivedOfferingsRef.current = false;
+      setIncludeArchivedOfferingsState(false);
+      setSupplierSettingsLoading(false);
       setPurchaseOrdersLoading(false);
       setRfqsLoading(false);
       setOfferingsLoading(false);
@@ -656,6 +672,32 @@ export function SupplierProvider({ children }: { children: React.ReactNode }) {
     );
     const canManageCompany =
       membership?.role === "OWNER" || membership?.role === "ADMIN";
+
+    includeArchivedOfferingsRef.current = false;
+    setIncludeArchivedOfferingsState(false);
+    const settingsRequest = (async () => {
+      try {
+        const settings = await procurementApi.getSupplierSettings();
+        if (isCurrentRequest()) {
+          includeArchivedOfferingsRef.current =
+            settings.show_archived_offerings;
+          setIncludeArchivedOfferingsState(settings.show_archived_offerings);
+          setSupplierSettingsError("");
+          setSupplierSettingsLoaded(true);
+        }
+        return settings;
+      } catch (loadError) {
+        if (isCurrentRequest()) {
+          setSupplierSettingsError(errorMessage(loadError));
+          setSupplierSettingsLoaded(false);
+        }
+        return null;
+      } finally {
+        if (isCurrentRequest()) {
+          setSupplierSettingsLoading(false);
+        }
+      }
+    })();
 
     const requests = [
       (async () => {
@@ -703,6 +745,8 @@ export function SupplierProvider({ children }: { children: React.ReactNode }) {
       })(),
       (async () => {
         try {
+          await settingsRequest;
+          if (!isCurrentRequest()) return;
           const response = await apiClient.get<SupplierMaterialOffering[]>(
             `/api/v1/suppliers/companies/${companyId}/offerings`,
             {
@@ -794,6 +838,12 @@ export function SupplierProvider({ children }: { children: React.ReactNode }) {
       setOfferingsLoading(false);
       setOfferingError("");
       setOfferingSuccess("");
+      includeArchivedOfferingsRef.current = false;
+      setIncludeArchivedOfferingsState(false);
+      setSupplierSettingsLoaded(true);
+      setSupplierSettingsLoading(false);
+      setSupplierSettingsSaving(false);
+      setSupplierSettingsError("");
       return;
     }
     setOfferings([]);
@@ -927,6 +977,56 @@ export function SupplierProvider({ children }: { children: React.ReactNode }) {
       ) {
         setOfferingsLoading(false);
       }
+    }
+  };
+
+  const refreshSupplierSettings = async () => {
+    if (!selectedCompanyId) {
+      setSupplierSettingsError("Select an active supplier company to load settings.");
+      return false;
+    }
+    setSupplierSettingsLoading(true);
+    setSupplierSettingsError("");
+    try {
+      const settings = await procurementApi.getSupplierSettings();
+      const changed =
+        includeArchivedOfferingsRef.current !== settings.show_archived_offerings;
+      includeArchivedOfferingsRef.current = settings.show_archived_offerings;
+      setIncludeArchivedOfferingsState(settings.show_archived_offerings);
+      setSupplierSettingsLoaded(true);
+      if (changed) await refreshOfferings();
+      return true;
+    } catch (loadError) {
+      setSupplierSettingsError(errorMessage(loadError));
+      return false;
+    } finally {
+      setSupplierSettingsLoading(false);
+    }
+  };
+
+  const setIncludeArchivedOfferings = async (show: boolean) => {
+    if (!selectedCompanyId) {
+      setSupplierSettingsError(
+        "An active supplier company membership is required to save this preference.",
+      );
+      return false;
+    }
+    setSupplierSettingsSaving(true);
+    setSupplierSettingsError("");
+    try {
+      const settings = await procurementApi.updateSupplierSettings({
+        show_archived_offerings: show,
+      });
+      includeArchivedOfferingsRef.current = settings.show_archived_offerings;
+      setIncludeArchivedOfferingsState(settings.show_archived_offerings);
+      setSupplierSettingsLoaded(true);
+      await refreshOfferings();
+      return true;
+    } catch (saveError) {
+      setSupplierSettingsError(errorMessage(saveError));
+      return false;
+    } finally {
+      setSupplierSettingsSaving(false);
     }
   };
 
@@ -1469,7 +1569,12 @@ export function SupplierProvider({ children }: { children: React.ReactNode }) {
         offeringsError,
         offeringsSuccess,
         includeArchivedOfferings,
+        supplierSettingsLoaded,
+        supplierSettingsLoading,
+        supplierSettingsSaving,
+        supplierSettingsError,
         setIncludeArchivedOfferings,
+        refreshSupplierSettings,
         setOfferingError,
         setOfferingSuccess,
         refreshOfferings,

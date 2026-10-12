@@ -3,12 +3,7 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import {
-  Building2,
-  Menu,
-  Package,
-  X,
-} from "lucide-react";
+import { Menu, X } from "lucide-react";
 import AgentSidebar from "@/components/agent-dashboard/AgentSidebar";
 import { supplierWorkspaceConfig } from "@/components/agents/procurement/supplierWorkspaceConfig";
 import { useSupplier } from "@/context/SupplierContext";
@@ -28,7 +23,6 @@ export default function SupplierLayoutShell({
     companies,
     selectedCompanyId,
     setSelectedCompanyId,
-    selectedMembership,
     error,
   } = useSupplier();
 
@@ -127,22 +121,6 @@ export default function SupplierLayoutShell({
           {/* Header Bar matching Procurement style */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200/80 pb-3 pt-1 sm:pb-4 sm:pt-0 text-left dark:border-slate-800/80">
             <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2 mb-2">
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-purple-200/90 bg-purple-50 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-purple-700 shadow-2xs dark:border-purple-800/80 dark:bg-purple-950/70 dark:text-purple-300">
-                  <Package size={11} className="text-purple-600 dark:text-purple-400" />
-                  Supplier Operations
-                </span>
-                {selectedMembership && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-300 max-w-full truncate">
-                    <Building2 size={11} className="text-slate-500 shrink-0" />
-                    <span className="truncate max-w-[140px] sm:max-w-[200px]">
-                      {selectedMembership.company_name}
-                    </span>
-                    <span className="text-slate-400">·</span>
-                    <span className="capitalize">{selectedMembership.role.toLowerCase()}</span>
-                  </span>
-                )}
-              </div>
               <h1 className="font-[var(--font-anton)] text-2xl uppercase tracking-wide text-slate-900 dark:text-white sm:text-2xl md:text-3xl leading-tight">
                 {activeTab === "dashboard" && "Supplier Dashboard"}
                 {activeTab === "rfqs" && "RFQs & Quotations"}

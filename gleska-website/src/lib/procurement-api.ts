@@ -89,6 +89,16 @@ export interface ProcurementSettings {
 export type ProcurementSettingsUpdate = Omit<ProcurementSettings, "updated_at">;
 export type ProcurementWorkspaceKind = "BUYER" | "SUPPLIER";
 
+export interface SupplierWorkspaceSettings {
+  show_archived_offerings: boolean;
+  updated_at: string | null;
+}
+
+export type SupplierWorkspaceSettingsUpdate = Pick<
+  SupplierWorkspaceSettings,
+  "show_archived_offerings"
+>;
+
 export interface ProcurementWorkspaceOption {
   id: string;
   kind: ProcurementWorkspaceKind;
@@ -489,6 +499,23 @@ export const procurementApi = {
   async listSupplierRFQs(companyId: string) {
     const response = await apiClient.get<SupplierRFQ[]>(
       `/api/v1/suppliers/companies/${encodeURIComponent(companyId)}/rfqs`,
+      { withCredentials: true },
+    );
+    return response.data;
+  },
+
+  async getSupplierSettings() {
+    const response = await apiClient.get<SupplierWorkspaceSettings>(
+      "/api/v1/suppliers/settings",
+      { withCredentials: true },
+    );
+    return response.data;
+  },
+
+  async updateSupplierSettings(settings: SupplierWorkspaceSettingsUpdate) {
+    const response = await apiClient.put<SupplierWorkspaceSettings>(
+      "/api/v1/suppliers/settings",
+      settings,
       { withCredentials: true },
     );
     return response.data;
