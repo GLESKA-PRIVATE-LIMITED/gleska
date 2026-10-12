@@ -55,7 +55,7 @@ export default function AgentSidebar({
             <Link href="/" className="flex items-center gap-3 group min-w-0">
               <img
                 src="/favicon.ico"
-                alt="GO LESKA"
+                alt="GO LESKA AI"
                 className="h-8 w-8 shrink-0 rounded-lg object-contain"
               />
               {!isCollapsed && (

@@ -4,8 +4,7 @@ import React from "react";
 import Link from "next/link";
 import { Building2, ClipboardList, Search, Truck } from "lucide-react";
 import { useSupplier } from "@/context/SupplierContext";
-
-const historicalOrderStatuses = ["REJECTED", "CANCELLED", "DELIVERED"];
+import { isActiveSupplierPurchaseOrderStatus } from "@/lib/procurement-api";
 
 export default function SupplierDashboardPage() {
   const {
@@ -25,7 +24,7 @@ export default function SupplierDashboardPage() {
     (rfq) => rfq.recipient_status === "INVITED" && rfq.status === "OPEN",
   );
   const activeOrders = purchaseOrders.filter(
-    (order) => !historicalOrderStatuses.includes(order.status),
+    (order) => isActiveSupplierPurchaseOrderStatus(order.status),
   );
 
   if (loading) {
@@ -65,34 +64,20 @@ export default function SupplierDashboardPage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
-      {selectedMembership && (
-        <div className="flex flex-wrap justify-center gap-2 text-[11px] font-semibold">
-          <span className="rounded-full bg-slate-100 px-3 py-1.5 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-            Operations ·{" "}
-            {selectedMembership.operational_status || "Status unavailable"}
-          </span>
-          <span className="rounded-full bg-slate-100 px-3 py-1.5 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-            Verification ·{" "}
-            {selectedMembership.verification_status?.replaceAll("_", " ") ||
-              "Status unavailable"}
-          </span>
-        </div>
-      )}
-
+    <div className="space-y-6">
       {selectedCompanyId &&
         companyDataId === selectedCompanyId &&
         !company &&
         companyError && (
           <div
             role="alert"
-            className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/50 dark:text-red-200"
+            className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-xs sm:text-sm text-red-800 dark:border-red-900 dark:bg-red-950/50 dark:text-red-200 shadow-xs"
           >
             <span>Company details could not be loaded: {companyError}</span>
             <button
               type="button"
               onClick={() => void loadCompany(selectedCompanyId)}
-              className="font-semibold underline"
+              className="font-semibold underline cursor-pointer"
             >
               Retry company details
             </button>
@@ -105,87 +90,151 @@ export default function SupplierDashboardPage() {
         !companyError && (
           <div
             role="status"
-            className="text-center text-sm text-slate-500 dark:text-slate-400"
+            className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-slate-200 bg-white p-12 text-center text-sm font-medium text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400"
           >
-            Loading selected company details…
+            <span className="h-6 w-6 animate-spin rounded-full border-2 border-purple-600 border-t-transparent" />
+            Loading company details…
           </div>
         )}
 
       {selectedCompanyId && companyDataId !== selectedCompanyId && (
         <div
           role="status"
-          className="text-center text-sm text-slate-500 dark:text-slate-400"
+          className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-slate-200 bg-white p-12 text-center text-sm font-medium text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400"
         >
+          <span className="h-6 w-6 animate-spin rounded-full border-2 border-purple-600 border-t-transparent" />
           Switching supplier company…
         </div>
       )}
 
       {selectedCompanyId && companyDataId === selectedCompanyId && (
         <>
-          <nav
-            aria-label="Supplier dashboard actions"
-            className="mx-auto flex w-fit max-w-full flex-wrap items-center justify-center gap-1 rounded-full border border-slate-200/90 bg-white/95 p-1.5 shadow-sm dark:border-slate-800/90 dark:bg-slate-900/95"
-          >
-            <Link
-              href="/supplier/rfqs"
-              className="inline-flex items-center justify-center gap-2 rounded-full bg-purple-600 px-5 py-2.5 text-xs font-bold text-white shadow-xs transition hover:bg-purple-700"
-            >
-              <ClipboardList size={15} />
-              RFQs & Quotations
-            </Link>
-            <Link
-              href="/supplier/orders"
-              className="inline-flex items-center justify-center gap-2 rounded-full px-5 py-2.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
-            >
-              <Truck size={15} />
-              Purchase Orders
-            </Link>
-          </nav>
-
-          <section className="mx-auto max-w-2xl pt-10 sm:pt-20">
-            <Link
-              href="/supplier/rfqs"
-              className="relative flex items-center rounded-full border border-slate-200/90 bg-white/95 py-3.5 pl-11 pr-4 text-xs font-medium text-slate-500 shadow-sm transition hover:border-purple-300 hover:text-purple-700 dark:border-slate-800 dark:bg-slate-900/95 dark:text-slate-400 dark:hover:border-purple-700 dark:hover:text-purple-300 sm:text-sm"
-            >
-              <Search
-                size={17}
-                className="absolute left-4 text-slate-400"
-                aria-hidden="true"
-              />
-              Review incoming RFQ invitations and quotations
-            </Link>
-            <p className="mx-auto mt-3 max-w-xl text-center text-xs text-slate-500 dark:text-slate-400">
-              Respond to buyer invitations and manage purchase orders from
-              their dedicated Supplier pages.
-            </p>
-          </section>
-
+          {/* Summary Cards */}
           <section
             aria-label="Supplier summary"
-            className="mx-auto grid max-w-2xl gap-3 sm:grid-cols-2"
+            className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
           >
             <Link
               href="/supplier/rfqs"
-              className="rounded-2xl border border-slate-200 bg-white/90 p-5 text-center shadow-sm transition hover:border-purple-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-900/90"
+              className="group rounded-2xl border border-slate-200/90 bg-white p-5 shadow-xs transition hover:border-purple-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-900"
             >
-              <p className="text-2xl font-bold text-slate-900 dark:text-white">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-purple-600 dark:text-purple-400">
+                  RFQ Invitations
+                </span>
+                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-50 text-purple-600 dark:bg-purple-950/60 dark:text-purple-300">
+                  <ClipboardList size={16} />
+                </span>
+              </div>
+              <p className="mt-3 text-3xl font-bold text-slate-900 dark:text-white">
                 {pendingInvitations.length}
               </p>
-              <p className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
-                Invitations pending response
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                Pending response
               </p>
             </Link>
+
             <Link
               href="/supplier/orders"
-              className="rounded-2xl border border-slate-200 bg-white/90 p-5 text-center shadow-sm transition hover:border-blue-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-900/90"
+              className="group rounded-2xl border border-slate-200/90 bg-white p-5 shadow-xs transition hover:border-blue-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-900"
             >
-              <p className="text-2xl font-bold text-slate-900 dark:text-white">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400">
+                  Active Orders
+                </span>
+                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 text-blue-600 dark:bg-blue-950/60 dark:text-blue-300">
+                  <Truck size={16} />
+                </span>
+              </div>
+              <p className="mt-3 text-3xl font-bold text-slate-900 dark:text-white">
                 {activeOrders.length}
               </p>
-              <p className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
-                Active purchase orders
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                In fulfilment
               </p>
             </Link>
+
+            <Link
+              href="/supplier/offerings"
+              className="group rounded-2xl border border-slate-200/90 bg-white p-5 shadow-xs transition hover:border-emerald-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-900"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+                  Catalogue
+                </span>
+                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-300">
+                  <Building2 size={16} />
+                </span>
+              </div>
+              <p className="mt-3 text-sm font-bold text-slate-900 dark:text-white">
+                Material Offerings
+              </p>
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                Manage supply items
+              </p>
+            </Link>
+
+            <Link
+              href="/supplier/company"
+              className="group rounded-2xl border border-slate-200/90 bg-white p-5 shadow-xs transition hover:border-indigo-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-900"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
+                  Verification
+                </span>
+                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300">
+                  <Building2 size={16} />
+                </span>
+              </div>
+              <p className="mt-3 text-sm font-bold text-slate-900 dark:text-white truncate">
+                {selectedMembership?.verification_status?.replaceAll("_", " ") || "Company Profile"}
+              </p>
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                Evidence & team
+              </p>
+            </Link>
+          </section>
+
+          {/* Quick Actions & Navigation Cards */}
+          <section className="space-y-3">
+            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+              Operations & Quick Access
+            </h2>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Link
+                href="/supplier/rfqs"
+                className="flex items-start gap-4 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs transition hover:border-purple-300 hover:shadow-sm dark:border-slate-800 dark:bg-slate-900"
+              >
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-purple-50 text-purple-600 dark:bg-purple-950/60 dark:text-purple-300">
+                  <ClipboardList size={20} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-slate-900 dark:text-white">
+                    RFQs & Quotations
+                  </h3>
+                  <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                    Review invitations from buyers, acknowledge deadlines, and submit competitive quotations.
+                  </p>
+                </div>
+              </Link>
+
+              <Link
+                href="/supplier/orders"
+                className="flex items-start gap-4 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs transition hover:border-blue-300 hover:shadow-sm dark:border-slate-800 dark:bg-slate-900"
+              >
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950/60 dark:text-blue-300">
+                  <Truck size={20} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-slate-900 dark:text-white">
+                    Purchase Orders & Fulfilment
+                  </h3>
+                  <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                    Accept or reject issued purchase orders and record progressive dispatch & delivery milestones.
+                  </p>
+                </div>
+              </Link>
+            </div>
           </section>
         </>
       )}

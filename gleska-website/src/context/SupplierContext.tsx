@@ -131,6 +131,20 @@ export interface CompanyDraft {
   registered_address: string;
 }
 
+export type SupplierCompanyProfileDraft = Pick<
+  CompanyDraft,
+  "name" | "description" | "website"
+>;
+
+export type SupplierCompanyPrivateProfileDraft = Pick<
+  CompanyDraft,
+  | "registered_name"
+  | "registration_number"
+  | "contact_email"
+  | "contact_phone"
+  | "registered_address"
+>;
+
 export type FulfillmentDraft = Omit<
   PurchaseOrderFulfillmentUpdate,
   "idempotency_key"
@@ -246,6 +260,16 @@ export function errorMessage(error: unknown): string {
     const messages: Record<string, string> = {
       SUPPLIER_COMPANY_MEMBERSHIP_NOT_FOUND:
         "You do not have active membership in that supplier company.",
+      SUPPLIER_COMPANY_MANAGEMENT_FORBIDDEN:
+        "Only active company owners and admins can edit company details.",
+      SUPPLIER_COMPANY_UPDATE_FAILED:
+        "Company details could not be saved. Please retry.",
+      SUPPLIER_COMPANY_PRIVATE_PROFILE_UPDATE_FAILED:
+        "Private registration and contact details could not be saved. Please retry.",
+      SUPPLIER_COMPANY_PRIVATE_PROFILE_NOT_FOUND:
+        "The private company profile is unavailable. Contact GLESKA support before retrying.",
+      SUPPLIER_COMPANY_PRIVATE_PROFILE_UPDATE_EMPTY:
+        "Enter at least one private profile field before saving.",
       SUPPLIER_COMPANY_NOT_OPERATIONAL:
         "This supplier company is suspended or archived. Contact an authorized GLESKA administrator.",
       VERIFIED_EMAIL_REQUIRED_TO_ACCEPT_SUPPLIER_INVITATION:
@@ -260,6 +284,12 @@ export function errorMessage(error: unknown): string {
         "That account already has a company invitation or membership.",
       SUPPLIER_DOCUMENT_UPLOAD_NOT_ALLOWED:
         "Documents cannot be changed while this verification is under review.",
+      SUPPLIER_DOCUMENT_UPLOAD_FAILED:
+        "The verification document could not be uploaded. Check the file and connection, then retry.",
+      SUPPLIER_DOCUMENT_LIST_FAILED:
+        "Private verification documents could not be loaded. Retry to view the current records.",
+      SUPPLIER_DOCUMENT_URL_FAILED:
+        "A secure link for this private document could not be created. Please retry.",
       SUPPLIER_VERIFICATION_DOCUMENT_REQUIRED:
         "Upload at least one verification document before submitting.",
       SUPPLIER_VERIFICATION_SUBMISSION_FAILED:
@@ -433,12 +463,18 @@ interface SupplierContextValue {
 
   // Company management
   members: SupplierMember[];
+  membersLoaded: boolean;
   membersError: string;
   verificationDocuments: VerificationDocument[];
+  verificationDocumentsLoaded: boolean;
   verificationError: string;
   verificationBusy: boolean;
   companyError: string;
   createCompany: (draft: CompanyDraft) => Promise<boolean>;
+  updateCompanyProfile: (draft: SupplierCompanyProfileDraft) => Promise<boolean>;
+  updateCompanyPrivateProfile: (
+    draft: SupplierCompanyPrivateProfileDraft,
+  ) => Promise<boolean>;
   inviteMember: (email: string, role: "ADMIN" | "MEMBER") => Promise<boolean>;
   changeMemberRole: (
     member: SupplierMember,
@@ -474,9 +510,12 @@ export function SupplierProvider({ children }: { children: React.ReactNode }) {
   const [company, setCompany] = useState<SupplierCompany | null>(null);
   const [companyDataId, setCompanyDataId] = useState("");
   const [members, setMembers] = useState<SupplierMember[]>([]);
+  const [membersLoaded, setMembersLoaded] = useState(false);
   const [verificationDocuments, setVerificationDocuments] = useState<
     VerificationDocument[]
   >([]);
+  const [verificationDocumentsLoaded, setVerificationDocumentsLoaded] =
+    useState(false);
   const [offerings, setOfferings] = useState<SupplierMaterialOffering[]>([]);
   const [offeringsLoaded, setOfferingsLoaded] = useState(false);
   const [rfqs, setRfqs] = useState<SupplierRFQ[]>([]);
@@ -586,7 +625,9 @@ export function SupplierProvider({ children }: { children: React.ReactNode }) {
     setCompany(null);
     setCompanyDataId(companyId);
     setMembers([]);
+    setMembersLoaded(false);
     setVerificationDocuments([]);
+    setVerificationDocumentsLoaded(false);
     setOfferings([]);
     setOfferingsLoaded(false);
     setRfqs([]);
@@ -632,9 +673,15 @@ export function SupplierProvider({ children }: { children: React.ReactNode }) {
           const response = await apiClient.get<SupplierMember[]>(
             `/api/v1/suppliers/companies/${companyId}/members`,
           );
-          if (isCurrentRequest()) setMembers(response.data);
+          if (isCurrentRequest()) {
+            setMembers(response.data);
+            setMembersLoaded(true);
+          }
         } catch (loadError) {
-          if (isCurrentRequest()) setMembersError(errorMessage(loadError));
+          if (isCurrentRequest()) {
+            setMembersError(errorMessage(loadError));
+            setMembersLoaded(true);
+          }
         }
       })(),
       (async () => {
@@ -643,10 +690,15 @@ export function SupplierProvider({ children }: { children: React.ReactNode }) {
           const response = await apiClient.get<VerificationDocument[]>(
             `/api/v1/suppliers/companies/${companyId}/verification/documents`,
           );
-          if (isCurrentRequest()) setVerificationDocuments(response.data);
+          if (isCurrentRequest()) {
+            setVerificationDocuments(response.data);
+            setVerificationDocumentsLoaded(true);
+          }
         } catch (loadError) {
-          if (isCurrentRequest())
+          if (isCurrentRequest()) {
             setVerificationError(errorMessage(loadError));
+            setVerificationDocumentsLoaded(true);
+          }
         }
       })(),
       (async () => {
@@ -725,6 +777,9 @@ export function SupplierProvider({ children }: { children: React.ReactNode }) {
     if (!user || !selectedCompanyId) {
       setCompany(null);
       setMembers([]);
+      setMembersLoaded(false);
+      setVerificationDocuments([]);
+      setVerificationDocumentsLoaded(false);
       setOfferings([]);
       setOfferingsLoaded(false);
       setRfqs([]);
@@ -1165,6 +1220,59 @@ export function SupplierProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const updateCompanyProfile = async (
+    draft: SupplierCompanyProfileDraft,
+  ): Promise<boolean> => {
+    if (!selectedCompanyId) return false;
+    setError("");
+    try {
+      const response = await apiClient.patch<SupplierCompany>(
+        `/api/v1/suppliers/companies/${selectedCompanyId}`,
+        {
+          name: draft.name.trim(),
+          description: draft.description.trim() || null,
+          website: draft.website.trim() || null,
+        },
+      );
+      setCompanies((current) =>
+        current.map((membership) =>
+          membership.company_id === selectedCompanyId
+            ? { ...membership, company_name: response.data.name }
+            : membership,
+        ),
+      );
+      await loadCompany(selectedCompanyId);
+      return true;
+    } catch (saveError) {
+      setError(errorMessage(saveError));
+      return false;
+    }
+  };
+
+  const updateCompanyPrivateProfile = async (
+    draft: SupplierCompanyPrivateProfileDraft,
+  ): Promise<boolean> => {
+    if (!selectedCompanyId) return false;
+    setError("");
+    try {
+      await apiClient.patch(
+        `/api/v1/suppliers/companies/${selectedCompanyId}/private-profile`,
+        {
+          registered_name: draft.registered_name.trim() || null,
+          registration_number: draft.registration_number.trim() || null,
+          contact_email: draft.contact_email.trim() || null,
+          contact_phone: draft.contact_phone.trim() || null,
+          registered_address: draft.registered_address.trim() || null,
+        },
+      );
+      await loadCompany(selectedCompanyId);
+      return true;
+    } catch (saveError) {
+      setError(errorMessage(saveError));
+      return false;
+    }
+  };
+
   const inviteMember = async (
     email: string,
     role: "ADMIN" | "MEMBER",
@@ -1368,12 +1476,16 @@ export function SupplierProvider({ children }: { children: React.ReactNode }) {
         saveOffering,
         archiveOffering,
         members,
+        membersLoaded,
         membersError,
         verificationDocuments,
+        verificationDocumentsLoaded,
         verificationError,
         verificationBusy,
         companyError,
         createCompany,
+        updateCompanyProfile,
+        updateCompanyPrivateProfile,
         inviteMember,
         changeMemberRole,
         revokeMember,

@@ -158,6 +158,32 @@ export type PurchaseOrderStatus =
   | "CANCELLED"
   | PurchaseOrderFulfillmentStatus;
 
+const activeSupplierPurchaseOrderStatuses = new Set<PurchaseOrderStatus>([
+  "ISSUED",
+  "ACCEPTED",
+  "PREPARING",
+  "DISPATCHED",
+  "PARTIALLY_DELIVERED",
+]);
+
+const historicalSupplierPurchaseOrderStatuses = new Set<PurchaseOrderStatus>([
+  "REJECTED",
+  "CANCELLED",
+  "DELIVERED",
+]);
+
+export function isActiveSupplierPurchaseOrderStatus(
+  status: PurchaseOrderStatus,
+): boolean {
+  return activeSupplierPurchaseOrderStatuses.has(status);
+}
+
+export function isHistoricalSupplierPurchaseOrderStatus(
+  status: PurchaseOrderStatus,
+): boolean {
+  return historicalSupplierPurchaseOrderStatuses.has(status);
+}
+
 export interface PurchaseOrderFulfillmentEvent {
   id: string;
   status: PurchaseOrderFulfillmentStatus;

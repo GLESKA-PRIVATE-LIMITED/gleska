@@ -14,7 +14,9 @@ from app.schemas.auth import UserResponse
 from app.schemas.supplier import (
     SupplierCompanyCreateRequest,
     SupplierCompanyMembershipResponse,
+    SupplierCompanyPrivateProfileUpdateRequest,
     SupplierCompanyResponse,
+    SupplierCompanyUpdateRequest,
     SupplierMemberInviteRequest,
     SupplierMemberResponse,
     SupplierMemberRoleUpdateRequest,
@@ -179,6 +181,79 @@ class SupplierService:
             return SupplierService._company_response(company, membership["role"], private_profile)
         except Exception as exc:
             SupplierService._raise_storage_error("company_read", exc)
+
+    @staticmethod
+    def update_company(
+        company_id: UUID,
+        request: SupplierCompanyUpdateRequest,
+        membership: dict[str, Any],
+    ) -> SupplierCompanyResponse:
+        if membership["role"] not in {"OWNER", "ADMIN"}:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="SUPPLIER_COMPANY_MANAGEMENT_FORBIDDEN",
+            )
+        try:
+            response = (
+                supabase.table("supplier_companies")
+                .update({
+                    "name": request.name,
+                    "description": request.description,
+                    "website": str(request.website) if request.website else None,
+                })
+                .eq("id", str(company_id))
+                .select("*")
+                .execute()
+            )
+            company = SupplierService._row(response)
+            if not company:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="SUPPLIER_COMPANY_NOT_FOUND",
+                )
+            return SupplierService._company_response(company, membership["role"])
+        except HTTPException:
+            raise
+        except Exception as exc:
+            SupplierService._raise_storage_error("company_update", exc)
+
+    @staticmethod
+    def update_company_private_profile(
+        company_id: UUID,
+        request: SupplierCompanyPrivateProfileUpdateRequest,
+        membership: dict[str, Any],
+    ) -> None:
+        if membership["role"] not in {"OWNER", "ADMIN"}:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="SUPPLIER_COMPANY_MANAGEMENT_FORBIDDEN",
+            )
+        fields = request.supplied_fields()
+        if not fields:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="SUPPLIER_COMPANY_PRIVATE_PROFILE_UPDATE_EMPTY",
+            )
+        try:
+            response = (
+                supabase.table("supplier_company_private_profiles")
+                .update(fields)
+                .eq("company_id", str(company_id))
+                .select(
+                    "company_id, registered_name, registration_number, "
+                    "contact_email, contact_phone, registered_address"
+                )
+                .execute()
+            )
+            if not SupplierService._rows(response):
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="SUPPLIER_COMPANY_PRIVATE_PROFILE_NOT_FOUND",
+                )
+        except HTTPException:
+            raise
+        except Exception as exc:
+            SupplierService._raise_storage_error("company_private_profile_update", exc)
 
     @staticmethod
     def list_invitations(user: UserResponse) -> list[SupplierCompanyMembershipResponse]:

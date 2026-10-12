@@ -11,7 +11,9 @@ from app.schemas.auth import UserResponse
 from app.schemas.supplier import (
     SupplierCompanyCreateRequest,
     SupplierCompanyMembershipResponse,
+    SupplierCompanyPrivateProfileUpdateRequest,
     SupplierCompanyResponse,
+    SupplierCompanyUpdateRequest,
     SupplierMemberInviteRequest,
     SupplierMemberInviteResponse,
     SupplierMemberResponse,
@@ -111,6 +113,32 @@ async def get_supplier_company(
     membership: dict = Depends(require_supplier_company_membership),
 ):
     return SupplierService.get_company(company_id, membership)
+
+
+@router.patch("/companies/{company_id}", response_model=SupplierCompanyResponse)
+async def update_supplier_company(
+    company_id: UUID,
+    request: SupplierCompanyUpdateRequest,
+    membership: dict = Depends(require_supplier_company_membership),
+):
+    return SupplierService.update_company(company_id, request, membership)
+
+
+@router.patch(
+    "/companies/{company_id}/private-profile",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def update_supplier_company_private_profile(
+    company_id: UUID,
+    request: SupplierCompanyPrivateProfileUpdateRequest,
+    membership: dict = Depends(require_supplier_company_membership),
+):
+    SupplierService.update_company_private_profile(
+        company_id,
+        request,
+        membership,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get(

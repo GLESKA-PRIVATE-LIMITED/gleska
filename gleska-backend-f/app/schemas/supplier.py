@@ -47,7 +47,7 @@ class SupplierCompanyCreateRequest(BaseModel):
     website: Optional[HttpUrl] = None
     registered_name: Optional[str] = Field(default=None, max_length=200)
     registration_number: Optional[str] = Field(default=None, max_length=100)
-    contact_email: Optional[EmailStr] = None
+    contact_email: Optional[EmailStr] = Field(default=None, max_length=254)
     contact_phone: Optional[str] = Field(default=None, max_length=32)
     registered_address: Optional[str] = Field(default=None, max_length=1000)
 
@@ -60,6 +60,66 @@ class SupplierCompanyCreateRequest(BaseModel):
         if len(normalized) < 2:
             raise ValueError("Company name must contain at least two non-space characters.")
         return normalized
+
+
+class SupplierCompanyUpdateRequest(BaseModel):
+    name: str = Field(..., min_length=2, max_length=160)
+    description: Optional[str] = Field(default=None, max_length=2000)
+    website: Optional[HttpUrl] = None
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def normalize_company_name(cls, value: str) -> str:
+        if not isinstance(value, str):
+            raise ValueError("Company name must be text.")
+        normalized = value.strip()
+        if len(normalized) < 2:
+            raise ValueError("Company name must contain at least two non-space characters.")
+        return normalized
+
+    @field_validator("description", mode="before")
+    @classmethod
+    def normalize_company_description(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise ValueError("Company description must be text.")
+        return value.strip() or None
+
+
+class SupplierCompanyPrivateProfileUpdateRequest(BaseModel):
+    registered_name: Optional[str] = Field(default=None, max_length=200)
+    registration_number: Optional[str] = Field(default=None, max_length=100)
+    contact_email: Optional[EmailStr] = Field(default=None, max_length=254)
+    contact_phone: Optional[str] = Field(default=None, max_length=32)
+    registered_address: Optional[str] = Field(default=None, max_length=1000)
+
+    @field_validator(
+        "registered_name",
+        "registration_number",
+        "contact_phone",
+        "registered_address",
+        mode="before",
+    )
+    @classmethod
+    def normalize_private_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise ValueError("Company profile details must be text.")
+        return value.strip() or None
+
+    @field_validator("contact_email", mode="before")
+    @classmethod
+    def normalize_contact_email(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise ValueError("Contact email must be text.")
+        return value.strip().lower() or None
+
+    def supplied_fields(self) -> dict[str, object]:
+        return self.model_dump(mode="json", exclude_unset=True)
 
 
 class SupplierCompanyResponse(BaseModel):

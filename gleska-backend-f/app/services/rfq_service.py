@@ -194,7 +194,6 @@ class RFQService:
             .select(cls._purchase_order_columns())
             .eq("supplier_company_id", str(company_id))
             .order("created_at", desc=True)
-            .limit(RFQ_LIST_LIMIT)
             .execute()
         )
         return cls._purchase_order_responses(rows)
