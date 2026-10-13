@@ -150,7 +150,7 @@ def _raise_procurement_error(exc: Exception) -> None:
             ) from exc
         http_status = (
             status.HTTP_502_BAD_GATEWAY
-            if "INVALID" in str(exc)
+            if "INVALID" in str(exc) or "RESPONSE_TOO_LONG" in str(exc)
             else status.HTTP_503_SERVICE_UNAVAILABLE
         )
         raise HTTPException(status_code=http_status, detail=str(exc)) from exc
@@ -599,7 +599,7 @@ async def list_procurement_requests(
     user: UserResponse = Depends(require_employer),
 ):
     try:
-        legacy_response = page is None and page_size is None
+        legacy_response = page is None and page_size is None and cursor is None
         result = ProcurementService.list_material_requests(
             user,
             page or 1,

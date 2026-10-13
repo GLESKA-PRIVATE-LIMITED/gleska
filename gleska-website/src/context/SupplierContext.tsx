@@ -1180,6 +1180,11 @@ export function SupplierProvider({ children }: { children: React.ReactNode }) {
     if (!selectedCompanyId) return false;
     setRfqsError("");
     setRfqsSuccess("");
+    const currentRfq = rfqs.find((rfq) => rfq.id === rfqId);
+    if (!currentRfq) {
+      setRfqsError("This RFQ is no longer loaded. Refresh the RFQ list before submitting.");
+      return false;
+    }
     try {
       const saved = await procurementApi.submitSupplierQuotation(
         selectedCompanyId,

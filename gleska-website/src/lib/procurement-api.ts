@@ -36,6 +36,7 @@ export interface ProcurementConversation {
   history_cursor: string | null;
   draft: MaterialRequestDraft;
   confirmed_fields: string[];
+  cleared_fields: string[];
   revision: number;
   created_at: string;
   updated_at: string;
@@ -336,6 +337,18 @@ export interface ProcurementRFQUpdate {
 }
 
 const basePath = "/api/v1/procurement";
+let conversationResolutionPromise: Promise<ProcurementConversation> | null = null;
+let conversationCreatePromise: Promise<ProcurementConversation> | null = null;
+let conversationCreateWaitsForResolution = false;
+
+async function requestNewConversation(): Promise<ProcurementConversation> {
+  const response = await apiClient.post<ProcurementConversation>(
+    `${basePath}/conversations`,
+    {},
+    { withCredentials: true },
+  );
+  return response.data;
+}
 
 export const procurementApi = {
   async getWorkspaces() {
@@ -381,12 +394,54 @@ export const procurementApi = {
   },
 
   async createConversation() {
-    const response = await apiClient.post<ProcurementConversation>(
-      `${basePath}/conversations`,
-      {},
-      { withCredentials: true },
-    );
-    return response.data;
+    if (conversationCreatePromise) return conversationCreatePromise;
+    const pendingResolution = conversationResolutionPromise;
+    conversationCreateWaitsForResolution = Boolean(pendingResolution);
+    const request = (async () => {
+      if (pendingResolution) await pendingResolution;
+      return requestNewConversation();
+    })();
+    conversationCreatePromise = request;
+    try {
+      return await request;
+    } finally {
+      if (conversationCreatePromise === request) {
+        conversationCreatePromise = null;
+        conversationCreateWaitsForResolution = false;
+      }
+    }
+  },
+
+  async resumeOrCreateConversation() {
+    if (conversationResolutionPromise) return conversationResolutionPromise;
+    const pendingCreate = conversationCreatePromise && !conversationCreateWaitsForResolution
+      ? conversationCreatePromise
+      : null;
+    const request = (async () => {
+      if (pendingCreate) return pendingCreate;
+
+      let cursor: string | null = null;
+      while (true) {
+        const page = await procurementApi.listConversations(cursor);
+        const activeConversation = page.items.find((item) => item.status === "ACTIVE");
+        if (activeConversation) {
+          return procurementApi.getConversation(activeConversation.conversation_id);
+        }
+        if (!page.has_more) return requestNewConversation();
+        if (!page.next_cursor) {
+          throw new Error("Conversation list reported more results without a cursor.");
+        }
+        cursor = page.next_cursor;
+      }
+    })();
+    conversationResolutionPromise = request;
+    try {
+      return await request;
+    } finally {
+      if (conversationResolutionPromise === request) {
+        conversationResolutionPromise = null;
+      }
+    }
   },
 
   async getConversation(id: string) {
@@ -419,12 +474,14 @@ export const procurementApi = {
     draft: MaterialRequestDraft,
     confirmedFields: string[],
     expectedRevision: number,
+    clearedFields: string[] = [],
   ) {
     const response = await apiClient.patch<ProcurementConversation>(
       `${basePath}/conversations/${encodeURIComponent(id)}/draft`,
       {
         draft,
         confirmed_fields: confirmedFields,
+        cleared_fields: clearedFields,
         expected_revision: expectedRevision,
       },
       { withCredentials: true },
@@ -488,10 +545,10 @@ export const procurementApi = {
     );
   },
 
-  async listRFQs(page = 1) {
+  async listRFQs(page = 1, pageSize = PROCUREMENT_PAGE_SIZE) {
     const response = await apiClient.get<ProcurementPage<ProcurementRFQ>>(
       `${basePath}/rfqs`,
-      { params: { page, page_size: PROCUREMENT_PAGE_SIZE }, withCredentials: true },
+      { params: { page, page_size: pageSize }, withCredentials: true },
     );
     return response.data;
   },
@@ -531,10 +588,10 @@ export const procurementApi = {
     return response.data;
   },
 
-  async listPurchaseOrders(page = 1) {
+  async listPurchaseOrders(page = 1, pageSize = PROCUREMENT_PAGE_SIZE) {
     const response = await apiClient.get<ProcurementPage<ProcurementPurchaseOrder>>(
       `${basePath}/purchase-orders`,
-      { params: { page, page_size: PROCUREMENT_PAGE_SIZE }, withCredentials: true },
+      { params: { page, page_size: pageSize }, withCredentials: true },
     );
     return response.data;
   },

@@ -32,6 +32,8 @@ import {
   MaterialRequestDraft,
   ProcurementConversation,
   ProcurementMaterialRequest,
+  ProcurementPurchaseOrder,
+  ProcurementRFQ,
   ProcurementSettings,
   ProcurementSettingsUpdate,
   ProcurementSupplierDiscovery,
@@ -74,7 +76,284 @@ const draftFieldMaxLengths: Partial<Record<DraftField, number>> = {
   unit: 48,
   delivery_location: 500,
   notes: 4000,
-};
+}
+
+type MaterialStatus =
+  | "Requirement Saved / Not Started"
+  | "RFQ In Progress"
+  | "Awaiting Quotations"
+  | "Quotation Review"
+  | "Order Placed"
+  | "Partially Delivered"
+  | "In Transit"
+  | "Completed"
+  | "On Hold / Cancelled"
+  | "Status unavailable";
+
+interface MaterialStatusSummary {
+  status: MaterialStatus;
+  progress: string;
+  nextAction: string;
+  rfqs: ProcurementRFQ[];
+  purchaseOrders: ProcurementPurchaseOrder[];
+  quotationCount: number;
+}
+
+function normalizedUnit(value: string | null | undefined): string {
+  return value?.trim().toLocaleLowerCase() ?? "";
+}
+
+function addUnsignedIntegers(left: string, right: string): string {
+  let carry = 0;
+  let result = "";
+  const length = Math.max(left.length, right.length);
+  for (let index = 0; index < length; index += 1) {
+    const leftDigit = Number(left[left.length - index - 1] || "0");
+    const rightDigit = Number(right[right.length - index - 1] || "0");
+    const sum = leftDigit + rightDigit + carry;
+    result = String(sum % 10) + result;
+    carry = Math.floor(sum / 10);
+  }
+  return carry ? `${carry}${result}` : result.replace(/^0+(?=\d)/, "");
+}
+
+function compareUnsignedIntegers(left: string, right: string): number {
+  const normalizedLeft = left.replace(/^0+(?=\d)/, "");
+  const normalizedRight = right.replace(/^0+(?=\d)/, "");
+  if (normalizedLeft.length !== normalizedRight.length) {
+    return normalizedLeft.length > normalizedRight.length ? 1 : -1;
+  }
+  return normalizedLeft === normalizedRight ? 0 : normalizedLeft > normalizedRight ? 1 : -1;
+}
+
+function summarizeQuantities(
+  required: string | number | null,
+  delivered: Array<string | number>,
+): { text: string; complete: boolean; valid: boolean; deliveredPositive: boolean } {
+  const parts = [required, ...delivered].map((value) => {
+    const match = String(value).trim().match(/^(\d+)(?:\.(\d+))?$/);
+    return match
+      ? { whole: match[1], fraction: match[2] || "" }
+      : null;
+  });
+  if (parts.some((part) => part === null)) {
+    return { text: "Recorded quantity unavailable", complete: false, valid: false, deliveredPositive: false };
+  }
+  const validParts = parts.filter(
+    (part): part is { whole: string; fraction: string } => part !== null,
+  );
+  const scale = Math.max(...validParts.map((part) => part.fraction.length));
+  const scaled = validParts.map((part) =>
+    `${part.whole}${part.fraction.padEnd(scale, "0")}`.replace(/^0+(?=\d)/, ""),
+  );
+  const deliveredTotal = scaled.slice(1).reduce(addUnsignedIntegers, "0");
+  const format = (value: string) => {
+    if (scale === 0) return value;
+    const raw = value.padStart(scale + 1, "0");
+    const fraction = raw.slice(-scale).replace(/0+$/, "");
+    return fraction ? `${raw.slice(0, -scale)}.${fraction}` : raw.slice(0, -scale);
+  };
+  return {
+    text: `${format(deliveredTotal)} delivered`,
+    complete: compareUnsignedIntegers(deliveredTotal, scaled[0]) >= 0,
+    valid: true,
+    deliveredPositive: compareUnsignedIntegers(deliveredTotal, "0") > 0,
+  };
+}
+
+function summarizeMaterialStatus(
+  request: ProcurementMaterialRequest,
+  allRFQs: ProcurementRFQ[],
+  allOrders: ProcurementPurchaseOrder[],
+): MaterialStatusSummary {
+  const rfqs = allRFQs.filter((rfq) => rfq.material_request_id === request.id);
+  const rfqIds = new Set(rfqs.map((rfq) => rfq.id));
+  const purchaseOrders = allOrders.filter((order) => rfqIds.has(order.rfq_id));
+  const quotations = rfqs.flatMap((rfq) =>
+    rfq.recipients.flatMap((recipient) => recipient.quotation ? [recipient.quotation] : []),
+  );
+  const activeOrders = purchaseOrders.filter(
+    (order) => order.status !== "CANCELLED" && order.status !== "REJECTED",
+  );
+  const compatibleOrders = activeOrders.filter(
+    (order) => normalizedUnit(order.unit) === normalizedUnit(request.unit)
+      && normalizedUnit(order.fulfillment_unit) === normalizedUnit(order.unit),
+  );
+  const deliveryRecordedOrders = compatibleOrders.filter((order) =>
+    order.fulfillment_events.some((event) =>
+      ["PARTIALLY_DELIVERED", "DELIVERED"].includes(event.status)
+        && Number(event.delivered_quantity) > 0
+        && normalizedUnit(event.unit) === normalizedUnit(request.unit),
+    ),
+  );
+  const quantitySummary = summarizeQuantities(
+    request.quantity,
+    deliveryRecordedOrders.map((order) => order.delivered_quantity),
+  );
+  const dispatchedOrders = compatibleOrders.filter((order) =>
+    order.fulfillment_events.some((event) =>
+      ["DISPATCHED", "PARTIALLY_DELIVERED", "DELIVERED"].includes(event.status)
+        && Number(event.dispatched_quantity) > 0
+        && normalizedUnit(event.unit) === normalizedUnit(request.unit),
+    ),
+  );
+  const dispatchedSummary = summarizeQuantities(
+    request.quantity,
+    dispatchedOrders.map((order) => order.dispatched_quantity),
+  );
+  const outstandingQuotations = rfqs
+    .filter((rfq) => rfq.status === "OPEN")
+    .flatMap((rfq) => rfq.recipients)
+    .filter((recipient) =>
+      !recipient.quotation && (recipient.status === "INVITED" || recipient.status === "ACKNOWLEDGED"),
+    ).length;
+  const hasOpenRFQ = rfqs.some((rfq) => rfq.status === "OPEN");
+  const incompatibleOrder = activeOrders.some(
+    (order) => normalizedUnit(order.unit) !== normalizedUnit(request.unit)
+      || normalizedUnit(order.fulfillment_unit) !== normalizedUnit(order.unit),
+  );
+  const fulfillmentDataMissing = activeOrders.some(
+    (order) => ["PREPARING", "DISPATCHED", "PARTIALLY_DELIVERED", "DELIVERED"].includes(order.status)
+      && order.fulfillment_events.length === 0,
+  );
+  const cancelledOrderCount = purchaseOrders.filter((order) => order.status === "CANCELLED").length;
+  const details = `${rfqs.length} linked RFQ${rfqs.length === 1 ? "" : "s"} · ${quotations.length} quotation${quotations.length === 1 ? "" : "s"} · ${purchaseOrders.length} purchase order${purchaseOrders.length === 1 ? "" : "s"}${cancelledOrderCount ? ` · ${cancelledOrderCount} cancelled` : ""}`;
+
+  if (deliveryRecordedOrders.length > 0 && quantitySummary.valid && quantitySummary.complete) {
+    return {
+      status: "Completed",
+      progress: `${quantitySummary.text} of ${request.quantity} ${request.unit}; based on recorded fulfillment for ${deliveryRecordedOrders.length} order${deliveryRecordedOrders.length === 1 ? "" : "s"}. ${details}`,
+      nextAction: "Required quantity is recorded as received. Review the order delivery history if needed.",
+      rfqs,
+      purchaseOrders,
+      quotationCount: quotations.length,
+    };
+  }
+  if (deliveryRecordedOrders.length > 0 && quantitySummary.valid && quantitySummary.deliveredPositive) {
+    return {
+      status: "Partially Delivered",
+      progress: `${quantitySummary.text} of ${request.quantity} ${request.unit}. ${details}`,
+      nextAction: "Monitor delivery updates until the full requested quantity is recorded.",
+      rfqs,
+      purchaseOrders,
+      quotationCount: quotations.length,
+    };
+  }
+  if (dispatchedOrders.length > 0 && dispatchedSummary.valid) {
+    return {
+      status: "In Transit",
+      progress: `${dispatchedSummary.text} of ${request.quantity} ${request.unit} dispatched; ${quantitySummary.text}. ${details}`,
+      nextAction: "Track the order and review delivery history for receipt updates.",
+      rfqs,
+      purchaseOrders,
+      quotationCount: quotations.length,
+    };
+  }
+  if (incompatibleOrder && compatibleOrders.length === 0) {
+    return {
+      status: "Status unavailable",
+      progress: `Linked purchase-order unit does not match the saved request unit. ${details}`,
+      nextAction: "Review the linked purchase order before interpreting its fulfillment progress.",
+      rfqs,
+      purchaseOrders,
+      quotationCount: quotations.length,
+    };
+  }
+  if (fulfillmentDataMissing) {
+    return {
+      status: "Status unavailable",
+      progress: `A purchase order indicates fulfillment activity, but its event history is unavailable. ${details}`,
+      nextAction: "Review the purchase-order delivery history before treating any quantity as received.",
+      rfqs,
+      purchaseOrders,
+      quotationCount: quotations.length,
+    };
+  }
+  if (activeOrders.length > 0) {
+    return {
+      status: "Order Placed",
+      progress: `${activeOrders.length} active purchase order${activeOrders.length === 1 ? "" : "s"}; no dispatch or delivery has been recorded.${incompatibleOrder ? " Some linked orders use a different unit and are excluded from fulfillment totals." : ""} ${details}`,
+      nextAction: "Track supplier acceptance, dispatch, and delivery updates.",
+      rfqs,
+      purchaseOrders,
+      quotationCount: quotations.length,
+    };
+  }
+  if (cancelledOrderCount > 0 && !hasOpenRFQ) {
+    return {
+      status: "On Hold / Cancelled",
+      progress: `${cancelledOrderCount} linked purchase order${cancelledOrderCount === 1 ? " is" : "s are"} explicitly cancelled; no active order or open RFQ is recorded. ${details}`,
+      nextAction: "Review the cancelled order and create a new RFQ if procurement should continue.",
+      rfqs,
+      purchaseOrders,
+      quotationCount: quotations.length,
+    };
+  }
+  if (quotations.length > 0) {
+    return {
+      status: "Quotation Review",
+      progress: `${quotations.length} submitted quotation${quotations.length === 1 ? "" : "s"} across ${rfqs.length} linked RFQ${rfqs.length === 1 ? "" : "s"}. ${details}`,
+      nextAction: "Compare submitted quotations and select one if you are ready to place an order.",
+      rfqs,
+      purchaseOrders,
+      quotationCount: quotations.length,
+    };
+  }
+  if (outstandingQuotations > 0) {
+    return {
+      status: "Awaiting Quotations",
+      progress: `${outstandingQuotations} invited supplier response${outstandingQuotations === 1 ? "" : "s"} outstanding. ${details}`,
+      nextAction: "Wait for supplier responses or review the open RFQ.",
+      rfqs,
+      purchaseOrders,
+      quotationCount: quotations.length,
+    };
+  }
+  if (hasOpenRFQ) {
+    return {
+      status: "RFQ In Progress",
+      progress: `An RFQ is open, but no quotation or purchase order is recorded yet. ${details}`,
+      nextAction: "Review the open RFQ and determine whether further supplier outreach is needed.",
+      rfqs,
+      purchaseOrders,
+      quotationCount: quotations.length,
+    };
+  }
+  if (rfqs.length > 0) {
+    return {
+      status: "Status unavailable",
+      progress: `Linked RFQs are closed and no submitted quotation or active purchase order is recorded. ${details}`,
+      nextAction: "Review the RFQ history; create a new RFQ if procurement should continue.",
+      rfqs,
+      purchaseOrders,
+      quotationCount: quotations.length,
+    };
+  }
+  return {
+    status: "Requirement Saved / Not Started",
+    progress: "No linked RFQ, quotation, purchase order, or fulfillment activity is recorded.",
+    nextAction: "Create an RFQ to begin supplier procurement.",
+    rfqs,
+    purchaseOrders,
+    quotationCount: quotations.length,
+  };
+}
+
+function materialStatusBadgeClass(status: MaterialStatus): string {
+  if (status === "Completed") {
+    return "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300";
+  }
+  if (status === "Partially Delivered" || status === "In Transit" || status === "Order Placed") {
+    return "bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300";
+  }
+  if (status === "Quotation Review" || status === "Awaiting Quotations" || status === "RFQ In Progress") {
+    return "bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300";
+  }
+  if (status === "On Hold / Cancelled" || status === "Status unavailable") {
+    return "bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300";
+  }
+  return "bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300";
+}
 
 const commonUnits: ProcurementUnit[] = [
   "MT", "Bags", "Pieces", "Kg", "Tons", "Meters", "Sq. ft", "Boxes", "Liters",
@@ -259,12 +538,13 @@ function errorMessage(error: unknown, fallback: string): string {
       MATERIAL_REQUEST_STATE_INVALID: "A saved material request could not be loaded due to an invalid format. Please refresh your workspace.",
       CONVERSATION_HISTORY_INVALID: "The conversation history contains invalid data.",
       CONVERSATION_NOT_FOUND: "This conversation is no longer available. Refresh your Procurement workspace.",
-      LLM_RATE_LIMITED: "The AI service is receiving too many requests. Please try again in a few moments; your entered form details have not been cleared.",
-      LLM_TIMEOUT: "The AI assistant did not respond in time. Please retry; your entered form details have not been cleared.",
-      LLM_UNAVAILABLE: "The AI assistant is temporarily unavailable. Please try again shortly. Your entered form details have not been cleared.",
-      LLM_CONFIGURATION_ERROR: "The AI assistant is not configured correctly right now. Contact support if this continues.",
-      LLM_PROVIDER_ERROR: "The AI service could not accept the request. Please try again shortly; your entered form details have not been cleared.",
-      LLM_INVALID_RESPONSE: "The AI assistant returned an unexpected response format. Please retry; your entered form details have not been cleared.",
+      LLM_RATE_LIMITED: "The assistant could not complete this turn, so your message was not added to conversation history. Your message remains in the input; any draft edits saved before sending remain saved.",
+      LLM_TIMEOUT: "The assistant did not complete this turn, so your message was not added to conversation history. Your message remains in the input; any draft edits saved before sending remain saved.",
+      LLM_UNAVAILABLE: "The assistant is temporarily unavailable, so your message was not added to conversation history. Your message remains in the input; any draft edits saved before sending remain saved.",
+      LLM_CONFIGURATION_ERROR: "The assistant could not complete this turn because of a configuration problem, so your message was not added to conversation history. Your message remains in the input; any draft edits saved before sending remain saved.",
+      LLM_PROVIDER_ERROR: "The assistant could not complete this turn, so your message was not added to conversation history. Your message remains in the input; any draft edits saved before sending remain saved.",
+      LLM_INVALID_RESPONSE: "The assistant returned an invalid response, so your message was not added to conversation history. Your message remains in the input; any draft edits saved before sending remain saved.",
+      PROCUREMENT_AGENT_RESPONSE_TOO_LONG: "The assistant's response exceeded the limit, so this turn was rejected. Your message is still here; edit it and ask for a shorter response. Any draft edits saved before this turn remain saved.",
       IDEMPOTENCY_KEY_REUSED: "This save retry key is already associated with a different request. The existing saved request was not changed.",
       IDEMPOTENCY_PAYLOAD_CONFLICT: "This save retry key was previously used for different request details. Reload the saved request before continuing.",
     };
@@ -389,6 +669,11 @@ export default function ProcurementAgentPage() {
   const [conversationsLoadingMore, setConversationsLoadingMore] = useState(false);
   const [conversation, setConversation] = useState<ProcurementConversation | null>(null);
   const [requests, setRequests] = useState<ProcurementMaterialRequest[]>([]);
+  const [statusRequests, setStatusRequests] = useState<ProcurementMaterialRequest[]>([]);
+  const [statusRFQs, setStatusRFQs] = useState<ProcurementRFQ[]>([]);
+  const [statusPurchaseOrders, setStatusPurchaseOrders] = useState<ProcurementPurchaseOrder[]>([]);
+  const [statusLoading, setStatusLoading] = useState(false);
+  const [statusError, setStatusError] = useState("");
   const [requestsPage, setRequestsPage] = useState(1);
   const [requestsCursor, setRequestsCursor] = useState<string | null>(null);
   const [requestsHasMore, setRequestsHasMore] = useState(false);
@@ -407,6 +692,7 @@ export default function ProcurementAgentPage() {
   const [settingsSuccess, setSettingsSuccess] = useState("");
   const [draft, setDraft] = useState<MaterialRequestDraft>(emptyDraft);
   const [confirmedFields, setConfirmedFields] = useState<string[]>([]);
+  const [clearedFields, setClearedFields] = useState<string[]>([]);
   const [manualConfirmed, setManualConfirmed] = useState(false);
   const [touchedFields, setTouchedFields] = useState<Record<string, boolean>>({});
   const [message, setMessage] = useState("");
@@ -418,11 +704,13 @@ export default function ProcurementAgentPage() {
   const [isDraftExpandedMobile, setIsDraftExpandedMobile] = useState(false);
 
   const idempotencyRef = useRef<{ conversationId: string; key: string } | null>(null);
+  const messageSubmissionRef = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const discoveryRunRef = useRef(0);
   const settingsRequestRef = useRef<Promise<ProcurementSettings> | null>(null);
   const conversationHistoryRequestRef = useRef(0);
   const preserveHistoryScrollRef = useRef(false);
+  const statusLoadPromiseRef = useRef<Promise<void> | null>(null);
 
   const formErrors = validateRequestDraft(draft);
   const isFormReady = Object.keys(formErrors).length === 0;
@@ -432,6 +720,8 @@ export default function ProcurementAgentPage() {
     && (
       requestFingerprint(draft) !== requestFingerprint(editableDraft(conversation.draft))
       || [...confirmedFields].sort().join("|") !== [...conversation.confirmed_fields].sort().join("|")
+      || [...clearedFields].sort().join("|")
+        !== [...(conversation.cleared_fields ?? [])].sort().join("|")
     )
   );
 
@@ -465,6 +755,7 @@ export default function ProcurementAgentPage() {
     setConversation(value);
     setDraft(editableDraft(value.draft));
     setConfirmedFields(value.confirmed_fields);
+    setClearedFields(value.cleared_fields ?? []);
     setConversationNeedsReload(false);
   };
 
@@ -596,6 +887,7 @@ export default function ProcurementAgentPage() {
     let loadedConversations: ProcurementConversation[] = [];
     let loadedRequests: ProcurementMaterialRequest[] = [];
     const errors: string[] = [];
+    let conversationLoadError = "";
 
     try {
       const [convosResult, requestsResult] = await Promise.allSettled([
@@ -610,7 +902,8 @@ export default function ProcurementAgentPage() {
         setConversationsCursor(convosResult.value.next_cursor ?? null);
         setConversationsHasMore(convosResult.value.has_more);
       } else {
-        errors.push(`Conversations: ${errorMessage(convosResult.reason, "Failed to load conversations.")}`);
+        conversationLoadError = `Conversations: ${errorMessage(convosResult.reason, "Failed to load conversations.")}`;
+        errors.push(conversationLoadError);
       }
 
       if (requestsResult.status === "fulfilled") {
@@ -627,25 +920,24 @@ export default function ProcurementAgentPage() {
       );
 
       if (convosResult.status === "fulfilled") {
-        const activeConvo = loadedConversations.find((item) => item.status === "ACTIVE");
-        if (activeConvo) {
-          try {
-            const latest = await procurementApi.getConversation(activeConvo.conversation_id);
+        try {
+          const latest = await procurementApi.resumeOrCreateConversation();
+          if (isDraftDirty && conversation) {
+            if (conversation.conversation_id !== latest.conversation_id) {
+              errors.push("A different active conversation was found. Your current unsaved draft remains selected.");
+            }
+          } else {
             selectConversation(latest);
-          } catch (err) {
-            errors.push(`Active conversation: ${errorMessage(err, "Failed to load active conversation.")}`);
           }
-        } else if (loadedConversations.length > 0) {
-          try {
-            const latest = await procurementApi.getConversation(loadedConversations[0].conversation_id);
-            selectConversation(latest);
-          } catch {
-            // Non-critical if last conversation cannot be loaded
-          }
+        } catch (err) {
+          conversationLoadError = `Conversation: ${errorMessage(err, "Failed to restore or start a conversation.")}`;
+          errors.push(conversationLoadError);
         }
       }
 
-      if (convosResult.status === "rejected" && requestsResult.status === "rejected") {
+      if (conversationLoadError) {
+        setWorkspaceError(errors.join(" · "));
+      } else if (convosResult.status === "rejected" && requestsResult.status === "rejected") {
         setWorkspaceError(errors.join(" · ") || "Unable to load Procurement workspace.");
       } else if (errors.length > 0) {
         setActionError(errors.join(" · "));
@@ -661,6 +953,71 @@ export default function ProcurementAgentPage() {
   useEffect(() => {
     void loadWorkspace();
   }, []);
+
+  const refreshMaterialStatus = async () => {
+    if (statusLoadPromiseRef.current) return statusLoadPromiseRef.current;
+    setStatusLoading(true);
+    setStatusError("");
+    setStatusRequests([]);
+    setStatusRFQs([]);
+    setStatusPurchaseOrders([]);
+    const request = (async () => {
+      let loadedRequests: ProcurementMaterialRequest[] = [];
+      let requestCursor: string | null = null;
+      const seenRequestCursors = new Set<string>();
+      do {
+        const page = await procurementApi.listRequests(requestCursor);
+        loadedRequests = [...loadedRequests, ...page.items];
+        if (!page.has_more) break;
+        if (!page.next_cursor || seenRequestCursors.has(page.next_cursor)) {
+          throw new Error("Saved requirement pagination did not advance.");
+        }
+        seenRequestCursors.add(page.next_cursor);
+        requestCursor = page.next_cursor;
+      } while (true);
+
+      const [loadedRFQs, loadedOrders] = await Promise.all([
+        (async () => {
+          const items: ProcurementRFQ[] = [];
+          let pageNumber = 1;
+          while (true) {
+            const page = await procurementApi.listRFQs(pageNumber, 100);
+            items.push(...page.items);
+            if (!page.has_more) return items;
+            if (page.items.length === 0) throw new Error("RFQ pagination returned an empty page with more results.");
+            pageNumber += 1;
+          }
+        })(),
+        (async () => {
+          const items: ProcurementPurchaseOrder[] = [];
+          let pageNumber = 1;
+          while (true) {
+            const page = await procurementApi.listPurchaseOrders(pageNumber, 100);
+            items.push(...page.items);
+            if (!page.has_more) return items;
+            if (page.items.length === 0) throw new Error("Purchase-order pagination returned an empty page with more results.");
+            pageNumber += 1;
+          }
+        })(),
+      ]);
+      setStatusRequests(loadedRequests);
+      setStatusRFQs(loadedRFQs);
+      setStatusPurchaseOrders(loadedOrders);
+    })();
+    statusLoadPromiseRef.current = request;
+    try {
+      await request;
+    } catch (error) {
+      setStatusError(errorMessage(error, "Material procurement status could not be loaded."));
+    } finally {
+      if (statusLoadPromiseRef.current === request) statusLoadPromiseRef.current = null;
+      setStatusLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (section === "status") void refreshMaterialStatus();
+  }, [section]);
 
   const loadProcurementSettings = async (): Promise<ProcurementSettings> => {
     if (settingsRequestRef.current) return settingsRequestRef.current;
@@ -840,7 +1197,14 @@ export default function ProcurementAgentPage() {
   const sendMessage = async (event?: FormEvent<HTMLFormElement>) => {
     event?.preventDefault();
     const text = message.trim();
-    if (!conversation || !text || busy || conversationNeedsReload) return;
+    if (
+      !conversation
+      || !text
+      || busy
+      || messageSubmissionRef.current
+      || conversationNeedsReload
+    ) return;
+    messageSubmissionRef.current = true;
     setBusy(true);
     setActionError("");
     setActionSuccess("");
@@ -853,6 +1217,7 @@ export default function ProcurementAgentPage() {
           draft,
           confirmedFields,
           conversation.revision,
+          clearedFields,
         );
         selectConversation(currentConversation);
       }
@@ -870,13 +1235,14 @@ export default function ProcurementAgentPage() {
       setMessageRetryAvailable(false);
     } catch (error) {
       setActionError(errorMessage(error, "The assistant could not process that message. Please retry."));
-      setMessageRetryAvailable(true);
+      setMessageRetryAvailable(errorCode(error) !== "PROCUREMENT_AGENT_RESPONSE_TOO_LONG");
       if (errorCode(error) === "STALE_CONVERSATION_STATE") {
         setConversationNeedsReload(true);
         setMessageRetryAvailable(false);
         setActionError("This conversation has changed on the server. Reload its latest state before retrying; your message and draft are preserved.");
       }
     } finally {
+      messageSubmissionRef.current = false;
       setBusy(false);
     }
   };
@@ -905,13 +1271,24 @@ export default function ProcurementAgentPage() {
   };
 
   const updateDraftField = (field: DraftField, value: string) => {
+    const updatedValue = field === "additional_requirements"
+      ? value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
+      : value === "" ? null : value;
     setDraft((current) => ({
       ...current,
-      [field]: field === "additional_requirements"
-        ? value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
-        : value === "" ? null : value,
+      [field]: updatedValue,
     }));
     setConfirmedFields((current) => current.filter((item) => item !== field));
+    setClearedFields((current) => {
+      if (
+        updatedValue === null
+        || updatedValue === ""
+        || (Array.isArray(updatedValue) && updatedValue.length === 0)
+      ) {
+        return current.includes(field) ? current : [...current, field];
+      }
+      return current.filter((item) => item !== field);
+    });
     setActionError("");
     setActionSuccess("");
   };
@@ -1045,6 +1422,8 @@ export default function ProcurementAgentPage() {
         requestFingerprint(draft) !== requestFingerprint(editableDraft(activeConvo.draft))
         || [...fieldsConfirmedBySave].sort().join("|")
           !== [...activeConvo.confirmed_fields].sort().join("|")
+        || [...clearedFields].sort().join("|")
+          !== [...(activeConvo.cleared_fields ?? [])].sort().join("|")
       );
 
       if (needsDraftUpdate) {
@@ -1053,6 +1432,7 @@ export default function ProcurementAgentPage() {
           draft,
           fieldsConfirmedBySave,
           activeConvo.revision,
+          clearedFields,
         );
         selectConversation(reviewedConversation);
       } else {
@@ -1129,9 +1509,10 @@ export default function ProcurementAgentPage() {
     setBusy(false);
   };
 
-  const openRequest = async (id: string) => {
+  const openRequest = async (id: string, discardDirtyConfirmed = false) => {
     if (
-      isRequestDirty
+      !discardDirtyConfirmed
+      && isRequestDirty
       && !window.confirm("Discard unsaved edits to the currently selected saved request?")
     ) return;
     setBusy(true);
@@ -1312,6 +1693,30 @@ export default function ProcurementAgentPage() {
     setActionSuccess("");
   };
 
+  const openRFQDetails = (rfqId: string) => {
+    const params = new URLSearchParams(window.location.search);
+    params.set("rfqView", "detail");
+    params.set("rfqId", rfqId);
+    router.push(`${window.location.pathname}?${params.toString()}`, { scroll: false });
+    setSection("rfqs");
+  };
+
+  const openPurchaseOrderHistory = () => {
+    const params = new URLSearchParams(window.location.search);
+    params.set("rfqView", "orders");
+    params.delete("rfqId");
+    router.push(`${window.location.pathname}?${params.toString()}`, { scroll: false });
+    setSection("rfqs");
+  };
+
+  const openRFQWorkspace = () => {
+    const params = new URLSearchParams(window.location.search);
+    params.set("rfqView", "list");
+    params.delete("rfqId");
+    router.push(`${window.location.pathname}?${params.toString()}`, { scroll: false });
+    setSection("rfqs");
+  };
+
   const filteredRequests = requests.filter((item) => {
     if (!savedRequestSearch.trim()) return true;
     const term = savedRequestSearch.toLowerCase();
@@ -1413,7 +1818,7 @@ export default function ProcurementAgentPage() {
                       ? "Create and confirm a material requirement with AI or the manual form."
                       : "Find, review, edit, or delete material requirements you have saved."
                     : section === "status"
-                        ? "Review saved requirement and conversation status here; manage RFQ quotations, purchase orders, and fulfillment in Requests for Quote."
+                        ? "Track saved material requirements against live RFQ, quotation, order, and recorded delivery data."
                       : section === "settings"
                         ? "Manage employer-specific defaults and supported supplier-matching preferences."
                         : "Review the material specifications and delivery details currently saved in your Procurement workspace."}
@@ -1651,7 +2056,7 @@ export default function ProcurementAgentPage() {
                           </span>
                         </div>
                         <p className="text-[11px] text-slate-500 dark:text-slate-400 hidden sm:block truncate">
-                          Chat naturally to specify and clarify material requirements
+                          Ask about procurement, requirements, supplier matches, RFQs, or quotations
                         </p>
                       </div>
                     </div>
@@ -1711,10 +2116,10 @@ export default function ProcurementAgentPage() {
                           <Sparkles size={20} />
                         </div>
                         <p className="text-xs sm:text-sm font-semibold text-slate-800 dark:text-slate-200">
-                          How can I help with your material request?
+                          What can I help you with in procurement?
                         </p>
                         <p className="text-xs max-w-sm">
-                          Tell me what you need, including material name, specification or grade, quantity, unit, or delivery requirements.
+                          Ask a general question, describe a material requirement, find current supplier offerings for a saved requirement, or review your RFQs, quotations, and purchase orders.
                         </p>
                       </div>
                     ) : (
@@ -1751,7 +2156,7 @@ export default function ProcurementAgentPage() {
                     {busy && (
                       <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/40 p-2.5 rounded-xl w-fit">
                         <Loader2 size={14} className="animate-spin text-purple-600" />
-                        <span>AI is analyzing material requirements…</span>
+                        <span>Thinking through your request and checking live data when needed…</span>
                       </div>
                     )}
                     <div ref={messagesEndRef} />
@@ -1771,7 +2176,7 @@ export default function ProcurementAgentPage() {
                             setMessage(event.target.value);
                             setMessageRetryAvailable(false);
                           }}
-                          placeholder="Describe material, grade, quantity, or delivery site…"
+                          placeholder="Ask about procurement, describe a requirement, or check an RFQ…"
                           className="w-full bg-transparent px-3.5 py-1.5 text-xs sm:text-sm font-medium text-slate-900 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-slate-500"
                         />
                         <button
@@ -1845,12 +2250,14 @@ export default function ProcurementAgentPage() {
                     <div className="divide-y divide-slate-100 dark:divide-slate-800">
                       {[
                         {
+                          field: "title",
                           label: "Request title",
                           value: draft.title,
                           fallback: "Not specified yet",
                           icon: FileText,
                         },
                         {
+                          field: "item_name",
                           label: "Material name",
                           value: draft.item_name,
                           fallback: "Not specified yet",
@@ -1858,6 +2265,7 @@ export default function ProcurementAgentPage() {
                           isRequired: true,
                         },
                         {
+                          field: "quantity",
                           label: "Quantity",
                           value: draft.quantity !== null && draft.quantity !== "" ? String(draft.quantity) : null,
                           fallback: "Not specified yet",
@@ -1865,6 +2273,7 @@ export default function ProcurementAgentPage() {
                           isRequired: true,
                         },
                         {
+                          field: "unit",
                           label: "Unit of measure",
                           value: draft.unit,
                           fallback: "Not specified yet",
@@ -1872,24 +2281,28 @@ export default function ProcurementAgentPage() {
                           isRequired: true,
                         },
                         {
+                          field: "specification",
                           label: "Specification / grade",
                           value: draft.specification,
                           fallback: "Not specified yet",
                           icon: FileText,
                         },
                         {
+                          field: "required_by",
                           label: "Required by date",
                           value: draft.required_by ? new Date(draft.required_by).toLocaleDateString() : null,
                           fallback: "Not specified yet",
                           icon: Calendar,
                         },
                         {
+                          field: "delivery_location",
                           label: "Delivery location",
                           value: draft.delivery_location,
                           fallback: "Not specified yet",
                           icon: MapPin,
                         },
                         {
+                          field: "notes",
                           label: "Notes",
                           value: draft.notes,
                           fallback: "Not specified yet",
@@ -1911,11 +2324,20 @@ export default function ProcurementAgentPage() {
                                 : "text-slate-400 italic font-normal"
                             }`}
                           >
-                            {item.value || item.fallback}
+                            <span className="block truncate">{item.value || item.fallback}</span>
+                            <span className="block text-[10px] font-normal text-slate-500 dark:text-slate-400">
+                              {confirmedFields.includes(item.field)
+                                ? "Confirmed"
+                                : item.value
+                                  ? "Draft suggestion · review before saving"
+                                  : "Not specified"}
+                            </span>
                           </span>
                         </div>
                       ))}
-
+                      <p className="py-2 text-[11px] text-slate-500 dark:text-slate-400">
+                        Review draft suggestions before saving. To restore a cleared field, enter its value in the draft form.
+                      </p>
                       {/* Additional Requirements Tags */}
                       <div className="py-2.5">
                         <div className="flex items-center gap-2 text-xs sm:text-sm font-semibold text-slate-600 dark:text-slate-300 mb-1.5">
@@ -1932,9 +2354,16 @@ export default function ProcurementAgentPage() {
                                 {req}
                               </span>
                             ))}
+                            <span className="w-full pt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                              {confirmedFields.includes("additional_requirements")
+                                ? "Confirmed"
+                                : "Draft suggestion · review before saving"}
+                            </span>
                           </div>
                         ) : (
-                          <span className="text-xs sm:text-sm text-slate-400 italic font-normal">None specified</span>
+                          <span className="text-xs sm:text-sm text-slate-400 italic font-normal">
+                            Not specified
+                          </span>
                         )}
                       </div>
                     </div>
@@ -2567,75 +2996,177 @@ export default function ProcurementAgentPage() {
             )}
           </section>
         ) : section === "status" ? (
-          <section className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900 sm:p-6">
-            <div>
-              <h2 className="text-base font-bold text-slate-900 dark:text-white">Recorded requirement status</h2>
-              <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-                Review saved requirements and AI conversations here. Requests for Quote includes invited suppliers, quotation comparison, purchase orders, and fulfillment history.
-              </p>
-            </div>
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="rounded-xl border border-slate-200 p-4 dark:border-slate-700">
-                <h3 className="font-semibold text-slate-900 dark:text-white">
-                  Saved requirements ({requests.length}{requestsHasMore ? " loaded" : ""})
-                </h3>
-                {requests.length ? (
-                  <ul className="mt-3 space-y-2">
-                    {requests.map((request) => (
-                      <li key={request.id} className="flex items-center justify-between gap-3 text-sm">
-                        <span className="truncate text-slate-700 dark:text-slate-300">{request.title || request.item_name}</span>
-                        <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                          {request.status}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">No saved requirements.</p>
-                )}
-                {requestsHasMore && (
-                  <button
-                    type="button"
-                    onClick={() => void loadMoreRequests()}
-                    disabled={requestsLoadingMore}
-                    className="mt-3 text-sm font-semibold text-purple-700 underline disabled:opacity-50 dark:text-purple-300"
-                  >
-                    {requestsLoadingMore ? "Loading…" : "Load more requirements"}
-                  </button>
-                )}
+          <section className="space-y-5">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900">
+              <div>
+                <h2 className="text-base font-bold text-slate-900 dark:text-white">Material procurement status</h2>
+                <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+                  Status comes from linked RFQs, submitted quotations, purchase orders, and recorded fulfillment—not AI conversation status.
+                </p>
               </div>
-              <div className="rounded-xl border border-slate-200 p-4 dark:border-slate-700">
-                <h3 className="font-semibold text-slate-900 dark:text-white">
-                  AI conversations ({conversations.length}{conversationsHasMore ? " loaded" : ""})
-                </h3>
-                {conversations.length ? (
-                  <ul className="mt-3 space-y-2">
-                    {conversations.map((item) => (
-                      <li key={item.conversation_id} className="flex items-center justify-between gap-3 text-sm">
-                        <span className="truncate text-slate-700 dark:text-slate-300">
-                          {item.draft.item_name || item.history.find((entry) => entry.role === "user")?.content.slice(0, 40) || "Material requirement"}
-                        </span>
-                        <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                          {item.status}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">No AI conversations.</p>
-                )}
-                {conversationsHasMore && (
-                  <button
-                    type="button"
-                    onClick={() => void loadMoreConversations()}
-                    disabled={conversationsLoadingMore}
-                    className="mt-3 text-sm font-semibold text-purple-700 underline disabled:opacity-50 dark:text-purple-300"
-                  >
-                    {conversationsLoadingMore ? "Loading…" : "Load older conversations"}
-                  </button>
-                )}
-              </div>
+              <button
+                type="button"
+                onClick={() => void refreshMaterialStatus()}
+                disabled={statusLoading}
+                className="inline-flex min-h-9 items-center gap-2 rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold disabled:opacity-60 dark:border-slate-700"
+              >
+                <Loader2 size={14} className={statusLoading ? "animate-spin" : ""} />
+                {statusLoading ? "Refreshing…" : "Refresh status"}
+              </button>
             </div>
+
+            {statusError && (
+              <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200">
+                <span>{statusError} No procurement status is inferred from incomplete data.</span>
+                <button
+                  type="button"
+                  onClick={() => void refreshMaterialStatus()}
+                  disabled={statusLoading}
+                  className="font-semibold underline disabled:opacity-50"
+                >
+                  Retry
+                </button>
+              </div>
+            )}
+
+            {statusLoading ? (
+              <div role="status" className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900">
+                <Loader2 size={17} className="animate-spin" /> Loading saved requirements and procurement records…
+              </div>
+            ) : !statusError && statusRequests.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center dark:border-slate-700 dark:bg-slate-900">
+                <p className="font-semibold text-slate-800 dark:text-slate-200">No saved material requirements yet.</p>
+                <p className="mt-1 text-sm text-slate-500">Save a requirement to track its procurement progress here.</p>
+                <button
+                  type="button"
+                  onClick={() => openRequirementView("create")}
+                  className="mt-4 rounded-xl bg-purple-700 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-800"
+                >
+                  Create a requirement
+                </button>
+              </div>
+            ) : !statusError && (
+              <ul className="space-y-4">
+                {statusRequests.map((request) => {
+                  const summary = summarizeMaterialStatus(request, statusRFQs, statusPurchaseOrders);
+                  return (
+                    <li key={request.id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900">
+                      <article className="space-y-4">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <h3 className="text-base font-bold text-slate-900 dark:text-white">{request.title || request.item_name}</h3>
+                            <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+                              {request.item_name}{request.specification ? ` · ${request.specification}` : ""}
+                            </p>
+                          </div>
+                          <span className={`rounded-full px-3 py-1 text-xs font-bold ${materialStatusBadgeClass(summary.status)}`}>
+                            {summary.status}
+                          </span>
+                        </div>
+
+                        <dl className="grid gap-3 rounded-xl bg-slate-50 p-4 text-sm dark:bg-slate-800/50 sm:grid-cols-3">
+                          <div>
+                            <dt className="text-xs font-semibold text-slate-500 dark:text-slate-400">Requested quantity</dt>
+                            <dd className="mt-1 font-semibold text-slate-800 dark:text-slate-200">{request.quantity} {request.unit}</dd>
+                          </div>
+                          <div>
+                            <dt className="text-xs font-semibold text-slate-500 dark:text-slate-400">Required by</dt>
+                            <dd className="mt-1 font-semibold text-slate-800 dark:text-slate-200">{request.required_by || "Not specified"}</dd>
+                          </div>
+                          <div>
+                            <dt className="text-xs font-semibold text-slate-500 dark:text-slate-400">Procurement activity</dt>
+                            <dd className="mt-1 font-semibold text-slate-800 dark:text-slate-200">
+                              {summary.rfqs.length} RFQs · {summary.quotationCount} quotations · {summary.purchaseOrders.length} orders
+                            </dd>
+                          </div>
+                        </dl>
+
+                        <div className="space-y-1">
+                          <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">Progress</p>
+                          <p className="text-sm text-slate-600 dark:text-slate-400">{summary.progress}</p>
+                          <p className="text-sm text-slate-600 dark:text-slate-400"><span className="font-semibold">Next action:</span> {summary.nextAction}</p>
+                        </div>
+
+                        {summary.rfqs.length > 0 && (
+                          <div className="space-y-2">
+                            <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200">Related RFQs and supplier quotations</h4>
+                            <ul className="space-y-2">
+                              {summary.rfqs.map((rfq) => (
+                                <li key={rfq.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 px-3 py-2 dark:border-slate-700">
+                                  <span className="text-sm text-slate-700 dark:text-slate-300">
+                                    RFQ · {rfq.status === "OPEN" ? "Open" : "Closed"} · {rfq.recipients.filter((recipient) => recipient.quotation).length} quotation(s) · {rfq.item_name} · {rfq.quantity} {rfq.unit}
+                                  </span>
+                                  <button type="button" onClick={() => openRFQDetails(rfq.id)} className="text-sm font-semibold text-purple-700 underline dark:text-purple-300">
+                                    View RFQ &amp; compare
+                                  </button>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+
+                        {summary.purchaseOrders.length > 0 && (
+                          <div className="space-y-2">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200">Related purchase orders and fulfillment</h4>
+                              <button type="button" onClick={openPurchaseOrderHistory} className="text-sm font-semibold text-purple-700 underline dark:text-purple-300">
+                                Open delivery history
+                              </button>
+                            </div>
+                            <ul className="space-y-2">
+                              {summary.purchaseOrders.map((order) => (
+                                <li key={order.id} className="rounded-xl border border-slate-200 px-3 py-3 dark:border-slate-700">
+                                  <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+                                    {order.order_reference} · {order.supplier_company_name} · {order.status.replaceAll("_", " ")}
+                                  </p>
+                                  <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+                                    Ordered {order.quantity} {order.unit} · {order.dispatched_quantity} {order.fulfillment_unit} dispatched · {order.delivered_quantity} {order.fulfillment_unit} received
+                                  </p>
+                                  {order.fulfillment_events.length > 0 && (
+                                    <ul className="mt-2 space-y-1 border-l-2 border-purple-200 pl-3 text-xs text-slate-500 dark:border-purple-900 dark:text-slate-400">
+                                      {order.fulfillment_events.map((event) => (
+                                        <li key={event.id}>
+                                          {event.status.replaceAll("_", " ")} · +{event.dispatched_quantity} {event.unit} dispatched · +{event.delivered_quantity} {event.unit} received · {event.delivery_date || event.dispatch_date || event.created_at.slice(0, 10)}
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  )}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+
+                        <div className="border-t border-slate-100 pt-3 dark:border-slate-800">
+                          {(summary.rfqs.length === 0 || summary.status === "On Hold / Cancelled") && (
+                            <button
+                              type="button"
+                              onClick={openRFQWorkspace}
+                              className="mr-4 text-sm font-semibold text-purple-700 underline dark:text-purple-300"
+                            >
+                              Open RFQ workspace
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (isRequestDirty && !window.confirm("Discard unsaved edits to the currently selected saved request?")) return;
+                              setSection("material-details");
+                              setRequirementView("saved");
+                              void openRequest(request.id, true);
+                            }}
+                            disabled={busy}
+                            className="text-sm font-semibold text-purple-700 underline disabled:opacity-50 dark:text-purple-300"
+                          >
+                            View or edit material requirement
+                          </button>
+                        </div>
+                      </article>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </section>
         ) : section === "rfqs" ? (
           <Suspense fallback={<div role="status" className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900">Loading RFQ workspace…</div>}>

@@ -11,11 +11,10 @@ from uuid import UUID, uuid4
 
 from pydantic import ValidationError
 
-from app.agents.procurement import PROCUREMENT_AGENT_DEFINITION
-from app.agents.shared.runtime import AgentConversationMessage, AgentLLMRequest
+from app.agents.shared.runtime import AgentConversationMessage
 from app.agents.shared.task import AgentTask, TaskState
 from app.core.supabase import supabase
-from app.llm.providers import GeminiLLMProvider, LLMProviderError
+from app.llm.providers import LLMProviderError
 from app.schemas.auth import UserResponse
 from app.services.pagination import (
     decode_created_cursor,
@@ -40,6 +39,7 @@ from app.schemas.procurement import (
     ProcurementSupplierDiscoveryResponse,
     ProcurementSupplierOfferingMatch,
 )
+from app.services.procurement_agent_service import ProcurementAgentService
 
 logger = logging.getLogger(__name__)
 HISTORY_LIMIT = 80
@@ -108,6 +108,47 @@ class ProcurementConflict(ProcurementServiceError):
 
 class ProcurementAgentError(ProcurementServiceError):
     """The Procurement Agent could not produce a valid response."""
+
+
+def _is_empty_draft_value(value: Any) -> bool:
+    return value is None or value == "" or value == []
+
+
+def _merge_model_draft_proposal(
+    current_draft: dict[str, Any],
+    proposal: Any,
+    cleared_fields: set[str],
+) -> dict[str, Any]:
+    if not isinstance(proposal, dict):
+        raise ProcurementAgentError("PROCUREMENT_AGENT_INVALID_DRAFT")
+    unknown_fields = set(proposal) - set(PROCUREMENT_DRAFT_FIELDS)
+    if unknown_fields:
+        raise ProcurementAgentError("PROCUREMENT_AGENT_INVALID_DRAFT")
+
+    merged_draft = dict(current_draft)
+    for field_name, value in proposal.items():
+        if (
+            field_name not in cleared_fields
+            and _is_empty_draft_value(merged_draft.get(field_name))
+        ):
+            merged_draft[field_name] = value
+    return merged_draft
+
+
+def _cleared_fields_after_user_edit(
+    previous_draft: dict[str, Any],
+    updated_draft: dict[str, Any],
+    existing_cleared_fields: list[str],
+    requested_cleared_fields: list[str],
+) -> list[str]:
+    cleared_fields = set(existing_cleared_fields) | set(requested_cleared_fields)
+    for field_name in PROCUREMENT_DRAFT_FIELDS:
+        updated_value = updated_draft.get(field_name)
+        if not _is_empty_draft_value(updated_value):
+            cleared_fields.discard(field_name)
+        elif not _is_empty_draft_value(previous_draft.get(field_name)):
+            cleared_fields.add(field_name)
+    return sorted(cleared_fields)
 
 
 class ProcurementService:
@@ -260,6 +301,7 @@ class ProcurementService:
                 history_limit_reached=False,
                 draft=draft,
                 confirmed_fields=row.get("confirmed_fields") or [],
+                cleared_fields=row.get("cleared_fields") or [],
                 revision=int(row.get("revision") or 0),
                 created_at=row["created_at"],
                 updated_at=row["updated_at"],
@@ -350,6 +392,7 @@ class ProcurementService:
                 "history": [],
                 "draft": initial_draft.model_dump(mode="json"),
                 "confirmed_fields": [],
+                "cleared_fields": [],
                 "revision": 0,
                 "created_at": now,
                 "updated_at": now,
@@ -441,34 +484,35 @@ class ProcurementService:
             task_type="procurement_material_request",
         )
         task_state = TaskState(
-            data={"draft": draft.model_dump(mode="json")},
+            data={
+                "draft": draft.model_dump(mode="json"),
+                "cleared_fields": conversation.get("cleared_fields") or [],
+            },
             current_step="clarify_material_requirement",
         )
         try:
-            response = await GeminiLLMProvider().generate_agent_response(
-                AgentLLMRequest(
-                    agent=PROCUREMENT_AGENT_DEFINITION,
-                    message=request.message,
-                    history=[
-                        AgentConversationMessage(role=item.role, content=item.content)
-                        for item in history
-                    ],
-                    task=task,
-                    task_state=task_state,
-                )
+            response = await ProcurementAgentService.generate_response(
+                user=user,
+                message=request.message,
+                history=[
+                    AgentConversationMessage(role=item.role, content=item.content)
+                    for item in history
+                ],
+                task=task,
+                task_state=task_state,
             )
             if response.error is not None or response.tool_calls:
                 raise ProcurementAgentError("PROCUREMENT_AGENT_INVALID_RESPONSE")
+            if len(response.assistant_message) > 4000:
+                raise ProcurementAgentError("PROCUREMENT_AGENT_RESPONSE_TOO_LONG")
             proposed_state = response.task_state
             proposed_draft = draft.model_dump(mode="json")
             if proposed_state is not None:
-                draft_proposal = proposed_state.data.get("draft", {})
-                if not isinstance(draft_proposal, dict):
-                    raise ProcurementAgentError("PROCUREMENT_AGENT_INVALID_DRAFT")
-                unknown_fields = set(draft_proposal) - set(PROCUREMENT_DRAFT_FIELDS)
-                if unknown_fields:
-                    raise ProcurementAgentError("PROCUREMENT_AGENT_INVALID_DRAFT")
-                proposed_draft.update(draft_proposal)
+                proposed_draft = _merge_model_draft_proposal(
+                    proposed_draft,
+                    proposed_state.data.get("draft", {}),
+                    set(conversation.get("cleared_fields") or []),
+                )
             validated_draft = MaterialRequestDraft.model_validate(proposed_draft)
         except LLMProviderError as exc:
             logger.warning(
@@ -589,11 +633,22 @@ class ProcurementService:
             raise ProcurementConflict("CONVERSATION_NOT_ACTIVE")
 
         now = datetime.now(timezone.utc)
+        previous_draft = MaterialRequestDraft.model_validate(
+            conversation.get("draft") or {}
+        ).model_dump(mode="json")
+        updated_draft = request.draft.model_dump(mode="json")
+        cleared_fields = _cleared_fields_after_user_edit(
+            previous_draft,
+            updated_draft,
+            conversation.get("cleared_fields") or [],
+            request.cleared_fields,
+        )
         response = (
             supabase.table("procurement_conversations")
             .update({
                 "draft": request.draft.model_dump(mode="json"),
                 "confirmed_fields": request.confirmed_fields,
+                "cleared_fields": cleared_fields,
                 "revision": revision + 1,
                 "updated_at": now.isoformat(),
             })

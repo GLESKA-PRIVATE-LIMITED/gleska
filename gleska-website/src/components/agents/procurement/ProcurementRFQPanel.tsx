@@ -260,6 +260,7 @@ export default function ProcurementRFQPanel({
   const submissionKey = useRef<{ signature: string; key: string } | null>(null);
   const urlLoadRequest = useRef(0);
   const selectedRFQIdRef = useRef<string | null>(null);
+  const automaticOrdersLoadRef = useRef(false);
   selectedRFQIdRef.current = selectedRFQ?.id ?? null;
 
   const navigateView = useCallback((nextView: View, rfqId?: string, replace = false) => {
@@ -492,6 +493,17 @@ export default function ProcurementRFQPanel({
       })
       .finally(() => setSettingsLoaded(true));
   }, [refreshRFQs]);
+
+  useEffect(() => {
+    if (view !== "orders") {
+      automaticOrdersLoadRef.current = false;
+      return;
+    }
+    if (!automaticOrdersLoadRef.current) {
+      automaticOrdersLoadRef.current = true;
+      void refreshPurchaseOrders();
+    }
+  }, [refreshPurchaseOrders, view]);
 
   useEffect(() => {
     if (!selectedRequestId || view !== "compose" || !settingsLoaded) {
@@ -772,10 +784,7 @@ export default function ProcurementRFQPanel({
             <>
               <button
                 type="button"
-                onClick={() => {
-                  navigateView("orders");
-                  void refreshPurchaseOrders();
-                }}
+                onClick={() => navigateView("orders")}
                 className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
               >
                 <Package size={15} /> Purchase orders
@@ -839,7 +848,6 @@ export default function ProcurementRFQPanel({
                 type="button"
                 onClick={() => {
                   navigateView("orders");
-                  void refreshPurchaseOrders();
                 }}
                 className="font-semibold text-purple-700 underline dark:text-purple-300"
               >

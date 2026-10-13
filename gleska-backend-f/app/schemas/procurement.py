@@ -151,6 +151,7 @@ class ProcurementConversationCreateResponse(ProcurementModel):
     history_cursor: str | None = None
     draft: MaterialRequestDraft
     confirmed_fields: list[str] = Field(default_factory=list)
+    cleared_fields: list[str] = Field(default_factory=list)
     revision: int
     created_at: datetime
     updated_at: datetime
@@ -172,6 +173,7 @@ class ProcurementConversationMessageRequest(ProcurementModel):
 class ProcurementDraftUpdateRequest(ProcurementModel):
     draft: MaterialRequestDraft
     confirmed_fields: list[str] = Field(default_factory=list)
+    cleared_fields: list[str] = Field(default_factory=list)
     expected_revision: int = Field(ge=0)
 
     @field_validator("confirmed_fields")
@@ -182,6 +184,14 @@ class ProcurementDraftUpdateRequest(ProcurementModel):
             raise ValueError("Unknown confirmed draft field")
         return list(dict.fromkeys(values))
 
+    @field_validator("cleared_fields")
+    @classmethod
+    def validate_cleared_fields(cls, values: list[str]) -> list[str]:
+        unknown = sorted(set(values) - set(PROCUREMENT_DRAFT_FIELDS))
+        if unknown:
+            raise ValueError("Unknown cleared draft field")
+        return list(dict.fromkeys(values))
+
     @model_validator(mode="after")
     def confirmed_values_must_exist(self):
         values = self.draft.model_dump(mode="python")
@@ -189,6 +199,12 @@ class ProcurementDraftUpdateRequest(ProcurementModel):
             value = values[field_name]
             if value is None or value == []:
                 raise ValueError(f"Cannot confirm empty field: {field_name}")
+        for field_name in self.cleared_fields:
+            value = values[field_name]
+            if value is not None and value != "" and value != []:
+                raise ValueError(f"Cannot mark a populated field as cleared: {field_name}")
+            if field_name in self.confirmed_fields:
+                raise ValueError(f"Cannot confirm a cleared field: {field_name}")
         return self
 
 
