@@ -3,7 +3,7 @@ import FinancialDashboard from "./dashboard";
 
 export const metadata = {
   title: "Financial | GLESKA AI",
-  description: "Automated industrial invoicing, auditing, and financial management.",
+  description: "Financial dashboard, invoice management, and settings.",
 };
 
 export default function FinancialPage() {

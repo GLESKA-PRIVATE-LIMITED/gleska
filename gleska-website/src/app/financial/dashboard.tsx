@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useEffect, useMemo } from "react";
+import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import {
   FileText,
   Scan,
@@ -14,24 +14,18 @@ import {
   X,
   CheckCircle2,
   Clock,
-  ArrowRight,
-  DollarSign,
   Building2,
-  Calendar,
   ShieldCheck,
   AlertCircle,
   Trash2,
-  Download,
-  Receipt,
   Sparkles,
   FileCheck,
-  CreditCard,
-  FileSpreadsheet,
   Check,
   RefreshCw,
 } from "lucide-react";
 import AgentLayout from "@/components/agent-dashboard/AgentLayout";
 import { financialConfig } from "@/components/agents/financial/financialConfig";
+import apiClient from "@/lib/api";
 
 // Supported file formats for upload
 const SUPPORTED_DOCUMENT_EXTENSIONS = [
@@ -52,141 +46,62 @@ interface FinancialRecord {
   title: string;
   entity: string;
   reference: string;
-  amount?: string;
-  status: "Paid" | "Pending" | "Overdue" | "Completed" | "Passed" | "Active";
+  amount: number | null;
+  status: string;
   date: string;
   category: string;
 }
 
-const INITIAL_FINANCIAL_RECORDS: FinancialRecord[] = [
-  {
-    id: "rec-1",
-    type: "INVOICE",
-    title: "Heavy Machinery Fabrication & Assembly",
-    entity: "Tata Steel Ltd",
-    reference: "INV-2024-001",
-    amount: "₹ 4,85,000",
-    status: "Paid",
-    date: "12 Oct 2024",
-    category: "Industrial Equipment",
-  },
-  {
-    id: "rec-2",
-    type: "INVOICE",
-    title: "Structural Steel Flanges Delivery",
-    entity: "Larsen & Toubro",
-    reference: "INV-2024-002",
-    amount: "₹ 12,40,000",
-    status: "Pending",
-    date: "24 Oct 2024",
-    category: "Structural Steel",
-  },
-  {
-    id: "rec-3",
-    type: "INVOICE",
-    title: "Boiler Pipeline High-Pressure Fittings",
-    entity: "JSW Energy Ltd",
-    reference: "INV-2024-003",
-    amount: "₹ 3,20,000",
-    status: "Overdue",
-    date: "05 Oct 2024",
-    category: "Pipeline Components",
-  },
-  {
-    id: "rec-4",
-    type: "INVOICE",
-    title: "Turbine Rotor Sealing Gaskets",
-    entity: "Bharat Heavy Electricals (BHEL)",
-    reference: "INV-2024-004",
-    amount: "₹ 8,95,000",
-    status: "Paid",
-    date: "18 Sep 2024",
-    category: "Turbine Parts",
-  },
-  {
-    id: "rec-5",
-    type: "TRANSACTION",
-    title: "Vendor Payout: Industrial Wire Rods",
-    entity: "Jindal Stainless",
-    reference: "TXN-8821",
-    amount: "₹ 2,15,000",
-    status: "Completed",
-    date: "10 Oct 2024",
-    category: "Vendor Payout",
-  },
-  {
-    id: "rec-6",
-    type: "TRANSACTION",
-    title: "GST Compliance Q3 CGST/SGST Remittance",
-    entity: "Government Tax Portal",
-    reference: "TXN-8822",
-    amount: "₹ 1,42,800",
-    status: "Completed",
-    date: "08 Oct 2024",
-    category: "Statutory Tax",
-  },
-  {
-    id: "rec-7",
-    type: "TRANSACTION",
-    title: "Freight & Heavy Haulage Advance",
-    entity: "FastTrack Logistics",
-    reference: "TXN-8823",
-    amount: "₹ 45,000",
-    status: "Completed",
-    date: "06 Oct 2024",
-    category: "Logistics Advance",
-  },
-  {
-    id: "rec-8",
-    type: "AUDIT",
-    title: "Statutory Corporate Tax & GST Compliance Audit",
-    entity: "KPMG Advisory / Internal Audit Team",
-    reference: "AUD-2024-Q3",
-    status: "Passed",
-    date: "30 Sep 2024",
-    category: "Statutory Compliance (99.4%)",
-  },
-  {
-    id: "rec-9",
-    type: "AUDIT",
-    title: "Vendor Purchase Order Reconciliation Audit",
-    entity: "Gleska Automated Auditor",
-    reference: "AUD-2024-Q2",
-    status: "Passed",
-    date: "30 Jun 2024",
-    category: "Discrepancy 0.02%",
-  },
-  {
-    id: "rec-10",
-    type: "VENDOR",
-    title: "Tier-1 Raw Material Supplier",
-    entity: "Tata Steel Ltd",
-    reference: "GSTIN: 27AAACT2727Q1ZW",
-    status: "Active",
-    date: "Verified",
-    category: "Raw Material",
-  },
-  {
-    id: "rec-11",
-    type: "VENDOR",
-    title: "Heavy EPC & Infrastructure Partner",
-    entity: "Larsen & Toubro",
-    reference: "GSTIN: 27AABCL0123M1Z9",
-    status: "Active",
-    date: "Verified",
-    category: "EPC Contracting",
-  },
-  {
-    id: "rec-12",
-    type: "VENDOR",
-    title: "High-Grade Stainless Steel Fabricator",
-    entity: "Jindal Stainless",
-    reference: "GSTIN: 06AAACJ8134Q1Z1",
-    status: "Active",
-    date: "Verified",
-    category: "Metal Fabrication",
-  },
-];
+interface DashboardSummary {
+  total_invoiced: number | null;
+  pending_receivables: number | null;
+  active_invoices: number | null;
+  audits_passed: number | null;
+  audit_pass_rate: number | null;
+  active_vendors: number | null;
+}
+
+interface FinancialInvoice {
+  id: string;
+  invoice_number: string;
+  client_name: string;
+  issue_date: string;
+  due_date: string;
+  payment_terms_notes: string;
+  currency: string;
+  status: "DRAFT" | "GENERATED";
+  subtotal: number;
+  tax_rate: number;
+  tax_amount: number;
+  total: number;
+  line_items: {
+    id: string;
+    description: string;
+    quantity: number;
+    unit_price: number;
+    line_total: number;
+  }[];
+}
+
+interface FinancialSettings {
+  base_currency: "INR" | "USD" | "EUR";
+  tax_identifier: string;
+  auto_reconcile_incoming_bills: boolean;
+}
+
+const FINANCIAL_API = "/api/v1/financial";
+
+const getApiErrorMessage = (error: unknown, fallback: string) => {
+  const response = (error as {
+    response?: { status?: number; data?: { detail?: unknown; message?: unknown } };
+  })?.response;
+  const detail = response?.data?.detail;
+  const message = response?.data?.message;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) return detail.map((item) => String(item?.msg || item)).join("; ");
+  if (typeof message === "string") return message;
+  return fallback;
+};
 
 interface AttachedDocument {
   name: string;
@@ -195,11 +110,11 @@ interface AttachedDocument {
   source: "upload" | "camera" | "photo";
 }
 
-interface InvoiceItem {
+interface InvoiceItemDraft {
   id: string;
   description: string;
-  quantity: number;
-  unitPrice: number;
+  quantity: string;
+  unitPrice: string;
 }
 
 export default function FinancialDashboard() {
@@ -209,10 +124,25 @@ export default function FinancialDashboard() {
   // Search state
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [executedSearchQuery, setExecutedSearchQuery] = useState<string>("");
+  const [hasSearched, setHasSearched] = useState<boolean>(false);
   const [isPlusMenuOpen, setIsPlusMenuOpen] = useState<boolean>(false);
   const [menuPlacement, setMenuPlacement] = useState<"top" | "bottom">("top");
   const [isListening, setIsListening] = useState<boolean>(false);
   const [attachedFile, setAttachedFile] = useState<AttachedDocument | null>(null);
+  const [dashboardSummary, setDashboardSummary] = useState<DashboardSummary | null>(null);
+  const [dashboardRecords, setDashboardRecords] = useState<FinancialRecord[]>([]);
+  const [dashboardLoading, setDashboardLoading] = useState<boolean>(true);
+  const [dashboardError, setDashboardError] = useState<string | null>(null);
+  const [searchResults, setSearchResults] = useState<FinancialRecord[]>([]);
+  const [searchLoading, setSearchLoading] = useState<boolean>(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [invoices, setInvoices] = useState<FinancialInvoice[]>([]);
+  const [invoicesLoading, setInvoicesLoading] = useState<boolean>(true);
+  const [invoicesError, setInvoicesError] = useState<string | null>(null);
+  const [invoiceListView, setInvoiceListView] = useState<"drafts" | "generated">("drafts");
+  const [audits, setAudits] = useState<Record<string, unknown>[]>([]);
+  const [auditsLoading, setAuditsLoading] = useState<boolean>(false);
+  const [auditsError, setAuditsError] = useState<string | null>(null);
 
   // Toast feedback state
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" | "info" } | null>(null);
@@ -223,29 +153,31 @@ export default function FinancialDashboard() {
 
   // Create Invoice state
   const [invoiceForm, setInvoiceForm] = useState({
-    invoiceNumber: "INV-2024-005",
-    clientName: "Premier Heavy Engineering Ltd",
-    clientGst: "27AAACP9988K1Z3",
+    clientName: "",
     issueDate: new Date().toISOString().split("T")[0],
     dueDate: new Date(Date.now() + 30 * 86400000).toISOString().split("T")[0],
-    taxRate: 18,
-    notes: "Payment due within 30 days of invoice receipt.",
+    taxRate: "18",
+    notes: "",
   });
-  const [invoiceItems, setInvoiceItems] = useState<InvoiceItem[]>([
-    { id: "1", description: "Precision CNC Milled Flanges (Grade 316)", quantity: 50, unitPrice: 2400 },
-    { id: "2", description: "Industrial High-Pressure Seals", quantity: 100, unitPrice: 450 },
+  const [generatedInvoiceNumber, setGeneratedInvoiceNumber] = useState<string | null>(null);
+  const [activeInvoiceId, setActiveInvoiceId] = useState<string | null>(null);
+  const [isViewingGeneratedInvoice, setIsViewingGeneratedInvoice] = useState<boolean>(false);
+  const [submitAttempted, setSubmitAttempted] = useState<boolean>(false);
+  const [isSavingInvoice, setIsSavingInvoice] = useState<boolean>(false);
+  const [invoiceItems, setInvoiceItems] = useState<InvoiceItemDraft[]>([
+    { id: "1", description: "", quantity: "", unitPrice: "" },
   ]);
+  const [financialSettings, setFinancialSettings] = useState<FinancialSettings>({
+    base_currency: "INR",
+    tax_identifier: "",
+    auto_reconcile_incoming_bills: false,
+  });
+  const [settingsLoading, setSettingsLoading] = useState<boolean>(true);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [isSavingSettings, setIsSavingSettings] = useState<boolean>(false);
 
   // Scan Invoice state
   const [isScanning, setIsScanning] = useState<boolean>(false);
-  const [scannedResult, setScannedResult] = useState<{
-    vendorName: string;
-    invoiceNo: string;
-    totalAmount: string;
-    taxAmount: string;
-    date: string;
-    confidence: string;
-  } | null>(null);
 
   // Refs
   const plusMenuRef = useRef<HTMLDivElement>(null);
@@ -261,6 +193,313 @@ export default function FinancialDashboard() {
     setTimeout(() => {
       setToast(null);
     }, 4000);
+  };
+
+  const formatMoney = (amount: number, currency = financialSettings.base_currency) =>
+    new Intl.NumberFormat("en-IN", {
+      style: "currency",
+      currency,
+      maximumFractionDigits: 2,
+    }).format(amount);
+
+  const refreshDashboard = useCallback(async () => {
+    try {
+      const { data } = await apiClient.get(`${FINANCIAL_API}/dashboard`);
+      setDashboardSummary(data.summary);
+      setDashboardRecords(data.records || []);
+      setDashboardError(null);
+    } catch (error) {
+      setDashboardError(getApiErrorMessage(error, "Unable to load financial dashboard data."));
+    } finally {
+      setDashboardLoading(false);
+    }
+  }, []);
+
+  const refreshInvoices = useCallback(async () => {
+    setInvoicesLoading(true);
+    try {
+      const { data } = await apiClient.get(`${FINANCIAL_API}/invoices`);
+      setInvoices(data.invoices || []);
+      setInvoicesError(null);
+    } catch (error) {
+      setInvoicesError(getApiErrorMessage(error, "Unable to load invoices."));
+    } finally {
+      setInvoicesLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshDashboard();
+    void refreshInvoices();
+
+    let isCurrent = true;
+    apiClient
+      .get(`${FINANCIAL_API}/settings`)
+      .then(({ data }) => {
+        if (!isCurrent) return;
+        setFinancialSettings(data.settings || data);
+        setSettingsError(null);
+      })
+      .catch((error) => {
+        if (isCurrent) {
+          setSettingsError(getApiErrorMessage(error, "Unable to load financial settings."));
+        }
+      })
+      .finally(() => {
+        if (isCurrent) setSettingsLoading(false);
+      });
+    return () => {
+      isCurrent = false;
+    };
+  }, [refreshDashboard, refreshInvoices]);
+
+  useEffect(() => {
+    if (activeTab !== "audits") return;
+    let isCurrent = true;
+    setAuditsLoading(true);
+    setAuditsError(null);
+    apiClient
+      .get(`${FINANCIAL_API}/audits`)
+      .then(({ data }) => {
+        if (isCurrent) setAudits(Array.isArray(data.audits) ? data.audits : []);
+      })
+      .catch((error) => {
+        if (isCurrent) {
+          setAudits([]);
+          setAuditsError(getApiErrorMessage(error, "Unable to load audit records."));
+        }
+      })
+      .finally(() => {
+        if (isCurrent) setAuditsLoading(false);
+      });
+    return () => {
+      isCurrent = false;
+    };
+  }, [activeTab]);
+
+  const parseQuantity = (val: string): number | null => {
+    const trimmed = val.trim();
+    if (!trimmed) return null;
+    const num = Number(trimmed);
+    if (Number.isNaN(num) || !Number.isFinite(num) || num <= 0) return null;
+    return num;
+  };
+
+  const parseRate = (val: string): number | null => {
+    const trimmed = val.trim();
+    if (!trimmed) return null;
+    const num = Number(trimmed);
+    if (Number.isNaN(num) || !Number.isFinite(num) || num < 0) return null;
+    return num;
+  };
+
+  const parseTaxRate = (val: string): number => {
+    const trimmed = val.trim();
+    if (!trimmed) return 0;
+    const num = Number(trimmed);
+    if (Number.isNaN(num) || !Number.isFinite(num) || num < 0 || num > 100) return 0;
+    return num;
+  };
+
+  const getRowAmount = (item: InvoiceItemDraft): number => {
+    const q = parseQuantity(item.quantity);
+    const r = parseRate(item.unitPrice);
+    if (q !== null && r !== null) {
+      return q * r;
+    }
+    return 0;
+  };
+
+  const validateInvoiceForm = (): string | null => {
+    if (!invoiceForm.clientName.trim()) {
+      return "Client or company name is required.";
+    }
+    if (!invoiceForm.issueDate) {
+      return "Issue date is required.";
+    }
+    if (!invoiceForm.dueDate) {
+      return "Payment due date is required.";
+    }
+    if (invoiceForm.dueDate < invoiceForm.issueDate) {
+      return "Payment due date cannot be earlier than issue date.";
+    }
+    const taxNum = Number(invoiceForm.taxRate.trim());
+    if (invoiceForm.taxRate.trim() !== "" && (Number.isNaN(taxNum) || taxNum < 0 || taxNum > 100)) {
+      return "Tax rate must be between 0% and 100%.";
+    }
+    if (invoiceItems.length === 0) {
+      return "At least one line item is required.";
+    }
+    for (let i = 0; i < invoiceItems.length; i++) {
+      const item = invoiceItems[i];
+      const rowNum = i + 1;
+      if (!item.description.trim()) {
+        return `Line item #${rowNum}: description is required.`;
+      }
+      const q = parseQuantity(item.quantity);
+      if (q === null) {
+        return `Line item #${rowNum}: quantity must be a positive number greater than 0.`;
+      }
+      const r = parseRate(item.unitPrice);
+      if (r === null) {
+        return `Line item #${rowNum}: unit rate must be 0 or greater.`;
+      }
+    }
+    return null;
+  };
+
+  const handleDescriptionChange = (id: string, value: string) => {
+    setInvoiceItems((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, description: value } : item))
+    );
+  };
+
+  const handleQuantityChange = (id: string, value: string) => {
+    if (value === "" || /^\d*\.?\d*$/.test(value)) {
+      setInvoiceItems((prev) =>
+        prev.map((item) => (item.id === id ? { ...item, quantity: value } : item))
+      );
+    }
+  };
+
+  const handleRateChange = (id: string, value: string) => {
+    if (value === "" || /^\d*\.?\d*$/.test(value)) {
+      setInvoiceItems((prev) =>
+        prev.map((item) => (item.id === id ? { ...item, unitPrice: value } : item))
+      );
+    }
+  };
+
+  const addLineItem = () => {
+    setInvoiceItems((prev) => [
+      ...prev,
+      {
+        id: String(Date.now() + Math.random()),
+        description: "",
+        quantity: "",
+        unitPrice: "",
+      },
+    ]);
+  };
+
+  const removeLineItem = (id: string) => {
+    setInvoiceItems((prev) => {
+      if (prev.length <= 1) {
+        return [{ id: prev[0]?.id || "1", description: "", quantity: "", unitPrice: "" }];
+      }
+      return prev.filter((item) => item.id !== id);
+    });
+  };
+
+  const resetInvoiceForm = () => {
+    setInvoiceForm({
+      clientName: "",
+      issueDate: new Date().toISOString().split("T")[0],
+      dueDate: new Date(Date.now() + 30 * 86400000).toISOString().split("T")[0],
+      taxRate: "18",
+      notes: "",
+    });
+    setInvoiceItems([{ id: "1", description: "", quantity: "", unitPrice: "" }]);
+    setSubmitAttempted(false);
+    setGeneratedInvoiceNumber(null);
+    setActiveInvoiceId(null);
+    setIsViewingGeneratedInvoice(false);
+  };
+
+  const saveInvoice = async (action: "save_draft" | "generate") => {
+    if (isSavingInvoice) return;
+    setSubmitAttempted(true);
+
+    const validationError = validateInvoiceForm();
+    if (validationError) {
+      showToast(validationError, "error");
+      return;
+    }
+
+    setIsSavingInvoice(true);
+    try {
+      const payloadLineItems = invoiceItems.map(({ description, quantity, unitPrice }) => ({
+        description: description.trim(),
+        quantity: Number(quantity),
+        unit_price: Number(unitPrice),
+      }));
+
+      const payload = {
+        client_name: invoiceForm.clientName.trim(),
+        issue_date: invoiceForm.issueDate,
+        due_date: invoiceForm.dueDate,
+        payment_terms_notes: invoiceForm.notes.trim(),
+        tax_rate: parseTaxRate(invoiceForm.taxRate),
+        line_items: payloadLineItems,
+        action,
+      };
+      const { data } = activeInvoiceId
+        ? await apiClient.put(`${FINANCIAL_API}/invoices/${activeInvoiceId}`, payload)
+        : await apiClient.post(`${FINANCIAL_API}/invoices`, payload);
+
+      const savedInvoice: FinancialInvoice | undefined = data?.invoice || data;
+      if (!savedInvoice?.id || !savedInvoice.invoice_number) {
+        throw new Error("Invoice creation response did not include the saved invoice number.");
+      }
+      setInvoices((current) => [
+        savedInvoice,
+        ...current.filter((invoice) => invoice.id !== savedInvoice.id),
+      ]);
+      setGeneratedInvoiceNumber(savedInvoice.invoice_number);
+      setActiveInvoiceId(savedInvoice.id);
+      setIsViewingGeneratedInvoice(savedInvoice.status === "GENERATED");
+      setInvoiceListView(savedInvoice.status === "DRAFT" ? "drafts" : "generated");
+      const serverTotal =
+        typeof savedInvoice?.total === "number"
+          ? ` Server-computed total: ${formatMoney(savedInvoice.total, (savedInvoice.currency || financialSettings.base_currency) as FinancialSettings["base_currency"])}.`
+          : "";
+      showToast(
+        action === "save_draft"
+          ? `Invoice draft ${savedInvoice.invoice_number} ${activeInvoiceId ? "updated" : "saved"}.${serverTotal}`
+          : `Invoice ${savedInvoice.invoice_number} saved with GENERATED status.${serverTotal} No ledger record was written.`,
+        "success"
+      );
+      void refreshDashboard();
+    } catch (error) {
+      showToast(getApiErrorMessage(error, "Unable to save this invoice. Your entries have been kept."), "error");
+    } finally {
+      setIsSavingInvoice(false);
+    }
+  };
+
+  const saveSettings = async () => {
+    setIsSavingSettings(true);
+    try {
+      const { data } = await apiClient.put(`${FINANCIAL_API}/settings`, financialSettings);
+      setFinancialSettings(data.settings || data || financialSettings);
+      setSettingsError(null);
+      showToast("Financial settings saved.", "success");
+    } catch (error) {
+      showToast(getApiErrorMessage(error, "Unable to save financial settings. Your entries have been kept."), "error");
+    } finally {
+      setIsSavingSettings(false);
+    }
+  };
+
+  const requestScan = async () => {
+    setIsScanning(true);
+    try {
+      await apiClient.post(`${FINANCIAL_API}/scans`, {});
+      showToast("The scan request was accepted, but no extraction result is available.", "info");
+    } catch (error) {
+      const response = (error as { response?: { status?: number } })?.response;
+      const status = response?.status;
+      if (status === 501 || status === 503) {
+        showToast(
+          "Invoice scanning is unavailable: OCR and document storage are not configured. The selected file was not uploaded.",
+          "error"
+        );
+      } else {
+        showToast(getApiErrorMessage(error, "Unable to start invoice scanning. The selected file was not uploaded."), "error");
+      }
+    } finally {
+      setIsScanning(false);
+    }
   };
 
   // Close plus dropdown menu when clicking outside or pressing Escape
@@ -338,6 +577,28 @@ export default function FinancialDashboard() {
     }
   };
 
+  const openSavedInvoice = (invoice: FinancialInvoice) => {
+    setInvoiceForm({
+      clientName: invoice.client_name,
+      issueDate: invoice.issue_date,
+      dueDate: invoice.due_date,
+      taxRate: String(invoice.tax_rate),
+      notes: invoice.payment_terms_notes,
+    });
+    setInvoiceItems(invoice.line_items.map((item) => ({
+      id: item.id,
+      description: item.description,
+      quantity: String(item.quantity),
+      unitPrice: String(item.unit_price),
+    })));
+    setGeneratedInvoiceNumber(invoice.invoice_number);
+    setActiveInvoiceId(invoice.id);
+    setIsViewingGeneratedInvoice(invoice.status === "GENERATED");
+    setInvoiceListView(invoice.status === "DRAFT" ? "drafts" : "generated");
+    setSubmitAttempted(false);
+    handleSelectorChange("create");
+  };
+
   // File Upload Handler
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -373,12 +634,11 @@ export default function FinancialDashboard() {
       source: "upload",
     });
 
-    showToast(`File uploaded: ${file.name} (${sizeFormatted})`, "success");
+    showToast(`Selected locally: ${file.name} (${sizeFormatted}). The file was not uploaded.`, "info");
     setIsPlusMenuOpen(false);
 
-    // If on scan tab, simulate scanning right away
     if (activeTab === "scan-invoice" || selectedOption === "scan") {
-      runOcrSimulation(file.name);
+      void requestScan();
     }
 
     if (fileInputRef.current) fileInputRef.current.value = "";
@@ -403,11 +663,11 @@ export default function FinancialDashboard() {
       source: "photo",
     });
 
-    showToast(`Photo selected: ${file.name}`, "success");
+    showToast(`Photo selected locally: ${file.name}. The file was not uploaded.`, "info");
     setIsPlusMenuOpen(false);
 
     if (activeTab === "scan-invoice" || selectedOption === "scan") {
-      runOcrSimulation(file.name);
+      void requestScan();
     }
 
     if (photoInputRef.current) photoInputRef.current.value = "";
@@ -463,9 +723,9 @@ export default function FinancialDashboard() {
       source: "camera",
     });
 
-    showToast("Document photo captured successfully.", "success");
+    showToast("Document photo selected locally. The file was not uploaded.", "info");
     if (activeTab === "scan-invoice" || selectedOption === "scan") {
-      runOcrSimulation(file.name || "Captured Document");
+      void requestScan();
     }
     if (cameraInputRef.current) cameraInputRef.current.value = "";
   };
@@ -488,10 +748,10 @@ export default function FinancialDashboard() {
           type: "Camera Capture (HD)",
           source: "camera",
         });
-        showToast("Photo captured from camera successfully.", "success");
+        showToast("Photo captured locally. The image was not uploaded.", "info");
         closeCameraModal();
         if (activeTab === "scan-invoice" || selectedOption === "scan") {
-          runOcrSimulation(filename);
+          void requestScan();
         }
       }
     } catch (e) {
@@ -580,11 +840,24 @@ export default function FinancialDashboard() {
   };
 
   // Search execution
-  const executeSearch = () => {
+  const executeSearch = async () => {
     const query = searchQuery.trim();
     setExecutedSearchQuery(query);
-    if (query) {
-      showToast(`Showing financial results matching "${query}"`, "info");
+    setHasSearched(true);
+    setSearchLoading(true);
+    setSearchError(null);
+    try {
+      const { data } = await apiClient.get(`${FINANCIAL_API}/dashboard`, {
+        params: { search: query },
+      });
+      setSearchResults(data.records || []);
+    } catch (error) {
+      setSearchResults([]);
+      const message = getApiErrorMessage(error, "Unable to search financial records.");
+      setSearchError(message);
+      showToast(message, "error");
+    } finally {
+      setSearchLoading(false);
     }
   };
 
@@ -595,46 +868,21 @@ export default function FinancialDashboard() {
     }
   };
 
-  // OCR Simulation for Scanned Documents
-  const runOcrSimulation = (fileName: string) => {
-    setIsScanning(true);
-    setScannedResult(null);
-    setTimeout(() => {
-      setIsScanning(false);
-      setScannedResult({
-        vendorName: "Bharat Precision Forgings Ltd",
-        invoiceNo: `BPF-${Math.floor(1000 + Math.random() * 9000)}`,
-        totalAmount: "₹ 3,45,200",
-        taxAmount: "₹ 52,657 (18% GST)",
-        date: new Date().toISOString().split("T")[0],
-        confidence: "99.1% Confidence Score",
-      });
-      showToast(`Document "${fileName}" scanned and data extracted.`, "success");
-    }, 1200);
-  };
-
-  // Dynamic filter results based on search
-  const filteredRecords = useMemo(() => {
-    const q = (executedSearchQuery || searchQuery).trim().toLowerCase();
-    if (!q) return INITIAL_FINANCIAL_RECORDS;
-    return INITIAL_FINANCIAL_RECORDS.filter(
-      (r) =>
-        r.title.toLowerCase().includes(q) ||
-        r.entity.toLowerCase().includes(q) ||
-        r.reference.toLowerCase().includes(q) ||
-        r.category.toLowerCase().includes(q) ||
-        r.status.toLowerCase().includes(q) ||
-        r.type.toLowerCase().includes(q)
-    );
-  }, [searchQuery, executedSearchQuery]);
-
   // Invoice calculations
   const invoiceSubtotal = useMemo(() => {
-    return invoiceItems.reduce((acc, item) => acc + item.quantity * item.unitPrice, 0);
+    return invoiceItems.reduce((acc, item) => {
+      const q = parseQuantity(item.quantity);
+      const r = parseRate(item.unitPrice);
+      if (q !== null && r !== null) {
+        return acc + q * r;
+      }
+      return acc;
+    }, 0);
   }, [invoiceItems]);
 
-  const invoiceTaxAmount = (invoiceSubtotal * invoiceForm.taxRate) / 100;
-  const invoiceGrandTotal = invoiceSubtotal + invoiceTaxAmount;
+  const numericTaxRate = useMemo(() => parseTaxRate(invoiceForm.taxRate), [invoiceForm.taxRate]);
+  const invoiceTaxAmount = useMemo(() => (invoiceSubtotal * numericTaxRate) / 100, [invoiceSubtotal, numericTaxRate]);
+  const invoiceGrandTotal = useMemo(() => invoiceSubtotal + invoiceTaxAmount, [invoiceSubtotal, invoiceTaxAmount]);
 
   return (
     <AgentLayout
@@ -815,8 +1063,8 @@ export default function FinancialDashboard() {
                   >
                     <Upload size={16} className="text-indigo-600 dark:text-indigo-400 shrink-0" />
                     <div>
-                      <p className="font-bold">Upload File</p>
-                      <p className="text-[10px] text-slate-500 dark:text-slate-400">PDF, DOCX, XLSX, CSV, Images</p>
+                      <p className="font-bold">Select File</p>
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400">Choose a document on this device</p>
                     </div>
                   </button>
 
@@ -856,7 +1104,7 @@ export default function FinancialDashboard() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Search invoices, transactions, audits, vendors, or financial records..."
+              placeholder="Search invoices..."
               className="flex-1 bg-transparent px-3 text-xs sm:text-sm font-medium text-slate-900 placeholder:text-slate-400 outline-none dark:text-white"
             />
 
@@ -903,7 +1151,7 @@ export default function FinancialDashboard() {
               <div className="flex items-center gap-2 truncate">
                 <FileCheck size={16} className="text-indigo-600 dark:text-indigo-400 shrink-0" />
                 <span className="truncate">
-                  Attached: <strong>{attachedFile.name}</strong> ({attachedFile.size})
+                  Selected on this device: <strong>{attachedFile.name}</strong> ({attachedFile.size})
                 </span>
                 <span className="rounded-md bg-indigo-200/60 dark:bg-indigo-900/80 px-1.5 py-0.5 text-[10px] uppercase font-bold text-indigo-700 dark:text-indigo-300">
                   {attachedFile.source}
@@ -925,15 +1173,17 @@ export default function FinancialDashboard() {
       {/* ========================================================================= */}
       {/* SEARCH RESULTS VIEW (when user is searching)                             */}
       {/* ========================================================================= */}
-      {(searchQuery.trim().length > 0 || executedSearchQuery.length > 0) && (
+      {(hasSearched || searchLoading) && (
         <section className="space-y-4 rounded-3xl border border-slate-200/80 bg-white/95 p-6 shadow-xl backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/95">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4 dark:border-slate-800">
             <div>
               <h2 className="text-base font-bold text-slate-900 dark:text-white">
-                Search Results ({filteredRecords.length})
+                Search Results ({searchResults.length})
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Matches for &ldquo;{searchQuery || executedSearchQuery}&rdquo; across invoices, transactions, audits, and vendors.
+                {executedSearchQuery
+                  ? `Invoice matches for “${executedSearchQuery}”.`
+                  : "Invoices returned by the server."}
               </p>
             </div>
             <button
@@ -941,6 +1191,9 @@ export default function FinancialDashboard() {
               onClick={() => {
                 setSearchQuery("");
                 setExecutedSearchQuery("");
+                setHasSearched(false);
+                setSearchResults([]);
+                setSearchError(null);
               }}
               className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 transition cursor-pointer"
             >
@@ -949,19 +1202,27 @@ export default function FinancialDashboard() {
             </button>
           </div>
 
-          {filteredRecords.length === 0 ? (
+          {searchLoading ? (
+            <p className="py-8 text-center text-sm font-semibold text-slate-500 dark:text-slate-400">
+              Searching financial records…
+            </p>
+          ) : searchError ? (
+            <p className="py-8 text-center text-sm font-semibold text-rose-600 dark:text-rose-400">
+              {searchError}
+            </p>
+          ) : searchResults.length === 0 ? (
             <div className="py-12 text-center">
               <Search className="mx-auto h-8 w-8 text-slate-400" />
               <p className="mt-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
                 No matching financial records found.
               </p>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Try searching by invoice number, company name, GSTIN, or transaction reference.
+                Try searching by invoice number or company name.
               </p>
             </div>
           ) : (
             <div className="divide-y divide-slate-100 overflow-x-auto dark:divide-slate-800">
-              {filteredRecords.map((item) => (
+              {searchResults.map((item) => (
                 <div
                   key={item.id}
                   className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-3.5 hover:bg-slate-50/70 dark:hover:bg-slate-800/40 rounded-xl px-2 transition"
@@ -995,16 +1256,16 @@ export default function FinancialDashboard() {
                   </div>
 
                   <div className="flex items-center justify-between sm:justify-end gap-4">
-                    {item.amount && (
+                    {item.amount !== null && (
                       <span className="text-sm font-bold text-slate-900 dark:text-white font-mono">
-                        {item.amount}
+                        {formatMoney(item.amount)}
                       </span>
                     )}
                     <span
                       className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
-                        item.status === "Paid" || item.status === "Completed" || item.status === "Passed" || item.status === "Active"
+                        ["paid", "completed", "passed", "active", "generated"].includes(item.status.toLowerCase())
                           ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300"
-                          : item.status === "Pending"
+                          : ["pending", "draft"].includes(item.status.toLowerCase())
                           ? "bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300"
                           : "bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300"
                       }`}
@@ -1026,6 +1287,11 @@ export default function FinancialDashboard() {
       {/* VIEW: DASHBOARD OVERVIEW */}
       {activeTab === "dashboard" && (
         <div className="space-y-6 sm:space-y-8 mt-3 sm:mt-6 md:mt-8 lg:mt-10">
+          {dashboardError && (
+            <p className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-semibold text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300">
+              {dashboardError}
+            </p>
+          )}
           {/* Quick Metrics Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="rounded-2xl border border-slate-200/80 bg-white/95 p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/95">
@@ -1037,9 +1303,11 @@ export default function FinancialDashboard() {
                   <FileText size={18} />
                 </span>
               </div>
-              <p className="mt-3 text-2xl font-bold text-slate-900 dark:text-white font-mono">₹ 29,40,000</p>
-              <p className="mt-1 text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
-                <span>↑ 14.2%</span> <span className="text-slate-400">vs last month</span>
+              <p className="mt-3 text-2xl font-bold text-slate-900 dark:text-white font-mono">
+                {dashboardLoading ? "Loading…" : dashboardSummary?.total_invoiced != null ? formatMoney(dashboardSummary.total_invoiced) : "—"}
+              </p>
+              <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 font-semibold">
+                Total invoiced
               </p>
             </div>
 
@@ -1052,9 +1320,11 @@ export default function FinancialDashboard() {
                   <Clock size={18} />
                 </span>
               </div>
-              <p className="mt-3 text-2xl font-bold text-slate-900 dark:text-white font-mono">₹ 15,60,000</p>
+              <p className="mt-3 text-2xl font-bold text-slate-900 dark:text-white font-mono">
+                {dashboardLoading ? "Loading…" : dashboardSummary?.pending_receivables != null ? formatMoney(dashboardSummary.pending_receivables) : "—"}
+              </p>
               <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 font-semibold">
-                2 active invoices awaiting clearance
+                {dashboardLoading ? "Loading invoice count…" : `${dashboardSummary?.active_invoices ?? "—"} active invoices`}
               </p>
             </div>
 
@@ -1067,9 +1337,17 @@ export default function FinancialDashboard() {
                   <ShieldCheck size={18} />
                 </span>
               </div>
-              <p className="mt-3 text-2xl font-bold text-slate-900 dark:text-white font-mono">100% Passed</p>
+              <p className="mt-3 text-2xl font-bold text-slate-900 dark:text-white font-mono">
+                {dashboardLoading ? "Loading…" : dashboardSummary?.audits_passed != null ? `${dashboardSummary.audits_passed} passed` : "—"}
+              </p>
               <p className="mt-1 text-[11px] text-cyan-600 dark:text-cyan-400 font-semibold">
-                99.4% average compliance rate
+                {dashboardLoading
+                  ? "Loading audit rate…"
+                  : `Audit pass rate: ${dashboardSummary?.audit_pass_rate == null
+                    ? "—"
+                    : `${dashboardSummary.audit_pass_rate <= 1
+                      ? (dashboardSummary.audit_pass_rate * 100).toFixed(1)
+                      : dashboardSummary.audit_pass_rate.toFixed(1)}%`}`}
               </p>
             </div>
 
@@ -1082,9 +1360,11 @@ export default function FinancialDashboard() {
                   <Building2 size={18} />
                 </span>
               </div>
-              <p className="mt-3 text-2xl font-bold text-slate-900 dark:text-white font-mono">28 Vendors</p>
+              <p className="mt-3 text-2xl font-bold text-slate-900 dark:text-white font-mono">
+                {dashboardLoading ? "Loading…" : dashboardSummary?.active_vendors != null ? `${dashboardSummary.active_vendors} vendors` : "—"}
+              </p>
               <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 font-semibold">
-                GSTIN verified & active accounts
+                Active vendors reported by dashboard
               </p>
             </div>
           </div>
@@ -1093,14 +1373,23 @@ export default function FinancialDashboard() {
           <div className="rounded-3xl border border-slate-200/80 bg-white/95 p-6 shadow-xl backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/95">
             <div className="flex items-center justify-between border-b border-slate-100 pb-4 dark:border-slate-800">
               <div>
-                <h3 className="text-base font-bold text-slate-900 dark:text-white">Recent Invoices</h3>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                  {invoiceListView === "drafts" ? "Saved Drafts" : "Generated Invoices"}
+                </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Live status of industrial customer invoices and payment collections.
+                  {invoiceListView === "drafts"
+                    ? "Continue editing drafts saved to your financial account."
+                    : "View invoices generated from your financial account."}
                 </p>
               </div>
               <button
                 type="button"
-                onClick={() => handleSelectorChange("create")}
+                onClick={() => {
+                  if (generatedInvoiceNumber) {
+                    resetInvoiceForm();
+                  }
+                  handleSelectorChange("create");
+                }}
                 className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-2 text-xs font-bold text-white hover:bg-indigo-700 transition cursor-pointer"
               >
                 <Plus size={14} />
@@ -1108,37 +1397,76 @@ export default function FinancialDashboard() {
               </button>
             </div>
 
+            <div className="mt-4 flex flex-wrap gap-2" role="tablist" aria-label="Invoice status">
+              {(["drafts", "generated"] as const).map((view) => (
+                <button
+                  key={view}
+                  type="button"
+                  role="tab"
+                  aria-selected={invoiceListView === view}
+                  onClick={() => setInvoiceListView(view)}
+                  className={`rounded-xl px-3.5 py-2 text-xs font-semibold transition ${
+                    invoiceListView === view
+                      ? "bg-indigo-600 text-white"
+                      : "border border-slate-200 text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                  }`}
+                >
+                  {view === "drafts" ? "Saved Drafts" : "Generated Invoices"}
+                  <span className="ml-2 opacity-75">
+                    {invoices.filter((invoice) => invoice.status === (view === "drafts" ? "DRAFT" : "GENERATED")).length}
+                  </span>
+                </button>
+              ))}
+            </div>
+
             <div className="mt-4 divide-y divide-slate-100 overflow-x-auto dark:divide-slate-800">
-              {INITIAL_FINANCIAL_RECORDS.filter((r) => r.type === "INVOICE").map((inv) => (
+              {invoicesLoading ? (
+                <p className="py-8 text-center text-sm text-slate-500 dark:text-slate-400">Loading invoices…</p>
+              ) : invoicesError ? (
+                <p className="py-8 text-center text-sm text-rose-600 dark:text-rose-400">{invoicesError}</p>
+              ) : invoices.filter((invoice) => invoice.status === (invoiceListView === "drafts" ? "DRAFT" : "GENERATED")).length === 0 ? (
+                <p className="py-8 text-center text-sm text-slate-500 dark:text-slate-400">
+                  {invoiceListView === "drafts" ? "No saved drafts yet." : "No generated invoices yet."}
+                </p>
+              ) : invoices.filter((invoice) => invoice.status === (invoiceListView === "drafts" ? "DRAFT" : "GENERATED")).map((inv) => (
                 <div
                   key={inv.id}
-                  className="flex items-center justify-between gap-4 py-3.5 hover:bg-slate-50/60 dark:hover:bg-slate-800/40 rounded-xl px-2 transition"
+                  className="flex flex-col gap-3 py-3.5 hover:bg-slate-50/60 dark:hover:bg-slate-800/40 rounded-xl px-2 transition sm:flex-row sm:items-center sm:justify-between"
                 >
                   <div className="flex items-center gap-3">
                     <span className="rounded-lg bg-indigo-50 p-2 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-400">
                       <FileText size={18} />
                     </span>
                     <div>
-                      <h4 className="text-sm font-bold text-slate-900 dark:text-white">{inv.title}</h4>
+                      <h4 className="text-sm font-bold text-slate-900 dark:text-white">{inv.client_name}</h4>
                       <p className="text-xs text-slate-500 dark:text-slate-400">
-                        {inv.entity} • <span className="font-mono">{inv.reference}</span> • {inv.date}
+                        <span className="font-mono">{inv.invoice_number}</span> • {inv.issue_date}
                       </p>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-4">
-                    <span className="text-sm font-bold text-slate-900 dark:text-white font-mono">{inv.amount}</span>
+                  <div className="flex flex-wrap items-center gap-3 sm:gap-4">
+                    <span className="text-sm font-bold text-slate-900 dark:text-white font-mono">
+                      {formatMoney(inv.total, (inv.currency || financialSettings.base_currency) as FinancialSettings["base_currency"])}
+                    </span>
                     <span
                       className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
-                        inv.status === "Paid"
+                        inv.status === "GENERATED"
                           ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300"
-                          : inv.status === "Pending"
+                          : inv.status === "DRAFT"
                           ? "bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300"
                           : "bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300"
                       }`}
                     >
                       {inv.status}
                     </span>
+                    <button
+                      type="button"
+                      onClick={() => openSavedInvoice(inv)}
+                      className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                    >
+                      {inv.status === "DRAFT" ? "Continue Editing" : "View Invoice"}
+                    </button>
                   </div>
                 </div>
               ))}
@@ -1149,89 +1477,151 @@ export default function FinancialDashboard() {
 
       {/* VIEW: CREATE INVOICE */}
       {activeTab === "create-invoice" && (
-        <div className="space-y-6 rounded-3xl border border-slate-200/80 bg-white/95 p-4 sm:p-6 sm:p-8 shadow-xl backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/95 mt-3 sm:mt-6 md:mt-8 lg:mt-10">
+        <div className="space-y-6 rounded-3xl border border-slate-200/80 bg-white/95 p-4 sm:p-6 sm:p-8 shadow-xl backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/95 mt-3 sm:mt-6 md:mt-8 lg:mt-10 pb-6 sm:pb-8">
           <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-5 dark:border-slate-800">
             <div>
               <div className="inline-flex items-center gap-2 rounded-full bg-indigo-50 px-3 py-1 text-xs font-bold text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-400">
                 <FileText size={14} />
                 <span>INVOICE GENERATOR</span>
               </div>
-              <h2 className="mt-2 text-xl font-bold text-slate-900 dark:text-white">Create Industrial Invoice</h2>
+              <h2 className="mt-2 text-xl font-bold text-slate-900 dark:text-white">
+                {isViewingGeneratedInvoice ? "View Generated Invoice" : activeInvoiceId ? "Continue Editing Draft" : "Create Industrial Invoice"}
+              </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Generate GST-compliant invoices for supply chain, machinery, and services.
+                Create invoices for supply chain, machinery, and services.
               </p>
             </div>
 
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  showToast("Invoice saved as draft.", "success");
-                }}
-                className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 transition cursor-pointer"
-              >
-                Save Draft
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  showToast(`Invoice ${invoiceForm.invoiceNumber} generated and ready to send.`, "success");
-                }}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-5 py-2 text-xs font-bold text-white shadow-md shadow-indigo-600/30 hover:bg-indigo-700 transition cursor-pointer"
-              >
-                <Check size={14} />
-                <span>Generate Invoice</span>
-              </button>
-            </div>
+            {generatedInvoiceNumber && (
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300">
+                  <CheckCircle2 size={14} />
+                  <span>
+                    {isViewingGeneratedInvoice
+                      ? `Viewing generated invoice ${generatedInvoiceNumber}`
+                      : activeInvoiceId
+                        ? `Editing draft ${generatedInvoiceNumber}`
+                        : `Invoice ${generatedInvoiceNumber} saved`}
+                  </span>
+                </span>
+                {isViewingGeneratedInvoice ? (
+                  <button
+                    type="button"
+                    onClick={() => handleTabChange("dashboard")}
+                    className="rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 transition cursor-pointer"
+                  >
+                    Back to Invoices
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={resetInvoiceForm}
+                    className="rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 transition cursor-pointer"
+                  >
+                    Create Another
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Invoice Header Details */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-4">
+            <div className="lg:col-span-3">
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
                 Invoice Number
               </label>
               <input
                 type="text"
-                value={invoiceForm.invoiceNumber}
-                onChange={(e) => setInvoiceForm({ ...invoiceForm, invoiceNumber: e.target.value })}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs sm:text-sm font-mono font-medium text-slate-900 outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                value={generatedInvoiceNumber || ""}
+                placeholder="Generated automatically"
+                readOnly
+                tabIndex={-1}
+                aria-label="Invoice number generated automatically"
+                className="w-full rounded-xl border border-slate-200 bg-slate-100/70 px-3.5 py-2.5 text-xs sm:text-sm font-mono font-medium text-slate-600 outline-none select-none dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-400 cursor-not-allowed"
               />
             </div>
 
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
-                Client / Company Name
+            <div className="lg:col-span-3">
+              <label htmlFor="client-name" className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
+                Client / Company Name <span className="text-rose-500">*</span>
               </label>
               <input
+                id="client-name"
                 type="text"
+                placeholder="e.g. Apex Digital"
                 value={invoiceForm.clientName}
-                onChange={(e) => setInvoiceForm({ ...invoiceForm, clientName: e.target.value })}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs sm:text-sm font-medium text-slate-900 outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                disabled={isViewingGeneratedInvoice}
+                onChange={(e) => setInvoiceForm((prev) => ({ ...prev, clientName: e.target.value }))}
+                className={`w-full rounded-xl border bg-slate-50/50 px-3.5 py-2.5 text-xs sm:text-sm font-medium text-slate-900 outline-none transition focus:bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:bg-slate-800/50 dark:text-white ${
+                  submitAttempted && !invoiceForm.clientName.trim()
+                    ? "border-rose-400 dark:border-rose-600 bg-rose-50/30 dark:bg-rose-950/20"
+                    : "border-slate-200 dark:border-slate-700"
+                }`}
               />
+              {submitAttempted && !invoiceForm.clientName.trim() && (
+                <p className="mt-1 text-[11px] font-semibold text-rose-500 dark:text-rose-400">
+                  Client name is required
+                </p>
+              )}
             </div>
 
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
-                Issue Date
+            <div className="lg:col-span-2">
+              <label htmlFor="issue-date" className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
+                Issue Date <span className="text-rose-500">*</span>
               </label>
               <input
+                id="issue-date"
                 type="date"
                 value={invoiceForm.issueDate}
-                onChange={(e) => setInvoiceForm({ ...invoiceForm, issueDate: e.target.value })}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs sm:text-sm font-medium text-slate-900 outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                disabled={isViewingGeneratedInvoice}
+                onChange={(e) => setInvoiceForm((prev) => ({ ...prev, issueDate: e.target.value }))}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2.5 text-xs sm:text-sm font-medium text-slate-900 outline-none transition focus:bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800/50 dark:text-white"
               />
             </div>
 
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
-                Payment Due Date
+            <div className="lg:col-span-2">
+              <label htmlFor="due-date" className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
+                Payment Due Date <span className="text-rose-500">*</span>
               </label>
               <input
+                id="due-date"
                 type="date"
                 value={invoiceForm.dueDate}
-                onChange={(e) => setInvoiceForm({ ...invoiceForm, dueDate: e.target.value })}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs sm:text-sm font-medium text-slate-900 outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                min={invoiceForm.issueDate}
+                disabled={isViewingGeneratedInvoice}
+                onChange={(e) => setInvoiceForm((prev) => ({ ...prev, dueDate: e.target.value }))}
+                className={`w-full rounded-xl border bg-slate-50/50 px-3 py-2.5 text-xs sm:text-sm font-medium text-slate-900 outline-none transition focus:bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:bg-slate-800/50 dark:text-white ${
+                  submitAttempted && invoiceForm.dueDate < invoiceForm.issueDate
+                    ? "border-rose-400 dark:border-rose-600 bg-rose-50/30 dark:bg-rose-950/20"
+                    : "border-slate-200 dark:border-slate-700"
+                }`}
+              />
+              {submitAttempted && invoiceForm.dueDate < invoiceForm.issueDate && (
+                <p className="mt-1 text-[11px] font-semibold text-rose-500 dark:text-rose-400">
+                  Due date must not precede issue date
+                </p>
+              )}
+            </div>
+
+            <div className="lg:col-span-2">
+              <label htmlFor="tax-rate" className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
+                Tax Rate (%)
+              </label>
+              <input
+                id="tax-rate"
+                type="text"
+                inputMode="decimal"
+                placeholder="18"
+                value={invoiceForm.taxRate}
+                disabled={isViewingGeneratedInvoice}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val === "" || /^\d*\.?\d*$/.test(val)) {
+                    setInvoiceForm((prev) => ({ ...prev, taxRate: val }));
+                  }
+                }}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2.5 text-xs sm:text-sm font-mono font-medium text-slate-900 outline-none transition focus:bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800/50 dark:text-white"
               />
             </div>
           </div>
@@ -1240,139 +1630,220 @@ export default function FinancialDashboard() {
           <div className="space-y-3 pt-2">
             <div className="flex items-center justify-between">
               <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                Invoice Line Items
+                Invoice Line Items <span className="text-rose-500">*</span>
               </h3>
-              <button
-                type="button"
-                onClick={() => {
-                  setInvoiceItems([
-                    ...invoiceItems,
-                    {
-                      id: String(Date.now()),
-                      description: "New Item / Industrial Service",
-                      quantity: 1,
-                      unitPrice: 1000,
-                    },
-                  ]);
-                }}
-                className="inline-flex items-center gap-1 text-xs font-bold text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 cursor-pointer"
-              >
-                <Plus size={14} />
-                <span>Add Item</span>
-              </button>
             </div>
 
-            <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-700">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 dark:bg-slate-800/80 text-slate-500 dark:text-slate-400 uppercase font-bold tracking-wider">
+            <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/60 shadow-xs">
+              <table className="w-full min-w-[620px] text-left text-xs">
+                <thead className="border-b border-slate-200/80 bg-slate-50/90 dark:border-slate-800 dark:bg-slate-800/70 text-slate-500 dark:text-slate-400 uppercase font-bold tracking-wider">
                   <tr>
-                    <th className="p-3">Description</th>
-                    <th className="p-3 w-24">Qty</th>
-                    <th className="p-3 w-32">Rate (₹)</th>
-                    <th className="p-3 w-32 text-right">Total (₹)</th>
-                    <th className="p-3 w-12 text-center">Action</th>
+                    <th className="py-2.5 px-3">Description</th>
+                    <th className="py-2.5 px-3 w-28">Qty</th>
+                    <th className="py-2.5 px-3 w-36">Rate (₹)</th>
+                    <th className="py-2.5 px-3 w-36 text-right">Amount (₹)</th>
+                    <th className="py-2.5 px-3 w-16 text-center">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {invoiceItems.map((item) => (
-                    <tr key={item.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
-                      <td className="p-3">
-                        <input
-                          type="text"
-                          value={item.description}
-                          onChange={(e) => {
-                            setInvoiceItems(
-                              invoiceItems.map((i) =>
-                                i.id === item.id ? { ...i, description: e.target.value } : i
-                              )
-                            );
-                          }}
-                          className="w-full bg-transparent font-medium text-slate-900 outline-none dark:text-white"
-                        />
-                      </td>
-                      <td className="p-3">
-                        <input
-                          type="number"
-                          min="1"
-                          value={item.quantity}
-                          onChange={(e) => {
-                            setInvoiceItems(
-                              invoiceItems.map((i) =>
-                                i.id === item.id ? { ...i, quantity: Number(e.target.value) || 0 } : i
-                              )
-                            );
-                          }}
-                          className="w-full bg-transparent font-mono font-medium text-slate-900 outline-none dark:text-white"
-                        />
-                      </td>
-                      <td className="p-3">
-                        <input
-                          type="number"
-                          min="0"
-                          value={item.unitPrice}
-                          onChange={(e) => {
-                            setInvoiceItems(
-                              invoiceItems.map((i) =>
-                                i.id === item.id ? { ...i, unitPrice: Number(e.target.value) || 0 } : i
-                              )
-                            );
-                          }}
-                          className="w-full bg-transparent font-mono font-medium text-slate-900 outline-none dark:text-white"
-                        />
-                      </td>
-                      <td className="p-3 text-right font-mono font-bold text-slate-900 dark:text-white">
-                        ₹ {(item.quantity * item.unitPrice).toLocaleString()}
-                      </td>
-                      <td className="p-3 text-center">
-                        {invoiceItems.length > 1 && (
+                  {invoiceItems.map((item, index) => {
+                    const rowAmount = getRowAmount(item);
+                    const hasDescError = submitAttempted && !item.description.trim();
+                    const hasQtyError = submitAttempted && parseQuantity(item.quantity) === null;
+                    const hasRateError = submitAttempted && parseRate(item.unitPrice) === null;
+
+                    return (
+                      <tr key={item.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition-colors">
+                        <td className="py-2.5 px-3">
+                          <input
+                            type="text"
+                            placeholder="Item description"
+                            aria-label={`Line item ${index + 1} description`}
+                            value={item.description}
+                            disabled={isViewingGeneratedInvoice}
+                            onChange={(e) => handleDescriptionChange(item.id, e.target.value)}
+                            className={`w-full rounded-lg border bg-slate-50/50 px-3 py-2 text-xs sm:text-sm font-medium text-slate-900 outline-none transition focus:bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:bg-slate-800/50 dark:text-white ${
+                              hasDescError
+                                ? "border-rose-400 dark:border-rose-600 bg-rose-50/30 dark:bg-rose-950/20"
+                                : "border-slate-200 dark:border-slate-700"
+                            }`}
+                          />
+                        </td>
+                        <td className="py-2.5 px-3">
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            placeholder="Qty"
+                            aria-label={`Line item ${index + 1} quantity`}
+                            value={item.quantity}
+                            disabled={isViewingGeneratedInvoice}
+                            onChange={(e) => handleQuantityChange(item.id, e.target.value)}
+                            className={`w-full rounded-lg border bg-slate-50/50 px-3 py-2 text-xs sm:text-sm font-mono font-medium text-slate-900 outline-none transition focus:bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:bg-slate-800/50 dark:text-white ${
+                              hasQtyError
+                                ? "border-rose-400 dark:border-rose-600 bg-rose-50/30 dark:bg-rose-950/20"
+                                : "border-slate-200 dark:border-slate-700"
+                            }`}
+                          />
+                        </td>
+                        <td className="py-2.5 px-3">
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            placeholder="Rate (₹)"
+                            aria-label={`Line item ${index + 1} unit rate`}
+                            value={item.unitPrice}
+                            disabled={isViewingGeneratedInvoice}
+                            onChange={(e) => handleRateChange(item.id, e.target.value)}
+                            className={`w-full rounded-lg border bg-slate-50/50 px-3 py-2 text-xs sm:text-sm font-mono font-medium text-slate-900 outline-none transition focus:bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:bg-slate-800/50 dark:text-white ${
+                              hasRateError
+                                ? "border-rose-400 dark:border-rose-600 bg-rose-50/30 dark:bg-rose-950/20"
+                                : "border-slate-200 dark:border-slate-700"
+                            }`}
+                          />
+                        </td>
+                        <td className="py-2.5 px-3 text-right font-mono font-semibold text-slate-900 dark:text-white">
+                          {formatMoney(rowAmount)}
+                        </td>
+                        <td className="py-2.5 px-3 text-center">
                           <button
                             type="button"
-                            onClick={() => {
-                              setInvoiceItems(invoiceItems.filter((i) => i.id !== item.id));
-                            }}
-                            className="text-slate-400 hover:text-rose-600 transition cursor-pointer"
+                            onClick={() => removeLineItem(item.id)}
+                            aria-label={`Remove line item ${index + 1}`}
+                            title={invoiceItems.length <= 1 ? "Clear row" : "Remove item"}
+                            disabled={isViewingGeneratedInvoice || (invoiceItems.length <= 1 && !item.description && !item.quantity && !item.unitPrice)}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/40 dark:hover:text-rose-400 transition cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-slate-400"
                           >
-                            <Trash2 size={14} />
+                            <Trash2 size={15} />
                           </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
+
+            {/* + Add item directly beneath the rows */}
+            <div className="pt-1">
+              <button
+                type="button"
+                onClick={addLineItem}
+                disabled={isViewingGeneratedInvoice}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-dashed border-indigo-300 bg-indigo-50/50 px-4 py-2 text-xs font-bold text-indigo-700 hover:bg-indigo-100 hover:border-indigo-400 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300 dark:hover:bg-indigo-950/60 transition cursor-pointer"
+              >
+                <Plus size={14} />
+                <span>Add item</span>
+              </button>
+            </div>
           </div>
 
-          {/* Invoice Summary */}
+          {/* Payment Terms & Notes and Summary */}
           <div className="flex flex-col sm:flex-row justify-between gap-6 border-t border-slate-100 pt-5 dark:border-slate-800">
             <div className="max-w-md w-full">
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+              <label htmlFor="payment-notes" className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
                 Payment Terms & Notes
               </label>
               <textarea
-                rows={2}
+                id="payment-notes"
+                rows={3}
+                placeholder="Payment due within 15 days"
                 value={invoiceForm.notes}
-                onChange={(e) => setInvoiceForm({ ...invoiceForm, notes: e.target.value })}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-xs text-slate-800 outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                disabled={isViewingGeneratedInvoice}
+                onChange={(e) => setInvoiceForm((prev) => ({ ...prev, notes: e.target.value }))}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50/50 p-3 text-xs text-slate-800 outline-none transition focus:bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-200"
               />
             </div>
 
-            <div className="w-full sm:w-72 space-y-2 text-xs">
+            <div className="w-full sm:w-80 rounded-2xl border border-slate-100 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-800/50 space-y-2 text-xs">
               <div className="flex justify-between text-slate-600 dark:text-slate-400">
                 <span>Subtotal:</span>
-                <span className="font-mono font-semibold">₹ {invoiceSubtotal.toLocaleString()}</span>
+                <span className="font-mono font-semibold text-slate-900 dark:text-white">
+                  {formatMoney(invoiceSubtotal)}
+                </span>
               </div>
               <div className="flex justify-between text-slate-600 dark:text-slate-400">
-                <span>GST ({invoiceForm.taxRate}%):</span>
-                <span className="font-mono font-semibold">₹ {invoiceTaxAmount.toLocaleString()}</span>
+                <span>Tax ({numericTaxRate}%):</span>
+                <span className="font-mono font-semibold text-slate-900 dark:text-white">
+                  {formatMoney(invoiceTaxAmount)}
+                </span>
               </div>
               <div className="flex justify-between border-t border-slate-200 pt-2 text-sm font-bold text-slate-900 dark:border-slate-700 dark:text-white">
                 <span>Grand Total:</span>
                 <span className="font-mono text-indigo-600 dark:text-indigo-400">
-                  ₹ {invoiceGrandTotal.toLocaleString()}
+                  {formatMoney(invoiceGrandTotal)}
                 </span>
               </div>
+              <p className="text-[10px] text-slate-500 dark:text-slate-400 pt-1">
+                Preview only; the server recomputes invoice totals when saved.
+              </p>
             </div>
+          </div>
+
+          {/* Sticky Bottom Action Bar */}
+          <div className="sticky bottom-0 z-20 -mx-4 -mb-4 sm:-mx-6 sm:-mb-6 sm:-mx-8 sm:-mb-8 mt-6 border-t border-slate-200/80 bg-white/95 dark:border-slate-800 dark:bg-slate-900/95 backdrop-blur-md px-4 py-3.5 sm:px-8 rounded-b-3xl shadow-lg">
+            {isViewingGeneratedInvoice ? (
+              <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500 dark:text-slate-400">
+                <span>Generated invoices are read-only.</span>
+                <button
+                  type="button"
+                  onClick={() => handleTabChange("dashboard")}
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                >
+                  Back to Invoices
+                </button>
+              </div>
+            ) : (
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="text-xs">
+                  {submitAttempted && (
+                    !invoiceForm.clientName.trim() ||
+                    !invoiceForm.issueDate ||
+                    !invoiceForm.dueDate ||
+                    invoiceForm.dueDate < invoiceForm.issueDate ||
+                    invoiceItems.some(
+                      (it) =>
+                        !it.description.trim() ||
+                        parseQuantity(it.quantity) === null ||
+                        parseRate(it.unitPrice) === null
+                    )
+                  ) ? (
+                    <span className="inline-flex items-center gap-1.5 font-semibold text-rose-500 dark:text-rose-400">
+                      <AlertCircle size={14} className="shrink-0" />
+                      <span>Please complete required fields highlighted above</span>
+                    </span>
+                  ) : null}
+                </div>
+
+                <div className="flex items-center gap-2.5 ml-auto">
+                  <button
+                    type="button"
+                    onClick={() => void saveInvoice("save_draft")}
+                    disabled={isSavingInvoice}
+                    className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isSavingInvoice ? "Saving…" : "Save Draft"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void saveInvoice("generate")}
+                    disabled={isSavingInvoice}
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-5 py-2.5 text-xs font-bold text-white shadow-md shadow-indigo-600/30 hover:bg-indigo-700 transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isSavingInvoice ? (
+                      <>
+                        <RefreshCw size={14} className="animate-spin" />
+                        <span>Saving…</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check size={14} />
+                        <span>Generate Invoice</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1383,13 +1854,13 @@ export default function FinancialDashboard() {
           <div className="border-b border-slate-100 pb-2.5 sm:pb-4 dark:border-slate-800">
             <div className="inline-flex items-center gap-1.5 sm:gap-2 rounded-full bg-purple-50 px-2.5 py-0.5 sm:px-3 sm:py-1 text-[10px] sm:text-xs font-bold text-purple-600 dark:bg-purple-950/60 dark:text-purple-400">
               <Scan size={13} className="sm:w-3.5 sm:h-3.5" />
-              <span>INTELLIGENT OCR SCANNER</span>
+              <span>SCAN SERVICE</span>
             </div>
             <h2 className="mt-1 sm:mt-2 text-sm sm:text-xl font-bold text-slate-900 dark:text-white">
               Scan & Process Vendor Bills
             </h2>
             <p className="mt-0.5 text-[10px] sm:text-xs text-slate-500 dark:text-slate-400">
-              Upload documents, take camera photos, or drag & drop vendor invoices to automatically extract data.
+              Select a document or capture a photo to check scan service availability.
             </p>
           </div>
 
@@ -1403,7 +1874,7 @@ export default function FinancialDashboard() {
                 <Upload size={16} className="sm:w-6 sm:h-6" />
               </div>
               <h4 className="mt-1 sm:mt-3 text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
-                Upload Invoice File
+                Select Invoice File
               </h4>
               <p className="mt-0.5 text-[10px] sm:text-xs text-slate-500 dark:text-slate-400">
                 PDF, DOCX, XLSX, CSV, or Image (up to 25MB)
@@ -1438,57 +1909,20 @@ export default function FinancialDashboard() {
             </div>
           </div>
 
-          {/* OCR Processing Loader / Result */}
+          {/* Scan service status */}
           {isScanning && (
             <div className="flex items-center justify-center gap-3 rounded-2xl border border-indigo-200 bg-indigo-50/70 p-6 text-indigo-700 dark:border-indigo-900/60 dark:bg-indigo-950/60 dark:text-indigo-300">
               <RefreshCw size={18} className="animate-spin text-indigo-600" />
               <span className="text-xs font-bold uppercase tracking-wider">
-                Analyzing invoice lines & extracting metadata with OCR...
+                Checking scan service availability…
               </span>
             </div>
           )}
 
-          {scannedResult && !isScanning && (
-            <div className="rounded-2xl border border-emerald-200 bg-emerald-50/40 p-5 dark:border-emerald-900/60 dark:bg-emerald-950/40">
-              <div className="flex items-center justify-between border-b border-emerald-200/60 pb-3 dark:border-emerald-800/60">
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 size={18} className="text-emerald-600 dark:text-emerald-400" />
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-300">
-                    Data Successfully Extracted ({scannedResult.confidence})
-                  </h4>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    showToast("Verified & Recorded in Financial Ledger", "success");
-                    setScannedResult(null);
-                  }}
-                  className="rounded-xl bg-emerald-600 px-4 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-emerald-700 transition cursor-pointer"
-                >
-                  Verify & Record to Ledger
-                </button>
-              </div>
-
-              <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
-                <div>
-                  <span className="text-slate-500 dark:text-slate-400">Extracted Vendor:</span>
-                  <p className="font-bold text-slate-900 dark:text-white">{scannedResult.vendorName}</p>
-                </div>
-                <div>
-                  <span className="text-slate-500 dark:text-slate-400">Invoice Number:</span>
-                  <p className="font-mono font-bold text-slate-900 dark:text-white">{scannedResult.invoiceNo}</p>
-                </div>
-                <div>
-                  <span className="text-slate-500 dark:text-slate-400">Total Amount:</span>
-                  <p className="font-mono font-bold text-emerald-600 dark:text-emerald-400">{scannedResult.totalAmount}</p>
-                </div>
-                <div>
-                  <span className="text-slate-500 dark:text-slate-400">Date:</span>
-                  <p className="font-medium text-slate-900 dark:text-white">{scannedResult.date}</p>
-                </div>
-              </div>
-            </div>
-          )}
+          <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4 text-xs font-medium text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
+            OCR and document storage are not configured. Selected files stay on this device and are not sent.
+            No scan result is created and no ledger record is written.
+          </div>
         </div>
       )}
 
@@ -1502,42 +1936,45 @@ export default function FinancialDashboard() {
             </div>
             <h2 className="mt-2 text-xl font-bold text-slate-900 dark:text-white">Audits Till Date</h2>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Historical ledger reconciliation, GST compliance checks, and statutory audit logs.
+              Audit records returned by your financial account.
             </p>
           </div>
 
-          <div className="divide-y divide-slate-100 dark:divide-slate-800">
-            {INITIAL_FINANCIAL_RECORDS.filter((r) => r.type === "AUDIT").map((audit) => (
-              <div key={audit.id} className="py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="flex items-start gap-3">
-                  <span className="mt-0.5 rounded-lg bg-cyan-50 p-2 text-cyan-600 dark:bg-cyan-950/60 dark:text-cyan-400">
-                    <ShieldCheck size={18} />
-                  </span>
-                  <div>
-                    <h4 className="text-sm font-bold text-slate-900 dark:text-white">{audit.title}</h4>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
-                      Ref: <span className="font-mono font-semibold">{audit.reference}</span> • Auditor: {audit.entity} • {audit.date}
-                    </p>
-                    <p className="mt-1 text-xs font-semibold text-cyan-600 dark:text-cyan-400">{audit.category}</p>
+          {auditsLoading ? (
+            <p className="py-8 text-center text-sm text-slate-500 dark:text-slate-400">Loading audit records…</p>
+          ) : auditsError ? (
+            <p className="py-8 text-center text-sm text-rose-600 dark:text-rose-400">{auditsError}</p>
+          ) : audits.length === 0 ? (
+            <div className="py-12 text-center">
+              <ShieldCheck className="mx-auto h-8 w-8 text-slate-400" />
+              <p className="mt-2 text-sm font-semibold text-slate-700 dark:text-slate-300">No audit records available.</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-slate-100 dark:divide-slate-800">
+              {audits.map((audit, index) => (
+                <div key={String(audit.id ?? index)} className="py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    <span className="mt-0.5 rounded-lg bg-cyan-50 p-2 text-cyan-600 dark:bg-cyan-950/60 dark:text-cyan-400">
+                      <ShieldCheck size={18} />
+                    </span>
+                    <div>
+                      <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+                        {String(audit.title ?? audit.name ?? audit.id ?? "Audit record")}
+                      </h4>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        {String(audit.reference ?? "")} {audit.date ? `• ${String(audit.date)}` : ""}
+                      </p>
+                    </div>
                   </div>
+                  {audit.status != null && (
+                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                      {String(audit.status)}
+                    </span>
+                  )}
                 </div>
-
-                <div className="flex items-center gap-3">
-                  <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
-                    {audit.status}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => showToast(`Audit Report ${audit.reference} downloaded.`, "success")}
-                    className="rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 transition cursor-pointer flex items-center gap-1.5"
-                  >
-                    <Download size={13} />
-                    <span>Report</span>
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -1547,16 +1984,32 @@ export default function FinancialDashboard() {
           <div className="border-b border-slate-100 pb-5 dark:border-slate-800">
             <h2 className="text-xl font-bold text-slate-900 dark:text-white">Financial Agent Settings</h2>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Configure currency, tax parameters, and automated invoice reconciliation preferences.
+              Configure your saved financial preferences. Saving the reconciliation preference does not run reconciliation.
             </p>
           </div>
 
+          {settingsLoading && (
+            <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">Loading financial settings…</p>
+          )}
+          {settingsError && (
+            <p className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-semibold text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300">
+              {settingsError}
+            </p>
+          )}
           <div className="space-y-5 max-w-xl text-xs">
             <div>
               <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
                 Base Operating Currency
               </label>
-              <select className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5 font-medium text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+              <select
+                value={financialSettings.base_currency}
+                disabled={settingsLoading || isSavingSettings}
+                onChange={(e) => setFinancialSettings({
+                  ...financialSettings,
+                  base_currency: e.target.value as FinancialSettings["base_currency"],
+                })}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5 font-medium text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+              >
                 <option value="INR">INR (₹) — Indian Rupee</option>
                 <option value="USD">USD ($) — United States Dollar</option>
                 <option value="EUR">EUR (€) — Euro</option>
@@ -1565,11 +2018,13 @@ export default function FinancialDashboard() {
 
             <div>
               <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                Company GSTIN / Tax Identification
+                Company Tax Identifier
               </label>
               <input
                 type="text"
-                defaultValue="27AAACG1234M1Z5"
+                value={financialSettings.tax_identifier}
+                disabled={settingsLoading || isSavingSettings}
+                onChange={(e) => setFinancialSettings({ ...financialSettings, tax_identifier: e.target.value })}
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5 font-mono font-medium text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
               />
             </div>
@@ -1578,18 +2033,28 @@ export default function FinancialDashboard() {
               <div>
                 <p className="font-bold text-slate-900 dark:text-white">Auto-Reconcile Incoming Bills</p>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                  Automatically match scanned vendor bills against purchase orders.
+                  Preference only; automatic reconciliation is not currently configured.
                 </p>
               </div>
-              <input type="checkbox" defaultChecked className="h-4 w-4 accent-indigo-600 cursor-pointer" />
+              <input
+                type="checkbox"
+                checked={financialSettings.auto_reconcile_incoming_bills}
+                disabled={settingsLoading || isSavingSettings}
+                onChange={(e) => setFinancialSettings({
+                  ...financialSettings,
+                  auto_reconcile_incoming_bills: e.target.checked,
+                })}
+                className="h-4 w-4 accent-indigo-600 cursor-pointer"
+              />
             </div>
 
             <button
               type="button"
-              onClick={() => showToast("Financial settings saved successfully.", "success")}
+              onClick={() => void saveSettings()}
+              disabled={settingsLoading || isSavingSettings}
               className="rounded-xl bg-indigo-600 px-5 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-indigo-700 transition cursor-pointer"
             >
-              Save Settings
+              {isSavingSettings ? "Saving…" : "Save Settings"}
             </button>
           </div>
         </div>

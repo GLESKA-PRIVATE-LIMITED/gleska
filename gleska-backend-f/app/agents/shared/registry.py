@@ -34,12 +34,14 @@ class AgentRegistry:
 
 def _default_agent_definitions() -> Iterable[AgentDefinition]:
     from app.agents.hiring import HIRING_AGENT_DEFINITION
+    from app.agents.financial import FINANCIAL_AGENT_DEFINITION
     from app.agents.logistics import LOGISTICS_AGENT_DEFINITION
     from app.agents.procurement import PROCUREMENT_AGENT_DEFINITION
     from app.agents.tender import TENDER_AGENT_DEFINITION
 
     return (
         HIRING_AGENT_DEFINITION,
+        FINANCIAL_AGENT_DEFINITION,
         LOGISTICS_AGENT_DEFINITION,
         PROCUREMENT_AGENT_DEFINITION,
         TENDER_AGENT_DEFINITION,
