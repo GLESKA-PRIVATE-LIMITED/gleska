@@ -3,9 +3,12 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import {
   FileText,
+  Download,
+  Eye,
   Scan,
   Search,
   Plus,
+  Printer,
   Mic,
   MicOff,
   Upload,
@@ -26,6 +29,7 @@ import {
 import AgentLayout from "@/components/agent-dashboard/AgentLayout";
 import { financialConfig } from "@/components/agents/financial/financialConfig";
 import apiClient from "@/lib/api";
+import { createInvoicePdf } from "./invoicePdf";
 
 // Supported file formats for upload
 const SUPPORTED_DOCUMENT_EXTENSIONS = [
@@ -68,7 +72,7 @@ interface FinancialInvoice {
   issue_date: string;
   due_date: string;
   payment_terms_notes: string;
-  currency: string;
+  currency: "INR" | "USD" | "EUR";
   status: "DRAFT" | "GENERATED";
   subtotal: number;
   tax_rate: number;
@@ -83,10 +87,32 @@ interface FinancialInvoice {
   }[];
 }
 
+interface FinancialInvoiceCompanyDetails {
+  business_name?: string | null;
+  registered_address?: string | null;
+  address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  pincode?: string | null;
+  gstin?: string | null;
+  company_email?: string | null;
+  company_phone?: string | null;
+}
+
 interface FinancialSettings {
   base_currency: "INR" | "USD" | "EUR";
   tax_identifier: string;
   auto_reconcile_incoming_bills: boolean;
+}
+
+interface FinancialAuditEvent {
+  id: string;
+  invoice_id: string;
+  invoice_number: string;
+  action: "DRAFT_CREATED" | "DRAFT_UPDATED" | "INVOICE_GENERATED" | "DRAFT_DELETED";
+  status: "DRAFT" | "GENERATED" | "DELETED";
+  actor_user_id: string;
+  created_at: string;
 }
 
 const FINANCIAL_API = "/api/v1/financial";
@@ -137,10 +163,15 @@ export default function FinancialDashboard() {
   const [searchLoading, setSearchLoading] = useState<boolean>(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [invoices, setInvoices] = useState<FinancialInvoice[]>([]);
+  const [invoiceCompanyDetails, setInvoiceCompanyDetails] = useState<FinancialInvoiceCompanyDetails | null>(null);
   const [invoicesLoading, setInvoicesLoading] = useState<boolean>(true);
   const [invoicesError, setInvoicesError] = useState<string | null>(null);
   const [invoiceListView, setInvoiceListView] = useState<"drafts" | "generated">("drafts");
-  const [audits, setAudits] = useState<Record<string, unknown>[]>([]);
+  const [viewingInvoice, setViewingInvoice] = useState<FinancialInvoice | null>(null);
+  const [invoiceMutationId, setInvoiceMutationId] = useState<string | null>(null);
+  const [invoiceMutationKind, setInvoiceMutationKind] = useState<"generate" | "delete" | null>(null);
+  const [downloadingInvoiceId, setDownloadingInvoiceId] = useState<string | null>(null);
+  const [audits, setAudits] = useState<FinancialAuditEvent[]>([]);
   const [auditsLoading, setAuditsLoading] = useState<boolean>(false);
   const [auditsError, setAuditsError] = useState<string | null>(null);
 
@@ -164,6 +195,8 @@ export default function FinancialDashboard() {
   const [isViewingGeneratedInvoice, setIsViewingGeneratedInvoice] = useState<boolean>(false);
   const [submitAttempted, setSubmitAttempted] = useState<boolean>(false);
   const [isSavingInvoice, setIsSavingInvoice] = useState<boolean>(false);
+  const invoiceMutationLockRef = useRef<boolean>(false);
+  const pdfDownloadLockRef = useRef<boolean>(false);
   const [invoiceItems, setInvoiceItems] = useState<InvoiceItemDraft[]>([
     { id: "1", description: "", quantity: "", unitPrice: "" },
   ]);
@@ -202,6 +235,12 @@ export default function FinancialDashboard() {
       maximumFractionDigits: 2,
     }).format(amount);
 
+  const formatInvoiceDate = (date: string) =>
+    new Intl.DateTimeFormat("en-IN", {
+      dateStyle: "medium",
+      timeZone: "UTC",
+    }).format(new Date(`${date}T00:00:00Z`));
+
   const refreshDashboard = useCallback(async () => {
     try {
       const { data } = await apiClient.get(`${FINANCIAL_API}/dashboard`);
@@ -220,11 +259,29 @@ export default function FinancialDashboard() {
     try {
       const { data } = await apiClient.get(`${FINANCIAL_API}/invoices`);
       setInvoices(data.invoices || []);
+      setInvoiceCompanyDetails(data.company_details || null);
       setInvoicesError(null);
     } catch (error) {
       setInvoicesError(getApiErrorMessage(error, "Unable to load invoices."));
     } finally {
       setInvoicesLoading(false);
+    }
+  }, []);
+
+  const refreshAudits = useCallback(async () => {
+    setAuditsLoading(true);
+    setAuditsError(null);
+    try {
+      const { data } = await apiClient.get(`${FINANCIAL_API}/audits`);
+      if (!Array.isArray(data?.audits)) {
+        throw new Error("The audit service returned an invalid response.");
+      }
+      setAudits(data.audits);
+    } catch (error) {
+      setAudits([]);
+      setAuditsError(getApiErrorMessage(error, "Unable to load audit records."));
+    } finally {
+      setAuditsLoading(false);
     }
   }, []);
 
@@ -255,27 +312,8 @@ export default function FinancialDashboard() {
 
   useEffect(() => {
     if (activeTab !== "audits") return;
-    let isCurrent = true;
-    setAuditsLoading(true);
-    setAuditsError(null);
-    apiClient
-      .get(`${FINANCIAL_API}/audits`)
-      .then(({ data }) => {
-        if (isCurrent) setAudits(Array.isArray(data.audits) ? data.audits : []);
-      })
-      .catch((error) => {
-        if (isCurrent) {
-          setAudits([]);
-          setAuditsError(getApiErrorMessage(error, "Unable to load audit records."));
-        }
-      })
-      .finally(() => {
-        if (isCurrent) setAuditsLoading(false);
-      });
-    return () => {
-      isCurrent = false;
-    };
-  }, [activeTab]);
+    void refreshAudits();
+  }, [activeTab, refreshAudits]);
 
   const parseQuantity = (val: string): number | null => {
     const trimmed = val.trim();
@@ -407,7 +445,7 @@ export default function FinancialDashboard() {
   };
 
   const saveInvoice = async (action: "save_draft" | "generate") => {
-    if (isSavingInvoice) return;
+    if (invoiceMutationLockRef.current) return;
     setSubmitAttempted(true);
 
     const validationError = validateInvoiceForm();
@@ -416,6 +454,7 @@ export default function FinancialDashboard() {
       return;
     }
 
+    invoiceMutationLockRef.current = true;
     setIsSavingInvoice(true);
     try {
       const payloadLineItems = invoiceItems.map(({ description, quantity, unitPrice }) => ({
@@ -449,6 +488,9 @@ export default function FinancialDashboard() {
       setActiveInvoiceId(savedInvoice.id);
       setIsViewingGeneratedInvoice(savedInvoice.status === "GENERATED");
       setInvoiceListView(savedInvoice.status === "DRAFT" ? "drafts" : "generated");
+      if (action === "generate" && savedInvoice.status === "GENERATED") {
+        setViewingInvoice(savedInvoice);
+      }
       const serverTotal =
         typeof savedInvoice?.total === "number"
           ? ` Server-computed total: ${formatMoney(savedInvoice.total, (savedInvoice.currency || financialSettings.base_currency) as FinancialSettings["base_currency"])}.`
@@ -463,6 +505,7 @@ export default function FinancialDashboard() {
     } catch (error) {
       showToast(getApiErrorMessage(error, "Unable to save this invoice. Your entries have been kept."), "error");
     } finally {
+      invoiceMutationLockRef.current = false;
       setIsSavingInvoice(false);
     }
   };
@@ -597,6 +640,108 @@ export default function FinancialDashboard() {
     setInvoiceListView(invoice.status === "DRAFT" ? "drafts" : "generated");
     setSubmitAttempted(false);
     handleSelectorChange("create");
+  };
+
+  const generateSavedInvoice = async (invoice: FinancialInvoice) => {
+    if (invoiceMutationLockRef.current || invoice.status !== "DRAFT") return;
+    invoiceMutationLockRef.current = true;
+    setInvoiceMutationId(invoice.id);
+    setInvoiceMutationKind("generate");
+    try {
+      const { data } = await apiClient.put(`${FINANCIAL_API}/invoices/${invoice.id}`, {
+        client_name: invoice.client_name,
+        issue_date: invoice.issue_date,
+        due_date: invoice.due_date,
+        payment_terms_notes: invoice.payment_terms_notes,
+        tax_rate: invoice.tax_rate,
+        line_items: invoice.line_items.map(({ description, quantity, unit_price }) => ({
+          description,
+          quantity,
+          unit_price,
+        })),
+        action: "generate",
+      });
+      const savedInvoice: FinancialInvoice | undefined = data?.invoice || data;
+      if (!savedInvoice?.id || !savedInvoice.invoice_number || savedInvoice.status !== "GENERATED") {
+        throw new Error("Invoice generation response did not include the persisted generated invoice.");
+      }
+      setInvoices((current) => [
+        savedInvoice,
+        ...current.filter((currentInvoice) => currentInvoice.id !== savedInvoice.id),
+      ]);
+      setInvoiceListView("generated");
+      setViewingInvoice(savedInvoice);
+      showToast(`Invoice ${savedInvoice.invoice_number} generated.`, "success");
+      void refreshDashboard();
+      void refreshInvoices();
+    } catch (error) {
+      showToast(getApiErrorMessage(error, "Unable to generate this invoice."), "error");
+    } finally {
+      invoiceMutationLockRef.current = false;
+      setInvoiceMutationId(null);
+      setInvoiceMutationKind(null);
+    }
+  };
+
+  const deleteInvoice = async (invoice: FinancialInvoice) => {
+    if (invoice.status !== "DRAFT") return;
+    if (!window.confirm(`Delete draft ${invoice.invoice_number} for ${invoice.client_name}? This cannot be undone.`)) return;
+    if (invoiceMutationLockRef.current) return;
+    invoiceMutationLockRef.current = true;
+    setInvoiceMutationId(invoice.id);
+    setInvoiceMutationKind("delete");
+    try {
+      await apiClient.delete(`${FINANCIAL_API}/invoices/${invoice.id}`);
+      setInvoices((current) => current.filter((currentInvoice) => currentInvoice.id !== invoice.id));
+      setViewingInvoice((current) => current?.id === invoice.id ? null : current);
+      showToast(`Draft ${invoice.invoice_number} deleted.`, "success");
+      void refreshDashboard();
+    } catch (error) {
+      showToast(getApiErrorMessage(error, "Unable to delete this invoice draft."), "error");
+    } finally {
+      invoiceMutationLockRef.current = false;
+      setInvoiceMutationId(null);
+      setInvoiceMutationKind(null);
+    }
+  };
+
+  const downloadInvoicePdf = async (invoice: FinancialInvoice) => {
+    if (pdfDownloadLockRef.current || invoice.status !== "GENERATED") return;
+    pdfDownloadLockRef.current = true;
+    setDownloadingInvoiceId(invoice.id);
+    try {
+      const pdf = await createInvoicePdf(
+        invoice,
+        invoiceCompanyDetails,
+        financialSettings.tax_identifier,
+      );
+      const safeInvoiceNumber = invoice.invoice_number.replace(/[^\w.-]+/g, "-");
+      const downloadUrl = URL.createObjectURL(pdf);
+      const link = document.createElement("a");
+      link.href = downloadUrl;
+      link.download = `${safeInvoiceNumber || "invoice"}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
+      showToast(`Downloaded ${link.download}.`, "success");
+    } catch (error) {
+      showToast(
+        getApiErrorMessage(error, "Unable to create or download this invoice PDF."),
+        "error",
+      );
+    } finally {
+      pdfDownloadLockRef.current = false;
+      setDownloadingInvoiceId(null);
+    }
+  };
+
+  const printInvoice = (invoice: FinancialInvoice) => {
+    if (invoice.status !== "GENERATED") return;
+    setViewingInvoice(invoice);
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => window.print());
+    });
   };
 
   // File Upload Handler
@@ -883,6 +1028,12 @@ export default function FinancialDashboard() {
   const numericTaxRate = useMemo(() => parseTaxRate(invoiceForm.taxRate), [invoiceForm.taxRate]);
   const invoiceTaxAmount = useMemo(() => (invoiceSubtotal * numericTaxRate) / 100, [invoiceSubtotal, numericTaxRate]);
   const invoiceGrandTotal = useMemo(() => invoiceSubtotal + invoiceTaxAmount, [invoiceSubtotal, invoiceTaxAmount]);
+  const invoiceCompanyAddress = [
+    invoiceCompanyDetails?.registered_address || invoiceCompanyDetails?.address,
+    [invoiceCompanyDetails?.city, invoiceCompanyDetails?.state, invoiceCompanyDetails?.pincode]
+      .filter(Boolean)
+      .join(", "),
+  ].filter(Boolean);
 
   return (
     <AgentLayout
@@ -911,6 +1062,200 @@ export default function FinancialDashboard() {
           >
             <X size={14} />
           </button>
+        </div>
+      )}
+
+      {viewingInvoice && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/60 p-3 sm:p-6"
+          role="presentation"
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="invoice-preview-title"
+            className="w-full max-w-4xl overflow-hidden rounded-2xl bg-slate-100 shadow-2xl dark:bg-slate-950"
+          >
+            <div className="financial-invoice-modal-controls flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-900">
+              <div>
+                <h2 id="invoice-preview-title" className="text-sm font-bold text-slate-900 dark:text-white">
+                  {viewingInvoice.status === "DRAFT" ? "Draft Preview" : "Invoice Document"}
+                </h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {viewingInvoice.status === "DRAFT"
+                    ? "Showing saved draft data. Generate the invoice before printing or downloading."
+                    : "Showing persisted invoice data. Preview does not change or regenerate the invoice."}
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {viewingInvoice.status === "GENERATED" && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => void downloadInvoicePdf(viewingInvoice)}
+                      disabled={downloadingInvoiceId !== null}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700"
+                    >
+                      <Download size={14} />
+                      {downloadingInvoiceId === viewingInvoice.id ? "Preparing PDF…" : "Download PDF"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => printInvoice(viewingInvoice)}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                    >
+                      <Printer size={14} />
+                      Print
+                    </button>
+                  </>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setViewingInvoice(null)}
+                  aria-label="Close invoice preview"
+                  className="rounded-lg border border-slate-300 p-2 text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            </div>
+            <div className="max-h-[calc(100vh-100px)] overflow-y-auto p-3 sm:p-6">
+              <article
+                id="financial-invoice-print"
+                className="mx-auto max-w-[800px] bg-white p-6 text-slate-900 shadow-sm sm:p-10"
+              >
+                <header className="flex flex-wrap items-start justify-between gap-6 border-b-2 border-indigo-600 pb-6">
+                  <div>
+                    {invoiceCompanyDetails?.business_name && (
+                      <h3 className="text-xl font-bold tracking-tight">
+                        {invoiceCompanyDetails.business_name}
+                      </h3>
+                    )}
+                    {invoiceCompanyAddress.map((addressLine) => (
+                      <p key={addressLine} className="mt-1 text-sm text-slate-600">{addressLine}</p>
+                    ))}
+                    {invoiceCompanyDetails?.gstin && (
+                      <p className="mt-1 text-sm text-slate-600">GSTIN: {invoiceCompanyDetails.gstin}</p>
+                    )}
+                    {financialSettings.tax_identifier && (
+                      <p className="mt-1 text-sm text-slate-600">
+                        Tax ID: {financialSettings.tax_identifier}
+                      </p>
+                    )}
+                    {invoiceCompanyDetails?.company_email && (
+                      <p className="mt-1 text-sm text-slate-600">{invoiceCompanyDetails.company_email}</p>
+                    )}
+                    {invoiceCompanyDetails?.company_phone && (
+                      <p className="mt-1 text-sm text-slate-600">{invoiceCompanyDetails.company_phone}</p>
+                    )}
+                  </div>
+                  <div className="text-left sm:text-right">
+                    <p className="text-3xl font-extrabold tracking-wide text-indigo-700">INVOICE</p>
+                    <p className="mt-2 font-mono text-base font-bold">{viewingInvoice.invoice_number}</p>
+                    <p className="mt-1 text-xs font-semibold uppercase tracking-wider text-slate-500">
+                      {viewingInvoice.status}
+                    </p>
+                  </div>
+                </header>
+
+                <section className="grid grid-cols-1 gap-6 py-6 sm:grid-cols-2">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Bill To</p>
+                    <p className="mt-2 text-base font-semibold">{viewingInvoice.client_name}</p>
+                  </div>
+                  <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm sm:justify-self-end">
+                    <dt className="text-slate-500">Issue Date</dt>
+                    <dd className="text-right font-medium">{formatInvoiceDate(viewingInvoice.issue_date)}</dd>
+                    <dt className="text-slate-500">Due Date</dt>
+                    <dd className="text-right font-medium">{formatInvoiceDate(viewingInvoice.due_date)}</dd>
+                  </dl>
+                </section>
+
+                <table className="w-full border-collapse text-sm">
+                  <thead>
+                    <tr className="border-y border-slate-300 bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-600">
+                      <th className="px-2 py-3 font-bold">Description</th>
+                      <th className="px-2 py-3 text-right font-bold">Qty</th>
+                      <th className="px-2 py-3 text-right font-bold">Unit Rate</th>
+                      <th className="px-2 py-3 text-right font-bold">Line Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {viewingInvoice.line_items.map((item) => (
+                      <tr key={item.id} className="border-b border-slate-200">
+                        <td className="px-2 py-3">{item.description}</td>
+                        <td className="px-2 py-3 text-right tabular-nums">
+                          {new Intl.NumberFormat("en-IN", { maximumFractionDigits: 3 }).format(item.quantity)}
+                        </td>
+                        <td className="px-2 py-3 text-right tabular-nums">
+                          {formatMoney(item.unit_price, viewingInvoice.currency)}
+                        </td>
+                        <td className="px-2 py-3 text-right font-medium tabular-nums">
+                          {formatMoney(item.line_total, viewingInvoice.currency)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                <section className="mt-6 flex flex-col justify-between gap-6 sm:flex-row">
+                  {viewingInvoice.payment_terms_notes && (
+                    <div className="max-w-sm">
+                      <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Notes</p>
+                      <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">
+                        {viewingInvoice.payment_terms_notes}
+                      </p>
+                    </div>
+                  )}
+                  <dl className="w-full space-y-2 text-sm sm:ml-auto sm:max-w-xs">
+                    <div className="flex justify-between gap-6">
+                      <dt className="text-slate-600">Subtotal</dt>
+                      <dd className="font-medium tabular-nums">
+                        {formatMoney(viewingInvoice.subtotal, viewingInvoice.currency)}
+                      </dd>
+                    </div>
+                    <div className="flex justify-between gap-6">
+                      <dt className="text-slate-600">Tax ({viewingInvoice.tax_rate}%)</dt>
+                      <dd className="font-medium tabular-nums">
+                        {formatMoney(viewingInvoice.tax_amount, viewingInvoice.currency)}
+                      </dd>
+                    </div>
+                    <div className="flex justify-between gap-6 border-t border-slate-300 pt-3 text-base font-bold">
+                      <dt>Grand Total</dt>
+                      <dd className="tabular-nums">
+                        {formatMoney(viewingInvoice.total, viewingInvoice.currency)}
+                      </dd>
+                    </div>
+                  </dl>
+                </section>
+                <footer className="mt-10 border-t border-slate-200 pt-4 text-center text-xs text-slate-500">
+                  {viewingInvoice.status === "DRAFT"
+                    ? "Saved invoice draft"
+                    : `Invoice ${viewingInvoice.invoice_number}`}
+                </footer>
+              </article>
+            </div>
+          </section>
+          <style>{`
+            @media print {
+              @page { size: A4; margin: 16mm; }
+              body * { visibility: hidden !important; }
+              #financial-invoice-print, #financial-invoice-print * { visibility: visible !important; }
+              #financial-invoice-print {
+                position: fixed !important;
+                inset: 0 !important;
+                width: 100% !important;
+                max-width: none !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                overflow: visible !important;
+                background: #fff !important;
+                box-shadow: none !important;
+                color: #111827 !important;
+              }
+              .financial-invoice-modal-controls { display: none !important; }
+            }
+          `}</style>
         </div>
       )}
 
@@ -1423,7 +1768,16 @@ export default function FinancialDashboard() {
               {invoicesLoading ? (
                 <p className="py-8 text-center text-sm text-slate-500 dark:text-slate-400">Loading invoices…</p>
               ) : invoicesError ? (
-                <p className="py-8 text-center text-sm text-rose-600 dark:text-rose-400">{invoicesError}</p>
+                <div className="py-8 text-center">
+                  <p className="text-sm text-rose-600 dark:text-rose-400">{invoicesError}</p>
+                  <button
+                    type="button"
+                    onClick={() => void refreshInvoices()}
+                    className="mt-3 rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50 dark:border-rose-800 dark:text-rose-300 dark:hover:bg-rose-950/40"
+                  >
+                    Retry loading invoices
+                  </button>
+                </div>
               ) : invoices.filter((invoice) => invoice.status === (invoiceListView === "drafts" ? "DRAFT" : "GENERATED")).length === 0 ? (
                 <p className="py-8 text-center text-sm text-slate-500 dark:text-slate-400">
                   {invoiceListView === "drafts" ? "No saved drafts yet." : "No generated invoices yet."}
@@ -1447,7 +1801,7 @@ export default function FinancialDashboard() {
 
                   <div className="flex flex-wrap items-center gap-3 sm:gap-4">
                     <span className="text-sm font-bold text-slate-900 dark:text-white font-mono">
-                      {formatMoney(inv.total, (inv.currency || financialSettings.base_currency) as FinancialSettings["base_currency"])}
+                      {formatMoney(inv.total, inv.currency)}
                     </span>
                     <span
                       className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
@@ -1460,13 +1814,68 @@ export default function FinancialDashboard() {
                     >
                       {inv.status}
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => openSavedInvoice(inv)}
-                      className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-                    >
-                      {inv.status === "DRAFT" ? "Continue Editing" : "View Invoice"}
-                    </button>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setViewingInvoice(inv)}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                      >
+                        <Eye size={14} />
+                        View Invoice
+                      </button>
+                      {inv.status === "DRAFT" ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => openSavedInvoice(inv)}
+                            disabled={isSavingInvoice || invoiceMutationId !== null}
+                            className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                          >
+                            Continue Editing
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void generateSavedInvoice(inv)}
+                            disabled={isSavingInvoice || invoiceMutationId !== null}
+                            className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {invoiceMutationId === inv.id && invoiceMutationKind === "generate"
+                              ? "Generating…"
+                              : "Generate Invoice"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void deleteInvoice(inv)}
+                            disabled={isSavingInvoice || invoiceMutationId !== null}
+                            className="rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-rose-900 dark:text-rose-300 dark:hover:bg-rose-950/40"
+                          >
+                            {invoiceMutationId === inv.id && invoiceMutationKind === "delete"
+                              ? "Deleting…"
+                              : "Delete"}
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => void downloadInvoicePdf(inv)}
+                            disabled={downloadingInvoiceId !== null}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                          >
+                            <Download size={14} />
+                            {downloadingInvoiceId === inv.id ? "Preparing PDF…" : "Download PDF"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => printInvoice(inv)}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                          >
+                            <Printer size={14} />
+                            Print
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </div>
                 </div>
               ))}
@@ -1936,41 +2345,62 @@ export default function FinancialDashboard() {
             </div>
             <h2 className="mt-2 text-xl font-bold text-slate-900 dark:text-white">Audits Till Date</h2>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Audit records returned by your financial account.
+              Invoice actions recorded for this employer account. Historical actions from before audit tracking was enabled are not available.
             </p>
           </div>
 
           {auditsLoading ? (
             <p className="py-8 text-center text-sm text-slate-500 dark:text-slate-400">Loading audit records…</p>
           ) : auditsError ? (
-            <p className="py-8 text-center text-sm text-rose-600 dark:text-rose-400">{auditsError}</p>
+            <div className="py-8 text-center">
+              <p className="text-sm text-rose-600 dark:text-rose-400">{auditsError}</p>
+              <button
+                type="button"
+                onClick={() => void refreshAudits()}
+                className="mt-3 rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50 dark:border-rose-800 dark:text-rose-300 dark:hover:bg-rose-950/40"
+              >
+                Retry loading audit records
+              </button>
+            </div>
           ) : audits.length === 0 ? (
             <div className="py-12 text-center">
               <ShieldCheck className="mx-auto h-8 w-8 text-slate-400" />
-              <p className="mt-2 text-sm font-semibold text-slate-700 dark:text-slate-300">No audit records available.</p>
+              <p className="mt-2 text-sm font-semibold text-slate-700 dark:text-slate-300">No recorded invoice audit events yet.</p>
             </div>
           ) : (
             <div className="divide-y divide-slate-100 dark:divide-slate-800">
-              {audits.map((audit, index) => (
-                <div key={String(audit.id ?? index)} className="py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              {audits.map((audit) => (
+                <div key={audit.id} className="py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="flex items-start gap-3">
                     <span className="mt-0.5 rounded-lg bg-cyan-50 p-2 text-cyan-600 dark:bg-cyan-950/60 dark:text-cyan-400">
                       <ShieldCheck size={18} />
                     </span>
                     <div>
                       <h4 className="text-sm font-bold text-slate-900 dark:text-white">
-                        {String(audit.title ?? audit.name ?? audit.id ?? "Audit record")}
+                        {audit.action.split("_").map((word) =>
+                          `${word.charAt(0)}${word.slice(1).toLowerCase()}`
+                        ).join(" ")}
                       </h4>
                       <p className="text-xs text-slate-500 dark:text-slate-400">
-                        {String(audit.reference ?? "")} {audit.date ? `• ${String(audit.date)}` : ""}
+                        Invoice {audit.invoice_number} · {new Intl.DateTimeFormat("en-IN", {
+                          dateStyle: "medium",
+                          timeStyle: "short",
+                        }).format(new Date(audit.created_at))}
+                      </p>
+                      <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                        Actor account {audit.actor_user_id.slice(0, 8)}
                       </p>
                     </div>
                   </div>
-                  {audit.status != null && (
-                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                      {String(audit.status)}
-                    </span>
-                  )}
+                  <span className={`self-start rounded-full px-3 py-1 text-xs font-bold ${
+                    audit.status === "GENERATED"
+                      ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300"
+                      : audit.status === "DELETED"
+                        ? "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                        : "bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300"
+                  }`}>
+                    {audit.status}
+                  </span>
                 </div>
               ))}
             </div>

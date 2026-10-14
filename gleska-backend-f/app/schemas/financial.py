@@ -103,8 +103,21 @@ class InvoiceResponse(FinancialModel):
     updated_at: datetime
 
 
+class FinancialInvoiceCompanyDetails(FinancialModel):
+    business_name: str | None = None
+    registered_address: str | None = None
+    address: str | None = None
+    city: str | None = None
+    state: str | None = None
+    pincode: str | None = None
+    gstin: str | None = None
+    company_email: str | None = None
+    company_phone: str | None = None
+
+
 class InvoiceListResponse(FinancialModel):
     invoices: list[InvoiceResponse]
+    company_details: FinancialInvoiceCompanyDetails | None = None
 
 
 class FinancialDashboardSummary(FinancialModel):
@@ -133,8 +146,23 @@ class FinancialDashboardResponse(FinancialModel):
     records: list[FinancialDashboardRecord]
 
 
+class FinancialInvoiceAuditEvent(FinancialModel):
+    id: UUID
+    invoice_id: UUID
+    invoice_number: str
+    action: Literal[
+        "DRAFT_CREATED",
+        "DRAFT_UPDATED",
+        "INVOICE_GENERATED",
+        "DRAFT_DELETED",
+    ]
+    status: Literal["DRAFT", "GENERATED", "DELETED"]
+    actor_user_id: UUID
+    created_at: datetime
+
+
 class FinancialAuditsResponse(FinancialModel):
-    audits: list[dict] = Field(default_factory=list)
+    audits: list[FinancialInvoiceAuditEvent] = Field(default_factory=list)
 
 
 class FinancialAgentConversationCreateResponse(FinancialModel):

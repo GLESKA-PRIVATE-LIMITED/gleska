@@ -11,6 +11,8 @@ from app.schemas.financial import (
     FinancialDashboardRecord,
     FinancialDashboardResponse,
     FinancialDashboardSummary,
+    FinancialInvoiceAuditEvent,
+    FinancialInvoiceCompanyDetails,
     FinancialSettings,
     FinancialSettingsUpdate,
     InvoiceCreateRequest,
@@ -205,6 +207,139 @@ class FinancialService:
                 type(exc).__name__,
             )
             raise FinancialServiceError("FINANCIAL_INVOICES_LOAD_FAILED") from exc
+
+    @classmethod
+    def invoice_company_details(cls, user: UserResponse) -> FinancialInvoiceCompanyDetails | None:
+        _, employer_id = cls._employer_scope(user)
+        try:
+            response = (
+                supabase.table("employer_onboarding_details")
+                .select(
+                    "business_name, registered_address, address, city, state, pincode, "
+                    "gstin, company_email, company_phone"
+                )
+                .eq("employer_id", employer_id)
+                .maybe_single()
+                .execute()
+            )
+            details = _row(response)
+            values = {
+                field: str(details[field]).strip() or None
+                for field in (
+                    "business_name",
+                    "registered_address",
+                    "address",
+                    "city",
+                    "state",
+                    "pincode",
+                    "gstin",
+                    "company_email",
+                    "company_phone",
+                )
+                if details.get(field) is not None
+            }
+            if not any(values.values()):
+                return None
+            return FinancialInvoiceCompanyDetails(**values)
+        except Exception as exc:
+            logger.error(
+                "Financial invoice company details load failed: user_id=%s exception_type=%s",
+                user.id,
+                type(exc).__name__,
+            )
+            raise FinancialServiceError("FINANCIAL_INVOICE_COMPANY_DETAILS_LOAD_FAILED") from exc
+
+    @classmethod
+    def delete_invoice(cls, user: UserResponse, invoice_id: UUID) -> None:
+        user_id, employer_id = cls._employer_scope(user)
+        try:
+            existing = (
+                supabase.table("financial_invoices")
+                .select("id, status")
+                .eq("id", str(invoice_id))
+                .eq("user_id", user_id)
+                .eq("employer_id", employer_id)
+                .maybe_single()
+                .execute()
+            )
+            invoice = _row(existing)
+            if not invoice:
+                raise FinancialNotFound("INVOICE_NOT_FOUND")
+            if invoice.get("status") != "DRAFT":
+                raise FinancialConflict("GENERATED_INVOICE_CANNOT_BE_DELETED")
+
+            deleted = (
+                supabase.table("financial_invoices")
+                .delete(count="exact")
+                .eq("id", str(invoice_id))
+                .eq("user_id", user_id)
+                .eq("employer_id", employer_id)
+                .eq("status", "DRAFT")
+                .execute()
+            )
+            if deleted.count == 1:
+                return
+            if deleted.count is None:
+                raise FinancialServiceError("FINANCIAL_INVOICE_DELETE_FAILED")
+
+            current = (
+                supabase.table("financial_invoices")
+                .select("id, status")
+                .eq("id", str(invoice_id))
+                .eq("user_id", user_id)
+                .eq("employer_id", employer_id)
+                .maybe_single()
+                .execute()
+            )
+            current_invoice = _row(current)
+            if not current_invoice:
+                raise FinancialNotFound("INVOICE_NOT_FOUND")
+            if current_invoice.get("status") != "DRAFT":
+                raise FinancialConflict("GENERATED_INVOICE_CANNOT_BE_DELETED")
+            raise FinancialServiceError("FINANCIAL_INVOICE_DELETE_FAILED")
+        except (FinancialConflict, FinancialNotFound, FinancialServiceError):
+            raise
+        except Exception as exc:
+            logger.error(
+                "Financial invoice delete failed: user_id=%s invoice_id=%s exception_type=%s",
+                user_id,
+                invoice_id,
+                type(exc).__name__,
+            )
+            raise FinancialServiceError("FINANCIAL_INVOICE_DELETE_FAILED") from exc
+
+    @classmethod
+    def list_audits(cls, user: UserResponse) -> list[FinancialInvoiceAuditEvent]:
+        user_id, employer_id = cls._employer_scope(user)
+        try:
+            audits: list[FinancialInvoiceAuditEvent] = []
+            offset = 0
+            page_size = 500
+            while True:
+                response = (
+                    supabase.table("financial_invoice_audit_events")
+                    .select(
+                        "id, invoice_id, invoice_number, action, status, actor_user_id, created_at"
+                    )
+                    .eq("user_id", user_id)
+                    .eq("employer_id", employer_id)
+                    .order("created_at", desc=True)
+                    .order("id", desc=True)
+                    .range(offset, offset + page_size - 1)
+                    .execute()
+                )
+                rows = _rows(response)
+                audits.extend(FinancialInvoiceAuditEvent.model_validate(row) for row in rows)
+                if len(rows) < page_size:
+                    return audits
+                offset += page_size
+        except Exception as exc:
+            logger.error(
+                "Financial invoice audit load failed: user_id=%s exception_type=%s",
+                user_id,
+                type(exc).__name__,
+            )
+            raise FinancialServiceError("FINANCIAL_AUDITS_LOAD_FAILED") from exc
 
     @classmethod
     def create_invoice(cls, user: UserResponse, request: InvoiceCreateRequest) -> InvoiceResponse:

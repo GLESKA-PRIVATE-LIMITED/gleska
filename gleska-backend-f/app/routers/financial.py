@@ -94,7 +94,10 @@ async def list_financial_invoices(
     user: UserResponse = Depends(require_employer),
 ):
     try:
-        return InvoiceListResponse(invoices=FinancialService.list_invoices(user, search))
+        return InvoiceListResponse(
+            invoices=FinancialService.list_invoices(user, search),
+            company_details=FinancialService.invoice_company_details(user),
+        )
     except (FinancialNotFound, FinancialServiceError) as exc:
         _raise_financial_error(exc)
     except Exception as exc:
@@ -140,6 +143,23 @@ async def update_financial_invoice(
         ) from exc
 
 
+@router.delete("/invoices/{invoice_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_financial_invoice(
+    invoice_id: UUID,
+    user: UserResponse = Depends(require_employer),
+):
+    try:
+        FinancialService.delete_invoice(user, invoice_id)
+    except (FinancialNotFound, FinancialConflict, FinancialServiceError) as exc:
+        _raise_financial_error(exc)
+    except Exception as exc:
+        logger.error("Financial invoice delete failed: exception_type=%s", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="FINANCIAL_INVOICE_DELETE_FAILED",
+        ) from exc
+
+
 @router.get("/settings", response_model=FinancialSettings)
 async def get_financial_settings(user: UserResponse = Depends(require_employer)):
     try:
@@ -173,7 +193,16 @@ async def update_financial_settings(
 
 @router.get("/audits", response_model=FinancialAuditsResponse)
 async def list_financial_audits(user: UserResponse = Depends(require_employer)):
-    return FinancialAuditsResponse()
+    try:
+        return FinancialAuditsResponse(audits=FinancialService.list_audits(user))
+    except (FinancialNotFound, FinancialServiceError) as exc:
+        _raise_financial_error(exc)
+    except Exception as exc:
+        logger.error("Financial audit listing failed: exception_type=%s", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="FINANCIAL_AUDITS_LOAD_FAILED",
+        ) from exc
 
 
 @router.post("/scans")
