@@ -327,6 +327,7 @@ interface InvoiceItemDraft {
 
 export default function FinancialDashboard() {
   const [activeTab, setActiveTab] = useState<string>("dashboard");
+  const activeTabRef = useRef<string>("dashboard");
   const [selectedOption, setSelectedOption] = useState<"create" | "scan">("create");
 
   // Search state
@@ -419,6 +420,7 @@ export default function FinancialDashboard() {
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const recognitionRef = useRef<any>(null);
+  const searchRequestIdRef = useRef<number>(0);
 
   const showToast = useCallback((message: string, type: "success" | "error" | "info" = "info") => {
     setToast({ message, type });
@@ -1015,37 +1017,54 @@ export default function FinancialDashboard() {
     }
   }, [showCameraModal, cameraStream]);
 
-  // Clean up streams and speech recognition on unmount
+  // Clean up the camera stream when it changes or the component unmounts.
   useEffect(() => {
     return () => {
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.abort();
-        } catch (e) {}
-      }
       if (cameraStream) {
         cameraStream.getTracks().forEach((track) => track.stop());
       }
     };
   }, [cameraStream]);
 
+  useEffect(() => {
+    return () => {
+      const recognition = recognitionRef.current;
+      recognitionRef.current = null;
+      if (!recognition) return;
+      recognition.onstart = null;
+      recognition.onresult = null;
+      recognition.onerror = null;
+      recognition.onend = null;
+      try {
+        recognition.abort();
+      } catch {}
+    };
+  }, []);
+
+  const clearInvoiceSearch = () => {
+    searchRequestIdRef.current += 1;
+    setSearchQuery("");
+    setExecutedSearchQuery("");
+    setHasSearched(false);
+    setSearchResults([]);
+    setSearchLoading(false);
+    setSearchError(null);
+  };
+
   // Synchronize selector changes with tabs if user clicks
   const handleSelectorChange = (optionId: "create" | "scan") => {
+    const nextTab = optionId === "create" ? "create-invoice" : "scan-invoice";
+    if (activeTabRef.current !== nextTab) clearInvoiceSearch();
+    activeTabRef.current = nextTab;
     setSelectedOption(optionId);
-    if (optionId === "create") {
-      setActiveTab("create-invoice");
-    } else {
-      setActiveTab("scan-invoice");
-    }
+    setActiveTab(nextTab);
   };
 
   const handleTabChange = (tabId: string) => {
+    if (activeTabRef.current !== tabId) clearInvoiceSearch();
+    activeTabRef.current = tabId;
     setActiveTab(tabId);
-    if (tabId === "create-invoice") {
-      setSelectedOption("create");
-    } else if (tabId === "scan-invoice") {
-      setSelectedOption("scan");
-    }
+    setSelectedOption(tabId === "scan-invoice" ? "scan" : "create");
   };
 
   const openSavedInvoice = (invoice: FinancialInvoice) => {
@@ -1203,7 +1222,7 @@ export default function FinancialDashboard() {
 
     setIsPlusMenuOpen(false);
 
-    if (activeTab === "scan-invoice" || selectedOption === "scan") {
+    if (activeTabRef.current === "scan-invoice") {
       void uploadScan(file);
     } else {
       showToast(`Selected locally: ${file.name} (${sizeFormatted}).`, "info");
@@ -1233,7 +1252,7 @@ export default function FinancialDashboard() {
 
     setIsPlusMenuOpen(false);
 
-    if (activeTab === "scan-invoice" || selectedOption === "scan") {
+    if (activeTabRef.current === "scan-invoice") {
       void uploadScan(file);
     } else {
       showToast(`Photo selected locally: ${file.name}.`, "info");
@@ -1295,7 +1314,7 @@ export default function FinancialDashboard() {
       source: "camera",
     });
 
-    if (activeTab === "scan-invoice" || selectedOption === "scan") {
+    if (activeTabRef.current === "scan-invoice") {
       void uploadScan(capturedFile);
     } else {
       showToast("Document photo selected.", "info");
@@ -1329,7 +1348,11 @@ export default function FinancialDashboard() {
             source: "camera",
           });
           closeCameraModal();
-          void uploadScan(capturedFile);
+          if (activeTabRef.current === "scan-invoice") {
+            void uploadScan(capturedFile);
+          } else {
+            showToast("Document photo selected.", "info");
+          }
         }, "image/jpeg", 0.92);
       }
     } catch (e) {
@@ -1348,13 +1371,12 @@ export default function FinancialDashboard() {
 
   // Speech Recognition / Voice Input
   const toggleListening = () => {
-    if (isListening) {
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.stop();
-        } catch (e) {}
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch {
+        showToast("Unable to stop speech recognition. Please try again.", "error");
       }
-      setIsListening(false);
       return;
     }
 
@@ -1407,11 +1429,15 @@ export default function FinancialDashboard() {
 
       recognition.onend = () => {
         setIsListening(false);
+        if (recognitionRef.current === recognition) {
+          recognitionRef.current = null;
+        }
       };
 
       recognitionRef.current = recognition;
       recognition.start();
-    } catch (err: any) {
+    } catch {
+      recognitionRef.current = null;
       setIsListening(false);
       showToast("Unable to start speech recognition. Please check your browser microphone settings.", "error");
     }
@@ -1420,6 +1446,7 @@ export default function FinancialDashboard() {
   // Search execution
   const executeSearch = async () => {
     const query = searchQuery.trim();
+    const requestId = ++searchRequestIdRef.current;
     setExecutedSearchQuery(query);
     setHasSearched(true);
     setSearchLoading(true);
@@ -1428,14 +1455,20 @@ export default function FinancialDashboard() {
       const { data } = await apiClient.get(`${FINANCIAL_API}/dashboard`, {
         params: { search: query },
       });
-      setSearchResults(data.records || []);
+      if (requestId === searchRequestIdRef.current) {
+        setSearchResults(
+          (data.records || []).filter((record: FinancialRecord) => record.type === "INVOICE"),
+        );
+      }
     } catch (error) {
-      setSearchResults([]);
-      const message = getApiErrorMessage(error, "Unable to search financial records.");
-      setSearchError(message);
-      showToast(message, "error");
+      if (requestId === searchRequestIdRef.current) {
+        setSearchResults([]);
+        const message = getApiErrorMessage(error, "Unable to search invoices.");
+        setSearchError(message);
+        showToast(message, "error");
+      }
     } finally {
-      setSearchLoading(false);
+      if (requestId === searchRequestIdRef.current) setSearchLoading(false);
     }
   };
 
@@ -1882,6 +1915,7 @@ export default function FinancialDashboard() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={handleKeyDown}
+              aria-label="Search invoices"
               placeholder="Search invoices..."
               className="flex-1 bg-transparent px-3 text-xs sm:text-sm font-medium text-slate-900 placeholder:text-slate-400 outline-none dark:text-white"
             />
@@ -1916,7 +1950,7 @@ export default function FinancialDashboard() {
                 onClick={executeSearch}
                 className="flex h-9 w-9 items-center justify-center rounded-full bg-indigo-600 text-white shadow-sm hover:bg-indigo-700 active:scale-95 transition cursor-pointer"
                 title="Execute Search"
-                aria-label="Search"
+                aria-label="Search invoices"
               >
                 <Search size={16} />
               </button>
@@ -1956,23 +1990,17 @@ export default function FinancialDashboard() {
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4 dark:border-slate-800">
             <div>
               <h2 className="text-base font-bold text-slate-900 dark:text-white">
-                Search Results ({searchResults.length})
+                Invoice Search Results ({searchResults.length})
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">
                 {executedSearchQuery
-                  ? `Invoice matches for “${executedSearchQuery}”.`
-                  : "Invoices returned by the server."}
+                  ? `Invoices matching “${executedSearchQuery}”.`
+                  : "Invoice search results."}
               </p>
             </div>
             <button
               type="button"
-              onClick={() => {
-                setSearchQuery("");
-                setExecutedSearchQuery("");
-                setHasSearched(false);
-                setSearchResults([]);
-                setSearchError(null);
-              }}
+              onClick={clearInvoiceSearch}
               className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 transition cursor-pointer"
             >
               <RefreshCw size={13} />
@@ -1982,7 +2010,7 @@ export default function FinancialDashboard() {
 
           {searchLoading ? (
             <p className="py-8 text-center text-sm font-semibold text-slate-500 dark:text-slate-400">
-              Searching financial records…
+              Searching invoices…
             </p>
           ) : searchError ? (
             <p className="py-8 text-center text-sm font-semibold text-rose-600 dark:text-rose-400">
@@ -1992,10 +2020,10 @@ export default function FinancialDashboard() {
             <div className="py-12 text-center">
               <Search className="mx-auto h-8 w-8 text-slate-400" />
               <p className="mt-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
-                No matching financial records found.
+                No matching invoices found.
               </p>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Try searching by invoice number or company name.
+                Try searching by invoice number or client name.
               </p>
             </div>
           ) : (
@@ -2006,18 +2034,8 @@ export default function FinancialDashboard() {
                   className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-3.5 hover:bg-slate-50/70 dark:hover:bg-slate-800/40 rounded-xl px-2 transition"
                 >
                   <div className="flex items-start gap-3">
-                    <span
-                      className={`mt-0.5 rounded-lg px-2 py-1 text-[10px] font-bold uppercase tracking-wider ${
-                        item.type === "INVOICE"
-                          ? "bg-indigo-50 text-indigo-700 dark:bg-indigo-950/70 dark:text-indigo-300"
-                          : item.type === "TRANSACTION"
-                          ? "bg-purple-50 text-purple-700 dark:bg-purple-950/70 dark:text-purple-300"
-                          : item.type === "AUDIT"
-                          ? "bg-cyan-50 text-cyan-700 dark:bg-cyan-950/70 dark:text-cyan-300"
-                          : "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/70 dark:text-emerald-300"
-                      }`}
-                    >
-                      {item.type}
+                    <span className="mt-0.5 rounded-lg bg-indigo-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-indigo-700 dark:bg-indigo-950/70 dark:text-indigo-300">
+                      Invoice
                     </span>
                     <div>
                       <h4 className="text-sm font-bold text-slate-900 dark:text-white">
@@ -2112,10 +2130,13 @@ export default function FinancialDashboard() {
                 </span>
               </div>
               <p className="mt-3 text-2xl font-bold text-slate-900 dark:text-white font-mono">
-                {dashboardLoading ? "Loading…" : dashboardSummary?.pending_receivables != null ? formatMoney(dashboardSummary.pending_receivables) : "—"}
+                —
               </p>
               <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 font-semibold">
-                {dashboardLoading ? "Loading invoice count…" : `${dashboardSummary?.active_invoices ?? "—"} active invoices`}
+                {dashboardLoading ? "Loading invoice count…" : `${dashboardSummary?.active_invoices ?? "—"} generated invoices`}
+              </p>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold">
+                Payment tracking not configured.
               </p>
             </div>
 
@@ -2129,16 +2150,10 @@ export default function FinancialDashboard() {
                 </span>
               </div>
               <p className="mt-3 text-2xl font-bold text-slate-900 dark:text-white font-mono">
-                {dashboardLoading ? "Loading…" : dashboardSummary?.audits_passed != null ? `${dashboardSummary.audits_passed} passed` : "—"}
+                —
               </p>
-              <p className="mt-1 text-[11px] text-cyan-600 dark:text-cyan-400 font-semibold">
-                {dashboardLoading
-                  ? "Loading audit rate…"
-                  : `Audit pass rate: ${dashboardSummary?.audit_pass_rate == null
-                    ? "—"
-                    : `${dashboardSummary.audit_pass_rate <= 1
-                      ? (dashboardSummary.audit_pass_rate * 100).toFixed(1)
-                      : dashboardSummary.audit_pass_rate.toFixed(1)}%`}`}
+              <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 font-semibold">
+                Audit results not configured.
               </p>
             </div>
 
@@ -2152,10 +2167,10 @@ export default function FinancialDashboard() {
                 </span>
               </div>
               <p className="mt-3 text-2xl font-bold text-slate-900 dark:text-white font-mono">
-                {dashboardLoading ? "Loading…" : dashboardSummary?.active_vendors != null ? `${dashboardSummary.active_vendors} vendors` : "—"}
+                —
               </p>
               <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 font-semibold">
-                Active vendors reported by dashboard
+                Vendor tracking not configured.
               </p>
             </div>
           </div>

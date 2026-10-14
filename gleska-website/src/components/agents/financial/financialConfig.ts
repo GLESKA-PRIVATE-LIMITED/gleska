@@ -45,7 +45,7 @@ export const financialConfig: AgentConfig = {
       topBorderColor: "border-t-purple-500",
     },
   ],
-  searchTitle: "Quick Invoice Search",
+  searchTitle: "Search invoices",
   searchSubtitle: "Search invoices only.",
   searchPlaceholder: "Search invoices...",
 };
