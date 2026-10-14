@@ -148,6 +148,13 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = Field(default="", validation_alias=AliasChoices("GEMINI_API_KEY", "gemini_api_key"))
     GEMINI_MODEL: str = Field(default="gemini-3.6-flash", validation_alias=AliasChoices("GEMINI_MODEL", "gemini_model"))
     GEMINI_TIMEOUT_SECONDS: int = Field(default=30, validation_alias=AliasChoices("GEMINI_TIMEOUT_SECONDS", "gemini_timeout_seconds"))
+    FINANCIAL_SCAN_GEMINI_TIMEOUT_SECONDS: int = Field(
+        default=120,
+        validation_alias=AliasChoices(
+            "FINANCIAL_SCAN_GEMINI_TIMEOUT_SECONDS",
+            "financial_scan_gemini_timeout_seconds",
+        ),
+    )
 
     # Google Routes / road routing
     GOOGLE_ROUTES_API_KEY: str = Field(default="", validation_alias=AliasChoices("GOOGLE_ROUTES_API_KEY", "google_routes_api_key"))

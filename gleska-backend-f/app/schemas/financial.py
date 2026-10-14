@@ -15,23 +15,50 @@ class FinancialModel(BaseModel):
 Currency = Literal["INR", "USD", "EUR"]
 InvoiceAction = Literal["save_draft", "generate"]
 InvoiceStatus = Literal["DRAFT", "GENERATED"]
+MAX_FINANCIAL_SCAN_UPLOAD_BYTES = 25 * 1024 * 1024
 
 
 class FinancialSettings(FinancialModel):
     base_currency: Currency = "INR"
     tax_identifier: Annotated[str, StringConstraints(max_length=64)] = ""
     auto_reconcile_incoming_bills: bool = False
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    document_processing_configured: bool = False
+    document_processing_upload_limit_bytes: int = MAX_FINANCIAL_SCAN_UPLOAD_BYTES
 
     @field_validator("tax_identifier", mode="before")
     @classmethod
     def normalize_tax_identifier(cls, value):
         if isinstance(value, str):
+            if any(ord(character) < 32 or ord(character) == 127 for character in value):
+                raise ValueError("tax_identifier must not contain control characters")
             return " ".join(value.split())
         return value
 
 
-class FinancialSettingsUpdate(FinancialSettings):
-    pass
+class FinancialSettingsUpdate(FinancialModel):
+    base_currency: Currency | None = None
+    tax_identifier: Annotated[str | None, StringConstraints(max_length=64)] = None
+    auto_reconcile_incoming_bills: bool | None = None
+
+    @field_validator("tax_identifier", mode="before")
+    @classmethod
+    def normalize_tax_identifier(cls, value):
+        if isinstance(value, str):
+            if any(ord(character) < 32 or ord(character) == 127 for character in value):
+                raise ValueError("tax_identifier must not contain control characters")
+            return " ".join(value.split())
+        return value
+
+    @model_validator(mode="after")
+    def validate_supplied_values(self):
+        if not self.model_fields_set:
+            raise ValueError("At least one financial setting must be provided")
+        for field_name in ("base_currency", "auto_reconcile_incoming_bills"):
+            if field_name in self.model_fields_set and getattr(self, field_name) is None:
+                raise ValueError(f"{field_name} must not be null")
+        return self
 
 
 class InvoiceLineItemInput(FinancialModel):
@@ -121,7 +148,9 @@ class InvoiceListResponse(FinancialModel):
 
 
 class FinancialDashboardSummary(FinancialModel):
-    total_invoiced: float
+    total_invoiced: float | None
+    total_invoiced_currency: Currency | None = None
+    total_invoiced_has_multiple_currencies: bool = False
     pending_receivables: float | None
     active_invoices: int
     audits_passed: int | None
@@ -136,6 +165,7 @@ class FinancialDashboardRecord(FinancialModel):
     entity: str
     reference: str
     amount: float | None
+    currency: Currency | None = None
     status: str
     date: str
     category: str
@@ -146,23 +176,88 @@ class FinancialDashboardResponse(FinancialModel):
     records: list[FinancialDashboardRecord]
 
 
-class FinancialInvoiceAuditEvent(FinancialModel):
+class FinancialAuditRecord(FinancialModel):
     id: UUID
-    invoice_id: UUID
-    invoice_number: str
-    action: Literal[
-        "DRAFT_CREATED",
-        "DRAFT_UPDATED",
-        "INVOICE_GENERATED",
-        "DRAFT_DELETED",
-    ]
-    status: Literal["DRAFT", "GENERATED", "DELETED"]
+    action: str
+    outcome: Literal["SUCCESS", "FAILURE"]
+    entity_type: str
+    entity_id: UUID | None = None
     actor_user_id: UUID
+    metadata: dict[str, object] = Field(default_factory=dict)
     created_at: datetime
 
 
-class FinancialAuditsResponse(FinancialModel):
-    audits: list[FinancialInvoiceAuditEvent] = Field(default_factory=list)
+class FinancialAuditEventsResponse(FinancialModel):
+    audits: list[FinancialAuditRecord] = Field(default_factory=list)
+
+
+class FinancialScanLineItem(FinancialModel):
+    description: Annotated[str | None, StringConstraints(max_length=500)] = None
+    quantity: Decimal | None = Field(default=None, gt=0, max_digits=12, decimal_places=3)
+    unit_rate: Decimal | None = Field(default=None, ge=0, max_digits=14, decimal_places=2)
+    tax_amount: Decimal | None = Field(default=None, ge=0, max_digits=14, decimal_places=2)
+    total: Decimal | None = Field(default=None, ge=0, max_digits=14, decimal_places=2)
+
+
+class FinancialScanResult(FinancialModel):
+    vendor_name: Annotated[str | None, StringConstraints(max_length=240)] = None
+    bill_number: Annotated[str | None, StringConstraints(max_length=120)] = None
+    bill_date: date | None = None
+    due_date: date | None = None
+    currency: Literal["INR", "USD", "EUR"] | None = None
+    line_items: list[FinancialScanLineItem] = Field(default_factory=list, max_length=100)
+    subtotal: Decimal | None = Field(default=None, ge=0, max_digits=14, decimal_places=2)
+    tax_amount: Decimal | None = Field(default=None, ge=0, max_digits=14, decimal_places=2)
+    total: Decimal | None = Field(default=None, ge=0, max_digits=14, decimal_places=2)
+
+    @model_validator(mode="after")
+    def validate_scan_date_order(self):
+        if self.bill_date and self.due_date and self.due_date < self.bill_date:
+            raise ValueError("due_date must not be before bill_date")
+        return self
+
+
+class FinancialScanRecord(FinancialModel):
+    id: UUID
+    original_filename: str
+    content_type: str
+    file_size: int
+    status: Literal["QUEUED", "PROCESSING", "COMPLETED", "FAILED", "CONFIRMED"]
+    progress: int
+    retryable: bool
+    result: FinancialScanResult = Field(default_factory=FinancialScanResult)
+    reviewed_result: FinancialScanResult | None = None
+    confidence: dict[str, float] = Field(default_factory=dict)
+    extracted_text: str | None = None
+    error_code: str | None = None
+    retry_count: int
+    confirmed_bill_id: UUID | None = None
+    created_at: datetime
+    updated_at: datetime
+    processed_at: datetime | None = None
+
+
+class FinancialScanListResponse(FinancialModel):
+    scans: list[FinancialScanRecord] = Field(default_factory=list)
+
+
+class FinancialScanReviewRequest(FinancialModel):
+    result: FinancialScanResult
+
+
+class FinancialVendorBillResponse(FinancialModel):
+    id: UUID
+    scan_id: UUID
+    vendor_name: str | None = None
+    bill_number: str | None = None
+    bill_date: date | None = None
+    due_date: date | None = None
+    currency: str | None = None
+    line_items: list[dict[str, object]] = Field(default_factory=list)
+    subtotal: Decimal | None = None
+    tax_amount: Decimal | None = None
+    total: Decimal | None = None
+    confirmed_at: datetime
 
 
 class FinancialAgentConversationCreateResponse(FinancialModel):

@@ -3,12 +3,13 @@
 import logging
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Response, UploadFile, status
+from pydantic import ValidationError
 
 from app.core.security import require_employer
 from app.schemas.auth import UserResponse
 from app.schemas.financial import (
-    FinancialAuditsResponse,
+    FinancialAuditEventsResponse,
     FinancialAgentConversationCreateResponse,
     FinancialAgentConversationListResponse,
     FinancialAgentHistoryResponse,
@@ -17,6 +18,10 @@ from app.schemas.financial import (
     FinancialDashboardResponse,
     FinancialSettings,
     FinancialSettingsUpdate,
+    FinancialScanListResponse,
+    FinancialScanRecord,
+    FinancialScanReviewRequest,
+    FinancialVendorBillResponse,
     InvoiceCreateRequest,
     InvoiceListResponse,
     InvoiceResponse,
@@ -28,6 +33,7 @@ from app.services.financial_service import (
     FinancialService,
     FinancialServiceError,
 )
+from app.services.financial_scan_service import FinancialScanError, FinancialScanService, MAX_UPLOAD_BYTES
 
 router = APIRouter(prefix="/financial", tags=["financial"])
 logger = logging.getLogger(__name__)
@@ -43,7 +49,7 @@ def _raise_financial_error(exc: Exception) -> None:
         http_status = (
             status.HTTP_422_UNPROCESSABLE_ENTITY
             if code in {"INVOICE_AMOUNT_OUT_OF_RANGE", "INVOICE_INPUT_INVALID"}
-            else status.HTTP_500_INTERNAL_SERVER_ERROR
+            else getattr(exc, "http_status", status.HTTP_500_INTERNAL_SERVER_ERROR)
         )
         raise HTTPException(status_code=http_status, detail=code) from exc
     raise exc
@@ -116,8 +122,22 @@ async def create_financial_invoice(
     try:
         return FinancialService.create_invoice(user, request)
     except (FinancialNotFound, FinancialConflict, FinancialServiceError) as exc:
+        FinancialService.record_failed_action(
+            user,
+            "INVOICE_GENERATION_FAILED" if request.action == "generate" else "INVOICE_DRAFT_CREATE_FAILED",
+            "invoice",
+            None,
+            str(exc),
+        )
         _raise_financial_error(exc)
     except Exception as exc:
+        FinancialService.record_failed_action(
+            user,
+            "INVOICE_GENERATION_FAILED" if request.action == "generate" else "INVOICE_DRAFT_CREATE_FAILED",
+            "invoice",
+            None,
+            "FINANCIAL_INVOICE_CREATE_FAILED",
+        )
         logger.error("Financial invoice create failed: exception_type=%s", type(exc).__name__)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -134,8 +154,22 @@ async def update_financial_invoice(
     try:
         return FinancialService.update_invoice(user, invoice_id, request)
     except (FinancialNotFound, FinancialConflict, FinancialServiceError) as exc:
+        FinancialService.record_failed_action(
+            user,
+            "INVOICE_GENERATION_FAILED" if request.action == "generate" else "INVOICE_DRAFT_UPDATE_FAILED",
+            "invoice",
+            str(invoice_id),
+            str(exc),
+        )
         _raise_financial_error(exc)
     except Exception as exc:
+        FinancialService.record_failed_action(
+            user,
+            "INVOICE_GENERATION_FAILED" if request.action == "generate" else "INVOICE_DRAFT_UPDATE_FAILED",
+            "invoice",
+            str(invoice_id),
+            "FINANCIAL_INVOICE_UPDATE_FAILED",
+        )
         logger.error("Financial invoice update failed: exception_type=%s", type(exc).__name__)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -151,8 +185,15 @@ async def delete_financial_invoice(
     try:
         FinancialService.delete_invoice(user, invoice_id)
     except (FinancialNotFound, FinancialConflict, FinancialServiceError) as exc:
+        FinancialService.record_failed_action(
+            user, "INVOICE_DRAFT_DELETE_FAILED", "invoice", str(invoice_id), str(exc)
+        )
         _raise_financial_error(exc)
     except Exception as exc:
+        FinancialService.record_failed_action(
+            user, "INVOICE_DRAFT_DELETE_FAILED", "invoice", str(invoice_id),
+            "FINANCIAL_INVOICE_DELETE_FAILED",
+        )
         logger.error("Financial invoice delete failed: exception_type=%s", type(exc).__name__)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -176,14 +217,36 @@ async def get_financial_settings(user: UserResponse = Depends(require_employer))
 
 @router.put("/settings", response_model=FinancialSettings)
 async def update_financial_settings(
-    request: FinancialSettingsUpdate,
+    request: dict[str, object],
     user: UserResponse = Depends(require_employer),
 ):
     try:
-        return FinancialService.update_settings(user, request)
+        validated_request = FinancialSettingsUpdate.model_validate(request)
+    except ValidationError as exc:
+        FinancialService.record_failed_action(
+            user,
+            "FINANCIAL_SETTINGS_UPDATE_FAILED",
+            "financial_settings",
+            None,
+            "FINANCIAL_SETTINGS_INPUT_INVALID",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Financial settings are invalid. Check the supported currency and tax identifier.",
+        ) from exc
+
+    try:
+        return FinancialService.update_settings(user, validated_request)
     except (FinancialNotFound, FinancialServiceError) as exc:
+        FinancialService.record_failed_action(
+            user, "FINANCIAL_SETTINGS_UPDATE_FAILED", "financial_settings", None, str(exc)
+        )
         _raise_financial_error(exc)
     except Exception as exc:
+        FinancialService.record_failed_action(
+            user, "FINANCIAL_SETTINGS_UPDATE_FAILED", "financial_settings", None,
+            "FINANCIAL_SETTINGS_SAVE_FAILED",
+        )
         logger.error("Financial settings save failed: exception_type=%s", type(exc).__name__)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -191,10 +254,14 @@ async def update_financial_settings(
         ) from exc
 
 
-@router.get("/audits", response_model=FinancialAuditsResponse)
-async def list_financial_audits(user: UserResponse = Depends(require_employer)):
+@router.get("/audits", response_model=FinancialAuditEventsResponse)
+async def list_financial_audits(
+    action: str | None = Query(default=None, max_length=100),
+    outcome: str | None = Query(default=None, pattern="^(SUCCESS|FAILURE)$"),
+    user: UserResponse = Depends(require_employer),
+):
     try:
-        return FinancialAuditsResponse(audits=FinancialService.list_audits(user))
+        return FinancialAuditEventsResponse(audits=FinancialService.list_audits(user, action, outcome))
     except (FinancialNotFound, FinancialServiceError) as exc:
         _raise_financial_error(exc)
     except Exception as exc:
@@ -205,12 +272,111 @@ async def list_financial_audits(user: UserResponse = Depends(require_employer)):
         ) from exc
 
 
-@router.post("/scans")
-async def create_financial_scan(user: UserResponse = Depends(require_employer)):
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="OCR_DOCUMENT_STORAGE_NOT_CONFIGURED",
-    )
+@router.post("/scans", response_model=FinancialScanRecord, status_code=status.HTTP_202_ACCEPTED)
+async def create_financial_scan(
+    background_tasks: BackgroundTasks,
+    response: Response,
+    file: UploadFile = File(...),
+    user: UserResponse = Depends(require_employer),
+):
+    try:
+        content = await file.read(MAX_UPLOAD_BYTES + 1)
+        scan, duplicate = FinancialScanService.submit(
+            user, file.filename, file.content_type or "", content
+        )
+        if duplicate:
+            response.status_code = status.HTTP_200_OK
+        if scan.status == "QUEUED":
+            background_tasks.add_task(
+                FinancialScanService.process_scan, str(scan.id), str(user.id),
+                FinancialService._employer_scope(user)[1],
+            )
+        return scan
+    except (FinancialNotFound, FinancialScanError, FinancialServiceError) as exc:
+        _raise_financial_error(exc)
+    except Exception as exc:
+        logger.error("Financial scan upload failed: exception_type=%s", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="SCAN_SUBMIT_FAILED",
+        ) from exc
+
+
+@router.get("/scans", response_model=FinancialScanListResponse)
+async def list_financial_scans(user: UserResponse = Depends(require_employer)):
+    try:
+        return FinancialScanListResponse(scans=FinancialScanService.list_scans(user))
+    except (FinancialNotFound, FinancialScanError, FinancialServiceError) as exc:
+        _raise_financial_error(exc)
+
+
+@router.get("/scans/{scan_id}", response_model=FinancialScanRecord)
+async def get_financial_scan(scan_id: UUID, user: UserResponse = Depends(require_employer)):
+    try:
+        return FinancialScanService.get_scan(user, scan_id)
+    except (FinancialNotFound, FinancialScanError, FinancialServiceError) as exc:
+        _raise_financial_error(exc)
+
+
+@router.post("/scans/{scan_id}/retry", response_model=FinancialScanRecord, status_code=status.HTTP_202_ACCEPTED)
+async def retry_financial_scan(
+    scan_id: UUID,
+    background_tasks: BackgroundTasks,
+    user: UserResponse = Depends(require_employer),
+):
+    try:
+        employer_id = FinancialService._employer_scope(user)[1]
+        scan = FinancialScanService.retry_scan(user, scan_id)
+        background_tasks.add_task(
+            FinancialScanService.process_scan, str(scan.id), str(user.id),
+            employer_id,
+        )
+        return scan
+    except (FinancialNotFound, FinancialScanError, FinancialServiceError) as exc:
+        if str(exc) != "FINANCIAL_AUDIT_WRITE_FAILED":
+            FinancialService.record_failed_action(
+                user, "SCAN_PROCESSING_RETRY_FAILED", "financial_invoice_scan",
+                str(scan_id), str(exc),
+            )
+        _raise_financial_error(exc)
+
+
+@router.put("/scans/{scan_id}/review", response_model=FinancialScanRecord)
+async def review_financial_scan(
+    scan_id: UUID,
+    request: FinancialScanReviewRequest,
+    user: UserResponse = Depends(require_employer),
+):
+    try:
+        return FinancialScanService.save_review(user, scan_id, request.result)
+    except (FinancialNotFound, FinancialScanError, FinancialServiceError) as exc:
+        if str(exc) != "FINANCIAL_AUDIT_WRITE_FAILED":
+            FinancialService.record_failed_action(
+                user, "SCAN_RESULT_REVIEW_FAILED", "financial_invoice_scan",
+                str(scan_id), str(exc),
+            )
+        _raise_financial_error(exc)
+
+
+@router.post(
+    "/scans/{scan_id}/confirm",
+    response_model=FinancialVendorBillResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def confirm_financial_scan(
+    scan_id: UUID,
+    request: FinancialScanReviewRequest,
+    user: UserResponse = Depends(require_employer),
+):
+    try:
+        return FinancialScanService.confirm_scan(user, scan_id, request.result)
+    except (FinancialNotFound, FinancialScanError, FinancialServiceError) as exc:
+        if str(exc) != "FINANCIAL_AUDIT_WRITE_FAILED":
+            FinancialService.record_failed_action(
+                user, "SCAN_BILL_CONFIRMATION_FAILED", "financial_invoice_scan",
+                str(scan_id), str(exc),
+            )
+        _raise_financial_error(exc)
 
 
 @router.post(

@@ -2,19 +2,22 @@
 
 from decimal import Decimal, ROUND_HALF_UP
 import logging
+import re
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
+from app.core.config import settings
 from app.core.supabase import supabase
 from app.schemas.auth import UserResponse
 from app.schemas.financial import (
     FinancialDashboardRecord,
     FinancialDashboardResponse,
     FinancialDashboardSummary,
-    FinancialInvoiceAuditEvent,
+    FinancialAuditRecord,
     FinancialInvoiceCompanyDetails,
     FinancialSettings,
     FinancialSettingsUpdate,
+    MAX_FINANCIAL_SCAN_UPLOAD_BYTES,
     InvoiceCreateRequest,
     InvoiceLineItemResponse,
     InvoiceResponse,
@@ -112,19 +115,120 @@ class FinancialService:
         return str(user.id), str(employer["id"])
 
     @classmethod
+    def record_audit_event(
+        cls,
+        user: UserResponse,
+        action: str,
+        outcome: str,
+        entity_type: str,
+        entity_id: str | None,
+        event_key: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        user_id, employer_id = cls._employer_scope(user)
+        cls.record_scoped_audit_event(
+            user_id, employer_id, action, outcome, entity_type, entity_id, event_key, metadata
+        )
+
+    @classmethod
+    def record_scoped_audit_event(
+        cls,
+        user_id: str,
+        employer_id: str,
+        action: str,
+        outcome: str,
+        entity_type: str,
+        entity_id: str | None,
+        event_key: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        try:
+            supabase.table("financial_audit_events").insert({
+                "user_id": user_id,
+                "employer_id": employer_id,
+                "actor_user_id": user_id,
+                "action": action,
+                "outcome": outcome,
+                "entity_type": entity_type,
+                "entity_id": entity_id,
+                "event_key": event_key,
+                "metadata": metadata or {},
+            }).execute()
+        except Exception as exc:
+            if getattr(exc, "code", None) == "23505" or "duplicate key" in str(exc).lower():
+                return
+            logger.error(
+                "Financial audit insert failed: action=%s user_id=%s exception_type=%s",
+                action, user_id, type(exc).__name__,
+            )
+            raise FinancialServiceError("FINANCIAL_AUDIT_WRITE_FAILED") from exc
+
+    @classmethod
+    def record_failed_action(
+        cls,
+        user: UserResponse,
+        action: str,
+        entity_type: str,
+        entity_id: str | None,
+        error_code: str,
+    ) -> None:
+        cls.record_audit_event(
+            user,
+            action,
+            "FAILURE",
+            entity_type,
+            entity_id,
+            f"financial-failure:{uuid4()}",
+            {"error_code": error_code[:100]},
+        )
+
+    @classmethod
     def get_settings(cls, user: UserResponse) -> FinancialSettings:
         user_id, employer_id = cls._employer_scope(user)
         try:
-            response = (
+            select_columns = (
+                "base_currency, tax_identifier, auto_reconcile_incoming_bills, "
+                "created_at, updated_at"
+            )
+            row = _row(
                 supabase.table("financial_settings")
-                .select("base_currency, tax_identifier, auto_reconcile_incoming_bills")
+                .select(select_columns)
                 .eq("user_id", user_id)
                 .eq("employer_id", employer_id)
                 .maybe_single()
                 .execute()
             )
-            row = _row(response)
-            return FinancialSettings.model_validate(row or {})
+            if not row:
+                try:
+                    row = _row(
+                        supabase.table("financial_settings")
+                        .insert({
+                            "user_id": user_id,
+                            "employer_id": employer_id,
+                            "base_currency": "INR",
+                            "tax_identifier": "",
+                            "auto_reconcile_incoming_bills": False,
+                        })
+                        .select(select_columns)
+                        .execute()
+                    )
+                except Exception as insert_exc:
+                    if (
+                        getattr(insert_exc, "code", None) != "23505"
+                        and "duplicate key" not in str(insert_exc).casefold()
+                    ):
+                        raise
+                    row = _row(
+                        supabase.table("financial_settings")
+                        .select(select_columns)
+                        .eq("user_id", user_id)
+                        .eq("employer_id", employer_id)
+                        .maybe_single()
+                        .execute()
+                    )
+            if not row:
+                raise ValueError("Financial settings persistence returned no record")
+            return cls._financial_settings_response(row)
         except FinancialServiceError:
             raise
         except Exception as exc:
@@ -142,15 +246,30 @@ class FinancialService:
         request: FinancialSettingsUpdate,
     ) -> FinancialSettings:
         user_id, employer_id = cls._employer_scope(user)
-        payload = request.model_dump(mode="json")
-        payload.update({"user_id": user_id, "employer_id": employer_id})
         try:
+            current = cls.get_settings(user)
+            payload = {
+                "base_currency": current.base_currency,
+                "tax_identifier": current.tax_identifier,
+                "auto_reconcile_incoming_bills": current.auto_reconcile_incoming_bills,
+            }
+            supplied = request.model_dump(mode="json", exclude_unset=True)
+            for field_name, value in supplied.items():
+                payload[field_name] = "" if field_name == "tax_identifier" and value is None else value
+            payload.update({"user_id": user_id, "employer_id": employer_id})
             response = (
                 supabase.table("financial_settings")
                 .upsert(payload, on_conflict="employer_id")
+                .select(
+                    "base_currency, tax_identifier, auto_reconcile_incoming_bills, "
+                    "created_at, updated_at"
+                )
                 .execute()
             )
-            return FinancialSettings.model_validate(_row(response) or payload)
+            row = _row(response)
+            if not row:
+                raise ValueError("Financial settings save returned no persisted record")
+            return cls._financial_settings_response(row)
         except Exception as exc:
             logger.error(
                 "Financial settings save failed: user_id=%s exception_type=%s",
@@ -158,6 +277,21 @@ class FinancialService:
                 type(exc).__name__,
             )
             raise FinancialServiceError("FINANCIAL_SETTINGS_SAVE_FAILED") from exc
+
+    @staticmethod
+    def _financial_settings_response(row: dict[str, Any]) -> FinancialSettings:
+        model = settings.GEMINI_MODEL.strip()
+        configured = bool(
+            settings.GEMINI_API_KEY.strip()
+            and model
+            and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}", model)
+            and settings.FINANCIAL_SCAN_GEMINI_TIMEOUT_SECONDS > 0
+        )
+        return FinancialSettings.model_validate({
+            **row,
+            "document_processing_configured": configured,
+            "document_processing_upload_limit_bytes": MAX_FINANCIAL_SCAN_UPLOAD_BYTES,
+        })
 
     @classmethod
     def list_invoices(cls, user: UserResponse, search: str | None = None) -> list[InvoiceResponse]:
@@ -309,33 +443,37 @@ class FinancialService:
             raise FinancialServiceError("FINANCIAL_INVOICE_DELETE_FAILED") from exc
 
     @classmethod
-    def list_audits(cls, user: UserResponse) -> list[FinancialInvoiceAuditEvent]:
+    def list_audits(
+        cls,
+        user: UserResponse,
+        action: str | None = None,
+        outcome: str | None = None,
+    ) -> list[FinancialAuditRecord]:
         user_id, employer_id = cls._employer_scope(user)
         try:
-            audits: list[FinancialInvoiceAuditEvent] = []
+            audits: list[FinancialAuditRecord] = []
             offset = 0
-            page_size = 500
+            page_size = 100
             while True:
-                response = (
-                    supabase.table("financial_invoice_audit_events")
-                    .select(
-                        "id, invoice_id, invoice_number, action, status, actor_user_id, created_at"
-                    )
-                    .eq("user_id", user_id)
-                    .eq("employer_id", employer_id)
-                    .order("created_at", desc=True)
-                    .order("id", desc=True)
-                    .range(offset, offset + page_size - 1)
-                    .execute()
-                )
+                # Retain the employer scope on every page of the canonical history.
+                query = supabase.table("financial_audit_events").select(
+                    "id, action, outcome, entity_type, entity_id, actor_user_id, metadata, created_at"
+                ).eq("user_id", user_id).eq("employer_id", employer_id)
+                if action:
+                    query = query.eq("action", action)
+                if outcome:
+                    query = query.eq("outcome", outcome)
+                response = query.order("created_at", desc=True).order("id", desc=True).range(
+                    offset, offset + page_size - 1
+                ).execute()
                 rows = _rows(response)
-                audits.extend(FinancialInvoiceAuditEvent.model_validate(row) for row in rows)
+                audits.extend(FinancialAuditRecord.model_validate(row) for row in rows)
                 if len(rows) < page_size:
                     return audits
                 offset += page_size
         except Exception as exc:
             logger.error(
-                "Financial invoice audit load failed: user_id=%s exception_type=%s",
+                "Financial audit load failed: user_id=%s exception_type=%s",
                 user_id,
                 type(exc).__name__,
             )
@@ -517,7 +655,13 @@ class FinancialService:
                 )
             ]
         generated = [invoice for invoice in all_invoices if invoice.status == "GENERATED"]
-        total_invoiced = sum((_decimal(invoice.total) for invoice in generated), Decimal("0"))
+        generated_currencies = {invoice.currency for invoice in generated}
+        total_invoiced = (
+            sum((_decimal(invoice.total) for invoice in generated), Decimal("0"))
+            if len(generated_currencies) <= 1
+            else None
+        )
+        total_invoiced_currency = next(iter(generated_currencies), None) if len(generated_currencies) <= 1 else None
         records = [
             FinancialDashboardRecord(
                 id=str(invoice.id),
@@ -526,6 +670,7 @@ class FinancialService:
                 entity=invoice.client_name,
                 reference=invoice.invoice_number,
                 amount=float(invoice.total),
+                currency=invoice.currency,
                 status=invoice.status,
                 date=invoice.issue_date.isoformat(),
                 category="INVOICE",
@@ -534,7 +679,9 @@ class FinancialService:
         ]
         return FinancialDashboardResponse(
             summary=FinancialDashboardSummary(
-                total_invoiced=float(total_invoiced),
+                total_invoiced=float(total_invoiced) if total_invoiced is not None else None,
+                total_invoiced_currency=total_invoiced_currency,
+                total_invoiced_has_multiple_currencies=len(generated_currencies) > 1,
                 # Payment state is not persisted, so receivables cannot be inferred safely.
                 pending_receivables=None,
                 active_invoices=len(generated),
