@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 import { isAxiosError } from "axios";
 import apiClient from "@/lib/api";
 import { supabase } from "@/lib/supabase";
@@ -134,67 +134,134 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [nextStep, setNextStep] = useState<NextStep | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const authStateVersion = useRef(0);
+  const currentUser = useRef<AuthUser | null>(null);
+  const refreshRetryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const setAuthState = (newUser: AuthUser, newNextStep: NextStep | null) => {
+  const beginAuthTransition = () => {
+    authStateVersion.current += 1;
+  };
+
+  const commitAuthState = (newUser: AuthUser | null, newNextStep: NextStep | null) => {
+    authStateVersion.current += 1;
+    if (refreshRetryTimer.current) {
+      clearTimeout(refreshRetryTimer.current);
+      refreshRetryTimer.current = null;
+    }
+    currentUser.current = newUser;
     setUser(newUser);
     setNextStep(newNextStep);
+  };
+
+  const setAuthState = (newUser: AuthUser, newNextStep: NextStep | null) => {
+    commitAuthState(newUser, newNextStep);
     setClientAuthCookie();
     notifyAuthStateChange();
     setError(null);
+    setIsLoading(false);
   };
 
   useEffect(() => {
+    let active = true;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+
     const initAuth = async () => {
+      const requestVersion = authStateVersion.current;
       try {
         const response = await apiClient.get("/api/v1/auth/me");
-        if (response.data?.user) {
-          setUser(response.data.user);
-          setNextStep(response.data.next_step);
-          setClientAuthCookie();
+        if (!active || requestVersion !== authStateVersion.current) return;
+        if (!response.data?.user) {
+          throw new Error("Authentication status could not be confirmed.");
         }
-      } catch (err: any) {
-        if (err.response?.status === 401) {
-          setUser(null);
-          setNextStep(null);
-          clearClientAuthCookie();
-        }
-      } finally {
+        commitAuthState(response.data.user, response.data.next_step || null);
+        setClientAuthCookie();
+        setError(null);
         setIsLoading(false);
+      } catch (err: unknown) {
+        if (!active || requestVersion !== authStateVersion.current) return;
+        const status = isAxiosError(err) ? err.response?.status : undefined;
+        if (status === 401) {
+          commitAuthState(null, null);
+          clearClientAuthCookie();
+          setError(null);
+          setIsLoading(false);
+        } else {
+          setError(status === 403
+            ? "Your session is authenticated but cannot access account details."
+            : "Unable to verify your session. Retrying...");
+          if (currentUser.current) {
+            setIsLoading(false);
+          } else {
+            retryTimer = setTimeout(() => {
+              if (active && requestVersion === authStateVersion.current) void initAuth();
+            }, 5000);
+          }
+        }
       }
     };
 
-    initAuth();
+    void initAuth();
     const { data: subscription } = supabase.auth.onAuthStateChange((event) => {
       if (event === "SIGNED_OUT") {
-        setUser(null);
-        setNextStep(null);
+        commitAuthState(null, null);
         clearClientAuthCookie();
         clearLanguageCache();
         notifyAuthStateChange();
+        setIsLoading(false);
       }
     });
     const handleStorage = (event: StorageEvent) => {
       if (event.key !== AUTH_SYNC_KEY) return;
+      const requestVersion = authStateVersion.current;
       void apiClient.get("/api/v1/auth/me").then((response) => {
+        if (requestVersion !== authStateVersion.current) return;
         if (response.data?.user) {
-          setUser(response.data.user);
-          setNextStep(response.data.next_step || null);
+          commitAuthState(response.data.user, response.data.next_step || null);
           setClientAuthCookie();
+          setError(null);
+          setIsLoading(false);
         } else {
-          setUser(null);
-          setNextStep(null);
-          clearClientAuthCookie();
+          setError("Authentication status could not be confirmed.");
         }
-      }).catch(() => {
-        setUser(null);
-        setNextStep(null);
+      }).catch((storageError: unknown) => {
+        if (requestVersion !== authStateVersion.current) return;
+        if (isAxiosError(storageError) && storageError.response?.status === 401) {
+          commitAuthState(null, null);
+          clearClientAuthCookie();
+          setError(null);
+          setIsLoading(false);
+          return;
+        }
+        setError(isAxiosError(storageError) && storageError.response?.status === 403
+          ? "Your session is authenticated but cannot access account details."
+          : "Unable to verify your session after an account change.");
+      });
+    };
+    const handleUnauthorizedSession = (event: Event) => {
+      const requestToken = (event as CustomEvent<{ token?: string }>).detail?.token;
+      if (!requestToken) return;
+      void supabase.auth.getSession().then(({ data }) => {
+        if (data.session?.access_token !== requestToken) return;
+        commitAuthState(null, null);
         clearClientAuthCookie();
+        setError(null);
+        setIsLoading(false);
+      }).catch((sessionError: unknown) => {
+        console.error("Unable to reconcile an unauthorized API response:", sessionError);
       });
     };
     window.addEventListener("storage", handleStorage);
+    window.addEventListener("goleska:session-unauthorized", handleUnauthorizedSession);
     return () => {
+      active = false;
+      if (retryTimer) clearTimeout(retryTimer);
+      if (refreshRetryTimer.current) {
+        clearTimeout(refreshRetryTimer.current);
+        refreshRetryTimer.current = null;
+      }
       subscription.subscription.unsubscribe();
       window.removeEventListener("storage", handleStorage);
+      window.removeEventListener("goleska:session-unauthorized", handleUnauthorizedSession);
     };
   }, []);
 
@@ -302,6 +369,8 @@ const resendOTP = async (mobile: string, requestId: string | null, channel: "SMS
     intent: "login" | "provision" = "provision",
     timeoutMs?: number,
   ) => {
+    beginAuthTransition();
+    const requestVersion = authStateVersion.current;
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.access_token) throw new Error("Authentication session was not created");
     const provisioned = await apiClient.post<AuthUser>(`/api/v1/auth/provision?intent=${intent}`, {
@@ -314,6 +383,9 @@ const resendOTP = async (mobile: string, requestId: string | null, channel: "SMS
     }
     await registerSession(timeoutMs);
     let state = await apiClient.get("/api/v1/auth/me", timeoutMs ? { timeout: timeoutMs } : undefined);
+    if (requestVersion !== authStateVersion.current) {
+      throw new Error("Authentication changed while verifying the session.");
+    }
     if (!state.data?.user) {
       throw new Error("Backend authentication could not be confirmed");
     }
@@ -323,15 +395,19 @@ const resendOTP = async (mobile: string, requestId: string | null, channel: "SMS
     if (role === "EMPLOYER" && accountType === "INDIVIDUAL" && !state.data.user.employer_type) {
       await apiClient.post("/api/v1/employers/onboarding/type", { employer_type: "INDIVIDUAL" });
       state = await apiClient.get("/api/v1/auth/me");
+      if (requestVersion !== authStateVersion.current) {
+        throw new Error("Authentication changed while verifying the session.");
+      }
     }
-    setUser(state.data.user);
-    setNextStep(state.data.next_step || null);
+    commitAuthState(state.data.user, state.data.next_step || null);
     setClientAuthCookie();
     notifyAuthStateChange();
+    setIsLoading(false);
     return { user: state.data.user, nextStep: state.data.next_step || null };
   };
 
   const signInWithEmail = async (email: string, password: string, role?: "WORKER" | "EMPLOYER" | "ADMIN") => {
+    beginAuthTransition();
     setError(null);
     setIsLoading(true);
     try {
@@ -382,16 +458,23 @@ const resendOTP = async (mobile: string, requestId: string | null, channel: "SMS
       }
       
       setError(message);
-      try {
-        await supabase.auth.signOut({ scope: "local" });
-      } catch {
-        // Clear application-side state even if Supabase sign-out cannot complete.
-      } finally {
-        setUser(null);
-        setNextStep(null);
-        clearClientAuthCookie();
-        clearSessionKey();
-        notifyAuthStateChange();
+      const clearRejectedSession = responseStatus === 401
+        || responseStatus === 403
+        || rawMessage === "Invalid login credentials"
+        || rawMessage === "ADMIN_ROLE_UNAUTHORIZED";
+      if (clearRejectedSession) {
+        try {
+          await supabase.auth.signOut({ scope: "local" });
+        } catch {
+          // Clear application-side state even if Supabase sign-out cannot complete.
+        } finally {
+          commitAuthState(null, null);
+          clearClientAuthCookie();
+          clearSessionKey();
+          notifyAuthStateChange();
+        }
+      } else {
+        void refreshUser();
       }
       throw new Error(message);
     } finally {
@@ -461,8 +544,10 @@ const resendOTP = async (mobile: string, requestId: string | null, channel: "SMS
   };
 
   const completeEmailSignup = async (email: string, password: string, name: string, mobile: string, otp: string, role: "WORKER" | "EMPLOYER" | "ADMIN", termsAccepted = true, accountType: "BUSINESS" | "INDIVIDUAL" = "BUSINESS") => {
+    beginAuthTransition();
     setError(null);
     setIsLoading(true);
+    let signupAuthVersion: number | null = null;
     let signupStage: "preparation" | "backend-signup" | "auth-sign-in" | "session-registration" | "session-restoration" | "onboarding" = "preparation";
     try {
       clearSessionKey();
@@ -493,24 +578,47 @@ const resendOTP = async (mobile: string, requestId: string | null, channel: "SMS
       if (signInError) throw signInError;
       signupStage = "session-registration";
       await registerSession();
-      setUser(response.data);
+      commitAuthState(response.data, null);
+      signupAuthVersion = authStateVersion.current;
       setClientAuthCookie();
       signupStage = "session-restoration";
       let state = await apiClient.get("/api/v1/auth/me");
+      if (signupAuthVersion !== authStateVersion.current) {
+        throw new Error("Authentication changed while restoring the account.");
+      }
       if (role === "EMPLOYER" && accountType === "INDIVIDUAL" && !state.data?.user?.employer_type) {
         signupStage = "onboarding";
         await apiClient.post("/api/v1/employers/onboarding/type", { employer_type: "INDIVIDUAL" });
         signupStage = "session-restoration";
         state = await apiClient.get("/api/v1/auth/me");
+        if (signupAuthVersion !== authStateVersion.current) {
+          throw new Error("Authentication changed while restoring the account.");
+        }
       }
-      setNextStep(state.data?.next_step || null);
+      commitAuthState(state.data.user, state.data?.next_step || null);
+      signupAuthVersion = authStateVersion.current;
       notifyAuthStateChange();
     } catch (err: any) {
       const signupError = toSignupFlowError(err, signupStage);
       setError(signupError.message);
-      try {
-        await supabase.auth.signOut();
-      } catch {
+      const signupResponseStatus = isAxiosError(err) ? err.response?.status : undefined;
+      if (
+        signupAuthVersion !== null
+        && signupAuthVersion === authStateVersion.current
+        && (signupResponseStatus === 401 || signupResponseStatus === 403)
+      ) {
+        try {
+          await supabase.auth.signOut();
+        } catch {
+          // Keep the application state aligned even if provider sign-out fails.
+        } finally {
+          commitAuthState(null, null);
+          clearClientAuthCookie();
+          clearSessionKey();
+          notifyAuthStateChange();
+        }
+      } else if (signupAuthVersion !== null && signupAuthVersion === authStateVersion.current) {
+        void refreshUser();
       }
       throw signupError;
     } finally {
@@ -519,6 +627,7 @@ const resendOTP = async (mobile: string, requestId: string | null, channel: "SMS
   };
 
   const login = async (mobile: string, otp: string, name: string, role: "WORKER" | "EMPLOYER" | "ADMIN") => {
+    beginAuthTransition();
     try {
       setError(null);
       setIsLoading(true);
@@ -534,8 +643,7 @@ const resendOTP = async (mobile: string, requestId: string | null, channel: "SMS
 
       if (response.data?.user) {
         await registerSession();
-        setUser(response.data.user);
-        setNextStep(response.data.next_step);
+        commitAuthState(response.data.user, response.data.next_step || null);
         notifyAuthStateChange();
       }
     } catch (err: any) {
@@ -548,6 +656,7 @@ const resendOTP = async (mobile: string, requestId: string | null, channel: "SMS
   };
 
   const loginWithMobile = async (mobile: string, otp: string) => {
+    beginAuthTransition();
     setError(null);
     setIsLoading(true);
     let backendLoginSucceeded = false;
@@ -567,26 +676,32 @@ const resendOTP = async (mobile: string, requestId: string | null, channel: "SMS
       if (response.data.user?.id) {
         await registerSession();
       }
+      const requestVersion = authStateVersion.current;
       const state = await apiClient.get("/api/v1/auth/me", { withCredentials: true });
+      if (requestVersion !== authStateVersion.current) {
+        throw new Error("Authentication changed while verifying the session.");
+      }
       if (!state.data?.user) {
         throw new Error("Backend authentication could not be confirmed.");
       }
-      setUser(state.data.user);
-      setNextStep(state.data.next_step || null);
+      commitAuthState(state.data.user, state.data.next_step || null);
       setClientAuthCookie();
       notifyAuthStateChange();
       return { user: state.data.user as AuthUser, nextStep: state.data.next_step || null };
     } catch (err: any) {
-      if (backendLoginSucceeded) {
+      const responseStatus = isAxiosError(err) ? err.response?.status : undefined;
+      if (backendLoginSucceeded && responseStatus === 401) {
         await clearBackendSession();
         clearSessionKey();
         try {
           await supabase.auth.signOut();
         } catch {}
-        setUser(null);
-        setNextStep(null);
+        commitAuthState(null, null);
         clearClientAuthCookie();
         notifyAuthStateChange();
+      }
+      if (backendLoginSucceeded && responseStatus !== 401) {
+        void refreshUser();
       }
       const message = err.response?.data?.detail === "User inactive"
         ? "User inactive"
@@ -599,6 +714,7 @@ const resendOTP = async (mobile: string, requestId: string | null, channel: "SMS
   };
 
   const logout = async () => {
+    beginAuthTransition();
     setError(null);
     setIsLoggingOut(true);
     try {
@@ -611,8 +727,7 @@ const resendOTP = async (mobile: string, requestId: string | null, channel: "SMS
       } catch (err) {
         console.error("Supabase logout error:", err);
       }
-      setUser(null);
-      setNextStep(null);
+      commitAuthState(null, null);
       clearClientAuthCookie();
       clearLanguageCache();
       clearSessionKey();
@@ -625,25 +740,43 @@ const resendOTP = async (mobile: string, requestId: string | null, channel: "SMS
     }
   };
 
-  const refreshUser = async (propagateError = false): Promise<NextStep | null> => {
+  async function refreshUser(propagateError = false): Promise<NextStep | null> {
+    const requestVersion = authStateVersion.current;
     try {
       const response = await apiClient.get("/api/v1/auth/me", { withCredentials: true });
       if (response.data?.user) {
-        setUser(response.data.user);
-        setNextStep(response.data.next_step);
+        if (requestVersion !== authStateVersion.current) return null;
+        commitAuthState(response.data.user, response.data.next_step || null);
         setClientAuthCookie();
         setError(null);
+        setIsLoading(false);
         return response.data.next_step || null;
       }
+      throw new Error("Authentication status could not be confirmed.");
     } catch (err) {
-      console.error("Failed to refresh user:", err);
-      setUser(null);
-      setNextStep(null);
-      clearClientAuthCookie();
+      if (requestVersion !== authStateVersion.current) return null;
+      const status = isAxiosError(err) ? err.response?.status : undefined;
+      if (status === 401) {
+        commitAuthState(null, null);
+        clearClientAuthCookie();
+        setError(null);
+        setIsLoading(false);
+      } else {
+        console.error("Failed to refresh user:", err);
+        setError(status === 403
+          ? "Your session is authenticated but cannot access account details."
+          : "Unable to verify your session. Please retry.");
+        if (!currentUser.current) {
+          setIsLoading(true);
+          refreshRetryTimer.current = setTimeout(() => {
+            if (requestVersion === authStateVersion.current) void refreshUser();
+          }, 5000);
+        }
+      }
       if (propagateError) throw toSignupFlowError(err, "session-restoration");
     }
-    return null;
-  };
+    return currentUser.current ? nextStep : null;
+  }
 
   const isSubscribed = Boolean(
     user?.subscription_active || user?.trial_active || (

@@ -1,10 +1,12 @@
 """Employer-scoped access to shared session and security activity data."""
 
+import base64
+import binascii
 from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 
 from app.core.security import require_employer
 from app.core.supabase import supabase
@@ -17,12 +19,37 @@ from app.schemas.account_security import (
 from app.schemas.auth import UserResponse
 
 router = APIRouter(prefix="/employers/me/security", tags=["employer-security"])
+SECURITY_ACTIVITY_PAGE_SIZE = 100
+
+
+def _decode_activity_cursor(cursor: str) -> tuple[datetime, UUID]:
+    try:
+        padded = cursor + "=" * (-len(cursor) % 4)
+        decoded = base64.b64decode(padded, altchars=b"-_", validate=True).decode("utf-8")
+        created_at_text, activity_id_text = decoded.split("\n", 1)
+        created_at = datetime.fromisoformat(created_at_text)
+        activity_id = UUID(activity_id_text)
+        if created_at.tzinfo is None:
+            raise ValueError("Activity cursor timestamp must include a timezone")
+        return created_at, activity_id
+    except (binascii.Error, UnicodeDecodeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="SECURITY_ACTIVITY_CURSOR_INVALID",
+        ) from exc
+
+
+def _encode_activity_cursor(row: dict) -> str:
+    value = f"{row['created_at']}\n{row['id']}".encode("utf-8")
+    return base64.urlsafe_b64encode(value).decode("ascii").rstrip("=")
 
 
 @router.get("", response_model=AccountSecurityResponse)
 async def get_employer_security(
     user: UserResponse = Depends(require_employer),
     session_key: Optional[str] = Header(default=None, alias="X-Goleska-Session-Key"),
+    limit: int = Query(default=20, ge=1, le=SECURITY_ACTIVITY_PAGE_SIZE),
+    cursor: Optional[str] = Query(default=None, max_length=256),
 ):
     if session_key:
         supabase.table("user_sessions").update(
@@ -37,14 +64,26 @@ async def get_employer_security(
         .order("last_active", desc=True)
         .execute()
     )
-    activities_response = (
+    activity_query = (
         supabase.table("security_activity")
-        .select("id, event_type, description, device_name, browser, os, city, country, created_at")
+        .select(
+            "id, event_type, description, device_name, browser, os, city, country, created_at",
+            count="exact" if cursor is None else None,
+        )
         .eq("user_id", user.id)
         .order("created_at", desc=True)
-        .limit(20)
-        .execute()
+        .order("id", desc=True)
     )
+    if cursor:
+        cursor_created_at, cursor_id = _decode_activity_cursor(cursor)
+        cursor_timestamp = cursor_created_at.isoformat()
+        activity_query = activity_query.or_(
+            f"created_at.lt.{cursor_timestamp},and(created_at.eq.{cursor_timestamp},id.lt.{cursor_id})"
+        )
+    activities_response = activity_query.limit(limit + 1).execute()
+    activity_rows = activities_response.data or []
+    has_more = len(activity_rows) > limit
+    activity_rows = activity_rows[:limit]
 
     sessions = [
         AccountSessionResponse(
@@ -62,9 +101,15 @@ async def get_employer_security(
     ]
     activities = [
         AccountSecurityActivityResponse(**row)
-        for row in (activities_response.data or [])
+        for row in activity_rows
     ]
-    return AccountSecurityResponse(sessions=sessions, activities=activities)
+    next_cursor = _encode_activity_cursor(activity_rows[-1]) if has_more and activity_rows else None
+    return AccountSecurityResponse(
+        sessions=sessions,
+        activities=activities,
+        activity_count=getattr(activities_response, "count", None) if cursor is None else None,
+        next_cursor=next_cursor,
+    )
 
 
 @router.post(

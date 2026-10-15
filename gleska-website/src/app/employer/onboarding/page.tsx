@@ -459,7 +459,10 @@ export default function EmployerOnboarding() {
 
   useEffect(() => {
     if (!isLoading && !user) {
-      router.replace("/employer/auth");
+      const requestedNext = new URLSearchParams(window.location.search).get("next");
+      router.replace(requestedNext
+        ? `/employer/auth?next=${encodeURIComponent(requestedNext)}`
+        : "/employer/auth");
     }
 
     if (!isLoading && user && user.role !== "EMPLOYER") {

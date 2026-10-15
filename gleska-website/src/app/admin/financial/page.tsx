@@ -188,6 +188,11 @@ function amount(value: number | string): string {
     : "—";
 }
 
+function vendorBillAmount(currency: string | null, value: number | string | null): string {
+  if (!currency) return value == null ? "Currency and amount unavailable" : `Currency unavailable · ${amount(value)}`;
+  return value == null ? "Amount unavailable" : `${currency} ${amount(value)}`;
+}
+
 function currencyTotals(values: CurrencyAmount[]): string {
   if (!values.length) return "—";
   return values.map(({ currency, amount: value }) => `${currency} ${amount(value)}`).join(" · ");
@@ -470,6 +475,7 @@ export default function AdminFinancialPage() {
                 <MetricCard title="Vendors & bills" value={`${overview.active_vendor_count.toLocaleString()} active vendors`} icon={Building2} values={overview.vendor_bill_totals_by_currency} caption={`${overview.vendor_bill_count.toLocaleString()} confirmed vendor bills`} />
                 <MetricCard title="Financial audit runs" value={overview.audit_runs_available ? overview.audit_run_count.toLocaleString() : "Unavailable"} icon={ShieldCheck} values={[]} caption={overview.audit_runs_available ? `${overview.completed_audit_run_count} completed · ${overview.running_audit_run_count} running · ${overview.failed_audit_run_count} failed` : "Audit-run data is not available"} />
               </div>
+              <VendorBillTotalsNotice className="mt-4" />
               {overview.audit_runs_available && <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
                 <h2 className="font-bold text-slate-900">Persisted audit check results</h2>
                 <div className="mt-3 flex flex-wrap gap-x-8 gap-y-2 text-sm text-slate-600">
@@ -508,6 +514,7 @@ export default function AdminFinancialPage() {
               onDueFrom={setDueDateFrom}
               onDueTo={setDueDateTo}
             />
+            {tab === "vendors" && <VendorBillTotalsNotice className="mb-4" />}
             {listError && <div className="mb-4 flex items-center justify-between gap-4 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700"><span className="flex items-center gap-2"><AlertCircle size={17} />{listError}</span><button type="button" onClick={() => void loadList()} className="font-bold underline">Retry</button></div>}
             {listLoading || (!currentPage && !listError) ? <div className="flex min-h-56 items-center justify-center gap-3 rounded-2xl border border-slate-200 bg-white text-sm text-slate-600"><Loader2 size={20} className="animate-spin text-blue-600" />Loading records…</div> :
               currentPage && currentPage.items.length ? (
@@ -550,6 +557,12 @@ function MetricCard({ title, value, icon: Icon, values, caption }: { title: stri
     <CurrencyList values={values} />
     <p className="mt-2 text-xs text-slate-500">{caption}</p>
   </article>;
+}
+
+function VendorBillTotalsNotice({ className = "" }: { className?: string }) {
+  return <p className={`rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 ${className}`}>
+    Vendor-bill monetary totals include only bills with both a recorded currency and total. Bills missing either may still be included in bill counts; this report does not provide an excluded-bill count.
+  </p>;
 }
 
 function FilterBar(props: {
@@ -609,7 +622,7 @@ function RecordTable({ data, onInvoice, onVendor, onBill, onAudit }: {
   </TableFrame>;
   if (data.kind === "bills") return <TableFrame headers={["Bill", "Employer", "Vendor", "Dates", "Assignment", "Amount"]}>
     {data.page.items.map((item) => <tr key={item.id} className="cursor-pointer hover:bg-slate-50" onClick={() => onBill(item.id)}>
-      <Cell><strong>{item.bill_number || "Unnumbered bill"}</strong><span className="block text-xs text-slate-500">{item.id.slice(0, 8)}</span></Cell><Cell>{item.employer.name}</Cell><Cell>{item.vendor_name || "Vendor unavailable"}</Cell><Cell>{dateText(item.bill_date)}<span className="block text-xs text-slate-500">Due {dateText(item.due_date)}</span></Cell><Cell><Status value={item.is_assigned ? "ASSIGNED" : "UNASSIGNED"} /></Cell><Cell>{item.currency ? `${item.currency} ${amount(item.total ?? 0)}` : "Currency unavailable"}</Cell>
+      <Cell><strong>{item.bill_number || "Unnumbered bill"}</strong><span className="block text-xs text-slate-500">{item.id.slice(0, 8)}</span></Cell><Cell>{item.employer.name}</Cell><Cell>{item.vendor_name || "Vendor unavailable"}</Cell><Cell>{dateText(item.bill_date)}<span className="block text-xs text-slate-500">Due {dateText(item.due_date)}</span></Cell><Cell><Status value={item.is_assigned ? "ASSIGNED" : "UNASSIGNED"} /></Cell><Cell>{vendorBillAmount(item.currency, item.total)}</Cell>
     </tr>)}
   </TableFrame>;
   return <TableFrame headers={["Audit run", "Employer", "Status", "Started", "Checks", "Failed checks"]}>
@@ -647,13 +660,14 @@ function DetailDialog({ detail, loading, error, onClose, onRetry, onOpenBill, on
       </div>}
       {!loading && detail?.kind === "vendor" && <div className="space-y-5">
         <DetailHeading title={detail.value.vendor_name} subtitle={detail.value.employer.name} />
+        <VendorBillTotalsNotice />
         <div className="grid gap-3 sm:grid-cols-3"><DetailValue label="Status" value={detail.value.is_active ? "Active" : "Inactive"} /><DetailValue label="Contact" value={detail.value.contact_email || detail.value.contact_phone || "Not provided"} /><DetailValue label="Tax identifier" value={detail.value.tax_identifier || "Not provided"} /><DetailValue label="Address" value={detail.value.address || "Not provided"} /><DetailValue label="Linked bills" value={String(detail.value.bill_count)} /><div className="rounded-xl bg-slate-50 p-3"><span className="text-xs uppercase text-slate-500">Bill totals</span><CurrencyList values={detail.value.bill_totals_by_currency} /></div></div>
-        <section><h3 className="mb-2 font-semibold">Linked bills ({detail.value.bill_count})</h3>{detail.value.bills.length ? <><TableFrame headers={["Bill", "Date", "Amount", "Confirmed"]}>{detail.value.bills.map((bill) => <tr key={bill.id} className="cursor-pointer hover:bg-slate-50" onClick={() => onOpenBill(bill.id)}><Cell>{bill.bill_number || "Unnumbered bill"}</Cell><Cell>{dateText(bill.bill_date)}</Cell><Cell>{bill.currency ? `${bill.currency} ${amount(bill.total ?? 0)}` : "Currency unavailable"}</Cell><Cell>{dateTimeText(bill.confirmed_at)}</Cell></tr>)}</TableFrame>{detail.value.bill_total_pages > 1 && <PageControls page={detail.value.bill_page} pages={detail.value.bill_total_pages} onChange={(nextPage) => onVendorBillPage(detail.value.id, nextPage)} />}</> : <EmptyInline>No linked bills are available.</EmptyInline>}</section>
+        <section><h3 className="mb-2 font-semibold">Linked bills ({detail.value.bill_count})</h3>{detail.value.bills.length ? <><TableFrame headers={["Bill", "Date", "Amount", "Confirmed"]}>{detail.value.bills.map((bill) => <tr key={bill.id} className="cursor-pointer hover:bg-slate-50" onClick={() => onOpenBill(bill.id)}><Cell>{bill.bill_number || "Unnumbered bill"}</Cell><Cell>{dateText(bill.bill_date)}</Cell><Cell>{vendorBillAmount(bill.currency, bill.total)}</Cell><Cell>{dateTimeText(bill.confirmed_at)}</Cell></tr>)}</TableFrame>{detail.value.bill_total_pages > 1 && <PageControls page={detail.value.bill_page} pages={detail.value.bill_total_pages} onChange={(nextPage) => onVendorBillPage(detail.value.id, nextPage)} />}</> : <EmptyInline>No linked bills are available.</EmptyInline>}</section>
       </div>}
       {!loading && detail?.kind === "bill" && <div className="space-y-5">
         <DetailHeading title={detail.value.bill_number || "Unnumbered vendor bill"} subtitle={`${detail.value.vendor_name || "Vendor unassigned"} · ${detail.value.employer.name}`} />
         <div className="grid gap-3 sm:grid-cols-4"><DetailValue label="Assignment" value={detail.value.is_assigned ? "Assigned" : "Unassigned historical bill"} /><DetailValue label="Bill date" value={dateText(detail.value.bill_date)} /><DetailValue label="Due date" value={dateText(detail.value.due_date)} /><DetailValue label="Confirmed" value={dateTimeText(detail.value.confirmed_at)} /></div>
-        {detail.value.currency && <div className="grid gap-3 sm:grid-cols-3"><DetailValue label="Subtotal" value={`${detail.value.currency} ${amount(detail.value.subtotal ?? 0)}`} /><DetailValue label="Tax" value={`${detail.value.currency} ${amount(detail.value.tax_amount ?? 0)}`} /><DetailValue label="Total" value={`${detail.value.currency} ${amount(detail.value.total ?? 0)}`} /></div>}
+        <div className="grid gap-3 sm:grid-cols-3"><DetailValue label="Subtotal" value={vendorBillAmount(detail.value.currency, detail.value.subtotal)} /><DetailValue label="Tax" value={vendorBillAmount(detail.value.currency, detail.value.tax_amount)} /><DetailValue label="Total" value={vendorBillAmount(detail.value.currency, detail.value.total)} /></div>
         <section><h3 className="mb-2 font-semibold">Bill line items</h3>{detail.value.line_items.length ? <pre className="overflow-x-auto rounded-xl bg-slate-50 p-4 text-xs text-slate-700">{JSON.stringify(detail.value.line_items, null, 2)}</pre> : <EmptyInline>No line items were persisted for this bill.</EmptyInline>}</section>
       </div>}
       {!loading && detail?.kind === "audit" && <div className="space-y-5">

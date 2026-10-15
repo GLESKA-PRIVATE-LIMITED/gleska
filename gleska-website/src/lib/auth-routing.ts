@@ -59,36 +59,40 @@ export function getRouteForAuthenticatedUser(
       || parsed.pathname === "/employer/auth"
     ) return fallback;
 
-    if (
-      role !== "ADMIN"
-      && (
-        isRouteOrChild(parsed.pathname, "/supplier")
-        || isRouteOrChild(parsed.pathname, "/procurement/workspaces")
-      )
-    ) {
+    if (role === "ADMIN") return fallback;
+
+    if (role === "EMPLOYER" && isRouteOrChild(parsed.pathname, "/employer/onboarding")) {
+      const nestedDestination = parsed.searchParams.get("next");
+      if (nestedDestination) {
+        const nestedUrl = new URL(nestedDestination, window.location.origin);
+        if (!isRouteOrChild(nestedUrl.pathname, "/employer/onboarding")) {
+          return getRouteForAuthenticatedUser(role, nextStep, nestedDestination);
+        }
+      }
+    }
+
+    if (isRouteOrChild(parsed.pathname, "/supplier")) {
       return `${parsed.pathname}${parsed.search}${parsed.hash}`;
     }
-    if (
-      role === "EMPLOYER"
-      && (
-        isRouteOrChild(parsed.pathname, "/procurement")
-        || isRouteOrChild(parsed.pathname, "/financial")
-      )
-    ) {
-      return nextStep === "DASHBOARD"
+
+    if (role === "WORKER") {
+      return nextStep === "DASHBOARD" && parsed.pathname.startsWith("/worker/")
         ? `${parsed.pathname}${parsed.search}${parsed.hash}`
-        : `/employer/onboarding?next=${encodeURIComponent(`${parsed.pathname}${parsed.search}${parsed.hash}`)}`;
+        : fallback;
     }
-    if (nextStep !== "DASHBOARD") return fallback;
-    if (role === "WORKER" && !parsed.pathname.startsWith("/worker/")) return fallback;
+
     const isEmployerPage = parsed.pathname.startsWith("/employer/")
+      && !isRouteOrChild(parsed.pathname, "/employer/auth")
       && !isRouteOrChild(parsed.pathname, "/employer/onboarding");
     const isEmployerAgent = [...EMPLOYER_AGENT_ROUTES].some(
       (route) => isRouteOrChild(parsed.pathname, route),
     );
-    if (role === "EMPLOYER" && !isEmployerPage && !isEmployerAgent) return fallback;
-    if (role === "ADMIN") return fallback;
-    return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+    if (!isEmployerPage && !isEmployerAgent) return fallback;
+
+    const destination = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+    return nextStep === "DASHBOARD"
+      ? destination
+      : `/employer/onboarding?next=${encodeURIComponent(destination)}`;
   } catch {
     return fallback;
   }

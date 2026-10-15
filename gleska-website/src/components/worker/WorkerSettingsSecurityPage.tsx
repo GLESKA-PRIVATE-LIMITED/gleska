@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import AccountManagementShell from "@/components/AccountManagementShell";
 import { useAuth } from "@/context/AuthContext";
 import apiClient from "@/lib/api";
-import { getSessionKey, updateLastActive } from "@/lib/security";
+import { getApproximateIpCountry, getSessionKey, updateLastActive } from "@/lib/security";
 import { supabase } from "@/lib/supabase";
 import NotificationCenter from "@/components/notifications/NotificationCenter";
 import { WorkerEmptyState, WorkerErrorState, WorkerLoadingState, WorkerPageFrame, WorkerPageHeader, WorkspaceCard } from "@/components/worker/WorkspaceUI";
@@ -241,7 +241,7 @@ export default function WorkerSettingsSecurityPage() {
                   </div>
                   <div className="mt-3 space-y-3">
                     {security.sessions.length === 0 ? <WorkerEmptyState icon={<Monitor size={26} />}>No active sessions found.</WorkerEmptyState> : security.sessions.map((session) => {
-                      const location = [session.city, session.country].filter(Boolean).join(", ");
+                      const country = getApproximateIpCountry(session.country);
                       const deviceDetails = [session.browser, session.os].filter(Boolean).join(" · ");
                       return <article key={session.id} className="flex flex-col gap-3 rounded-xl border border-slate-200 p-4 sm:flex-row sm:items-center sm:justify-between dark:border-slate-800">
                         <div className="flex min-w-0 items-start gap-3">
@@ -249,7 +249,7 @@ export default function WorkerSettingsSecurityPage() {
                           <div className="min-w-0">
                             <p className="font-semibold text-slate-900 dark:text-white">{session.device_name || "Unknown device"}{session.is_current && <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-bold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300"><CheckCircle2 size={13} /> Current</span>}</p>
                             {deviceDetails && <p className="mt-1 break-words text-sm text-slate-500 dark:text-slate-400">Reported browser / OS: {deviceDetails}</p>}
-                            {location && <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Approximate location: {location}</p>}
+                            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Approximate public-IP location: {country || "Location unavailable"}</p>
                             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">First seen {formatDate(session.first_seen)} · Last active {formatDate(session.last_active)}</p>
                           </div>
                         </div>
@@ -265,8 +265,11 @@ export default function WorkerSettingsSecurityPage() {
                   <h3 className="font-bold text-slate-900 dark:text-white">Recent security activity</h3>
                   <div className="mt-3 space-y-3">
                     {security.activities.length === 0 ? <WorkerEmptyState icon={<ShieldCheck size={26} />}>No recent security activity.</WorkerEmptyState> : security.activities.map((activity) => {
-                      const activityLocation = [activity.city, activity.country].filter(Boolean).join(", ");
-                      const context = [activity.device_name, activityLocation ? `Approximate location: ${activityLocation}` : null].filter(Boolean).join(" · ");
+                      const activityCountry = getApproximateIpCountry(activity.country);
+                      const context = [
+                        activity.device_name,
+                        `Approximate public-IP location: ${activityCountry || "Location unavailable"}`,
+                      ].filter(Boolean).join(" · ");
                       return <article key={activity.id} className="rounded-xl border border-slate-200 p-4 dark:border-slate-800">
                         <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
                           <div className="min-w-0"><p className="font-semibold capitalize text-slate-900 dark:text-white">{activity.event_type.replaceAll("_", " ")}</p><p className="mt-1 break-words text-sm text-slate-500 dark:text-slate-400">{activity.description || "Security activity recorded"}</p>{context && <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{context}</p>}</div>

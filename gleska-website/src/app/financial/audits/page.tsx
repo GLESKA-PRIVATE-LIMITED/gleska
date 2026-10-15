@@ -21,7 +21,7 @@ import {
 import AgentLayout from "@/components/agent-dashboard/AgentLayout";
 import { financialConfig } from "@/components/agents/financial/financialConfig";
 import apiClient from "@/lib/api";
-import { getSessionKey } from "@/lib/security";
+import { getApproximateIpCountry, getSessionKey } from "@/lib/security";
 
 type AuditResult = "PASS" | "FAIL" | "NOT_APPLICABLE";
 type AuditStatus = "RUNNING" | "COMPLETED" | "FAILED";
@@ -88,6 +88,8 @@ interface SecurityActivity {
 interface AccountSecurityResponse {
   sessions: unknown[];
   activities: SecurityActivity[];
+  activity_count?: number | null;
+  next_cursor?: string | null;
 }
 
 interface TimelineAction {
@@ -369,6 +371,10 @@ const getErrorMessage = (error: unknown, fallback: string) => {
 export default function FinancialAuditsPage() {
   const [events, setEvents] = useState<FinancialAuditEvent[]>([]);
   const [securityActivities, setSecurityActivities] = useState<SecurityActivity[]>([]);
+  const [securityActivityCount, setSecurityActivityCount] = useState<number | null>(null);
+  const [securityActivityCursor, setSecurityActivityCursor] = useState<string | null>(null);
+  const [loadingOlderSecurityActivities, setLoadingOlderSecurityActivities] = useState(false);
+  const [olderSecurityActivitiesError, setOlderSecurityActivitiesError] = useState<string | null>(null);
   const [runs, setRuns] = useState<AuditRun[]>([]);
   const [category, setCategory] = useState<FilterCategory>("All");
   const [historyLoading, setHistoryLoading] = useState(true);
@@ -380,6 +386,7 @@ export default function FinancialAuditsPage() {
   const [startError, setStartError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const startLock = useRef(false);
+  const securityActivityPageLock = useRef(false);
   const requestKey = useRef<string | null>(null);
 
   const latestCompletedRun = useMemo(() => (
@@ -465,6 +472,7 @@ export default function FinancialAuditsPage() {
         apiClient.get<AuditEventsResponse>(`${FINANCIAL_API}/audits`),
         apiClient.get<AuditRunsResponse>(`${FINANCIAL_API}/audit-runs`),
         apiClient.get<AccountSecurityResponse>(EMPLOYER_SECURITY_API, {
+          params: { limit: 100 },
           headers: { "X-Goleska-Session-Key": sessionKey },
         }),
       ]);
@@ -504,6 +512,17 @@ export default function FinancialAuditsPage() {
       setEvents(rawEvents);
       setRuns(completeRuns);
       setSecurityActivities(rawSecurityActivities);
+      setSecurityActivityCount(
+        typeof securityResult.status === "fulfilled" && typeof securityResult.value.data?.activity_count === "number"
+          ? securityResult.value.data.activity_count
+          : rawSecurityActivities.length,
+      );
+      setSecurityActivityCursor(
+        securityResult.status === "fulfilled" && typeof securityResult.value.data?.next_cursor === "string"
+          ? securityResult.value.data.next_cursor
+          : null,
+      );
+      setOlderSecurityActivitiesError(null);
       setHistoryLoaded(true);
     } catch (error) {
       setHistoryError(getErrorMessage(error, "Unable to load the complete audit history."));
@@ -511,6 +530,32 @@ export default function FinancialAuditsPage() {
       setHistoryLoading(false);
     }
   }, []);
+
+  const loadOlderSecurityActivities = useCallback(async () => {
+    if (!securityActivityCursor || securityActivityPageLock.current) return;
+    securityActivityPageLock.current = true;
+    setLoadingOlderSecurityActivities(true);
+    setOlderSecurityActivitiesError(null);
+    try {
+      const response = await apiClient.get<AccountSecurityResponse>(
+        `${EMPLOYER_SECURITY_API}?limit=100&cursor=${encodeURIComponent(securityActivityCursor)}`,
+      );
+      const olderActivities = Array.isArray(response.data?.activities) ? response.data.activities : [];
+      setSecurityActivities((current) => {
+        const byId = new Map(current.map((activity) => [activity.id, activity]));
+        olderActivities.forEach((activity) => byId.set(activity.id, activity));
+        return [...byId.values()];
+      });
+      setSecurityActivityCursor(
+        typeof response.data?.next_cursor === "string" ? response.data.next_cursor : null,
+      );
+    } catch (error) {
+      setOlderSecurityActivitiesError(getErrorMessage(error, "Unable to load older security events."));
+    } finally {
+      securityActivityPageLock.current = false;
+      setLoadingOlderSecurityActivities(false);
+    }
+  }, [securityActivityCursor]);
 
   useEffect(() => {
     void refreshHistory();
@@ -570,7 +615,7 @@ export default function FinancialAuditsPage() {
     ? (latestCompletedRun.passed_checks / applicableChecks) * 100
     : null;
 
-  const totalActionAndSecurityCount = events.length + securityActivities.length;
+  const totalActionAndSecurityCount = events.length + (securityActivityCount ?? securityActivities.length);
 
   return (
     <AgentLayout config={financialConfig} activeTab="audits" setActiveTab={() => undefined} fullWidth>
@@ -837,6 +882,24 @@ export default function FinancialAuditsPage() {
                   })}
                 </div>
               )}
+              {(category === "All" || category === "Access & Security") && securityActivityCursor && (
+                <div className="border-t border-slate-100 px-4 py-4 text-center dark:border-slate-800">
+                  {olderSecurityActivitiesError && (
+                    <p role="alert" className="mb-2 text-xs text-rose-600 dark:text-rose-400">
+                      {olderSecurityActivitiesError}
+                    </p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => void loadOlderSecurityActivities()}
+                    disabled={loadingOlderSecurityActivities}
+                    className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+                  >
+                    {loadingOlderSecurityActivities && <LoaderCircle size={14} className="animate-spin" />}
+                    {loadingOlderSecurityActivities ? "Loading older events…" : "Load older security events"}
+                  </button>
+                </div>
+              )}
             </>
           )}
         </section>
@@ -936,7 +999,7 @@ function SecurityActivityEntry({ entry }: { entry: TimelineSecurity }) {
   const title = eventTitleMap[activity.event_type]
     || activity.event_type.replaceAll("_", " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
-  const location = [activity.city, activity.country].filter(Boolean).join(", ");
+  const country = getApproximateIpCountry(activity.country);
   const device = [activity.browser, activity.os].filter(Boolean).join(" · ") || activity.device_name;
 
   return (
@@ -966,20 +1029,16 @@ function SecurityActivityEntry({ entry }: { entry: TimelineSecurity }) {
               <span>{formatDateTime(entry.timestamp)}</span>
             </div>
 
-            {(device || location) && (
-              <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:bg-slate-800/60 dark:text-slate-300">
-                {device && (
-                  <span>
-                    Device: <span className="font-medium text-slate-800 dark:text-slate-200">{device}</span>
-                  </span>
-                )}
-                {location && (
-                  <span>
-                    Location: <span className="font-medium text-slate-800 dark:text-slate-200">{location}</span>
-                  </span>
-                )}
-              </div>
-            )}
+            <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:bg-slate-800/60 dark:text-slate-300">
+              {device && (
+                <span>
+                  Device: <span className="font-medium text-slate-800 dark:text-slate-200">{device}</span>
+                </span>
+              )}
+              <span>
+                Approximate public-IP location: <span className="font-medium text-slate-800 dark:text-slate-200">{country || "Location unavailable"}</span>
+              </span>
+            </div>
           </div>
         </div>
 

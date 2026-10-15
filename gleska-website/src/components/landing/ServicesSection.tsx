@@ -15,8 +15,9 @@ import {
   ArrowRight,
   Zap,
 } from "lucide-react";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth, type AuthUser, type NextStep } from "@/context/AuthContext";
 import { useLanguage } from "@/context/LanguageContext";
+import { getRouteForAuthenticatedUser } from "@/lib/auth-routing";
 
 interface AgentCard {
   id: string;
@@ -30,8 +31,24 @@ interface AgentCard {
   hoverGlow: string;
 }
 
+const DASHBOARD_PATHS: Record<string, string> = {
+  "01": "/employer/dashboard",
+  "02": "/logistics",
+  "03": "/tender-filing",
+  "04": "/procurement/workspaces",
+  "05": "/financial",
+  "06": "/tender-tracking",
+};
+
+function getDashboardHref(agentId: string, user: AuthUser | null, nextStep: NextStep | null): string {
+  const destination = DASHBOARD_PATHS[agentId];
+  if (!destination) return "/#services";
+  if (!user) return `/auth/signin?next=${encodeURIComponent(destination)}`;
+  return getRouteForAuthenticatedUser(user.role, nextStep, destination);
+}
+
 function AgentCardsGrid({ agentCards }: { agentCards: AgentCard[] }) {
-  const { user } = useAuth();
+  const { user, nextStep } = useAuth();
   const { t } = useLanguage();
 
   return (
@@ -55,54 +72,10 @@ function AgentCardsGrid({ agentCards }: { agentCards: AgentCard[] }) {
 
           {/* Action Row: Subscribe / Dashboard */}
           <div className="mt-3 sm:mt-3.5 flex items-center justify-start border-t border-slate-100 pt-2 sm:pt-2.5 text-xs font-semibold dark:border-slate-800/80">
-            {agent.id === "01" ? (
+            {DASHBOARD_PATHS[agent.id] ? (
               <Link
-                href={
-                  user
-                    ? "/employer/dashboard"
-                    : "/auth/signin?next=%2Femployer%2Fdashboard"
-                }
-                className={`inline-flex items-center gap-1 text-[11px] sm:text-xs font-bold transition-colors ${agent.dashboardCtaColor}`}
-              >
-                <span>{t("services.dashboard")}</span>
-                <ArrowRight size={13} className="shrink-0" />
-              </Link>
-            ) : agent.id === "02" ? (
-              <Link
-                href="/logistics"
-                className={`inline-flex items-center gap-1 text-[11px] sm:text-xs font-bold transition-colors ${agent.ctaColor}`}
-              >
-                <span>{t("services.dashboard")}</span>
-                <ArrowRight size={13} className="shrink-0" />
-              </Link>
-            ) : agent.id === "03" ? (
-              <Link
-                href="/tender-filing"
-                className={`inline-flex items-center gap-1 text-[11px] sm:text-xs font-bold transition-colors ${agent.ctaColor}`}
-              >
-                <span>{t("services.dashboard")}</span>
-                <ArrowRight size={13} className="shrink-0" />
-              </Link>
-            ) : agent.id === "04" ? (
-              <Link
-                href="/procurement/workspaces"
-                className={`inline-flex items-center gap-1 text-[11px] sm:text-xs font-bold transition-colors ${agent.ctaColor}`}
-              >
-                <span>{t("services.dashboard")}</span>
-                <ArrowRight size={13} className="shrink-0" />
-              </Link>
-            ) : agent.id === "05" ? (
-              <Link
-                href="/financial"
-                className={`inline-flex items-center gap-1 text-[11px] sm:text-xs font-bold transition-colors ${agent.ctaColor}`}
-              >
-                <span>{t("services.dashboard")}</span>
-                <ArrowRight size={13} className="shrink-0" />
-              </Link>
-            ) : agent.id === "06" ? (
-              <Link
-                href="/tender-tracking"
-                className={`inline-flex items-center gap-1 text-[11px] sm:text-xs font-bold transition-colors ${agent.ctaColor}`}
+                href={getDashboardHref(agent.id, user, nextStep)}
+                className={`inline-flex items-center gap-1 text-[11px] sm:text-xs font-bold transition-colors ${agent.id === "01" ? agent.dashboardCtaColor : agent.ctaColor}`}
               >
                 <span>{t("services.dashboard")}</span>
                 <ArrowRight size={13} className="shrink-0" />

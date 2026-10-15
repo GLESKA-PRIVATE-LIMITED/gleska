@@ -54,6 +54,20 @@ apiClient.interceptors.response.use(
       // Intentionally avoid window.location redirects here. A redirect on
       // a public page such as / causes a full reload loop when the auth
       // bootstrap request is unauthenticated during initial page load.
+      const requestUrl = error.config?.url || "";
+      const authorization = error.config?.headers?.Authorization;
+      const token = typeof authorization === "string" && authorization.startsWith("Bearer ")
+        ? authorization.slice("Bearer ".length)
+        : null;
+      if (
+        typeof window !== "undefined"
+        && !requestUrl.includes("/api/v1/auth/")
+        && token
+      ) {
+        window.dispatchEvent(new CustomEvent("goleska:session-unauthorized", {
+          detail: { token },
+        }));
+      }
     }
     return Promise.reject(error);
   }

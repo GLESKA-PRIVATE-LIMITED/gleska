@@ -302,6 +302,9 @@ export default function FinancialVendorsPage() {
         )}
 
         <section className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white/95 shadow-xl dark:border-slate-800 dark:bg-slate-900/95">
+          <p role="note" className="border-b border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+            Vendor bill totals are grouped by currency and include only bills with both a recorded currency and total. Bills missing either value may still be included in bill counts; an excluded-bill count is not available.
+          </p>
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 p-4 dark:border-slate-800 sm:p-5">
             <div>
               <h2 className="font-bold text-slate-900 dark:text-white">Directory</h2>

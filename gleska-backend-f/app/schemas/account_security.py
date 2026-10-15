@@ -33,6 +33,8 @@ class AccountSecurityActivityResponse(BaseModel):
 class AccountSecurityResponse(BaseModel):
     sessions: list[AccountSessionResponse]
     activities: list[AccountSecurityActivityResponse]
+    activity_count: Optional[int] = None
+    next_cursor: Optional[str] = None
 
 
 class AccountSecurityRevokeResponse(BaseModel):

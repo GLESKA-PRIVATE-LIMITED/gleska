@@ -187,6 +187,7 @@ const getApiErrorMessage = (error: unknown, fallback: string) => {
   const message = response?.data?.message;
   if (typeof detail === "string") {
     const messages: Record<string, string> = {
+      INVOICE_IDEMPOTENCY_KEY_REUSED: "This invoice creation key was already used with different details. Review the invoice and retry with the current details.",
       OCR_PROVIDER_NOT_CONFIGURED: "Invoice OCR is not configured on the server. The private scan is saved and can be retried after configuration.",
       SCAN_FILE_TOO_LARGE: "Files must be 25 MB or smaller.",
       SCAN_FILE_TYPE_UNSUPPORTED: "Unsupported file. Use PDF, DOCX, XLSX, CSV, PNG, JPG, JPEG, WEBP, or SVG.",
@@ -284,6 +285,7 @@ export default function FinancialDashboard() {
   const [submitAttempted, setSubmitAttempted] = useState<boolean>(false);
   const [isSavingInvoice, setIsSavingInvoice] = useState<boolean>(false);
   const invoiceMutationLockRef = useRef<boolean>(false);
+  const invoiceCreateIdempotencyRef = useRef<{ fingerprint: string; key: string } | null>(null);
   const pdfDownloadLockRef = useRef<boolean>(false);
   const [invoiceItems, setInvoiceItems] = useState<InvoiceItemDraft[]>([
     { id: "1", description: "", quantity: "", unitPrice: "" },
@@ -645,11 +647,30 @@ export default function FinancialDashboard() {
         line_items: payloadLineItems,
         action,
       };
-      const { data } = activeInvoiceId
-        ? await apiClient.put(`${FINANCIAL_API}/invoices/${activeInvoiceId}`, payload)
-        : await apiClient.post(`${FINANCIAL_API}/invoices`, payload);
+      let responseData: FinancialInvoice | { invoice: FinancialInvoice };
+      if (activeInvoiceId) {
+        const response = await apiClient.put<FinancialInvoice | { invoice: FinancialInvoice }>(
+          `${FINANCIAL_API}/invoices/${activeInvoiceId}`,
+          payload,
+        );
+        responseData = response.data;
+      } else {
+        const fingerprint = JSON.stringify(payload);
+        const priorIdempotency = invoiceCreateIdempotencyRef.current;
+        const idempotencyKey = priorIdempotency?.fingerprint === fingerprint
+          ? priorIdempotency.key
+          : crypto.randomUUID();
+        invoiceCreateIdempotencyRef.current = { fingerprint, key: idempotencyKey };
+        const response = await apiClient.post<FinancialInvoice | { invoice: FinancialInvoice }>(`${FINANCIAL_API}/invoices`, {
+          ...payload,
+          idempotency_key: idempotencyKey,
+        });
+        responseData = response.data;
+      }
 
-      const savedInvoice: FinancialInvoice | undefined = data?.invoice || data;
+      const savedInvoice: FinancialInvoice | undefined = "invoice" in responseData
+        ? responseData.invoice
+        : responseData;
       if (!savedInvoice?.id || !savedInvoice.invoice_number) {
         throw new Error("Invoice creation response did not include the saved invoice number.");
       }
@@ -657,6 +678,7 @@ export default function FinancialDashboard() {
         savedInvoice,
         ...current.filter((invoice) => invoice.id !== savedInvoice.id),
       ]);
+      if (!activeInvoiceId) invoiceCreateIdempotencyRef.current = null;
       setGeneratedInvoiceNumber(savedInvoice.invoice_number);
       setActiveInvoiceId(savedInvoice.id);
       setIsViewingGeneratedInvoice(savedInvoice.status === "GENERATED");

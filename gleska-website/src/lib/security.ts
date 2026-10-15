@@ -5,8 +5,9 @@
  * - This module does NOT store or transmit passwords, Supabase access tokens,
  *   refresh tokens, or any other authentication secrets.
  * - session_key is a random UUID generated per-browser; it is NOT a Supabase token.
- * - IP/location info is fetched from ipapi.co (public, no API key required) only
- *   at login time — not on every page load.
+ * - Approximate country-level location is fetched from ipapi.co (public, no API
+ *   key required) only at login time — not on every page load. City-level IP
+ *   geolocation is too imprecise to present as a login location.
  */
 
 import { SupabaseClient } from "@supabase/supabase-js";
@@ -56,6 +57,12 @@ export interface GeoInfo {
   city: string | null;
   country: string | null;
   ip: string | null;
+}
+
+export function getApproximateIpCountry(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const country = value.trim();
+  return /^[\p{L}][\p{L}\p{M} .,'()-]{0,99}$/u.test(country) ? country : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -169,25 +176,41 @@ export function parseDeviceInfo(ua?: string): DeviceInfo {
 // ---------------------------------------------------------------------------
 
 /**
- * Fetches approximate city/country from the caller's public IP.
+ * Fetches an approximate country from the caller's public IP.
  * Uses ipapi.co (free, no key, rate limited to 45 req/day per IP on free tier).
- * Only called at login time. Returns null fields on failure — never throws.
+ * Only called at login time. City-level results are intentionally omitted.
+ * Returns null fields when the provider response is missing or invalid.
  */
 export async function getGeoInfo(): Promise<GeoInfo> {
+  const unavailable: GeoInfo = { city: null, country: null, ip: null };
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000); // 5s timeout
     const res = await fetch("https://ipapi.co/json/", { signal: controller.signal });
-    clearTimeout(timeout);
-    if (!res.ok) return { city: null, country: null, ip: null };
-    const data = await res.json();
+    if (!res.ok) return unavailable;
+    const payload: unknown = await res.json();
+    if (typeof payload !== "object" || payload === null) return unavailable;
+    const data = payload as Record<string, unknown>;
+    const ip = typeof data.ip === "string" ? data.ip.trim() : "";
+    const countryCode = typeof data.country_code === "string" ? data.country_code.trim() : "";
+    const countryName = getApproximateIpCountry(data.country_name);
+    if (
+      data.error === true
+      || !ip
+      || !/^[A-Z]{2}$/i.test(countryCode)
+      || !countryName
+    ) {
+      return unavailable;
+    }
     return {
-      city: data.city || null,
-      country: data.country_name || null,
-      ip: data.ip || null,
+      city: null,
+      country: countryName,
+      ip,
     };
   } catch {
-    return { city: null, country: null, ip: null };
+    return unavailable;
+  } finally {
+    clearTimeout(timeout);
   }
 }
 

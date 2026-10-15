@@ -8,7 +8,7 @@ import AccountManagementShell, { formatEmployerType } from "@/components/Account
 import NotificationCenter from "@/components/notifications/NotificationCenter";
 import { useAuth } from "@/context/AuthContext";
 import apiClient from "@/lib/api";
-import { getSessionKey } from "@/lib/security";
+import { getApproximateIpCountry, getSessionKey } from "@/lib/security";
 import { WorkerEmptyState, WorkerErrorState, WorkerLoadingState, WorkerPageFrame, WorkerPageHeader, WorkspaceCard } from "@/components/worker/WorkspaceUI";
 
 type EmployerPreferences = {
@@ -248,7 +248,7 @@ export default function EmployerSecurityPage() {
                   </div>
                   <div className="mt-3 space-y-3">
                     {security.sessions.length === 0 ? <WorkerEmptyState icon={<Monitor size={26} />}>No tracked sessions found.</WorkerEmptyState> : security.sessions.map((session) => {
-                      const location = [session.city, session.country].filter(Boolean).join(", ");
+                      const country = getApproximateIpCountry(session.country);
                       const deviceDetails = [session.browser, session.os].filter(Boolean).join(" · ");
                       return <article key={session.id} className="flex flex-col gap-3 rounded-xl border border-slate-200 p-4 sm:flex-row sm:items-center sm:justify-between dark:border-slate-800">
                         <div className="flex min-w-0 items-start gap-3">
@@ -256,7 +256,7 @@ export default function EmployerSecurityPage() {
                           <div className="min-w-0">
                             <p className="font-semibold text-slate-900 dark:text-white">{session.device_name || "Unknown device"}{session.is_current && <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-bold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300"><CheckCircle2 size={13} /> Current</span>}</p>
                             {deviceDetails && <p className="mt-1 break-words text-sm text-slate-500 dark:text-slate-400">Reported browser / OS: {deviceDetails}</p>}
-                            {location && <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Approximate public-IP location: {location}</p>}
+                            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Approximate public-IP location: {country || "Location unavailable"}</p>
                             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">First seen {formatDate(session.first_seen)} · Last active {formatDate(session.last_active)}</p>
                           </div>
                         </div>

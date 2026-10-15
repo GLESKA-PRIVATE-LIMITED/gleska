@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { AxiosError } from "axios";
+import { isAxiosError } from "axios";
 import { useAuth } from "@/context/AuthContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { getRouteForAuthenticatedUser } from "@/lib/auth-routing";
@@ -33,22 +33,33 @@ function getStoredAccountType(): "BUSINESS" | "INDIVIDUAL" {
   return match?.[1] === "INDIVIDUAL" ? "INDIVIDUAL" : "BUSINESS";
 }
 
-function clearStoredRole() {
+function clearStoredRole(preserveNext = false) {
   if (typeof window === "undefined") return;
   sessionStorage.removeItem("goleska_oauth_role");
   sessionStorage.removeItem("goleska_oauth_account_type");
-  sessionStorage.removeItem("goleska_oauth_next");
   localStorage.removeItem("goleska_oauth_role");
   localStorage.removeItem("goleska_oauth_account_type");
-  localStorage.removeItem("goleska_oauth_next");
   document.cookie = "goleska_oauth_role=; path=/; max-age=0; SameSite=Lax";
   document.cookie = "goleska_oauth_account_type=; path=/; max-age=0; SameSite=Lax";
-  document.cookie = "goleska_oauth_next=; path=/; max-age=0; SameSite=Lax";
+  if (!preserveNext) {
+    sessionStorage.removeItem("goleska_oauth_next");
+    localStorage.removeItem("goleska_oauth_next");
+    document.cookie = "goleska_oauth_next=; path=/; max-age=0; SameSite=Lax";
+  }
 }
 
 function getStoredNext(): string | null {
   if (typeof window === "undefined") return null;
-  return sessionStorage.getItem("goleska_oauth_next") || localStorage.getItem("goleska_oauth_next");
+  const storedNext = sessionStorage.getItem("goleska_oauth_next")
+    || localStorage.getItem("goleska_oauth_next");
+  if (storedNext) return storedNext;
+  const match = document.cookie.match(/(?:^|;\s*)goleska_oauth_next=([^;]+)/);
+  if (!match) return null;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return null;
+  }
 }
 
 export default function AuthCallbackPage() {
@@ -65,6 +76,7 @@ export default function AuthCallbackPage() {
     }
     exchangeHandled.current = true;
 
+    let preserveSupabaseSessionOnError = false;
     const handleCallback = async () => {
       // PHASE 1: Extract and validate authorization code from URL
       const searchParams = new URLSearchParams(window.location.search);
@@ -124,30 +136,42 @@ export default function AuthCallbackPage() {
 
       // PHASE 4: Check if user is already provisioned in backend
       console.log("[OAuth] Checking if user already exists in backend...");
+      let existingUserData: { user: { role: "WORKER" | "EMPLOYER" }; next_step?: string | null } | null = null;
       try {
         const meRes = await apiClient.get("/api/v1/auth/me", { withCredentials: true });
-        if (meRes.data?.user?.role) {
-          // Existing user - redirect to appropriate route
-          console.log("[OAuth] User already provisioned. Role:", meRes.data.user.role);
-          const existingRole = meRes.data.user.role as "WORKER" | "EMPLOYER";
-          const nextStep = meRes.data.next_step;
-          const requestedNext = getStoredNext();
-          await registerSession();
-          clearStoredRole();
-          setAuthState(meRes.data.user, meRes.data.next_step || null);
-          const targetRoute = getRouteForAuthenticatedUser(existingRole, nextStep, requestedNext);
-          console.log("[OAuth] Redirecting existing user to:", targetRoute);
-          router.replace(targetRoute);
-          return;
+        if (!meRes.data?.user?.role) {
+          preserveSupabaseSessionOnError = true;
+          throw new Error("The backend did not return a valid account for this session.");
         }
+        existingUserData = meRes.data;
       } catch (meError: unknown) {
-        // User not yet provisioned in backend (401 is expected for new user)
-        const axiosError = meError as AxiosError;
-        if (axiosError?.response?.status === 401) {
+        const unprovisionedAccount = isAxiosError<{ detail?: unknown }>(meError)
+          && meError.response?.status === 401
+          && meError.response.data?.detail === "User not found";
+        if (unprovisionedAccount) {
+          preserveSupabaseSessionOnError = false;
           console.log("[OAuth] User not yet provisioned (401 expected for new user)");
         } else {
-          console.warn("[OAuth] Unexpected error checking user:", axiosError?.message);
+          preserveSupabaseSessionOnError = true;
+          console.error("[OAuth] Unable to verify the backend account:", meError);
+          throw new Error("Unable to verify your account right now. Please retry without signing out.");
         }
+      }
+
+      if (existingUserData) {
+        // Existing user - redirect to appropriate route
+        console.log("[OAuth] User already provisioned. Role:", existingUserData.user.role);
+        const existingRole = existingUserData.user.role;
+        const nextStep = existingUserData.next_step;
+        const requestedNext = getStoredNext();
+        preserveSupabaseSessionOnError = true;
+        await registerSession();
+        clearStoredRole();
+        setAuthState(existingUserData.user, nextStep || null);
+        const targetRoute = getRouteForAuthenticatedUser(existingRole, nextStep, requestedNext);
+        console.log("[OAuth] Redirecting existing user to:", targetRoute);
+        router.replace(targetRoute);
+        return;
       }
 
       // PHASE 5: New user provisioning with selected role
@@ -190,6 +214,12 @@ export default function AuthCallbackPage() {
         console.log("[OAuth] Redirecting new user to:", finalRoute);
         router.replace(finalRoute);
       } catch (provisionError) {
+        if (
+          !isAxiosError(provisionError)
+          || (provisionError.response?.status !== 401 && provisionError.response?.status !== 403)
+        ) {
+          preserveSupabaseSessionOnError = true;
+        }
         throw new Error(
           provisionError instanceof Error
             ? provisionError.message
@@ -199,12 +229,14 @@ export default function AuthCallbackPage() {
     };
 
     handleCallback().catch(async (callbackError: Error) => {
-      clearStoredRole();
-      // Sign out any stale Supabase session to prevent middleware redirecting to dashboard/onboarding
-      try {
-        await supabase.auth.signOut();
-      } catch (signOutError) {
-        console.warn("[OAuth] Error signing out stale session:", signOutError);
+      clearStoredRole(true);
+      if (!preserveSupabaseSessionOnError) {
+        // Clear a session only when callback validation or expected provisioning failed.
+        try {
+          await supabase.auth.signOut();
+        } catch (signOutError) {
+          console.warn("[OAuth] Error signing out stale session:", signOutError);
+        }
       }
       const message = callbackError.message || t('auth.googleError');
       console.error("[OAuth] Authentication error:", message);
@@ -214,8 +246,11 @@ export default function AuthCallbackPage() {
   }, [provisionSession, setAuthState, router]);
 
   const handleReturnToSignIn = () => {
+    const requestedNext = getStoredNext();
     clearStoredRole();
-    router.replace("/auth/signin");
+    router.replace(requestedNext
+      ? `/auth/signin?next=${encodeURIComponent(requestedNext)}`
+      : "/auth/signin");
   };
 
   return (

@@ -756,8 +756,9 @@ class FinancialService:
         try:
             response = (
                 supabase.rpc(
-                    "create_financial_invoice",
+                    "create_financial_invoice_idempotent",
                     {
+                        "p_idempotency_key": str(request.idempotency_key or uuid4()),
                         "p_user_id": user_id,
                         "p_employer_id": employer_id,
                         "p_client_name": request.client_name,
@@ -779,6 +780,10 @@ class FinancialService:
                             }
                             for item in line_items
                         ],
+                        "p_request_payload": request.model_dump(
+                            mode="json",
+                            exclude={"idempotency_key"},
+                        ),
                     },
                 )
                 .execute()
@@ -794,6 +799,8 @@ class FinancialService:
             error_code = getattr(exc, "code", None)
             if error_code == "23505" or "duplicate key" in str(exc).casefold() or "unique constraint" in str(exc).casefold():
                 raise FinancialConflict("INVOICE_NUMBER_ALREADY_EXISTS") from exc
+            if "INVOICE_IDEMPOTENCY_KEY_REUSED" in str(exc):
+                raise FinancialConflict("INVOICE_IDEMPOTENCY_KEY_REUSED") from exc
             logger.exception(
                 "Financial invoice create failed: user_id=%s exception_type=%s",
                 user_id,

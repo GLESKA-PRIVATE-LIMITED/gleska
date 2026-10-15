@@ -8,7 +8,7 @@ import { CheckCircle2 } from "lucide-react";
 import AuthMethodPanel from "@/components/auth/AuthMethodPanel";
 import AuthPageFrame from "@/components/auth/AuthPageFrame";
 import BackLink from "@/components/auth/BackLink";
-import { getRouteForNextStep } from "@/lib/auth-routing";
+import { getRouteForAuthenticatedUser } from "@/lib/auth-routing";
 
 function EmployerAuthContent() {
   const router = useRouter();
@@ -21,9 +21,13 @@ function EmployerAuthContent() {
 
   useEffect(() => {
     if (!authLoading && user) {
-      router.replace(getRouteForNextStep(user.role, nextStep));
+      router.replace(getRouteForAuthenticatedUser(
+        user.role,
+        nextStep,
+        searchParams.get("next"),
+      ));
     }
-  }, [authLoading, user, nextStep, router]);
+  }, [authLoading, user, nextStep, router, searchParams]);
 
   return (
     <AuthPageFrame>

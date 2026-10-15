@@ -76,6 +76,7 @@ class InvoiceLineItemInput(FinancialModel):
 
 
 class InvoiceCreateRequest(FinancialModel):
+    idempotency_key: UUID | None = None
     client_name: Annotated[str, StringConstraints(min_length=1, max_length=240)]
     issue_date: date
     due_date: date

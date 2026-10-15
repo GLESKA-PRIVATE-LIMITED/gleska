@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { CheckCircle2 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useLanguage } from "@/context/LanguageContext";
-import { getRouteForNextStep } from "@/lib/auth-routing";
+import { getRouteForAuthenticatedUser } from "@/lib/auth-routing";
 import AuthMethodPanel from "@/components/auth/AuthMethodPanel";
 import AuthPageFrame from "@/components/auth/AuthPageFrame";
 import BackLink from "@/components/auth/BackLink";
@@ -19,8 +19,14 @@ function WorkerAuthContent() {
   const { t } = useLanguage();
 
   useEffect(() => {
-    if (!authLoading && user) router.replace(getRouteForNextStep(user.role, nextStep));
-  }, [authLoading, user, nextStep, router]);
+    if (!authLoading && user) {
+      router.replace(getRouteForAuthenticatedUser(
+        user.role,
+        nextStep,
+        searchParams.get("next"),
+      ));
+    }
+  }, [authLoading, user, nextStep, router, searchParams]);
 
 
   return (
