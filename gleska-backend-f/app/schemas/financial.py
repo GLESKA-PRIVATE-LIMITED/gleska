@@ -230,8 +230,12 @@ class FinancialDashboardSummary(FinancialModel):
     active_invoices: int
     audits_passed: int | None
     audit_pass_rate: float | None
+    latest_audit_failed_checks: int | None = None
     latest_audit_run_id: UUID | None = None
     latest_audit_completed_at: datetime | None = None
+    latest_audit_started_at: datetime | None = None
+    latest_audit_run_status: Literal["RUNNING", "COMPLETED", "FAILED"] | None = None
+    total_audit_runs: int = 0
     active_vendors: int | None
 
 

@@ -940,9 +940,27 @@ class FinancialService:
             )
             raise FinancialServiceError("FINANCIAL_VENDORS_LOAD_FAILED") from exc
         try:
+            audit_run_count_response = (
+                supabase.table("financial_audit_runs")
+                .select("id", count="exact", head=True)
+                .eq("user_id", user_id)
+                .eq("employer_id", employer_id)
+                .execute()
+            )
+            total_audit_runs = int(audit_run_count_response.count or 0)
+            latest_audit_run_rows = _rows(
+                supabase.table("financial_audit_runs")
+                .select("started_at, status")
+                .eq("user_id", user_id)
+                .eq("employer_id", employer_id)
+                .order("started_at", desc=True)
+                .limit(1)
+                .execute()
+            )
+            latest_audit_run = latest_audit_run_rows[0] if latest_audit_run_rows else None
             latest_audit_rows = _rows(
                 supabase.table("financial_audit_runs")
-                .select("id, passed_checks, pass_rate, completed_at")
+                .select("id, passed_checks, failed_checks, pass_rate, completed_at")
                 .eq("user_id", user_id)
                 .eq("employer_id", employer_id)
                 .eq("status", "COMPLETED")
@@ -985,8 +1003,12 @@ class FinancialService:
                 active_invoices=len(generated),
                 audits_passed=int(latest_audit["passed_checks"]) if latest_audit else None,
                 audit_pass_rate=float(latest_audit["pass_rate"]) if latest_audit and latest_audit["pass_rate"] is not None else None,
+                latest_audit_failed_checks=int(latest_audit["failed_checks"]) if latest_audit else None,
                 latest_audit_run_id=latest_audit["id"] if latest_audit else None,
                 latest_audit_completed_at=latest_audit["completed_at"] if latest_audit else None,
+                latest_audit_started_at=latest_audit_run["started_at"] if latest_audit_run else None,
+                latest_audit_run_status=latest_audit_run["status"] if latest_audit_run else None,
+                total_audit_runs=total_audit_runs,
                 active_vendors=active_vendor_count,
             ),
             records=records,

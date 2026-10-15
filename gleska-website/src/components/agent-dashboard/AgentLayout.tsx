@@ -16,6 +16,7 @@ interface AgentLayoutProps {
   children?: React.ReactNode;
   activeTab?: string;
   setActiveTab?: (tabId: string) => void;
+  fullWidth?: boolean;
 }
 
 export default function AgentLayout({
@@ -23,6 +24,7 @@ export default function AgentLayout({
   children,
   activeTab: externalActiveTab,
   setActiveTab: externalSetActiveTab,
+  fullWidth = false,
 }: AgentLayoutProps) {
   const router = useRouter();
   const { user, isLoading, nextStep } = useAuth();
@@ -115,7 +117,7 @@ export default function AgentLayout({
           isCollapsed ? "md:ml-20" : "md:ml-64"
         }`}
       >
-        <div className="mx-auto max-w-5xl space-y-4 sm:space-y-6">
+        <div className={`mx-auto w-full space-y-4 sm:space-y-6 ${fullWidth ? "max-w-none" : "max-w-5xl"}`}>
           {children ? (
             children
           ) : (

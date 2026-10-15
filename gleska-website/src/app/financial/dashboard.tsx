@@ -70,7 +70,11 @@ interface DashboardSummary {
   audits_passed: number | null;
   audit_pass_rate: number | null;
   latest_audit_run_id?: string | null;
+  latest_audit_failed_checks?: number | null;
   latest_audit_completed_at?: string | null;
+  latest_audit_started_at?: string | null;
+  latest_audit_run_status?: "RUNNING" | "COMPLETED" | "FAILED" | null;
+  total_audit_runs?: number;
   active_vendors: number | null;
 }
 
@@ -122,116 +126,6 @@ type FinancialSettingsValues = Pick<
   FinancialSettings,
   "base_currency" | "tax_identifier" | "auto_reconcile_incoming_bills"
 >;
-
-interface FinancialAuditEvent {
-  id: string;
-  action: string;
-  outcome: "SUCCESS" | "FAILURE";
-  entity_type: string;
-  entity_id: string | null;
-  actor_user_id: string;
-  metadata: Record<string, unknown>;
-  created_at: string;
-}
-
-const AUDIT_ACTION_PRESENTATION: Record<string, { title: string; description: string }> = {
-  INVOICE_GENERATED: { title: "Invoice Generated", description: "was generated successfully." },
-  INVOICE_DRAFT_CREATED: { title: "Invoice Draft Created", description: "was created successfully." },
-  INVOICE_DRAFT_UPDATED: { title: "Invoice Updated", description: "was updated successfully." },
-  INVOICE_DRAFT_DELETED: { title: "Invoice Deleted", description: "was deleted successfully." },
-  INVOICE_GENERATION_FAILED: { title: "Invoice Generation", description: "The invoice could not be generated." },
-  INVOICE_DRAFT_CREATE_FAILED: { title: "Invoice Draft Creation", description: "The invoice draft could not be created." },
-  INVOICE_DRAFT_UPDATE_FAILED: { title: "Invoice Update", description: "The invoice could not be updated." },
-  INVOICE_DRAFT_DELETE_FAILED: { title: "Invoice Deletion", description: "The invoice draft could not be deleted." },
-  SCAN_PROCESSING_COMPLETED: { title: "Scan Processed", description: "The uploaded invoice was processed successfully." },
-  SCAN_UPLOAD_SUCCEEDED: { title: "Invoice Scan Uploaded", description: "The uploaded invoice is ready for processing." },
-  SCAN_SUBMITTED: { title: "Invoice Scan Submitted", description: "The invoice scan was submitted for processing." },
-  SCAN_UPLOAD_FAILED: { title: "Invoice Scan Upload", description: "The invoice could not be uploaded." },
-  SCAN_PROCESSING_FAILED: { title: "Scan Processing", description: "The uploaded invoice could not be processed." },
-  SCAN_PROCESSING_RETRY_FAILED: { title: "Scan Retry", description: "Processing could not be restarted for the uploaded invoice." },
-  SCAN_RESULT_REVIEW_FAILED: { title: "Scan Review", description: "The extracted invoice details could not be saved." },
-  SCAN_BILL_CONFIRMATION_FAILED: { title: "Bill Confirmation", description: "The reviewed invoice could not be added to financial records." },
-  SCAN_RESULT_REVIEWED: { title: "Scan Reviewed", description: "The extracted invoice details were reviewed." },
-  SCAN_PROCESSING_RETRIED: { title: "Scan Retry Started", description: "Processing was restarted for the uploaded invoice." },
-  SCAN_CONVERTED_TO_FINANCIAL_BILL: { title: "Bill Added to Financial Records", description: "The reviewed invoice was added to financial records." },
-  FINANCIAL_SETTINGS_CREATED: { title: "Financial Settings Set Up", description: "Your financial settings were set up successfully." },
-  FINANCIAL_SETTINGS_UPDATED: { title: "Financial Settings Updated", description: "Your financial settings were updated successfully." },
-  FINANCIAL_INVOICE_CREATE_FAILED: { title: "Invoice Creation", description: "The invoice could not be created." },
-  FINANCIAL_INVOICE_UPDATE_FAILED: { title: "Invoice Update", description: "The invoice could not be updated." },
-  FINANCIAL_INVOICE_DELETE_FAILED: { title: "Invoice Deletion", description: "The invoice could not be deleted." },
-  FINANCIAL_SETTINGS_UPDATE_FAILED: { title: "Financial Settings Update", description: "Your financial settings could not be updated." },
-};
-
-const AUDIT_FAILURE_MESSAGES: Record<string, string> = {
-  INVOICE_NUMBER_ALREADY_EXISTS: "That invoice number is already in use. No changes were made.",
-  INVOICE_NOT_FOUND: "The invoice could not be found, so no changes were made.",
-  INVOICE_ALREADY_GENERATED: "This invoice has already been generated and could not be changed.",
-  GENERATED_INVOICE_CANNOT_BE_DELETED: "Only invoice drafts can be deleted.",
-  INVOICE_INPUT_INVALID: "Some invoice details need attention. Please review them and try again.",
-  FINANCIAL_SETTINGS_INPUT_INVALID: "Some financial settings need attention. Please review them and try again.",
-  FINANCIAL_SETTINGS_SAVE_FAILED: "Your financial settings could not be saved. Please try again.",
-  OCR_PROVIDER_NOT_CONFIGURED: "Invoice processing is not configured yet. Please contact your administrator.",
-  OCR_PROVIDER_TIMEOUT: "Invoice processing took too long. Please try again.",
-  OCR_PROVIDER_UNAVAILABLE: "Invoice processing is temporarily unavailable. Please try again later.",
-  OCR_PROVIDER_RATE_LIMITED: "Invoice processing is busy. Please try again later.",
-  SCAN_FILE_TOO_LARGE: "The file is larger than the allowed limit. Choose a smaller file and try again.",
-  SCAN_FILE_TYPE_UNSUPPORTED: "This file type is not supported. Choose a supported invoice document.",
-  SCAN_NOT_RETRYABLE: "This scan cannot be retried because its document is unavailable.",
-  SCAN_PROCESSING_IN_PROGRESS: "This scan is still processing. Wait before retrying.",
-  SCAN_NOT_READY_FOR_REVIEW: "The scan must finish processing before its details can be reviewed.",
-  SCAN_NOT_READY_FOR_CONFIRMATION: "The scan must finish processing before the bill can be confirmed.",
-};
-
-const formatAuditTimestamp = (timestamp: string) => {
-  const date = new Date(timestamp);
-  if (Number.isNaN(date.getTime())) return "Date unavailable";
-  return new Intl.DateTimeFormat("en-IN", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(date);
-};
-
-const getAuditPresentation = (audit: FinancialAuditEvent) => {
-  const presentation = AUDIT_ACTION_PRESENTATION[audit.action];
-  const invoiceNumber = typeof audit.metadata?.invoice_number === "string"
-    ? audit.metadata.invoice_number.trim()
-    : "";
-  const invoiceReferenceType = audit.action === "INVOICE_DRAFT_CREATED"
-    || audit.action === "INVOICE_DRAFT_DELETED"
-    ? "Draft"
-    : "Invoice";
-  const reference = invoiceNumber ? `${invoiceReferenceType} ${invoiceNumber}` : `The ${invoiceReferenceType.toLowerCase()}`;
-
-  if (audit.outcome === "FAILURE") {
-    const errorCode = typeof audit.metadata?.error_code === "string"
-      ? audit.metadata.error_code
-      : "";
-    const description = AUDIT_FAILURE_MESSAGES[errorCode]
-      || presentation?.description
-      || (audit.entity_type === "financial_settings"
-        ? "Your financial settings could not be updated. Please try again."
-        : audit.entity_type === "financial_invoice_scan"
-          ? "The invoice scan could not be completed. Please try again."
-          : "This action could not be completed. Please try again.");
-    return {
-      title: presentation?.title || "Financial Action",
-      description: invoiceNumber && audit.entity_type === "invoice"
-        ? `${reference}: ${description}`
-        : description,
-    };
-  }
-
-  if (!presentation) {
-    return {
-      title: "Financial Activity",
-      description: "A financial action was completed successfully.",
-    };
-  }
-  if (invoiceNumber && audit.entity_type === "invoice") {
-    return { title: presentation.title, description: `${reference} ${presentation.description}` };
-  }
-  return { title: presentation.title, description: presentation.description };
-};
 
 interface FinancialScanResult {
   vendor_name: string | null;
@@ -360,10 +254,6 @@ export default function FinancialDashboard() {
   const [invoiceMutationId, setInvoiceMutationId] = useState<string | null>(null);
   const [invoiceMutationKind, setInvoiceMutationKind] = useState<"generate" | "delete" | null>(null);
   const [downloadingInvoiceId, setDownloadingInvoiceId] = useState<string | null>(null);
-  const [audits, setAudits] = useState<FinancialAuditEvent[]>([]);
-  const [auditsLoading, setAuditsLoading] = useState<boolean>(false);
-  const [auditsError, setAuditsError] = useState<string | null>(null);
-  const [auditOutcomeFilter, setAuditOutcomeFilter] = useState<"" | "SUCCESS" | "FAILURE">("");
   const [scans, setScans] = useState<FinancialScan[]>([]);
   const [scansLoading, setScansLoading] = useState<boolean>(false);
   const [scansError, setScansError] = useState<string | null>(null);
@@ -413,6 +303,11 @@ export default function FinancialDashboard() {
   const [settingsSaveError, setSettingsSaveError] = useState<string | null>(null);
   const [isSavingSettings, setIsSavingSettings] = useState<boolean>(false);
   const operatingCurrency = savedSettingsValues?.base_currency ?? financialSettings.base_currency;
+  const latestAuditCheckTotal = (dashboardSummary?.audits_passed ?? 0)
+    + (dashboardSummary?.latest_audit_failed_checks ?? 0);
+  const latestAuditPassRate = dashboardSummary?.latest_audit_run_id && latestAuditCheckTotal > 0
+    ? ((dashboardSummary.audits_passed ?? 0) / latestAuditCheckTotal) * 100
+    : null;
   const invoiceFormCurrency = activeInvoiceId
     ? invoices.find((invoice) => invoice.id === activeInvoiceId)?.currency || operatingCurrency
     : operatingCurrency;
@@ -480,25 +375,6 @@ export default function FinancialDashboard() {
       setInvoicesLoading(false);
     }
   }, []);
-
-  const refreshAudits = useCallback(async () => {
-    setAuditsLoading(true);
-    setAuditsError(null);
-    try {
-      const { data } = await apiClient.get(`${FINANCIAL_API}/audits`, {
-        params: { outcome: auditOutcomeFilter || undefined },
-      });
-      if (!Array.isArray(data?.audits)) {
-        throw new Error("The audit service returned an invalid response.");
-      }
-      setAudits(data.audits);
-    } catch (error) {
-      setAudits([]);
-      setAuditsError(getApiErrorMessage(error, "Unable to load audit records."));
-    } finally {
-      setAuditsLoading(false);
-    }
-  }, [auditOutcomeFilter]);
 
   const refreshScans = useCallback(async () => {
     setScansLoading(true);
@@ -569,11 +445,6 @@ export default function FinancialDashboard() {
     const invoice = invoices.find((candidate) => candidate.id === invoiceId);
     if (invoice) setViewingInvoice(invoice);
   }, [invoices, invoicesLoading]);
-
-  useEffect(() => {
-    if (activeTab !== "audits") return;
-    void refreshAudits();
-  }, [activeTab, refreshAudits]);
 
   useEffect(() => {
     if (activeTab !== "scan-invoice") return;
@@ -963,7 +834,6 @@ export default function FinancialDashboard() {
       setActiveScan(confirmed);
       setScans((current) => current.map((scan) => scan.id === confirmed.id ? confirmed : scan));
       showToast("Reviewed vendor bill confirmed and saved to financial records.", "success");
-      void refreshAudits();
     } catch (error) {
       showToast(getApiErrorMessage(error, "Unable to confirm this vendor bill."), "error");
     } finally {
@@ -2176,7 +2046,7 @@ export default function FinancialDashboard() {
             <Link href="/financial/audits" className="rounded-2xl border border-slate-200/80 bg-white/95 p-5 shadow-sm transition hover:border-cyan-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-900/95 dark:hover:border-cyan-800">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                  Audits Passed
+                  Audit Summary
                 </span>
                 <span className="rounded-lg bg-cyan-50 p-2 text-cyan-600 dark:bg-cyan-950/60 dark:text-cyan-400">
                   <ShieldCheck size={18} />
@@ -2187,19 +2057,31 @@ export default function FinancialDashboard() {
                   ? "Loading…"
                   : dashboardError || !dashboardSummary
                     ? "Unavailable"
-                    : dashboardSummary.latest_audit_run_id
-                      ? dashboardSummary.audits_passed ?? 0
-                      : "—"}
+                    : dashboardSummary.total_audit_runs ?? "—"}
               </p>
-              <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 font-semibold">
+              <p className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">Automated audit runs</p>
+              <div className="mt-3 grid grid-cols-2 gap-2 border-t border-slate-100 pt-3 text-[11px] dark:border-slate-800">
+                <p className="text-slate-600 dark:text-slate-300">
+                  Pass rate <span className="font-bold text-slate-900 dark:text-white">
+                    {dashboardLoading ? "…" : dashboardError || !dashboardSummary ? "Unavailable" : latestAuditPassRate == null ? "—" : `${latestAuditPassRate.toFixed(1)}%`}
+                  </span>
+                </p>
+                <p className="text-slate-600 dark:text-slate-300">
+                  Failed checks <span className="font-bold text-slate-900 dark:text-white">
+                    {dashboardLoading ? "…" : dashboardError || !dashboardSummary ? "Unavailable" : dashboardSummary.latest_audit_run_id ? dashboardSummary.latest_audit_failed_checks ?? "—" : "—"}
+                  </span>
+                </p>
+              </div>
+              <p className="mt-2 text-[10px] font-semibold text-slate-500 dark:text-slate-400">
                 {dashboardLoading
-                  ? "Loading latest completed run…"
+                  ? "Loading latest run…"
                   : dashboardError || !dashboardSummary
-                    ? "Audit results unavailable"
-                    : dashboardSummary.latest_audit_run_id
-                      ? `${dashboardSummary.audit_pass_rate == null ? "Pass rate unavailable" : `${dashboardSummary.audit_pass_rate.toFixed(1)}% pass rate`} · View audit`
-                      : "No completed audit run · Start audit"}
+                    ? "Audit data unavailable"
+                    : dashboardSummary.latest_audit_started_at
+                      ? `Last run ${new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(dashboardSummary.latest_audit_started_at))} · ${dashboardSummary.latest_audit_run_status ?? "Status unavailable"}`
+                      : "No audit runs yet"}
               </p>
+              <p className="mt-1 text-[10px] font-bold text-cyan-700 dark:text-cyan-300">View audit history</p>
             </Link>
 
             <Link href="/financial/vendors" className="rounded-2xl border border-slate-200/80 bg-white/95 p-5 shadow-sm transition hover:border-emerald-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-900/95 dark:hover:border-emerald-800">
@@ -3057,89 +2939,6 @@ export default function FinancialDashboard() {
               </div>
             )}
           </section>
-        </div>
-      )}
-
-      {/* VIEW: AUDITS TILL DATE */}
-      {activeTab === "audits" && (
-        <div className="space-y-6 rounded-3xl border border-slate-200/80 bg-white/95 p-4 sm:p-6 sm:p-8 shadow-xl backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/95 mt-3 sm:mt-6 md:mt-8 lg:mt-10">
-          <div className="border-b border-slate-100 pb-5 dark:border-slate-800">
-            <div className="inline-flex items-center gap-2 rounded-full bg-cyan-50 px-3 py-1 text-xs font-bold text-cyan-600 dark:bg-cyan-950/60 dark:text-cyan-400">
-              <ShieldCheck size={14} />
-              <span>COMPLIANCE & RECONCILIATION</span>
-            </div>
-            <h2 className="mt-2 text-xl font-bold text-slate-900 dark:text-white">Audits Till Date</h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Persisted financial actions for this employer account. Historical actions from before audit tracking was enabled are not available.
-            </p>
-            <label className="mt-4 inline-flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-300">
-              Outcome
-              <select value={auditOutcomeFilter} onChange={(event) => setAuditOutcomeFilter(event.target.value as "" | "SUCCESS" | "FAILURE")}
-                className="rounded-lg border border-slate-300 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-950">
-                <option value="">All recorded outcomes</option>
-                <option value="SUCCESS">Successful actions</option>
-                <option value="FAILURE">Failed actions</option>
-              </select>
-            </label>
-          </div>
-
-          {auditsLoading ? (
-            <p className="py-8 text-center text-sm text-slate-500 dark:text-slate-400">Loading audit records…</p>
-          ) : auditsError ? (
-            <div className="py-8 text-center">
-              <p className="text-sm text-rose-600 dark:text-rose-400">{auditsError}</p>
-              <button
-                type="button"
-                onClick={() => void refreshAudits()}
-                className="mt-3 rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50 dark:border-rose-800 dark:text-rose-300 dark:hover:bg-rose-950/40"
-              >
-                Retry loading audit records
-              </button>
-            </div>
-          ) : audits.length === 0 ? (
-            <div className="py-12 text-center">
-              <ShieldCheck className="mx-auto h-8 w-8 text-slate-400" />
-              <p className="mt-2 text-sm font-semibold text-slate-700 dark:text-slate-300">No recorded financial audit events match this filter.</p>
-            </div>
-          ) : (
-            <div className="divide-y divide-slate-100 dark:divide-slate-800">
-              {audits.map((audit) => {
-                const presentation = getAuditPresentation(audit);
-                const succeeded = audit.outcome === "SUCCESS";
-                return (
-                  <div key={audit.id} className="flex flex-col justify-between gap-3 py-4 sm:flex-row sm:items-start">
-                    <div className="flex items-start gap-3">
-                      <span className={`mt-0.5 rounded-lg p-2 ${
-                        succeeded
-                          ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-300"
-                          : "bg-rose-50 text-rose-600 dark:bg-rose-950/60 dark:text-rose-300"
-                      }`}>
-                        <ShieldCheck size={18} />
-                      </span>
-                      <div>
-                        <h4 className="text-sm font-bold text-slate-900 dark:text-white">
-                          {presentation.title}
-                        </h4>
-                        <p className="mt-0.5 text-sm text-slate-600 dark:text-slate-300">
-                          {presentation.description}
-                        </p>
-                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                          {formatAuditTimestamp(audit.created_at)}
-                        </p>
-                      </div>
-                    </div>
-                    <span className={`self-start rounded-full px-3 py-1 text-xs font-bold ${
-                      succeeded
-                        ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300"
-                        : "bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300"
-                    }`}>
-                      {succeeded ? "Success" : "Failed"}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
         </div>
       )}
 

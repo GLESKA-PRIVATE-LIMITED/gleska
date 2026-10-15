@@ -15,7 +15,7 @@ const WORKER_PROTECTED_PREFIXES = [
   "/worker/settings",
   "/worker/help",
 ];
-const EMPLOYER_PROTECTED_PREFIXES = ["/employer/dashboard", "/employer/onboarding", "/employer/company-profile", "/employer/director-profile", "/employer/security", "/employer/workers", "/employer/attendance", "/employer/subscription"];
+const EMPLOYER_PROTECTED_PREFIXES = ["/employer/dashboard", "/employer/onboarding", "/employer/company-profile", "/employer/director-profile", "/employer/security", "/employer/workers", "/employer/attendance", "/employer/subscription", "/financial"];
 const ADMIN_PROTECTED_PREFIXES = ["/admin"];
 const SUPPLIER_PROTECTED_PREFIXES = ["/supplier"];
 

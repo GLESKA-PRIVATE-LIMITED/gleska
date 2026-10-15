@@ -68,7 +68,13 @@ export function getRouteForAuthenticatedUser(
     ) {
       return `${parsed.pathname}${parsed.search}${parsed.hash}`;
     }
-    if (role === "EMPLOYER" && isRouteOrChild(parsed.pathname, "/procurement")) {
+    if (
+      role === "EMPLOYER"
+      && (
+        isRouteOrChild(parsed.pathname, "/procurement")
+        || isRouteOrChild(parsed.pathname, "/financial")
+      )
+    ) {
       return nextStep === "DASHBOARD"
         ? `${parsed.pathname}${parsed.search}${parsed.hash}`
         : `/employer/onboarding?next=${encodeURIComponent(`${parsed.pathname}${parsed.search}${parsed.hash}`)}`;
