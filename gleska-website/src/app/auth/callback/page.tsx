@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { isAxiosError } from "axios";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth, type AuthUser, type NextStep } from "@/context/AuthContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { getRouteForAuthenticatedUser } from "@/lib/auth-routing";
 import { registerSession } from "@/lib/security";
@@ -136,9 +136,12 @@ export default function AuthCallbackPage() {
 
       // PHASE 4: Check if user is already provisioned in backend
       console.log("[OAuth] Checking if user already exists in backend...");
-      let existingUserData: { user: { role: "WORKER" | "EMPLOYER" }; next_step?: string | null } | null = null;
+      let existingUserData: { user: AuthUser; next_step?: NextStep | null } | null = null;
       try {
-        const meRes = await apiClient.get("/api/v1/auth/me", { withCredentials: true });
+        const meRes = await apiClient.get<{ user: AuthUser; next_step?: NextStep | null }>(
+          "/api/v1/auth/me",
+          { withCredentials: true },
+        );
         if (!meRes.data?.user?.role) {
           preserveSupabaseSessionOnError = true;
           throw new Error("The backend did not return a valid account for this session.");

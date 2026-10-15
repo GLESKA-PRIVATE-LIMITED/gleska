@@ -513,7 +513,7 @@ export default function FinancialAuditsPage() {
       setRuns(completeRuns);
       setSecurityActivities(rawSecurityActivities);
       setSecurityActivityCount(
-        typeof securityResult.status === "fulfilled" && typeof securityResult.value.data?.activity_count === "number"
+        securityResult.status === "fulfilled" && typeof securityResult.value.data?.activity_count === "number"
           ? securityResult.value.data.activity_count
           : rawSecurityActivities.length,
       );
