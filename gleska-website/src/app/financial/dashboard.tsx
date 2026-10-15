@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
+import Link from "next/link";
 import {
   FileText,
   Download,
@@ -62,9 +63,14 @@ interface DashboardSummary {
   total_invoiced_currency?: "INR" | "USD" | "EUR" | null;
   total_invoiced_has_multiple_currencies?: boolean;
   pending_receivables: number | null;
+  pending_receivables_by_currency?: { currency: "INR" | "USD" | "EUR"; amount: number }[];
+  pending_receivable_count?: number;
+  receivables_as_of_date?: string;
   active_invoices: number | null;
   audits_passed: number | null;
   audit_pass_rate: number | null;
+  latest_audit_run_id?: string | null;
+  latest_audit_completed_at?: string | null;
   active_vendors: number | null;
 }
 
@@ -551,7 +557,18 @@ export default function FinancialDashboard() {
     void refreshDashboard();
     void refreshInvoices();
     void refreshSettings();
+    const refreshAfterPayment = () => void refreshDashboard();
+    window.addEventListener("financial-receivables-updated", refreshAfterPayment);
+    return () => window.removeEventListener("financial-receivables-updated", refreshAfterPayment);
   }, [refreshDashboard, refreshInvoices, refreshSettings]);
+
+  useEffect(() => {
+    if (invoicesLoading || typeof window === "undefined") return;
+    const invoiceId = new URLSearchParams(window.location.search).get("invoice");
+    if (!invoiceId) return;
+    const invoice = invoices.find((candidate) => candidate.id === invoiceId);
+    if (invoice) setViewingInvoice(invoice);
+  }, [invoices, invoicesLoading]);
 
   useEffect(() => {
     if (activeTab !== "audits") return;
@@ -2120,7 +2137,7 @@ export default function FinancialDashboard() {
               </p>
             </div>
 
-            <div className="rounded-2xl border border-slate-200/80 bg-white/95 p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/95">
+            <Link href="/financial/receivables" className="rounded-2xl border border-slate-200/80 bg-white/95 p-5 shadow-sm transition hover:border-amber-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-900/95 dark:hover:border-amber-800">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                   Pending Receivables
@@ -2129,18 +2146,34 @@ export default function FinancialDashboard() {
                   <Clock size={18} />
                 </span>
               </div>
-              <p className="mt-3 text-2xl font-bold text-slate-900 dark:text-white font-mono">
-                —
-              </p>
+              <div className="mt-3 min-h-8 text-lg font-bold text-slate-900 dark:text-white font-mono">
+                {dashboardLoading
+                  ? "Loading…"
+                  : dashboardError || !dashboardSummary
+                    ? "Unavailable"
+                  : dashboardSummary?.pending_receivables_by_currency?.length
+                    ? dashboardSummary.pending_receivables_by_currency.map((entry) => (
+                      <span key={entry.currency} className="mr-3 inline-block">
+                        {formatMoney(entry.amount, entry.currency)}
+                      </span>
+                    ))
+                    : "No outstanding balance"}
+              </div>
               <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 font-semibold">
-                {dashboardLoading ? "Loading invoice count…" : `${dashboardSummary?.active_invoices ?? "—"} generated invoices`}
+                {dashboardLoading
+                  ? "Loading invoice count…"
+                  : dashboardError || !dashboardSummary
+                    ? "Receivables data unavailable"
+                    : `${dashboardSummary.pending_receivable_count ?? 0} invoices outstanding`}
               </p>
               <p className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold">
-                Payment tracking not configured.
+                {dashboardSummary?.receivables_as_of_date
+                  ? `As of ${formatInvoiceDate(dashboardSummary.receivables_as_of_date)} · View receivables`
+                  : "View receivables"}
               </p>
-            </div>
+            </Link>
 
-            <div className="rounded-2xl border border-slate-200/80 bg-white/95 p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/95">
+            <Link href="/financial/audits" className="rounded-2xl border border-slate-200/80 bg-white/95 p-5 shadow-sm transition hover:border-cyan-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-900/95 dark:hover:border-cyan-800">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                   Audits Passed
@@ -2150,14 +2183,26 @@ export default function FinancialDashboard() {
                 </span>
               </div>
               <p className="mt-3 text-2xl font-bold text-slate-900 dark:text-white font-mono">
-                —
+                {dashboardLoading
+                  ? "Loading…"
+                  : dashboardError || !dashboardSummary
+                    ? "Unavailable"
+                    : dashboardSummary.latest_audit_run_id
+                      ? dashboardSummary.audits_passed ?? 0
+                      : "—"}
               </p>
               <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 font-semibold">
-                Audit results not configured.
+                {dashboardLoading
+                  ? "Loading latest completed run…"
+                  : dashboardError || !dashboardSummary
+                    ? "Audit results unavailable"
+                    : dashboardSummary.latest_audit_run_id
+                      ? `${dashboardSummary.audit_pass_rate == null ? "Pass rate unavailable" : `${dashboardSummary.audit_pass_rate.toFixed(1)}% pass rate`} · View audit`
+                      : "No completed audit run · Start audit"}
               </p>
-            </div>
+            </Link>
 
-            <div className="rounded-2xl border border-slate-200/80 bg-white/95 p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/95">
+            <Link href="/financial/vendors" className="rounded-2xl border border-slate-200/80 bg-white/95 p-5 shadow-sm transition hover:border-emerald-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-900/95 dark:hover:border-emerald-800">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                   Active Vendors
@@ -2167,12 +2212,18 @@ export default function FinancialDashboard() {
                 </span>
               </div>
               <p className="mt-3 text-2xl font-bold text-slate-900 dark:text-white font-mono">
-                —
+                {dashboardLoading
+                  ? "Loading…"
+                  : dashboardError || !dashboardSummary
+                    ? "Unavailable"
+                    : dashboardSummary.active_vendors ?? 0}
               </p>
               <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 font-semibold">
-                Vendor tracking not configured.
+                {dashboardError || !dashboardSummary
+                  ? "Vendor count unavailable"
+                  : "Active records · Manage vendors"}
               </p>
-            </div>
+            </Link>
           </div>
 
           {/* Recent Invoices & Activity Table */}

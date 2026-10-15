@@ -147,14 +147,91 @@ class InvoiceListResponse(FinancialModel):
     company_details: FinancialInvoiceCompanyDetails | None = None
 
 
+class FinancialCurrencyAmount(FinancialModel):
+    currency: Currency
+    amount: Decimal
+
+
+class FinancialReceivableStatus(FinancialModel):
+    invoice_id: UUID
+    invoice_number: str
+    client_name: str
+    issue_date: date
+    due_date: date
+    currency: Currency
+    invoice_total: Decimal
+    paid_amount: Decimal
+    outstanding_amount: Decimal
+    payment_status: Literal["UNPAID", "PARTIALLY_PAID", "PAID"]
+    is_overdue: bool
+
+
+class FinancialReceivablesSummary(FinancialModel):
+    as_of_date: date
+    generated_invoice_count: int
+    outstanding_invoice_count: int
+    unpaid_count: int
+    partially_paid_count: int
+    overdue_count: int
+    paid_count: int
+    outstanding_by_currency: list[FinancialCurrencyAmount]
+
+
+class FinancialReceivablesResponse(FinancialModel):
+    summary: FinancialReceivablesSummary
+    invoices: list[FinancialReceivableStatus]
+
+
+class FinancialPaymentCreateRequest(FinancialModel):
+    amount: Decimal = Field(gt=0, max_digits=14, decimal_places=2)
+    payment_date: date
+    idempotency_key: UUID
+    payment_reference: Annotated[str | None, StringConstraints(max_length=120)] = None
+    notes: Annotated[str, StringConstraints(max_length=1000)] = ""
+
+    @field_validator("payment_reference", "notes")
+    @classmethod
+    def normalize_payment_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return " ".join(value.split())
+
+
+class FinancialPaymentRecord(FinancialModel):
+    id: UUID
+    invoice_id: UUID
+    amount: Decimal
+    currency: Currency
+    payment_date: date
+    payment_reference: str | None = None
+    notes: str = ""
+    idempotency_key: UUID
+    created_at: datetime
+
+
+class FinancialInvoicePaymentsResponse(FinancialModel):
+    invoice_id: UUID
+    currency: Currency
+    invoice_total: Decimal
+    paid_amount: Decimal
+    outstanding_amount: Decimal
+    as_of_date: date
+    payments: list[FinancialPaymentRecord]
+
+
 class FinancialDashboardSummary(FinancialModel):
     total_invoiced: float | None
     total_invoiced_currency: Currency | None = None
     total_invoiced_has_multiple_currencies: bool = False
     pending_receivables: float | None
+    pending_receivables_by_currency: list[FinancialCurrencyAmount] = Field(default_factory=list)
+    pending_receivable_count: int = 0
+    receivables_as_of_date: date
     active_invoices: int
     audits_passed: int | None
     audit_pass_rate: float | None
+    latest_audit_run_id: UUID | None = None
+    latest_audit_completed_at: datetime | None = None
     active_vendors: int | None
 
 
@@ -189,6 +266,41 @@ class FinancialAuditRecord(FinancialModel):
 
 class FinancialAuditEventsResponse(FinancialModel):
     audits: list[FinancialAuditRecord] = Field(default_factory=list)
+
+
+class FinancialAuditCheckResult(FinancialModel):
+    id: UUID
+    check_id: str
+    title: str
+    result: Literal["PASS", "FAIL", "NOT_APPLICABLE"]
+    explanation: str
+    entity_type: str | None = None
+    entity_id: UUID | None = None
+    findings: list[dict[str, object]] = Field(default_factory=list)
+    checked_at: datetime
+
+
+class FinancialAuditRun(FinancialModel):
+    id: UUID
+    status: Literal["RUNNING", "COMPLETED", "FAILED"]
+    started_at: datetime
+    completed_at: datetime | None = None
+    total_checks: int
+    passed_checks: int
+    failed_checks: int
+    not_applicable_checks: int
+    pass_rate: Decimal | None = None
+    summary: dict[str, object] = Field(default_factory=dict)
+    error_message: str | None = None
+    checks: list[FinancialAuditCheckResult] = Field(default_factory=list)
+
+
+class FinancialAuditRunsResponse(FinancialModel):
+    runs: list[FinancialAuditRun]
+
+
+class FinancialAuditRunCreateRequest(FinancialModel):
+    idempotency_key: UUID
 
 
 class FinancialScanLineItem(FinancialModel):
@@ -245,14 +357,87 @@ class FinancialScanReviewRequest(FinancialModel):
     result: FinancialScanResult
 
 
-class FinancialVendorBillResponse(FinancialModel):
+class FinancialVendorFields(FinancialModel):
+    vendor_name: Annotated[str, StringConstraints(min_length=1, max_length=240)]
+    contact_email: Annotated[str | None, StringConstraints(max_length=254)] = None
+    contact_phone: Annotated[str | None, StringConstraints(max_length=40)] = None
+    address: Annotated[str | None, StringConstraints(max_length=1000)] = None
+    tax_identifier: Annotated[str | None, StringConstraints(max_length=64)] = None
+
+    @field_validator("vendor_name")
+    @classmethod
+    def normalize_vendor_name(cls, value: str) -> str:
+        normalized = " ".join(value.split())
+        if not normalized:
+            raise ValueError("vendor_name must not be blank")
+        return normalized
+
+    @field_validator("contact_email", "contact_phone", "address", "tax_identifier")
+    @classmethod
+    def normalize_vendor_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = " ".join(value.split())
+        return normalized or None
+
+
+class FinancialVendorCreateRequest(FinancialVendorFields):
+    pass
+
+
+class FinancialVendorUpdateRequest(FinancialVendorFields):
+    is_active: bool
+
+
+class FinancialVendorBillLinkRequest(FinancialModel):
+    vendor_id: UUID
+
+
+class FinancialVendorBillRecord(FinancialModel):
     id: UUID
     scan_id: UUID
+    vendor_id: UUID | None = None
     vendor_name: str | None = None
     bill_number: str | None = None
     bill_date: date | None = None
     due_date: date | None = None
-    currency: str | None = None
+    currency: Currency | None = None
+    total: Decimal | None = None
+    confirmed_at: datetime
+
+
+class FinancialVendorCurrencyTotal(FinancialModel):
+    currency: Currency
+    total: Decimal
+
+
+class FinancialVendorResponse(FinancialVendorFields):
+    id: UUID
+    normalized_name: str
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+    bill_count: int = 0
+    bill_totals_by_currency: list[FinancialVendorCurrencyTotal] = Field(default_factory=list)
+    bills: list[FinancialVendorBillRecord] = Field(default_factory=list)
+
+
+class FinancialVendorListResponse(FinancialModel):
+    vendors: list[FinancialVendorResponse]
+    total_count: int
+    active_count: int
+    inactive_count: int
+
+
+class FinancialVendorBillResponse(FinancialModel):
+    id: UUID
+    scan_id: UUID
+    vendor_id: UUID | None = None
+    vendor_name: str | None = None
+    bill_number: str | None = None
+    bill_date: date | None = None
+    due_date: date | None = None
+    currency: Currency | None = None
     line_items: list[dict[str, object]] = Field(default_factory=list)
     subtotal: Decimal | None = None
     tax_amount: Decimal | None = None

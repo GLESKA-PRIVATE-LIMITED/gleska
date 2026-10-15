@@ -1,10 +1,13 @@
 import {
   Home,
+  Building2,
   LayoutDashboard,
   FileCheck,
   FileText,
   Scan,
   Settings,
+  Wallet,
+  ShieldCheck,
 } from "lucide-react";
 import { AgentConfig } from "@/components/agent-dashboard/types";
 
@@ -17,8 +20,11 @@ export const financialConfig: AgentConfig = {
   accentColor: "indigo",
   sidebarItems: [
     { id: "home", label: "Home", icon: Home, href: "/#services" },
-    { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, isTab: true },
+    { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, href: "/financial" },
+    { id: "receivables", label: "Receivables", icon: Wallet, href: "/financial/receivables" },
+    { id: "vendors", label: "Vendors", icon: Building2, href: "/financial/vendors" },
     { id: "audits", label: "Audits till date", icon: FileCheck, isTab: true },
+    { id: "audit-checks", label: "Financial Audit", icon: ShieldCheck, href: "/financial/audits" },
     { id: "create-invoice", label: "Create Invoice", icon: FileText, isTab: true },
     { id: "scan-invoice", label: "Scan Invoice", icon: Scan, isTab: true },
     { id: "settings", label: "Settings", icon: Settings, isTab: true },

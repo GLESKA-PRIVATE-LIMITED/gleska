@@ -1,5 +1,7 @@
 """Persistence and calculations for employer-owned financial records."""
 
+from collections import defaultdict
+from datetime import date, datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 import logging
 import re
@@ -14,7 +16,14 @@ from app.schemas.financial import (
     FinancialDashboardResponse,
     FinancialDashboardSummary,
     FinancialAuditRecord,
+    FinancialCurrencyAmount,
+    FinancialInvoicePaymentsResponse,
     FinancialInvoiceCompanyDetails,
+    FinancialPaymentCreateRequest,
+    FinancialPaymentRecord,
+    FinancialReceivableStatus,
+    FinancialReceivablesResponse,
+    FinancialReceivablesSummary,
     FinancialSettings,
     FinancialSettingsUpdate,
     MAX_FINANCIAL_SCAN_UPLOAD_BYTES,
@@ -343,6 +352,245 @@ class FinancialService:
             raise FinancialServiceError("FINANCIAL_INVOICES_LOAD_FAILED") from exc
 
     @classmethod
+    def _invoice_payment_scope(
+        cls,
+        user: UserResponse,
+        invoice_id: UUID,
+    ) -> tuple[str, str, dict[str, Any]]:
+        user_id, employer_id = cls._employer_scope(user)
+        try:
+            invoice = _row(
+                supabase.table("financial_invoices")
+                .select("id, status, total, currency")
+                .eq("id", str(invoice_id))
+                .eq("user_id", user_id)
+                .eq("employer_id", employer_id)
+                .maybe_single()
+                .execute()
+            )
+        except Exception as exc:
+            logger.error(
+                "Financial payment invoice lookup failed: invoice_id=%s exception_type=%s",
+                invoice_id,
+                type(exc).__name__,
+            )
+            raise FinancialServiceError("FINANCIAL_PAYMENT_INVOICE_LOAD_FAILED") from exc
+        if not invoice:
+            raise FinancialNotFound("INVOICE_NOT_FOUND")
+        if invoice.get("status") != "GENERATED":
+            raise FinancialConflict("INVOICE_NOT_GENERATED")
+        return user_id, employer_id, invoice
+
+    @staticmethod
+    def _payment_rows(
+        user_id: str,
+        employer_id: str,
+        invoice_ids: list[str],
+    ) -> list[dict[str, Any]]:
+        if not invoice_ids:
+            return []
+        try:
+            payments: list[dict[str, Any]] = []
+            page_size = 500
+            for first in range(0, len(invoice_ids), 100):
+                invoice_chunk = invoice_ids[first:first + 100]
+                offset = 0
+                while True:
+                    rows = _rows(
+                        supabase.table("financial_invoice_payments")
+                        .select(
+                            "id, invoice_id, amount, payment_date, payment_reference, notes, "
+                            "idempotency_key, created_at"
+                        )
+                        .eq("user_id", user_id)
+                        .eq("employer_id", employer_id)
+                        .in_("invoice_id", invoice_chunk)
+                        .order("payment_date", desc=True)
+                        .order("created_at", desc=True)
+                        .range(offset, offset + page_size - 1)
+                        .execute()
+                    )
+                    payments.extend(rows)
+                    if len(rows) < page_size:
+                        break
+                    offset += page_size
+            return payments
+        except Exception as exc:
+            logger.error(
+                "Financial invoice payments load failed: user_id=%s exception_type=%s",
+                user_id,
+                type(exc).__name__,
+            )
+            raise FinancialServiceError("FINANCIAL_PAYMENTS_LOAD_FAILED") from exc
+
+    @classmethod
+    def _receivables_from_invoices(
+        cls,
+        user_id: str,
+        employer_id: str,
+        invoices: list[InvoiceResponse],
+        as_of_date: date,
+    ) -> FinancialReceivablesResponse:
+        generated = [invoice for invoice in invoices if invoice.status == "GENERATED"]
+        payment_rows = cls._payment_rows(
+            user_id,
+            employer_id,
+            [str(invoice.id) for invoice in generated],
+        )
+        paid_by_invoice: dict[str, Decimal] = defaultdict(Decimal)
+        for payment in payment_rows:
+            paid_by_invoice[str(payment["invoice_id"])] += _decimal(payment["amount"])
+
+        currency_totals: dict[str, Decimal] = defaultdict(Decimal)
+        receivables: list[FinancialReceivableStatus] = []
+        unpaid_count = partially_paid_count = overdue_count = paid_count = 0
+        outstanding_invoice_count = 0
+        for invoice in generated:
+            paid_amount = paid_by_invoice[str(invoice.id)]
+            invoice_total = _decimal(invoice.total)
+            outstanding_amount = _money(invoice_total - paid_amount)
+            is_overdue = outstanding_amount > 0 and invoice.due_date < as_of_date
+            if outstanding_amount > 0:
+                outstanding_invoice_count += 1
+                currency_totals[invoice.currency] += outstanding_amount
+                if is_overdue:
+                    overdue_count += 1
+                if paid_amount == 0:
+                    unpaid_count += 1
+                else:
+                    partially_paid_count += 1
+                payment_status = "UNPAID" if paid_amount == 0 else "PARTIALLY_PAID"
+            else:
+                paid_count += 1
+                payment_status = "PAID"
+            receivables.append(FinancialReceivableStatus(
+                invoice_id=invoice.id,
+                invoice_number=invoice.invoice_number,
+                client_name=invoice.client_name,
+                issue_date=invoice.issue_date,
+                due_date=invoice.due_date,
+                currency=invoice.currency,
+                invoice_total=invoice_total,
+                paid_amount=paid_amount,
+                outstanding_amount=outstanding_amount,
+                payment_status=payment_status,
+                is_overdue=is_overdue,
+            ))
+
+        summary = FinancialReceivablesSummary(
+            as_of_date=as_of_date,
+            generated_invoice_count=len(generated),
+            outstanding_invoice_count=outstanding_invoice_count,
+            unpaid_count=unpaid_count,
+            partially_paid_count=partially_paid_count,
+            overdue_count=overdue_count,
+            paid_count=paid_count,
+            outstanding_by_currency=[
+                FinancialCurrencyAmount(currency=currency, amount=amount)
+                for currency, amount in sorted(currency_totals.items())
+                if amount > 0
+            ],
+        )
+        return FinancialReceivablesResponse(summary=summary, invoices=receivables)
+
+    @classmethod
+    def receivables(cls, user: UserResponse) -> FinancialReceivablesResponse:
+        user_id, employer_id = cls._employer_scope(user)
+        return cls._receivables_from_invoices(
+            user_id,
+            employer_id,
+            cls.list_invoices(user),
+            datetime.now(timezone.utc).date(),
+        )
+
+    @classmethod
+    def list_invoice_payments(
+        cls,
+        user: UserResponse,
+        invoice_id: UUID,
+    ) -> FinancialInvoicePaymentsResponse:
+        user_id, employer_id, invoice = cls._invoice_payment_scope(user, invoice_id)
+        payment_rows = cls._payment_rows(user_id, employer_id, [str(invoice_id)])
+        payments = [
+            FinancialPaymentRecord.model_validate({
+                **row,
+                "currency": invoice["currency"],
+            })
+            for row in payment_rows
+        ]
+        paid_amount = sum((_decimal(payment.amount) for payment in payments), Decimal("0"))
+        invoice_total = _decimal(invoice["total"])
+        return FinancialInvoicePaymentsResponse(
+            invoice_id=invoice_id,
+            currency=invoice["currency"],
+            invoice_total=invoice_total,
+            paid_amount=paid_amount,
+            outstanding_amount=_money(invoice_total - paid_amount),
+            as_of_date=datetime.now(timezone.utc).date(),
+            payments=payments,
+        )
+
+    @classmethod
+    def record_invoice_payment(
+        cls,
+        user: UserResponse,
+        invoice_id: UUID,
+        request: FinancialPaymentCreateRequest,
+    ) -> FinancialPaymentRecord:
+        user_id, employer_id, _ = cls._invoice_payment_scope(user, invoice_id)
+        try:
+            row = _row(supabase.rpc(
+                "record_financial_invoice_payment",
+                {
+                    "p_invoice_id": str(invoice_id),
+                    "p_user_id": user_id,
+                    "p_employer_id": employer_id,
+                    "p_amount": str(request.amount),
+                    "p_payment_date": request.payment_date.isoformat(),
+                    "p_payment_reference": request.payment_reference or "",
+                    "p_notes": request.notes,
+                    "p_idempotency_key": str(request.idempotency_key),
+                },
+            ).execute())
+            if not row:
+                raise ValueError("Invoice payment RPC returned no record")
+            return FinancialPaymentRecord.model_validate({
+                field: row[field]
+                for field in (
+                    "id",
+                    "invoice_id",
+                    "amount",
+                    "currency",
+                    "payment_date",
+                    "payment_reference",
+                    "notes",
+                    "idempotency_key",
+                    "created_at",
+                )
+            })
+        except (FinancialConflict, FinancialNotFound, FinancialServiceError):
+            raise
+        except Exception as exc:
+            error_code = getattr(exc, "code", None)
+            error_message = str(exc)
+            if error_code == "P0002" or "INVOICE_NOT_FOUND" in error_message:
+                raise FinancialNotFound("INVOICE_NOT_FOUND") from exc
+            if "INVOICE_NOT_GENERATED" in error_message:
+                raise FinancialConflict("INVOICE_NOT_GENERATED") from exc
+            if "PAYMENT_EXCEEDS_OUTSTANDING" in error_message:
+                raise FinancialConflict("PAYMENT_EXCEEDS_OUTSTANDING") from exc
+            if "PAYMENT_IDEMPOTENCY_KEY_REUSED" in error_message:
+                raise FinancialConflict("PAYMENT_IDEMPOTENCY_KEY_REUSED") from exc
+            if "PAYMENT_INPUT_INVALID" in error_message:
+                raise FinancialServiceError("PAYMENT_INPUT_INVALID") from exc
+            logger.error(
+                "Financial invoice payment failed: invoice_id=%s exception_type=%s",
+                invoice_id,
+                type(exc).__name__,
+            )
+            raise FinancialServiceError("FINANCIAL_PAYMENT_RECORD_FAILED") from exc
+
+    @classmethod
     def invoice_company_details(cls, user: UserResponse) -> FinancialInvoiceCompanyDetails | None:
         _, employer_id = cls._employer_scope(user)
         try:
@@ -662,6 +910,54 @@ class FinancialService:
             else None
         )
         total_invoiced_currency = next(iter(generated_currencies), None) if len(generated_currencies) <= 1 else None
+        user_id, employer_id = cls._employer_scope(user)
+        as_of_date = datetime.now(timezone.utc).date()
+        receivables = cls._receivables_from_invoices(
+            user_id, employer_id, all_invoices, as_of_date
+        )
+        outstanding_by_currency = receivables.summary.outstanding_by_currency
+        pending_receivables = (
+            float(outstanding_by_currency[0].amount)
+            if len(outstanding_by_currency) == 1
+            else 0.0 if not outstanding_by_currency
+            else None
+        )
+        try:
+            active_vendor_response = (
+                supabase.table("financial_vendors")
+                .select("id", count="exact", head=True)
+                .eq("user_id", user_id)
+                .eq("employer_id", employer_id)
+                .eq("is_active", True)
+                .execute()
+            )
+            active_vendor_count = int(active_vendor_response.count or 0)
+        except Exception as exc:
+            logger.error(
+                "Financial active vendor count failed: user_id=%s exception_type=%s",
+                user_id,
+                type(exc).__name__,
+            )
+            raise FinancialServiceError("FINANCIAL_VENDORS_LOAD_FAILED") from exc
+        try:
+            latest_audit_rows = _rows(
+                supabase.table("financial_audit_runs")
+                .select("id, passed_checks, pass_rate, completed_at")
+                .eq("user_id", user_id)
+                .eq("employer_id", employer_id)
+                .eq("status", "COMPLETED")
+                .order("completed_at", desc=True)
+                .limit(1)
+                .execute()
+            )
+            latest_audit = latest_audit_rows[0] if latest_audit_rows else None
+        except Exception as exc:
+            logger.error(
+                "Financial latest audit summary failed: user_id=%s exception_type=%s",
+                user_id,
+                type(exc).__name__,
+            )
+            raise FinancialServiceError("FINANCIAL_AUDIT_SUMMARY_LOAD_FAILED") from exc
         records = [
             FinancialDashboardRecord(
                 id=str(invoice.id),
@@ -682,12 +978,16 @@ class FinancialService:
                 total_invoiced=float(total_invoiced) if total_invoiced is not None else None,
                 total_invoiced_currency=total_invoiced_currency,
                 total_invoiced_has_multiple_currencies=len(generated_currencies) > 1,
-                # Payment state is not persisted, so receivables cannot be inferred safely.
-                pending_receivables=None,
+                pending_receivables=pending_receivables,
+                pending_receivables_by_currency=outstanding_by_currency,
+                pending_receivable_count=receivables.summary.outstanding_invoice_count,
+                receivables_as_of_date=as_of_date,
                 active_invoices=len(generated),
-                audits_passed=None,
-                audit_pass_rate=None,
-                active_vendors=None,
+                audits_passed=int(latest_audit["passed_checks"]) if latest_audit else None,
+                audit_pass_rate=float(latest_audit["pass_rate"]) if latest_audit and latest_audit["pass_rate"] is not None else None,
+                latest_audit_run_id=latest_audit["id"] if latest_audit else None,
+                latest_audit_completed_at=latest_audit["completed_at"] if latest_audit else None,
+                active_vendors=active_vendor_count,
             ),
             records=records,
         )
