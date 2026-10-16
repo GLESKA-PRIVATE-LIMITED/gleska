@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">GLESKA Employer</string>
+    <string name="title_activity_main">GLESKA Employer</string>
+    <string name="package_name">com.gleska.employer</string>
+    <string name="custom_url_scheme">com.gleska.employer</string>
+</resources>

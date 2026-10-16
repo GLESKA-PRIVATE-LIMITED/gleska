@@ -1,13 +1,13 @@
 import { useEffect, useEffectEvent, useState, type FormEvent } from "react";
-import { ArrowLeft, Eye, EyeOff, LoaderCircle, Mail, Phone } from "lucide-react";
-import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { missingBackendConfiguration, missingMsg91Configuration, missingSupabaseConfiguration } from "../../config/environment";
+import { ArrowLeft, ArrowRight, Building2, Eye, EyeOff, LoaderCircle, Mail, Phone, UserRound } from "lucide-react";
+import { Link, Navigate, useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { appRole, missingBackendConfiguration, missingMsg91Configuration, missingSupabaseConfiguration } from "../../config/environment";
 import { useAuth, errorMessage } from "./AuthProvider";
 import { LanguageSelector, useLanguage } from "./LanguageContext";
 import { getSupabaseClient } from "../../lib/supabase";
-import { type AccountType, type AuthStateResponse } from "../../types/auth";
+import { routeForAuthState, type AccountType, type AuthStateResponse, type UserRole } from "../../types/auth";
 
-type SignupRole = "WORKER";
+type SignupRole = Exclude<UserRole, "ADMIN">;
 type SignupInput = {
   name: string;
   email: string;
@@ -19,7 +19,13 @@ type SignupInput = {
 };
 
 function routeAfterAuth(state: AuthStateResponse, navigate: ReturnType<typeof useNavigate>) {
-  navigate(state.user.role === "WORKER" ? "/worker/dashboard" : "/", { replace: true });
+  navigate(routeForAuthState(state.user.role, state.next_step), { replace: true });
+}
+
+function workerSignupPath(requestedNext: string | null) {
+  const signup = new URLSearchParams({ role: "WORKER", account: "business", mode: "signup" });
+  if (requestedNext) signup.set("next", requestedNext);
+  return `/auth/signin?${signup.toString()}`;
 }
 
 function MobileHeader({ signup = false }: { signup?: boolean }) {
@@ -37,6 +43,10 @@ export function AuthLayout({ children, variant }: { children: React.ReactNode; v
 }
 
 export function WelcomeScreen() {
+  const accountHref = appRole === "WORKER" ? "/worker/auth" : "/employer/auth";
+  const getStartedHref = appRole === "WORKER"
+    ? "/auth/signin?role=WORKER&account=business&mode=signup"
+    : "/auth/role-selection";
   return <main className="welcome-page">
     <div className="welcome-content">
       <header className="welcome-brand" aria-label="GLESKA">
@@ -47,12 +57,65 @@ export function WelcomeScreen() {
         <h1 id="welcome-title">Kaam Milega. Turant.</h1>
         <p>INDIA'S BLUE-COLLAR PROFESSIONALS DESERVE BETTER. GO LESKA MATCHES VERIFIED WORKERS TO REAL JOBS, POWERED BY AI, BUILT FOR FACTORIES AND BUSINESSES.</p>
       </section>
-      <nav className="welcome-actions" aria-label="Worker account actions">
-        <Link className="welcome-primary" to="/worker/auth?mode=signup">Get Started</Link>
-        <Link className="welcome-signin" to="/worker/auth">Already have an account? <strong>Sign in</strong></Link>
+      <nav className="welcome-actions" aria-label="Account actions">
+        <Link className="welcome-primary" to={getStartedHref}>Get Started</Link>
+        <Link className="welcome-signin" to={accountHref}>Already have an account? <strong>Sign in</strong></Link>
       </nav>
     </div>
   </main>;
+}
+
+export function RoleSelectionScreen() {
+  const [params] = useSearchParams();
+  const { t } = useLanguage();
+  const requestedNext = params.get("next");
+  if (appRole === "WORKER") {
+    return <Navigate to={workerSignupPath(requestedNext)} replace />;
+  }
+  const authPath = (role: SignupRole, accountType: AccountType) => {
+    const selection = new URLSearchParams({
+      role,
+      account: accountType === "INDIVIDUAL" ? "individual" : "business",
+      mode: "signup",
+    });
+    if (requestedNext) selection.set("next", requestedNext);
+    return `/auth/signin?${selection.toString()}`;
+  };
+  const choices = [
+    { accountType: "BUSINESS" as const },
+    { accountType: "INDIVIDUAL" as const },
+  ];
+
+  return <AuthLayout>
+    <main className="auth-content role-selection-content">
+      <section className="role-selection-panel" aria-labelledby="role-selection-title">
+        <Link className="text-link role-selection-back" to="/">
+          <ArrowLeft size={16} aria-hidden="true" />
+          {t("signin.backToWelcome")}
+        </Link>
+        <header className="role-selection-heading">
+          <p className="auth-eyebrow">{t("nav.signup")}</p>
+          <h1 id="role-selection-title">{t("signin.whoAreYou")}</h1>
+          <p className="auth-description">{t("signin.roleDescription")}</p>
+        </header>
+        <nav className="account-choice-list" aria-label="Choose your account type">
+          {choices.map(({ accountType }) => {
+            const individual = accountType === "INDIVIDUAL";
+            const Icon = individual ? UserRound : Building2;
+            const title = individual ? t("signin.individualEmployerTitle") : t("signin.businessEmployerTitle");
+            const description = individual
+              ? t("signin.individualEmployerOptionDescription")
+              : t("signin.businessEmployerOptionDescription");
+            return <Link key={accountType} className={`account-choice${!individual ? " account-choice-blue" : ""}`} to={authPath("EMPLOYER", accountType)}>
+              <span className="account-choice-icon" aria-hidden="true"><Icon size={21} /></span>
+              <span className="account-choice-copy"><strong>{title}</strong><span>{description}</span></span>
+              <ArrowRight className="account-choice-arrow" size={20} aria-hidden="true" />
+            </Link>;
+          })}
+        </nav>
+      </section>
+    </main>
+  </AuthLayout>;
 }
 
 function InlineError({ children }: { children: string }) {
@@ -98,31 +161,69 @@ function ConfigurationNotice({ needsSupabase = true, needsMsg91 = false }: { nee
   return <p className="auth-error" role="alert">Authentication is unavailable until the public mobile configuration is set: {missing.join(", ")}.</p>;
 }
 
-export function RoleAuthScreen({ role }: { role: SignupRole }) {
+export function RoleAuthScreen({ role: routeRole = appRole }: { role?: SignupRole } = {}) {
   const [params] = useSearchParams();
-  const accountType: AccountType = "BUSINESS";
+  const selectedRole = params.get("role");
+  const selectedAccount = params.get("account");
+  const hasSelectedRole = selectedRole === "EMPLOYER" || selectedRole === "WORKER";
+  const hasSignupChoice = hasSelectedRole && (
+    selectedRole === "WORKER"
+      ? selectedAccount === "business"
+      : selectedAccount === "business" || selectedAccount === "individual"
+  );
+  const role: SignupRole | undefined = routeRole ?? (
+    hasSelectedRole ? selectedRole : undefined
+  );
+  const accountType: AccountType = params.get("account") === "individual" ? "INDIVIDUAL" : "BUSINESS";
   const isDirectSignup = params.get("mode") === "signup";
   const { t } = useLanguage();
+  const navigate = useNavigate();
+  const selectionParams = new URLSearchParams();
+  const requestedNext = params.get("next");
+  if (requestedNext) selectionParams.set("next", requestedNext);
+  const selectionQuery = selectionParams.toString();
+  const roleSelectionPath = `/auth/role-selection${selectionQuery ? `?${selectionQuery}` : ""}`;
+  if (isDirectSignup && !hasSignupChoice) {
+    if (routeRole === "WORKER") {
+      return <Navigate to={workerSignupPath(requestedNext)} replace />;
+    }
+    return <Navigate to={roleSelectionPath} replace />;
+  }
+  const roleLabel = role === "WORKER"
+    ? t("signin.workerTitle")
+    : role === "EMPLOYER"
+      ? accountType === "INDIVIDUAL" ? t("signin.individualEmployerTitle") : t("signin.businessEmployerTitle")
+      : t("nav.signIn");
   return <AuthLayout variant={isDirectSignup ? "signup" : undefined}>
     <main className="auth-content">
       <section className="auth-card">
-        <p className="auth-eyebrow">{t("signin.workerTitle")}</p>
-        <h1>{isDirectSignup
-          ? t("auth.employeeTitle")
-          : t("nav.signIn")}</h1>
+        <p className="auth-eyebrow">{roleLabel}</p>
+        <h1>{isDirectSignup ? roleLabel : t("nav.signIn")}</h1>
         <p className="auth-description">{isDirectSignup
-          ? t("auth.employeeTitle")
+          ? roleLabel
           : t("auth.securityText")}</p>
-        <AuthForm role={role} accountType={accountType} initialSignup={isDirectSignup} />
+        <AuthForm
+          role={role}
+          accountType={accountType}
+          initialSignup={isDirectSignup}
+          onChooseSignup={() => {
+            if (routeRole !== "WORKER") {
+              navigate(roleSelectionPath);
+              return;
+            }
+            navigate(workerSignupPath(requestedNext));
+          }}
+        />
       </section>
     </main>
   </AuthLayout>;
 }
 
-function AuthForm({ role, accountType, initialSignup = false }: {
+function AuthForm({ role, accountType, initialSignup = false, onChooseSignup }: {
   role: SignupRole | undefined;
   accountType: AccountType;
   initialSignup?: boolean;
+  onChooseSignup: () => void;
 }) {
   const navigate = useNavigate();
   const { t } = useLanguage();
@@ -219,9 +320,9 @@ function AuthForm({ role, accountType, initialSignup = false }: {
     }
     setBusy(true);
     try {
-      routeAfterAuth(await auth.signInWithEmail(email, password, role), navigate);
+      routeAfterAuth(await auth.signInWithEmail(email, password, role, accountType), navigate);
     } catch (error) {
-      setLocalError(errorMessage(error));
+      setLocalError(error instanceof Error ? error.message : errorMessage(error));
     } finally {
       setBusy(false);
     }
@@ -276,10 +377,10 @@ function AuthForm({ role, accountType, initialSignup = false }: {
   };
 
   return <>
-    {!initialSignup && role && <div className="auth-tabs" role="tablist" aria-label="Authentication method">
+    <div className="auth-tabs" role="tablist" aria-label="Authentication method">
       <button type="button" role="tab" aria-selected={!signup} className={!signup ? "active" : ""} onClick={() => { setSignup(false); setOtpPurpose(null); setLocalError(""); }}>Login</button>
-      <button type="button" role="tab" aria-selected={signup} className={signup ? "active" : ""} onClick={() => { setSignup(true); setOtpPurpose(null); setLocalError(""); }}>Sign up</button>
-    </div>}
+      <button type="button" role="tab" aria-selected={signup} className={signup ? "active" : ""} onClick={onChooseSignup}>Sign up</button>
+    </div>
 
     {otpPurpose === "signup" ? <div className="auth-otp-backdrop" role="presentation">
       <section className="auth-otp-dialog" role="dialog" aria-modal="true" aria-labelledby="signup-otp-title">

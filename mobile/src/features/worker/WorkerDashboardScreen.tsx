@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { CheckCircle2, Loader2, MapPin, RefreshCw, User, X } from "lucide-react";
 import { useAuth } from "../auth/AuthProvider";
 import { apiGet, apiPut, ApiError } from "../../lib/api";
+import { useRefreshOnFocus } from "../../lib/useRefreshOnFocus";
 import WorkerMobileShell from "./WorkerMobileShell";
 
 const MAX_LOCATION_ACCURACY_METERS = 1000;
@@ -223,19 +224,13 @@ export default function WorkerDashboardScreen() {
     void Promise.resolve().then(() => Promise.all([loadProfile(), loadAvailableJobs()]));
   }, [isLoading, loadAvailableJobs, loadProfile, user]);
 
-  useEffect(() => {
-    if (!user || user.role !== "WORKER" || isLoading) return;
-    const refresh = () => {
-      void loadProfile();
-      void loadAvailableJobs();
-    };
-    window.addEventListener("focus", refresh);
-    document.addEventListener("visibilitychange", refresh);
-    return () => {
-      window.removeEventListener("focus", refresh);
-      document.removeEventListener("visibilitychange", refresh);
-    };
-  }, [isLoading, loadAvailableJobs, loadProfile, user]);
+
+  useRefreshOnFocus(
+    async () => {
+      await Promise.all([loadProfile(), loadAvailableJobs()]);
+    },
+    !isLoading && user?.role === "WORKER",
+  );
 
   useEffect(() => {
     if (
@@ -456,7 +451,7 @@ export default function WorkerDashboardScreen() {
               <p className="auth-eyebrow">Matching</p>
               <h2>Nearby work</h2>
             </div>
-            <span>Showing up to 3</span>
+            <Link to="/worker/jobs" className="worker-profile-link">View all jobs</Link>
           </div>
 
           <SectionState

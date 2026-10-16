@@ -593,6 +593,40 @@ button:disabled {
   font-size: 1.5rem;
 }
 
+.role-selection-content {
+  align-items: flex-start;
+  padding-top: max(var(--space-6), env(safe-area-inset-top));
+}
+
+.role-selection-panel {
+  width: 100%;
+  max-width: 28rem;
+  margin: auto;
+}
+
+.role-selection-back {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-6);
+  text-decoration: none;
+}
+
+.role-selection-heading {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.role-selection-heading h1 {
+  margin: 0;
+  font-size: 1.75rem;
+  line-height: 1.2;
+}
+
+.role-selection-heading .auth-description {
+  margin-bottom: var(--space-2);
+}
+
 .auth-status-card {
   text-align: center;
 }
@@ -4319,5 +4353,516 @@ button:disabled {
 
   .welcome-message {
     padding-block: 0.75rem;
+  }
+}
+
+.employer-onboarding-content {
+  display: block;
+  max-width: 48rem;
+  padding-top: var(--space-4);
+}
+
+.employer-onboarding-card {
+  width: 100%;
+  border: 1px solid rgb(226 232 240 / 90%);
+  border-radius: 1.25rem;
+  background: rgb(255 255 255 / 96%);
+  padding: var(--space-4);
+  box-shadow: 0 12px 30px rgb(15 23 42 / 7%);
+}
+
+.employer-onboarding-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  border-bottom: 1px solid #f1f5f9;
+  padding-bottom: var(--space-4);
+}
+
+.employer-onboarding-header h1 {
+  margin: var(--space-2) 0;
+  font-size: 1.4rem;
+  line-height: 1.25;
+}
+
+.employer-onboarding-header .auth-description strong {
+  color: var(--color-primary);
+}
+
+.employer-onboarding-change {
+  flex: none;
+  min-height: 2.5rem;
+  border: 0;
+  background: transparent;
+  padding: 0.25rem;
+  color: var(--color-primary);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.employer-onboarding-progress {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin-block: var(--space-5);
+}
+
+.employer-onboarding-progress-item {
+  display: grid;
+  justify-items: center;
+  gap: 0.4rem;
+  color: #94a3b8;
+  text-align: center;
+}
+
+.employer-onboarding-progress-item > span {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  border-radius: 50%;
+  background: #f1f5f9;
+  color: #64748b;
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.employer-onboarding-progress-item small {
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1rem;
+}
+
+.employer-onboarding-progress-item.current,
+.employer-onboarding-progress-item.complete {
+  color: #2563eb;
+}
+
+.employer-onboarding-progress-item.current > span,
+.employer-onboarding-progress-item.complete > span {
+  background: #2563eb;
+  color: #fff;
+  box-shadow: 0 0 0 4px #dbeafe;
+}
+
+.employer-onboarding-alert {
+  margin-block: var(--space-4);
+}
+
+.employer-onboarding-load-retry {
+  display: grid;
+  gap: var(--space-3);
+  border: 1px solid #fecdd3;
+  border-radius: 0.875rem;
+  background: #fff1f2;
+  padding: var(--space-4);
+}
+
+.employer-onboarding-load-retry p {
+  margin: 0;
+  color: #9f1239;
+  font-size: 0.8rem;
+  line-height: 1.3rem;
+}
+
+.employer-onboarding-load-retry .auth-secondary {
+  width: auto;
+}
+
+.employer-onboarding-type-list,
+.employer-onboarding-form {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.employer-onboarding-type-card {
+  display: flex;
+  width: 100%;
+  min-height: 5rem;
+  align-items: center;
+  gap: var(--space-3);
+  border: 1px solid #e2e8f0;
+  border-radius: 0.875rem;
+  background: #f8fafc;
+  padding: var(--space-3);
+  text-align: left;
+}
+
+.employer-onboarding-type-card:disabled {
+  opacity: 0.6;
+}
+
+.employer-onboarding-type-card > span:nth-child(2) {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 0.25rem;
+}
+
+.employer-onboarding-type-card strong {
+  color: #0f172a;
+  font-size: 0.875rem;
+}
+
+.employer-onboarding-type-card small {
+  color: #64748b;
+  font-size: 0.75rem;
+  line-height: 1.1rem;
+}
+
+.employer-onboarding-type-card > svg:last-child {
+  flex: none;
+  color: #2563eb;
+}
+
+.employer-onboarding-type-icon {
+  display: grid;
+  width: 2.75rem;
+  height: 2.75rem;
+  flex: none;
+  place-items: center;
+  border-radius: 0.75rem;
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+.employer-onboarding-form h2,
+.employer-onboarding-individual h2 {
+  margin: 0 0 var(--space-1);
+  color: #0f172a;
+  font-size: 1rem;
+  line-height: 1.4;
+}
+
+.employer-onboarding-field {
+  display: grid;
+  min-width: 0;
+  gap: 0.4rem;
+}
+
+.employer-onboarding-field > span,
+.employer-onboarding-field > label > span {
+  color: #334155;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.employer-onboarding-field > label {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.employer-onboarding-field .auth-input {
+  min-height: 3rem;
+  border-radius: 0.75rem;
+  font-size: 0.9rem;
+}
+
+.employer-onboarding-field-error {
+  color: #be123c;
+  font-size: 0.72rem;
+  line-height: 1.1rem;
+}
+
+.employer-onboarding-custom-option {
+  margin-top: 0.45rem;
+}
+
+.employer-onboarding-section-title {
+  grid-column: 1 / -1;
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 0.5rem;
+  color: #64748b;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.employer-onboarding-actions {
+  display: flex;
+  grid-column: 1 / -1;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+}
+
+.employer-onboarding-actions > button {
+  width: auto;
+  min-width: 0;
+  flex: 1;
+  min-height: 3rem;
+  border-radius: 0.875rem;
+  font-size: 0.8125rem;
+}
+
+.employer-onboarding-actions .auth-primary {
+  gap: 0.4rem;
+}
+
+.employer-onboarding-location-search {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.employer-onboarding-location-search .auth-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.employer-onboarding-location-search .auth-secondary {
+  width: auto;
+  flex: none;
+  gap: 0.4rem;
+}
+
+.employer-onboarding-location-selected,
+.employer-onboarding-hint {
+  color: #64748b;
+  font-size: 0.72rem;
+  line-height: 1.1rem;
+}
+
+.employer-onboarding-location-results {
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  background: #fff;
+}
+
+.employer-onboarding-location-results button {
+  display: flex;
+  width: 100%;
+  min-height: 3.25rem;
+  align-items: center;
+  gap: 0.65rem;
+  border: 0;
+  border-bottom: 1px solid #f1f5f9;
+  background: #fff;
+  padding: 0.65rem;
+  text-align: left;
+}
+
+.employer-onboarding-location-results button:last-child {
+  border-bottom: 0;
+}
+
+.employer-onboarding-location-results button > svg {
+  flex: none;
+  color: #2563eb;
+}
+
+.employer-onboarding-location-results button > span {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.employer-onboarding-location-results strong {
+  color: #334155;
+  font-size: 0.78rem;
+}
+
+.employer-onboarding-location-results small {
+  color: #64748b;
+  font-size: 0.7rem;
+}
+
+.employer-onboarding-verification-panel,
+.employer-onboarding-review,
+.employer-onboarding-individual {
+  display: grid;
+  gap: var(--space-3);
+  border: 1px solid #e2e8f0;
+  border-radius: 1rem;
+  background: #fff;
+  padding: var(--space-4);
+}
+
+.employer-onboarding-verification-panel h3,
+.employer-onboarding-review h3 {
+  margin: 0;
+  color: #334155;
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.employer-onboarding-verification-panel > p,
+.employer-onboarding-individual p {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.78rem;
+  line-height: 1.35rem;
+}
+
+.employer-onboarding-save-identity {
+  width: 100%;
+}
+
+.employer-onboarding-verification-row {
+  display: grid;
+  gap: 0.65rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  padding: var(--space-3);
+}
+
+.employer-onboarding-verification-row > div:first-child {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.employer-onboarding-verification-row strong {
+  color: #0f172a;
+  font-size: 0.82rem;
+}
+
+.employer-onboarding-verification-row small {
+  color: #64748b;
+  font-size: 0.72rem;
+}
+
+.employer-onboarding-verification-row small.verified {
+  color: #059669;
+  font-weight: 700;
+}
+
+.employer-onboarding-verification-row small.failed {
+  color: #be123c;
+  font-weight: 700;
+}
+
+.employer-onboarding-verify-button {
+  display: inline-flex;
+  width: 100%;
+  min-height: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  border: 1px solid #bfdbfe;
+  border-radius: 0.75rem;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.employer-onboarding-verify-button:disabled {
+  opacity: 0.55;
+}
+
+.employer-onboarding-otp-row {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.employer-onboarding-otp-row .auth-input {
+  min-width: 0;
+  flex: 1;
+}
+
+.employer-onboarding-otp-row .auth-secondary {
+  width: auto;
+  flex: none;
+  gap: 0.35rem;
+}
+
+.employer-onboarding-review {
+  background: #f8fafc;
+}
+
+.employer-onboarding-review > div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  border-bottom: 1px solid #e2e8f0;
+  padding-block: 0.35rem;
+  font-size: 0.75rem;
+}
+
+.employer-onboarding-review > div:last-child {
+  border-bottom: 0;
+}
+
+.employer-onboarding-review span {
+  color: #64748b;
+}
+
+.employer-onboarding-review strong {
+  max-width: 60%;
+  overflow-wrap: anywhere;
+  color: #334155;
+  text-align: right;
+}
+
+.employer-onboarding-info {
+  margin: 0;
+  border: 1px solid #bfdbfe;
+  border-radius: 0.75rem;
+  background: #eff6ff;
+  padding: var(--space-3);
+  color: #1e40af;
+  font-size: 0.78rem;
+  line-height: 1.25rem;
+}
+
+.employer-onboarding-individual {
+  margin-top: var(--space-5);
+  background: #f8fafc;
+}
+
+.employer-onboarding-individual .auth-secondary {
+  width: auto;
+}
+
+.employer-onboarding-loading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: #64748b;
+  font-size: 0.875rem;
+}
+
+.employer-onboarding-spinner {
+  flex: none;
+  animation: employer-onboarding-spin 1s linear infinite;
+}
+
+@keyframes employer-onboarding-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (min-width: 38rem) {
+  .employer-onboarding-card {
+    padding: var(--space-6);
+  }
+
+  .employer-onboarding-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .employer-onboarding-form > h2,
+  .employer-onboarding-form > .employer-onboarding-section-title,
+  .employer-onboarding-form > .employer-onboarding-verification-panel,
+  .employer-onboarding-form > .employer-onboarding-review,
+  .employer-onboarding-form > .employer-onboarding-info,
+  .employer-onboarding-form > .employer-onboarding-save-identity,
+  .employer-onboarding-form > .employer-onboarding-actions {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 23rem) {
+  .employer-onboarding-header {
+    flex-direction: column;
+  }
+
+  .employer-onboarding-change {
+    align-self: flex-start;
+  }
+
+  .employer-onboarding-actions {
+    flex-direction: column-reverse;
   }
 }

@@ -48,9 +48,25 @@ export default function WorkerJobsPage() {
   }, [user]);
 
   React.useEffect(() => {
-    if (!isLoading && (!user || user.role !== "WORKER")) router.replace("/worker/auth");
-    void load();
+    if (isLoading) return;
+    if (!user || user.role !== "WORKER") {
+      router.replace("/worker/auth");
+      return;
+    }
+    void Promise.resolve().then(load);
   }, [isLoading, load, router, user]);
+
+  React.useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState === "visible") void load();
+    };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [load]);
 
   return (
     <AccountManagementShell kind="worker" name={user?.name || "Worker"} accountLabel="Worker" profileHref="/worker/profile" onLogout={() => void logout()}>
@@ -95,7 +111,7 @@ export default function WorkerJobsPage() {
               <article key={job.job_id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <h2 className="text-lg font-bold">{job.title}</h2>
+                    <h2 className="text-lg font-bold"><Link href={`/worker/jobs/${encodeURIComponent(job.job_id)}`}>{job.title}</Link></h2>
                     <p className="mt-1 text-sm text-slate-500">{job.employer_name}</p>
                   </div>
                   <MapPin size={20} className="shrink-0 text-blue-700" />
@@ -106,7 +122,7 @@ export default function WorkerJobsPage() {
                   <p><span className="block text-xs text-slate-400">Experience</span><strong>{job.min_experience == null ? "Any" : `${job.min_experience} yrs`}</strong></p>
                   <p><span className="block text-xs text-slate-400">Workers</span><strong>{job.headcount}</strong></p>
                 </div>
-                <p className="mt-5 text-xs text-slate-500">Applications and job acceptance are managed by the existing matching workflow.</p>
+                <Link href={`/worker/jobs/${encodeURIComponent(job.job_id)}`} className="mt-5 inline-flex min-h-10 items-center rounded-xl bg-blue-700 px-4 text-sm font-bold text-white hover:bg-blue-800">View details</Link>
               </article>
             ))}
           </div>

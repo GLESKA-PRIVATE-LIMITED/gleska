@@ -5,6 +5,7 @@ import { AlertCircle, Check, Eye, Loader2, UploadCloud, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthProvider";
 import { apiGet, apiPost, apiRequest } from "../../lib/api";
+import { useRefreshOnFocus } from "../../lib/useRefreshOnFocus";
 import { getSupabaseClient } from "../../lib/supabase";
 import WorkerMobileShell from "./WorkerMobileShell";
 
@@ -105,8 +106,14 @@ export default function WorkerDocumentsScreen() {
       navigate("/worker/auth", { replace: true });
       return;
     }
-    void loadDocuments();
+    void Promise.resolve().then(loadDocuments);
   }, [authLoading, loadDocuments, navigate, user]);
+
+  useRefreshOnFocus(
+    loadDocuments,
+    !authLoading && user?.role === "WORKER" &&
+      !Object.values(progressByType).some((progress) => progress !== undefined && progress.progress < 100),
+  );
 
   const setProgress = (type: DocumentType, progress: number) => {
     setProgressByType((current) => ({ ...current, [type]: { progress } }));
@@ -168,7 +175,8 @@ export default function WorkerDocumentsScreen() {
       });
       setFeedback({ kind: "error", message: errorMessage(error, "Upload failed.") });
     } finally {
-      inputRefs.current[documentType] && (inputRefs.current[documentType]!.value = "");
+      const input = inputRefs.current[documentType];
+      if (input) input.value = "";
       window.setTimeout(() => {
         setProgressByType((current) => {
           const next = { ...current };

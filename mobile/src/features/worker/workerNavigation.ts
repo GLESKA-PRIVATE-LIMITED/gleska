@@ -1,4 +1,5 @@
 import {
+  BriefcaseBusiness,
   Building2,
   Clock3,
   CreditCard,
@@ -11,6 +12,7 @@ import {
 
 export const workerNavigation = [
   { href: "/worker/dashboard", label: "Dashboard", icon: LayoutDashboard, section: "pages", screen: "dashboard" },
+  { href: "/worker/jobs", label: "Jobs near you", icon: BriefcaseBusiness, section: "pages", screen: "jobs" },
   { href: "/worker/attendance", label: "Attendance", icon: Clock3, section: "pages", screen: "attendance" },
   { href: "/worker/companies-worked", label: "Companies Worked", icon: Building2, section: "pages", screen: "companies-worked" },
   { href: "/worker/documents", label: "Documents", icon: FileText, section: "pages", screen: "documents" },

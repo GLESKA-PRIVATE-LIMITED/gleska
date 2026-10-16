@@ -3,6 +3,7 @@ import { Building2, CheckCircle2, Loader2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthProvider";
 import { apiGet } from "../../lib/api";
+import { useRefreshOnFocus } from "../../lib/useRefreshOnFocus";
 import WorkerMobileShell from "./WorkerMobileShell";
 
 type WorkRecord = {
@@ -54,8 +55,10 @@ export default function WorkerCompaniesWorkedScreen() {
       return;
     }
     if (!user || isLoading) return;
-    void loadRecords();
+    void Promise.resolve().then(loadRecords);
   }, [isLoading, loadRecords, navigate, user]);
+
+  useRefreshOnFocus(loadRecords, !isLoading && user?.role === "WORKER");
 
   return (
     <WorkerMobileShell>

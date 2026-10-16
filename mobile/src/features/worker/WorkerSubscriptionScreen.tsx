@@ -3,6 +3,7 @@ import { AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthProvider";
 import { apiGet, apiPost } from "../../lib/api";
+import { useRefreshOnFocus } from "../../lib/useRefreshOnFocus";
 import WorkerMobileShell from "./WorkerMobileShell";
 
 declare global {
@@ -108,7 +109,7 @@ export default function WorkerSubscriptionScreen() {
       return;
     }
     if (!user || isLoading) return;
-    void loadProfile();
+    void Promise.resolve().then(loadProfile);
   }, [isLoading, loadProfile, navigate, user]);
 
   useEffect(() => {
@@ -119,6 +120,8 @@ export default function WorkerSubscriptionScreen() {
     verifiedOrderRef.current = orderId;
     void verifyReturnedOrder(orderId);
   }, [isLoading, user, verifyReturnedOrder]);
+
+  useRefreshOnFocus(loadProfile, !isLoading && user?.role === "WORKER" && !paymentLoading);
 
   const handleSubscribe = async () => {
     if (paymentLoading) return;

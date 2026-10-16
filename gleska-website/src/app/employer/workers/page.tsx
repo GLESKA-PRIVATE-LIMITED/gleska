@@ -1,9 +1,8 @@
 "use client";
 
 import React from "react";
-import Link from "next/link";
 import Image from "next/image";
-import { ArrowLeft, BadgeCheck, ChevronLeft, ChevronRight, Loader2, Search, SlidersHorizontal, Users, X } from "lucide-react";
+import { BadgeCheck, ChevronLeft, ChevronRight, Loader2, Search, SlidersHorizontal, Users, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import apiClient from "@/lib/api";
@@ -197,7 +196,6 @@ export default function EmployerWorkersPage() {
               <h1 className="mt-2 text-3xl font-bold text-slate-900 dark:text-white sm:text-4xl">Work history</h1>
               <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">Workers engaged through your jobs and their recorded work details.</p>
             </div>
-            <Link href="/employer/dashboard" className="inline-flex items-center gap-2 self-start text-sm font-bold text-blue-700 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200 sm:self-auto"><ArrowLeft size={16} /> Back to dashboard</Link>
           </header>
 
           <form onSubmit={submitFilters} className="mb-7 rounded-2xl border border-slate-200 bg-white p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900 sm:p-5">

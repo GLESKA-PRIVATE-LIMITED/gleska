@@ -7,10 +7,11 @@ Gleska is a platform connecting workers with employers through worker profiles, 
 ```text
 gleska/
 ├── gleska-website/
-│   └── Next.js frontend
-│
+│   └── Single Next.js website with role-based worker and employer flows
+├── mobile/
+│   └── Shared source that builds separate GLESKA Worker and GLESKA Employer apps
 ├── gleska-backend-f/
-│   └── FastAPI backend
+│   └── FastAPI backend shared by the website and both mobile apps
 │
 ├── .gitignore
 └── README.md
@@ -18,7 +19,7 @@ gleska/
 
 ## Frontend
 
-The frontend is a Next.js application written in TypeScript. It uses Tailwind CSS, Supabase authentication, Axios-based backend API integration, and separate worker and employer dashboard, onboarding, profile, attendance, and worker-management routes.
+The website is one Next.js application written in TypeScript. It uses Tailwind CSS, Supabase authentication, Axios-based backend API integration, and role-specific worker and employer routes.
 
 ```bash
 cd gleska-website
@@ -32,6 +33,8 @@ Validation commands:
 npm run lint
 npx tsc --noEmit
 ```
+
+The mobile worker and employer apps have separate Android application IDs, navigation, and role-specific route trees. See [mobile/README.md](./mobile/README.md) for target build, Capacitor sync, OAuth redirect, and Android flavor commands.
 
 ## Backend
 

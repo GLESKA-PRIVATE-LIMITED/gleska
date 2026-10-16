@@ -1,75 +1,54 @@
-# React + TypeScript + Vite
+# GLESKA mobile apps
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The mobile source is shared where appropriate, but Android produces two independent apps:
 
-Currently, two official plugins are available:
+- **GLESKA Worker** (`com.gleska.worker`) has worker-only authentication, navigation, dashboards, and workflows.
+- **GLESKA Employer** (`com.gleska.employer`) has employer-only authentication, navigation, dashboards, and workflows.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+Each app build selects its own route tree and app-specific OAuth callback. Both use the same configured GLESKA API, Supabase authentication, database, and persisted records. The mobile clients use the authenticated backend API; they do not bypass backend authorization or Supabase RLS.
 
-## React Compiler
+## Configure
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Copy `.env.example` to `.env` and configure the same reachable backend URL, Supabase URL/public anon key, and MSG91 public widget settings used by the website. Do not put service-role credentials in the mobile environment. If `VITE_ANDROID_OAUTH_REDIRECT_URL` is left empty, the build selects the redirect URI for its target.
 
-## Expanding the ESLint configuration
+Add both callback URIs to the Supabase Auth redirect allow-list:
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
+```text
+com.gleska.worker://auth/callback
+com.gleska.employer://auth/callback
 ```
 
-You can also install [eslint-plugin-react-x](https://npmx.dev/package/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://npmx.dev/package/eslint-plugin-react-dom) for React-specific lint rules:
+For a physical Android device, `VITE_API_BASE_URL` must be reachable from the device; the Android emulator's `localhost` API hostname is mapped to `10.0.2.2`.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Run and build
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm run dev:worker
+npm run dev:employer
+npm run build:worker
+npm run build:employer
+```
 
+Build and sync the web assets for the selected Android app before building its matching Gradle flavor:
+
+```bash
+npm run sync:worker
+cd android
+.\gradlew.bat assembleWorkerDebug
+```
+
+```bash
+npm run sync:employer
+cd android
+.\gradlew.bat assembleEmployerDebug
+```
+
+The target-specific Capacitor sync and Gradle product flavors assign distinct Android application IDs, launcher names, and OAuth schemes. Build and sync one target at a time because both target builds write their respective web assets to `dist`.
+
+## Validation
+
+```bash
+npm run lint
+npm run build:worker
+npm run build:employer
 ```

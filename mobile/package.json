@@ -4,8 +4,14 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
+    "dev": "vite --mode worker",
+    "dev:worker": "vite --mode worker",
+    "dev:employer": "vite --mode employer",
+    "build": "tsc -b && vite build --mode worker",
+    "build:worker": "tsc -b && vite build --mode worker",
+    "build:employer": "tsc -b && vite build --mode employer",
+    "sync:worker": "npm run build:worker && node scripts/capacitor-sync.mjs worker",
+    "sync:employer": "npm run build:employer && node scripts/capacitor-sync.mjs employer",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run"

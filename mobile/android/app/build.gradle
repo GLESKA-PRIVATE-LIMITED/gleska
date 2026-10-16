@@ -16,6 +16,19 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    flavorDimensions "gleskaApp"
+    productFlavors {
+        worker {
+            dimension "gleskaApp"
+            applicationId "com.gleska.worker"
+            manifestPlaceholders = [appAuthScheme: "com.gleska.worker"]
+        }
+        employer {
+            dimension "gleskaApp"
+            applicationId "com.gleska.employer"
+            manifestPlaceholders = [appAuthScheme: "com.gleska.employer"]
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false

@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth, errorMessage } from "../auth/AuthProvider";
 import { useLanguage } from "../auth/LanguageContext";
 import { apiGet, apiPost, apiPut } from "../../lib/api";
+import { useRefreshOnFocus } from "../../lib/useRefreshOnFocus";
 import { getSupabaseClient } from "../../lib/supabase";
 import WorkerMobileShell from "./WorkerMobileShell";
 
@@ -99,6 +100,9 @@ export default function WorkerProfileScreen() {
     }
     void Promise.resolve().then(loadProfile);
   }, [auth.isLoading, auth.user, loadProfile, navigate]);
+
+  useRefreshOnFocus(loadProfile, !auth.isLoading && auth.user?.role === "WORKER" &&
+    !editingPersonal && !editingAddress && !editingProfessional && !saving);
 
   const change = <K extends keyof WorkerProfile>(key: K, value: WorkerProfile[K]) => {
     setProfile((current) => current ? { ...current, [key]: value } : current);

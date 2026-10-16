@@ -107,6 +107,28 @@ export default function WorkerProfilePage() {
     if (!isLoading && user?.role === "WORKER") void Promise.resolve().then(loadProfile);
   }, [isLoading, loadProfile, router, user]);
 
+  useEffect(() => {
+    if (isLoading || user?.role !== "WORKER") return;
+    const refresh = () => {
+      if (
+        document.visibilityState === "visible" &&
+        !saving &&
+        !isPopulatingPermanentAddress &&
+        !isEditingPersonal &&
+        !isEditingAddress &&
+        !isEditingProfessional
+      ) {
+        void loadProfile();
+      }
+    };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [isEditingAddress, isEditingPersonal, isEditingProfessional, isLoading, isPopulatingPermanentAddress, loadProfile, saving, user]);
+
   // Location handlers
   const selectLocation = (location: LocationSelection) => {
     setProfile((current) => ({

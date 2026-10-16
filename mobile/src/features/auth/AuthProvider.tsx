@@ -27,7 +27,7 @@ interface AuthContextValue {
   isAuthenticated: boolean;
   error: string;
   refreshAuth: () => Promise<AuthStateResponse>;
-  signInWithEmail: (email: string, password: string, role?: Exclude<UserRole, "ADMIN">) => Promise<AuthStateResponse>;
+  signInWithEmail: (email: string, password: string, role?: Exclude<UserRole, "ADMIN">, accountType?: AccountType) => Promise<AuthStateResponse>;
   sendLoginOtp: (mobile: string) => Promise<{ requestId: string | null }>;
   signInWithMobileOtp: (mobile: string, otp: string) => Promise<AuthStateResponse>;
   beginSignup: (input: SignupInput) => Promise<{ requestId: string | null }>;
@@ -68,7 +68,45 @@ export function errorMessage(error: unknown): string {
   return otpUserMessage(error, "auth");
 }
 
-function errorMessageForLogin(error: unknown): string {
+export function errorMessageForEmailLogin(error: unknown): string {
+  if (error instanceof SignupFlowError) return error.message;
+  const errorRecord = typeof error === "object" && error !== null ? error as Record<string, unknown> : null;
+  const detail = errorRecord && "detail" in errorRecord
+    ? errorRecord.detail
+    : error instanceof Error
+      ? error.message
+      : undefined;
+  const status = typeof errorRecord?.status === "number" ? errorRecord.status : undefined;
+  if (detail === "User inactive") return "User inactive";
+  const text = typeof detail === "string"
+    ? detail
+    : error instanceof Error
+      ? error.message
+      : "";
+  const normalized = text.toLowerCase();
+  if (/invalid login credentials|invalid_credentials|email or password/.test(normalized)) {
+    return "The email or password is incorrect. Check your sign-in details and try again.";
+  }
+  if (normalized === "email not found. please register first.") {
+    return "Email not found. Please register first.";
+  }
+  if (/role_conflict|admin_role_unauthorized/.test(normalized)) {
+    return "This account cannot use the selected account type. Sign in with the correct account.";
+  }
+  if (/network|timeout|timed out|could not connect|connection/.test(normalized)) {
+    return "Could not connect to GLESKA. Check your connection and try again.";
+  }
+  if (/configuration|service unavailable|temporarily unavailable/.test(normalized) ||
+    (status !== undefined && status >= 500)) {
+    return "Sign-in is temporarily unavailable. Please try again later.";
+  }
+  if (status === 401) {
+    return "The email or password is incorrect. Check your sign-in details and try again.";
+  }
+  return text || "Unable to sign in. Check your details and try again.";
+}
+
+function errorMessageForMobileLogin(error: unknown): string {
   const detail = error instanceof ApiError ? error.detail : error instanceof Error ? error.message : undefined;
   if (detail === "User inactive") return "User inactive";
   return otpUserMessage(error, "verify");
@@ -109,7 +147,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await registerMobileSession();
 
     let state = await apiGet<AuthStateResponse>("/api/v1/auth/me");
-    if (role === "EMPLOYER" && state.user.role === "EMPLOYER" && accountType === "INDIVIDUAL" && !state.user.employer_type) {
+    if (intent === "provision" && role === "EMPLOYER" && state.user.role === "EMPLOYER" && accountType === "INDIVIDUAL" && !state.user.employer_type) {
       await apiPost("/api/v1/employers/onboarding/type", { employer_type: "INDIVIDUAL" });
       state = await apiGet<AuthStateResponse>("/api/v1/auth/me");
     }
@@ -203,7 +241,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const signInWithEmail = async (email: string, password: string, role?: Exclude<UserRole, "ADMIN">) => {
+  const signInWithEmail = async (email: string, password: string, role?: Exclude<UserRole, "ADMIN">, accountType: AccountType = "BUSINESS") => {
     setError("");
     if (missingSupabaseConfiguration()) throw new Error("Supabase is not configured for this build.");
     if (missingBackendConfiguration()) throw new Error("The GLESKA API URL is not configured for this build.");
@@ -223,12 +261,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
       if (signInError) throw signInError;
       setIsLoading(true);
-      return await provisionAndRestore(role, "", "BUSINESS", "login");
+      return await provisionAndRestore(role, "", accountType, "login");
     } catch (authError) {
       await getSupabaseClient().auth.signOut();
       setUser(null);
       setNextStep(null);
-      const message = errorMessageForLogin(authError);
+      const message = errorMessageForEmailLogin(authError);
       setError(message);
       throw new Error(message);
     } finally {
@@ -265,7 +303,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return await refreshAuth();
     } catch (authError) {
       if (backendLoginSucceeded) await logout();
-      const message = errorMessageForLogin(authError);
+      const message = errorMessageForMobileLogin(authError);
       setError(message);
       throw new Error(message);
     } finally {

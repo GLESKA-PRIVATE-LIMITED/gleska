@@ -262,6 +262,7 @@ export default function EmployerDashboard() {
   const [isSiteSaving, setIsSiteSaving] = React.useState(false);
   const siteLocationAcquisitionRef = React.useRef<AbortController | null>(null);
   const [jobs, setJobs] = React.useState<Job[]>([]);
+  const [dashboardReloadToken, setDashboardReloadToken] = React.useState(0);
   const [availableWorkerCount, setAvailableWorkerCount] = React.useState(0);
   const [activeWorkerCount, setActiveWorkerCount] = React.useState(0);
   const [manualJobState, setManualJobState] = React.useState<ManualJobFormState>({ required_skills: [] });
@@ -754,17 +755,25 @@ export default function EmployerDashboard() {
     };
 
     loadJobs();
-  }, [isLoading, loadAvailableWorkerCount, loadEmployerProfile, user]);
+  }, [dashboardReloadToken, isLoading, loadAvailableWorkerCount, loadEmployerProfile, user]);
 
   useEffect(() => {
     if (isLoading || !user || user.role !== "EMPLOYER") return;
-    window.addEventListener("focus", loadEmployerProfile);
-    document.addEventListener("visibilitychange", loadEmployerProfile);
-    return () => {
-      window.removeEventListener("focus", loadEmployerProfile);
-      document.removeEventListener("visibilitychange", loadEmployerProfile);
+    let lastRefreshAt = 0;
+    const refreshDashboard = () => {
+      if (document.visibilityState === "hidden") return;
+      const now = Date.now();
+      if (now - lastRefreshAt < 1000) return;
+      lastRefreshAt = now;
+      setDashboardReloadToken((current) => current + 1);
     };
-  }, [isLoading, loadEmployerProfile, user]);
+    window.addEventListener("focus", refreshDashboard);
+    document.addEventListener("visibilitychange", refreshDashboard);
+    return () => {
+      window.removeEventListener("focus", refreshDashboard);
+      document.removeEventListener("visibilitychange", refreshDashboard);
+    };
+  }, [isLoading, user]);
 
   // Handle return from Cashfree checkout for Individual Commission
   React.useEffect(() => {

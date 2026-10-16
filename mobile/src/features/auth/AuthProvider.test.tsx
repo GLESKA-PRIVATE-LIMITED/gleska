@@ -1,6 +1,6 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AuthProvider, errorMessage, useAuth } from "./AuthProvider";
+import { AuthProvider, errorMessage, errorMessageForEmailLogin, useAuth } from "./AuthProvider";
 import { OtpVerificationError, SignupFlowError } from "../../lib/auth-errors";
 
 const mocks = vi.hoisted(() => ({
@@ -242,6 +242,21 @@ describe("mobile OTP login recovery", () => {
     expect(result.current.user).toEqual(activeUser);
     expect(result.current.isAuthenticated).toBe(true);
     expect(mocks.clearSessionKey).not.toHaveBeenCalled();
+  });
+});
+
+describe("mobile email login errors", () => {
+  it("does not label email sign-in service errors as OTP outages", () => {
+    const message = errorMessageForEmailLogin(new ApiError("MSG91_SERVICE_UNAVAILABLE", 503, "MSG91_SERVICE_UNAVAILABLE"));
+
+    expect(message).toBe("Sign-in is temporarily unavailable. Please try again later.");
+    expect(message.toLowerCase()).not.toContain("otp");
+  });
+
+  it("preserves the email/password credential error", () => {
+    expect(errorMessageForEmailLogin(new Error("Invalid login credentials"))).toBe(
+      "The email or password is incorrect. Check your sign-in details and try again.",
+    );
   });
 });
 

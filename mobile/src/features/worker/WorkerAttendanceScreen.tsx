@@ -3,6 +3,7 @@ import { Clock3, MapPin, RefreshCw } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthProvider";
 import { ApiError, apiGet, apiPost } from "../../lib/api";
+import { useRefreshOnFocus } from "../../lib/useRefreshOnFocus";
 import WorkerMobileShell from "./WorkerMobileShell";
 
 type AttendanceStatus = "PRESENT" | "LATE" | "ABSENT";
@@ -137,8 +138,10 @@ export default function WorkerAttendanceScreen() {
     }
     if (!user || isLoading) return;
 
-    void loadAttendance();
+    void Promise.resolve().then(loadAttendance);
   }, [isLoading, loadAttendance, navigate, user]);
+
+  useRefreshOnFocus(loadAttendance, !isLoading && user?.role === "WORKER" && !action);
 
   const act = async (kind: "check-in" | "check-out") => {
     if (action) return;
