@@ -6,10 +6,10 @@ from uuid import UUID
 
 from app.core.security import require_employer
 from app.schemas.auth import UserResponse
-from app.schemas.job import JobCreate, JobDetailsResponse, JobMatchAcceptRequest, JobMatchAcceptResponse, JobMatchSummary, JobMatchesResponse, JobResponse
+from app.schemas.job import JobCreate, JobDetailsResponse, JobMatchAcceptRequest, JobMatchAcceptResponse, JobMatchRejectResponse, JobMatchSummary, JobMatchesResponse, JobResponse
 from app.schemas.job_extraction import JobExtractionRequest, JobExtractionResponse
 from app.schemas.job_assistant import JobAssistantCreateRequest, JobAssistantMessageRequest, JobAssistantResponse, JobAssistantStateUpdateRequest, JobAssistantStateUpdateResponse
-from app.schemas.hiring_agent import HiringAgentConversationResponse, HiringAgentCreateRequest, HiringAgentMessageRequest, HiringAgentResponse
+from app.schemas.hiring_agent import HiringAgentConversationResponse, HiringAgentCreateRequest, HiringAgentDiscoveryRequest, HiringAgentMessageRequest, HiringAgentResponse
 from app.services.job_assistant_service import JobAssistantService
 from app.services.hiring_agent_service import HiringAgentConversationError, HiringAgentService
 from app.services.job_service import JobLifecycleError, JobNotFound, JobPaymentRequired, JobService
@@ -48,6 +48,36 @@ async def process_hiring_agent_message(
     except Exception as exc:
         logger.exception("Hiring agent message processing failed: user_id=%s", user.id)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="HIRING_AGENT_FAILED") from exc
+
+
+@router.post(
+    "/assistant/agent/discover",
+    response_model=HiringAgentConversationResponse,
+)
+async def discover_hiring_agent_candidates(
+    request: HiringAgentDiscoveryRequest,
+    user: UserResponse = Depends(require_employer),
+):
+    try:
+        return HiringAgentService.discover_candidates(user, request)
+    except HiringAgentConversationError as exc:
+        code = str(exc)
+        error_status = (
+            status.HTTP_404_NOT_FOUND
+            if code == "CONVERSATION_NOT_FOUND"
+            else status.HTTP_409_CONFLICT
+        )
+        raise HTTPException(status_code=error_status, detail=code) from exc
+    except JobNotFound as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Hiring agent candidate discovery failed: user_id=%s", user.id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="HIRING_AGENT_DISCOVERY_FAILED",
+        ) from exc
 
 
 @router.get(
@@ -137,6 +167,8 @@ async def create_job(
 async def get_job_match_summaries(user: UserResponse = Depends(require_employer)):
     try:
         return JobMatchService.summaries_for_user(user)
+    except MatchingError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
     except PermissionError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     except JobNotFound as exc:
@@ -179,6 +211,8 @@ async def complete_job(job_id: str, user: UserResponse = Depends(require_employe
 async def get_job_matches(job_id: str, user: UserResponse = Depends(require_employer)):
     try:
         return JobMatchService.list_for_user(user, job_id)
+    except MatchingError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
     except JobNotFound as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
@@ -195,7 +229,7 @@ async def accept_job_match(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except ValueError as exc:
         error_code = str(exc)
-        if error_code in {"MATCH_NOT_FOUND", "WORKER_NOT_ELIGIBLE"}:
+        if error_code in {"JOB_NOT_FOUND", "MATCH_NOT_FOUND", "WORKER_NOT_ELIGIBLE"}:
             error_status = status.HTTP_404_NOT_FOUND
         elif error_code in {"JOB_NOT_OPEN_FOR_HIRING", "MATCH_NOT_PENDING", "MATCH_EXPIRED", "HEADCOUNT_FILLED"}:
             error_status = status.HTTP_409_CONFLICT
@@ -215,6 +249,27 @@ async def accept_job_match(
                     "worker_profile_id": str(request.worker_profile_id),
                 },
             ) from exc
+        else:
+            error_status = status.HTTP_422_UNPROCESSABLE_ENTITY
+        raise HTTPException(status_code=error_status, detail=error_code) from exc
+
+
+@router.post("/{job_id}/matches/reject", response_model=JobMatchRejectResponse)
+async def reject_job_match(
+    job_id: str,
+    request: JobMatchAcceptRequest,
+    user: UserResponse = Depends(require_employer),
+):
+    try:
+        return JobMatchService.reject_for_user(user, job_id, str(request.worker_profile_id))
+    except JobNotFound as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ValueError as exc:
+        error_code = str(exc)
+        if error_code in {"JOB_NOT_FOUND", "MATCH_NOT_FOUND", "WORKER_NOT_ELIGIBLE"}:
+            error_status = status.HTTP_404_NOT_FOUND
+        elif error_code in {"JOB_NOT_OPEN_FOR_HIRING", "MATCH_NOT_PENDING", "MATCH_EXPIRED"}:
+            error_status = status.HTTP_409_CONFLICT
         else:
             error_status = status.HTTP_422_UNPROCESSABLE_ENTITY
         raise HTTPException(status_code=error_status, detail=error_code) from exc

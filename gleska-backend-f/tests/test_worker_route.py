@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pytest
+from pydantic import ValidationError
 
 from app.routers import workers
 
@@ -121,13 +122,19 @@ async def test_worker_location_upserts_gps_and_provider_address(monkeypatch):
         "worker_current_locations": [],
     })
     monkeypatch.setattr(workers, "supabase", fake_supabase)
+    monkeypatch.setattr(workers.MatchingService, "reconcile_worker", lambda *_args, **_kwargs: [])
 
     async def save_address(*_args):
         return "Nanded, Maharashtra, India"
 
     monkeypatch.setattr(workers.GeocodingService, "reverse_geocode", staticmethod(save_address))
     result = await workers.update_worker_location(
-        workers.WorkerLocationUpdate(latitude=19.1383, longitude=77.3210, accuracy_m=15.2),
+        workers.WorkerLocationUpdate(
+            latitude=19.1383,
+            longitude=77.3210,
+            accuracy_m=15.2,
+            captured_at=datetime.now(timezone.utc),
+        ),
         USER,
     )
 
@@ -146,13 +153,19 @@ async def test_worker_location_saves_gps_when_geocoding_fails(monkeypatch):
         "worker_current_locations": [],
     })
     monkeypatch.setattr(workers, "supabase", fake_supabase)
+    monkeypatch.setattr(workers.MatchingService, "reconcile_worker", lambda *_args, **_kwargs: [])
 
     async def fail_geocoding(*_args):
         raise workers.GeocodingError("ADDRESS_NOT_FOUND")
 
     monkeypatch.setattr(workers.GeocodingService, "reverse_geocode", staticmethod(fail_geocoding))
     result = await workers.update_worker_location(
-        workers.WorkerLocationUpdate(latitude=19.1383, longitude=77.3210, accuracy_m=15.2),
+        workers.WorkerLocationUpdate(
+            latitude=19.1383,
+            longitude=77.3210,
+            accuracy_m=15.2,
+            captured_at=datetime.now(timezone.utc),
+        ),
         USER,
     )
 
@@ -162,33 +175,19 @@ async def test_worker_location_saves_gps_when_geocoding_fails(monkeypatch):
     assert result.address is None
 
 
-@pytest.mark.asyncio
-async def test_worker_location_selects_profile_coordinates_without_database_source_column(monkeypatch):
-    fake_supabase = FakeSupabase({
-        "worker_profiles": [_profile_row()],
-        "worker_current_locations": [],
-    })
-    monkeypatch.setattr(workers, "supabase", fake_supabase)
-
-    async def save_address(*_args):
-        return "Nanded, Maharashtra, India"
-
-    monkeypatch.setattr(workers.GeocodingService, "reverse_geocode", staticmethod(save_address))
-    result = await workers.update_worker_location(
-        workers.WorkerLocationUpdate(location_source="PROFILE"),
-        USER,
-    )
-
-    assert result.latitude == 18.5514
-    assert result.longitude == 73.8219
-    assert result.accuracy_m == 1000
-    assert result.location_source == "PROFILE"
-    assert "location_source" not in fake_supabase.upsert_payloads[0]
+def test_worker_location_rejects_profile_coordinates_as_current_gps():
+    with pytest.raises(ValidationError):
+        workers.WorkerLocationUpdate(location_source="PROFILE")
 
 
 def test_worker_location_rejects_zero_coordinates():
     with pytest.raises(ValueError, match="cannot both be zero"):
-        workers.WorkerLocationUpdate(latitude=0, longitude=0, accuracy_m=10)
+        workers.WorkerLocationUpdate(
+            latitude=0,
+            longitude=0,
+            accuracy_m=10,
+            captured_at=datetime.now(timezone.utc),
+        )
 
 
 @pytest.mark.asyncio

@@ -4,9 +4,10 @@ from typing import Any
 
 from app.core.supabase import supabase
 from app.schemas.auth import UserResponse
-from app.schemas.job import JobMatchAcceptResponse, JobMatchSummary, JobMatchWorkerResponse, JobMatchesResponse
+from app.schemas.job import JobMatchAcceptResponse, JobMatchRejectResponse, JobMatchSummary, JobMatchWorkerResponse, JobMatchesResponse
 from app.services.entitlements import employer_state
 from app.services.job_service import JobNotFound, JobService
+from app.services.matching_service import MatchingService
 
 
 class JobMatchService:
@@ -37,6 +38,22 @@ class JobMatchService:
         return response.data or []
 
     @staticmethod
+    def _rejected_rows(employer_id: str, job_id: str) -> list[dict[str, Any]]:
+        response = (
+            supabase.table("job_matches")
+            .select(
+                "worker_profile_id,status,created_at,composite_score,"
+                "worker_profiles!inner(id,trade_id,skills,experience_years,expected_daily_wage,"
+                "availability_status,users!inner(name)),jobs!inner(employer_id)"
+            )
+            .eq("job_id", job_id)
+            .eq("jobs.employer_id", employer_id)
+            .eq("status", "REJECTED")
+            .execute()
+        )
+        return response.data or []
+
+    @staticmethod
     def _worker_response(match: dict[str, Any]) -> JobMatchWorkerResponse:
         profile = match.get("worker_profiles") or {}
         user = profile.get("users") or {}
@@ -57,15 +74,20 @@ class JobMatchService:
     @classmethod
     def list_for_user(cls, user: UserResponse, job_id: str) -> JobMatchesResponse:
         job = JobService.get_for_user(user, job_id)
+        if job.status == "SEARCHING":
+            MatchingService.create_matches(job_id, "EMPLOYER_MATCHES_REFRESHED")
         pending_matches = cls._current_rows(str(job.employer_id), job_id)
         accepted_matches = cls._accepted_rows(str(job.employer_id), job_id)
+        rejected_matches = cls._rejected_rows(str(job.employer_id), job_id)
         matching_workers = [cls._worker_response(match) for match in pending_matches]
         selected_workers = [cls._worker_response(match) for match in accepted_matches]
+        rejected_workers = [cls._worker_response(match) for match in rejected_matches]
         selected_count = len(selected_workers)
         return JobMatchesResponse(
             matching_status="FOUND" if matching_workers else "NO_MATCHES",
             matches=matching_workers,
             selected_workers=selected_workers,
+            rejected_workers=rejected_workers,
             headcount_required=job.headcount_required,
             selected_count=selected_count,
             remaining_count=max(job.headcount_required - selected_count, 0),
@@ -162,4 +184,28 @@ class JobMatchService:
             match_status=accepted["match_status"],
             job_status=accepted["job_status"],
             accepted_count=accepted["accepted_count"],
+        )
+
+    @classmethod
+    def reject_for_user(cls, user: UserResponse, job_id: str, worker_profile_id: str) -> JobMatchRejectResponse:
+        job = JobService.get_for_user(user, job_id)
+        try:
+            rpc_response = supabase.rpc("reject_job_match", {
+                "p_employer_id": job.employer_id,
+                "p_job_id": job_id,
+                "p_worker_profile_id": worker_profile_id,
+            })
+            response = rpc_response.execute() if hasattr(rpc_response, "execute") else rpc_response
+        except Exception as exc:
+            raise ValueError(str(exc)) from exc
+        rejected = response.data[0] if isinstance(getattr(response, "data", None), list) and response.data else getattr(response, "data", None)
+        if not rejected:
+            raise ValueError("MATCH_REJECT_FAILED")
+
+        return JobMatchRejectResponse(
+            match_id=str(rejected["match_id"]),
+            worker_profile_id=str(rejected["worker_profile_id"]),
+            match_status=rejected["match_status"],
+            job_status=rejected["job_status"],
+            rejected_count=rejected["rejected_count"],
         )

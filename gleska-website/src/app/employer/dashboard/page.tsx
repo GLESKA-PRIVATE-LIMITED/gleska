@@ -134,6 +134,7 @@ interface HiringAgentMessage {
 
 interface HiringAgentCandidate {
   candidate_ref: string;
+  worker_profile_id?: string | null;
   name?: string | null;
   trade?: string | null;
   skills: string[];
@@ -214,6 +215,7 @@ interface JobMatches {
   matching_status: string;
   matches: JobMatchWorker[];
   selected_workers: JobMatchWorker[];
+  rejected_workers?: JobMatchWorker[];
   headcount_required: number;
   selected_count: number;
   remaining_count: number;
@@ -255,6 +257,8 @@ export default function EmployerDashboard() {
   const displayedProfilePhotoUrl =
     employerProfile?.profile_photo_url ?? user?.profile_photo_url ?? null;
   const [jobSites, setJobSites] = React.useState<JobSite[]>([]);
+  const [isHiringJobsLoading, setIsHiringJobsLoading] = React.useState(true);
+  const [hiringJobsError, setHiringJobsError] = React.useState("");
   const [siteForm, setSiteForm] = React.useState({ name: "", address: "", city: "", state: "", pincode: "", latitude: "", longitude: "" });
   const [siteError, setSiteError] = React.useState("");
   const [siteLocationNotice, setSiteLocationNotice] = React.useState("");
@@ -317,6 +321,10 @@ export default function EmployerDashboard() {
     },
   ]);
   const [hiringCandidates, setHiringCandidates] = React.useState<HiringAgentCandidate[]>([]);
+  const [hiringCandidateDecisionStatuses, setHiringCandidateDecisionStatuses] = React.useState<Record<string, string>>({});
+  const [isHiringCandidateDecisionStatusLoading, setIsHiringCandidateDecisionStatusLoading] = React.useState(false);
+  const [hiringCandidateDecisionWorkerId, setHiringCandidateDecisionWorkerId] = React.useState<string | null>(null);
+  const [hiringCandidateDecisionError, setHiringCandidateDecisionError] = React.useState("");
   const [hiringCandidateStatus, setHiringCandidateStatus] = React.useState<HiringAgentConversation["candidate_result_status"]>("NOT_RETRIEVED");
   const [hiringCandidateNote, setHiringCandidateNote] = React.useState<string | null>(null);
   const [hiringCandidateRetrievedAt, setHiringCandidateRetrievedAt] = React.useState<string | null>(null);
@@ -350,6 +358,35 @@ export default function EmployerDashboard() {
     setHiringCreatedJobId(data.created_job_id || null);
   }, []);
 
+  const refreshHiringCandidateDecisionStatuses = React.useCallback(async (jobId: string) => {
+    const { data } = await apiClient.get<JobMatches>(
+      `/api/v1/jobs/${encodeURIComponent(jobId)}/matches`,
+      { withCredentials: true },
+    );
+    return Object.fromEntries(
+      [...data.matches, ...data.selected_workers, ...(data.rejected_workers || [])]
+        .map((match) => [match.worker_profile_id, match.status]),
+    );
+  }, []);
+
+  React.useEffect(() => {
+    if (!hiringJobId || !hiringCandidates.length) {
+      setHiringCandidateDecisionStatuses({});
+      setIsHiringCandidateDecisionStatusLoading(false);
+      return;
+    }
+    let active = true;
+    setIsHiringCandidateDecisionStatusLoading(true);
+    setHiringCandidateDecisionError("");
+    void refreshHiringCandidateDecisionStatuses(hiringJobId)
+      .then((statuses) => { if (active) setHiringCandidateDecisionStatuses(statuses); })
+      .catch(() => {
+        if (active) setHiringCandidateDecisionError("Candidate statuses could not be refreshed. The backend will validate any decision before applying it.");
+      })
+      .finally(() => { if (active) setIsHiringCandidateDecisionStatusLoading(false); });
+    return () => { active = false; };
+  }, [hiringCandidates, hiringJobId, refreshHiringCandidateDecisionStatuses]);
+
   React.useEffect(() => {
     const messageList = hiringMessagesRef.current;
     if (messageList) {
@@ -357,7 +394,7 @@ export default function EmployerDashboard() {
     }
   }, [hiringHistory, isHiringAgentSending]);
 
-  const loadHiringConversation = React.useCallback(async (savedConversationId: string) => {
+  const loadHiringConversation = React.useCallback(async (savedConversationId: string, preserveJobId = "") => {
     setIsHiringConversationLoading(true);
     setHiringConversationError("");
     try {
@@ -366,6 +403,7 @@ export default function EmployerDashboard() {
         { withCredentials: true },
       );
       applyHiringConversation(data);
+      setHiringJobId(data.job_id || preserveJobId);
     } catch (error: unknown) {
       if (isAxiosError(error) && error.response?.status === 404 && user?.id) {
         window.localStorage.removeItem(`gleska_hiring_agent_conversation:${user.id}`);
@@ -384,7 +422,7 @@ export default function EmployerDashboard() {
       setHiringConversationError("There is no saved conversation to reload.");
       return;
     }
-    void loadHiringConversation(savedConversationId);
+    void loadHiringConversation(savedConversationId, hiringJobId);
   };
 
   React.useEffect(() => {
@@ -737,6 +775,8 @@ export default function EmployerDashboard() {
     loadJobSites();
 
     const loadJobs = async () => {
+      setIsHiringJobsLoading(true);
+      setHiringJobsError("");
       try {
         const response = await apiClient.get<Job[]>("/api/v1/jobs", {
           withCredentials: true,
@@ -750,7 +790,10 @@ export default function EmployerDashboard() {
           setJobMatchSummaries({});
           setJobMatchSummaryState("ERROR");
         }
-      } catch (err: any) {
+      } catch {
+        setHiringJobsError("Unable to load your jobs. Retry before discovering candidates.");
+      } finally {
+        setIsHiringJobsLoading(false);
       }
     };
 
@@ -1084,9 +1127,14 @@ export default function EmployerDashboard() {
       const matchesResponse = await apiClient.get<JobMatches>(`/api/v1/jobs/${jobId}/matches`, { withCredentials: true });
       if (selectedJobRequestRef.current !== requestId) return;
       setJobMatches(matchesResponse.data);
-    } catch {
+    } catch (error: unknown) {
       if (selectedJobRequestRef.current !== requestId) return;
-      setJobMatchesError("Unable to load matching workers right now.");
+      const detail = isAxiosError<{ detail?: unknown }>(error)
+        ? error.response?.data?.detail
+        : null;
+      setJobMatchesError(typeof detail === "string"
+        ? `Matching workers could not be refreshed (${detail}). Try again.`
+        : "Matching workers could not be loaded. Check your connection and retry.");
     } finally {
       if (selectedJobRequestRef.current === requestId) setIsJobMatchesLoading(false);
     }
@@ -1120,6 +1168,10 @@ export default function EmployerDashboard() {
       { worker_profile_id: workerProfileId },
       { withCredentials: true },
     );
+    setHiringCandidateDecisionStatuses((current) => ({
+      ...current,
+      [workerProfileId]: response.data.match_status,
+    }));
 
     const requestId = selectedJobRequestRef.current + 1;
     selectedJobRequestRef.current = requestId;
@@ -1193,6 +1245,19 @@ export default function EmployerDashboard() {
     setHiringAgentInput("");
   };
 
+  const handleHiringJobSelection = (jobId: string) => {
+    if (hiringConversationId && hiringJobId && jobId !== hiringJobId) {
+      setHiringConversationError("This conversation is already linked to another job. Start a new chat before selecting a different job.");
+      return;
+    }
+    setHiringJobId(jobId);
+    setHiringCandidates([]);
+    setHiringCandidateStatus("NOT_RETRIEVED");
+    setHiringCandidateNote(null);
+    setHiringCandidateRetrievedAt(null);
+    setHiringConversationError("");
+  };
+
   const handleEditExtractedDataInManualForm = () => {
     setManualJobState((prev) => ({
       ...prev,
@@ -1227,8 +1292,10 @@ export default function EmployerDashboard() {
   const handleSendHiringAgentMessage = async (messageText = hiringAgentInput) => {
     const text = messageText.trim();
     if (!text || hiringSendInFlightRef.current || isHiringConversationLoading) return;
+    const consumesInput = text === hiringAgentInput.trim();
+    const selectedJobId = hiringJobId;
     hiringSendInFlightRef.current = true;
-    setHiringAgentInput("");
+    if (consumesInput) setHiringAgentInput("");
     setHiringConversationError("");
     setHiringHistory((current) => [...current, { role: "user", content: text }]);
     setIsHiringAgentSending(true);
@@ -1258,6 +1325,7 @@ export default function EmployerDashboard() {
         : undefined;
       const stale = detail === "STALE_ASSISTANT_STATE";
       let savedHistory = hiringHistory;
+      let conversationReloaded = false;
       if (hiringConversationId) {
         try {
           const { data } = await apiClient.get<HiringAgentConversation>(
@@ -1265,21 +1333,32 @@ export default function EmployerDashboard() {
             { withCredentials: true },
           );
           applyHiringConversation(data);
+          setHiringJobId(data.job_id || selectedJobId);
           savedHistory = data.history;
+          conversationReloaded = true;
         } catch {
-          // Keep the last known history and the unsent text visible if refresh is unavailable.
+          // Keep the last known history and selected job if refresh is unavailable.
         }
       }
-      setHiringAgentInput(text);
-      const recoverableError = stale
-        ? "This conversation changed elsewhere. The latest saved state has been loaded; review your message and resend it."
-        : isAxiosError(error) && error.response?.status === 402
-          ? "Your account needs an active subscription to continue. Your message is preserved in the input."
-          : isAxiosError(error) && error.response?.status === 403
-            ? "You aren't authorized to use this conversation. Your message is preserved in the input."
-            : isAxiosError(error) && error.response?.status === 429
-              ? "The AI Assistant is temporarily at its usage limit. Your message is preserved in the input; try again later."
-              : "Couldn't reach the AI Assistant. Your message is preserved in the input; retry when the connection is available.";
+      if (consumesInput) setHiringAgentInput(text);
+      let recoverableError = "Couldn't reach the AI Assistant. Your message is preserved in the input; retry when the connection is available.";
+      if (stale) {
+        recoverableError = conversationReloaded
+          ? "This conversation changed elsewhere. The latest saved state has been loaded; review your message and resend it."
+          : "This conversation changed elsewhere, but the latest saved state couldn't be reloaded. Your message and job selection are preserved; retry loading the conversation before resending.";
+      } else if (detail === "JOB_NOT_SEARCHING") {
+        recoverableError = "This job is no longer searching for workers. Your job selection and message are preserved; choose an eligible searching job in a new chat.";
+      } else if (detail === "CONVERSATION_JOB_MISMATCH") {
+        recoverableError = "This conversation is linked to a different job. Your job selection and message are preserved; start a new chat to use another job.";
+      } else if (isAxiosError(error) && error.response?.status === 404) {
+        recoverableError = "The selected job or conversation is no longer available. Your job selection and message are preserved; refresh jobs or start a new chat.";
+      } else if (isAxiosError(error) && error.response?.status === 402) {
+        recoverableError = "Your account needs an active subscription to continue. Your message is preserved in the input.";
+      } else if (isAxiosError(error) && error.response?.status === 403) {
+        recoverableError = "You aren't authorized to use this conversation. Your message is preserved in the input.";
+      } else if (isAxiosError(error) && error.response?.status === 429) {
+        recoverableError = "The AI Assistant is temporarily at its usage limit. Your message is preserved in the input; try again later.";
+      }
       setHiringConversationError(recoverableError);
       setHiringHistory([
         ...savedHistory,
@@ -1291,6 +1370,131 @@ export default function EmployerDashboard() {
     } finally {
       setIsHiringAgentSending(false);
       hiringSendInFlightRef.current = false;
+    }
+  };
+
+  const handleFindHiringCandidates = async () => {
+    const selectedJobId = hiringJobId;
+    if (
+      !selectedJobId
+      || !hiringEligibleJobs.some((job) => job.id === selectedJobId)
+      || hiringSendInFlightRef.current
+      || isHiringConversationLoading
+    ) return;
+
+    hiringSendInFlightRef.current = true;
+    setHiringConversationError("");
+    setIsHiringAgentSending(true);
+    try {
+      const { data } = await apiClient.post<HiringAgentConversation>(
+        "/api/v1/jobs/assistant/agent/discover",
+        {
+          job_id: selectedJobId,
+          conversation_id: hiringConversationId || undefined,
+          state_revision: hiringConversationId ? hiringStateRevision : undefined,
+        },
+        { withCredentials: true },
+      );
+      applyHiringConversation(data);
+      setHiringJobId(data.job_id || selectedJobId);
+      if (user?.id) {
+        window.localStorage.setItem(
+          `gleska_hiring_agent_conversation:${user.id}`,
+          data.conversation_id,
+        );
+      }
+    } catch (error: unknown) {
+      const detail = isAxiosError<{ detail?: unknown }>(error)
+        ? error.response?.data?.detail
+        : undefined;
+      if (hiringConversationId) {
+        try {
+          const { data } = await apiClient.get<HiringAgentConversation>(
+            `/api/v1/jobs/assistant/agent/${encodeURIComponent(hiringConversationId)}`,
+            { withCredentials: true },
+          );
+          applyHiringConversation(data);
+          setHiringJobId(data.job_id || selectedJobId);
+        } catch {
+          setHiringJobId(selectedJobId);
+        }
+      }
+      if (detail === "STALE_ASSISTANT_STATE") {
+        setHiringConversationError("This conversation changed elsewhere. The latest saved state has been loaded; review it and retry candidate discovery.");
+      } else if (detail === "JOB_NOT_SEARCHING") {
+        setHiringConversationError("This job is no longer searching for workers. Refresh your jobs and select an eligible searching job.");
+      } else if (detail === "CONVERSATION_JOB_MISMATCH") {
+        setHiringConversationError("This conversation is linked to another job. Start a new chat to discover candidates for this selection.");
+      } else if (isAxiosError(error) && error.response?.status === 403) {
+        setHiringConversationError("You are not authorized to access this job or conversation. Refresh your jobs and select one you own.");
+      } else if (isAxiosError(error) && error.response?.status === 404) {
+        setHiringConversationError("The selected job or conversation is no longer available. Refresh jobs and retry.");
+      } else {
+        setHiringConversationError("Candidate discovery could not complete. Your selected job and chat input are preserved; retry the discovery action.");
+      }
+    } finally {
+      setIsHiringAgentSending(false);
+      hiringSendInFlightRef.current = false;
+    }
+  };
+
+  const handleHiringCandidateDecision = async (
+    candidate: HiringAgentCandidate,
+    decision: "accept" | "reject",
+  ) => {
+    const jobId = hiringJobId;
+    const workerProfileId = candidate.worker_profile_id;
+    if (!workerProfileId || !jobId || !hiringSelectedJobIsEligible || hiringCandidateDecisionWorkerId) return;
+    setHiringCandidateDecisionWorkerId(workerProfileId);
+    setHiringCandidateDecisionError("");
+    try {
+      if (decision === "accept") {
+        const { data } = await apiClient.post<{ match_status: string; job_status: string }>(
+          `/api/v1/jobs/${encodeURIComponent(jobId)}/matches/accept`,
+          { worker_profile_id: workerProfileId },
+          { withCredentials: true },
+        );
+        setHiringCandidateDecisionStatuses((current) => ({
+          ...current,
+          [workerProfileId]: data.match_status,
+        }));
+        setJobs((current) => current.map((job) => job.id === jobId ? { ...job, status: data.job_status } : job));
+        toast.success("Worker selected");
+      } else {
+        const { data } = await apiClient.post<{ match_status: string }>(
+          `/api/v1/jobs/${encodeURIComponent(jobId)}/matches/reject`,
+          { worker_profile_id: workerProfileId },
+          { withCredentials: true },
+        );
+        setHiringCandidateDecisionStatuses((current) => ({
+          ...current,
+          [workerProfileId]: data.match_status,
+        }));
+        toast.success("Candidate declined for this job");
+      }
+    } catch (error: unknown) {
+      const detail = isAxiosError<{ detail?: unknown }>(error) ? error.response?.data?.detail : undefined;
+      if (decision === "accept" && isAxiosError(error) && error.response?.status === 402
+        && typeof detail === "object" && detail !== null && "code" in detail
+        && detail.code === "COMMISSION_REQUIRED") {
+        try {
+          await startCommissionPayment(jobId, workerProfileId);
+          setHiringCandidateDecisionError("Commission payment is required. Complete checkout and verify payment to finish selecting this worker.");
+        } catch {
+          setHiringCandidateDecisionError("Unable to start commission payment. Retry the selection from the job's worker matches.");
+        }
+      } else if (detail === "MATCH_NOT_FOUND" || detail === "MATCH_NOT_PENDING" || detail === "MATCH_EXPIRED" || detail === "WORKER_NOT_ELIGIBLE" || detail === "JOB_NOT_OPEN_FOR_HIRING" || detail === "HEADCOUNT_FILLED") {
+        setHiringCandidateDecisionError("This candidate or job is no longer available for that action. Refresh candidate discovery before deciding.");
+        void refreshHiringCandidateDecisionStatuses(jobId)
+          .then(setHiringCandidateDecisionStatuses)
+          .catch(() => setHiringCandidateDecisionError("Candidate statuses could not be refreshed. Retry discovery."));
+      } else if (isAxiosError(error) && error.response?.status === 402) {
+        setHiringCandidateDecisionError("An active business subscription is required to select this worker.");
+      } else {
+        setHiringCandidateDecisionError(typeof detail === "string" ? detail : "Unable to update this candidate. Retry after refreshing candidate discovery.");
+      }
+    } finally {
+      setHiringCandidateDecisionWorkerId(null);
     }
   };
 
@@ -1319,7 +1523,15 @@ export default function EmployerDashboard() {
         apiClient.get<Job[]>("/api/v1/jobs", { withCredentials: true }),
         apiClient.get<JobMatchSummary[]>("/api/v1/jobs/match-summary", { withCredentials: true }),
       ]);
-      if (jobsResult.status === "fulfilled") setJobs(jobsResult.value.data);
+      if (jobsResult.status === "fulfilled") {
+        setJobs(jobsResult.value.data);
+        const createdJob = jobsResult.value.data.find((job) => job.id === data.created_job_id);
+        if (createdJob?.status === "SEARCHING") {
+          setHiringJobId(createdJob.id);
+        } else if (data.created_job_id) {
+          setHiringConversationError("The job was created, but it is not currently eligible for candidate discovery.");
+        }
+      }
       if (summariesResult.status === "fulfilled") {
         setJobMatchSummaries(Object.fromEntries(summariesResult.value.data.map((summary) => [summary.job_id, summary])));
         setJobMatchSummaryState("FOUND");
@@ -1460,7 +1672,11 @@ export default function EmployerDashboard() {
       setCommissionRecovery({ orderId, jobId, workerProfileId, status: "FAILED" });
       toast.error(typeof detail === "string" ? detail : "Payment verification or dispatch failed. Retry again.", { id: "commission-verify" });
     }
-  };
+  }
+
+  const hiringEligibleJobs = jobs.filter((job) => job.status === "SEARCHING");
+  const hiringSelectedJob = jobs.find((job) => job.id === hiringJobId);
+  const hiringSelectedJobIsEligible = hiringEligibleJobs.some((job) => job.id === hiringJobId);
 
   return (
     <AccountManagementShell
@@ -1696,6 +1912,23 @@ export default function EmployerDashboard() {
                       </div>
 
                       <div className="flex items-center gap-2 shrink-0">
+                        <select
+                          value={hiringJobId}
+                          disabled={isHiringAgentSending || isHiringConversationLoading || isHiringJobsLoading || Boolean(hiringJobsError)}
+                          onChange={(event) => handleHiringJobSelection(event.target.value)}
+                          aria-label="Select a searching job for candidate discovery"
+                          className="h-8 max-w-[150px] sm:max-w-[210px] truncate rounded-lg border border-slate-200 bg-slate-50 px-2 text-xs font-semibold text-slate-700 focus:border-blue-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                        >
+                          <option value="">Draft a new job</option>
+                          {hiringEligibleJobs.map((job) => (
+                            <option key={job.id} value={job.id}>{job.title}</option>
+                          ))}
+                          {hiringJobId && !hiringSelectedJobIsEligible && (
+                            <option value={hiringJobId} disabled>
+                              {hiringSelectedJob?.title || "Selected job"} — no longer searching
+                            </option>
+                          )}
+                        </select>
                         {/* Work Site Selector Pill */}
                         <div className="relative flex items-center">
                           <MapPin size={13} className="pointer-events-none absolute left-2.5 text-blue-600 dark:text-blue-400" />
@@ -1740,6 +1973,42 @@ export default function EmployerDashboard() {
                         </button>
                       </div>
                     </div>
+
+                    {hiringJobsError && (
+                      <div role="alert" className="mt-3 flex-none rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-200">
+                        <p>{hiringJobsError}</p>
+                        <button type="button" onClick={() => setDashboardReloadToken((current) => current + 1)} className="mt-1.5 font-semibold underline">
+                          Retry loading jobs
+                        </button>
+                      </div>
+                    )}
+                    {isHiringJobsLoading && !hiringJobsError ? (
+                      <p className="mt-3 flex-none text-xs text-slate-500 dark:text-slate-400">Loading your searching jobs…</p>
+                    ) : hiringJobId ? (
+                      <div className="mt-3 flex-none rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs text-blue-800 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-200">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span>
+                            {hiringSelectedJobIsEligible
+                              ? `Candidate discovery is scoped to “${hiringSelectedJob?.title}”. Ask the assistant about available candidates.`
+                              : "The selected job is not currently eligible for candidate discovery. Select a searching job in a new chat."}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => void handleFindHiringCandidates()}
+                            disabled={!hiringSelectedJobIsEligible || isHiringJobsLoading || Boolean(hiringJobsError) || isHiringAgentSending || isHiringConversationLoading}
+                            className="shrink-0 rounded-lg bg-blue-600 px-3 py-1.5 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            Find matching candidates
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="mt-3 flex-none text-xs text-slate-500 dark:text-slate-400">
+                        {hiringEligibleJobs.length
+                          ? "Select one of your searching jobs to ask the Hiring Agent for its current eligible matches. Candidate discovery does not create a job."
+                          : "You have no searching jobs available for candidate discovery. Create a job first; it will appear here while it is searching for workers."}
+                      </p>
+                    )}
 
                     {hiringConversationError && (
                       <div role="alert" className="mt-3 flex-none rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-200">
@@ -1837,7 +2106,7 @@ export default function EmployerDashboard() {
                           <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800">
                             Created ✓
                           </span>
-                        ) : hiringConfirmationToken ? (
+                        ) : hiringConfirmationToken && !hiringJobId ? (
                           <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800 animate-pulse">
                             Ready to confirm ✨
                           </span>
@@ -1982,7 +2251,11 @@ export default function EmployerDashboard() {
                     {hiringCandidateStatus !== "NOT_RETRIEVED" && (
                       <section className="mt-5 border-t border-slate-200/80 pt-4 dark:border-slate-800">
                         <div className="flex items-center justify-between gap-3">
-                          <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">Candidate matches</h3>
+                          <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
+                            {hiringSelectedJobIsEligible
+                              ? "Eligible matches returned by the backend"
+                              : "Previously retrieved matches — job no longer searching"}
+                          </h3>
                           {hiringCandidateStatus === "FOUND" && (
                             <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
                               Matches found
@@ -2019,7 +2292,7 @@ export default function EmployerDashboard() {
                                     </p>
                                   </div>
                                   <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                                    {candidate.availability_status || "Available"}
+                                    {candidate.availability_status || "Availability unavailable"}
                                   </span>
                                 </div>
                                 <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400">
@@ -2031,7 +2304,7 @@ export default function EmployerDashboard() {
                                   {candidate.projected_distance_m != null && (
                                     <span className="flex items-center gap-1">
                                       <MapPin size={11} />
-                                      {(candidate.projected_distance_m / 1000).toFixed(1)} km away
+                                      Projected: {(candidate.projected_distance_m / 1000).toFixed(1)} km
                                     </span>
                                   )}
                                 </div>
@@ -2044,9 +2317,55 @@ export default function EmployerDashboard() {
                                     ))}
                                   </div>
                                 )}
+                                {candidate.verified_evidence.length > 0 && (
+                                  <div className="mt-2 text-[11px] text-slate-600 dark:text-slate-300">
+                                    <p className="font-semibold">Match evidence returned by the backend</p>
+                                    <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                                      {candidate.verified_evidence.map((evidence) => <li key={evidence}>{evidence}</li>)}
+                                    </ul>
+                                  </div>
+                                )}
+                                {candidate.unavailable_fields.length > 0 && (
+                                  <p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
+                                    Not available: {candidate.unavailable_fields.join(", ")}
+                                  </p>
+                                )}
+                                <div className="mt-3 flex flex-wrap items-center gap-2">
+                                  {!candidate.worker_profile_id ? (
+                                    <span className="text-xs text-slate-500">Refresh candidate discovery to enable decisions for this saved result.</span>
+                                  ) : hiringCandidateDecisionStatuses[candidate.worker_profile_id] === "ACCEPTED" ? (
+                                    <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-300">Selected for this job</span>
+                                  ) : hiringCandidateDecisionStatuses[candidate.worker_profile_id] === "REJECTED" ? (
+                                    <span className="text-xs font-semibold text-slate-500">Declined for this job</span>
+                                  ) : (
+                                    <>
+                                      <button
+                                        type="button"
+                                        disabled={!hiringSelectedJobIsEligible || isHiringCandidateDecisionStatusLoading || hiringCandidateDecisionWorkerId !== null}
+                                        onClick={() => void handleHiringCandidateDecision(candidate, "accept")}
+                                        className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                                      >
+                                        {hiringCandidateDecisionWorkerId === candidate.worker_profile_id ? "Updating…" : "Select worker"}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        disabled={!hiringSelectedJobIsEligible || isHiringCandidateDecisionStatusLoading || hiringCandidateDecisionWorkerId !== null}
+                                        onClick={() => void handleHiringCandidateDecision(candidate, "reject")}
+                                        className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-600 dark:text-slate-200"
+                                      >
+                                        Decline
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
                               </article>
                             ))}
                           </div>
+                        )}
+                        {hiringCandidateDecisionError && (
+                          <p className="mt-3 rounded-lg bg-rose-50 p-2.5 text-xs text-rose-700 dark:bg-rose-950/30 dark:text-rose-200" role="alert">
+                            {hiringCandidateDecisionError}
+                          </p>
                         )}
                       </section>
                     )}
@@ -2457,9 +2776,9 @@ export default function EmployerDashboard() {
                       <p className={`mt-1 text-sm font-semibold ${jobMatchSummaryState === "ERROR" ? "text-rose-600 dark:text-rose-400" : "text-slate-700 dark:text-slate-300"}`}>{summaryText}</p>
                     </div>
                     <div className="flex flex-wrap items-center gap-2 shrink-0">
-                      {job.status !== "COMPLETED" && job.status !== "CANCELLED" && jobMatchSummaryState === "FOUND" && (matchCount > 0 || acceptedCount > 0) && (
+                      {job.status !== "COMPLETED" && job.status !== "CANCELLED" && (
                         <button type="button" onClick={() => void handleViewJobWorkers(job.id)} className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 px-3 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-blue-600 hover:border-blue-300 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-400 dark:hover:bg-slate-800 cursor-pointer">
-                          <Users size={15} /> View Workers
+                          <Users size={15} /> {job.status === "SEARCHING" && matchCount === 0 ? "Check Workers" : "View Workers"}
                         </button>
                       )}
                       {job.status === "SEARCHING" && (
@@ -2702,7 +3021,10 @@ export default function EmployerDashboard() {
                 </div>
               )}
               {isJobMatchesLoading && <div className="mt-3 flex items-center gap-2 text-sm text-slate-500"><Loader2 size={16} className="animate-spin" /> Matching workers...</div>}
-              {!isJobMatchesLoading && jobMatchesError && <p className="mt-3 text-sm text-rose-600 dark:text-rose-400">{jobMatchesError}</p>}
+              {!isJobMatchesLoading && jobMatchesError && <>
+                <p className="mt-3 text-sm text-rose-600 dark:text-rose-400">{jobMatchesError}</p>
+                <button type="button" onClick={() => selectedJobId && void handleViewJobWorkers(selectedJobId)} className="mt-2 text-sm font-semibold text-blue-600 underline dark:text-blue-400">Retry matching workers</button>
+              </>}
               {!isJobMatchesLoading && !jobMatchesError && jobMatches?.matches.length === 0 && <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">{jobMatches.selected_count > 0 ? "No additional suitable workers found." : "No suitable workers found yet."}</p>}
               {!isJobMatchesLoading && !jobMatchesError && jobMatches?.matches.length ? <div className="mt-3 space-y-3">{jobMatches.matches.map((match) => (
                 <div key={match.worker_profile_id} className="rounded-xl border border-slate-200 p-3 dark:border-slate-700">

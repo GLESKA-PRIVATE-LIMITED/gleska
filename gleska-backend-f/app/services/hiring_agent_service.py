@@ -32,6 +32,7 @@ from app.schemas.hiring_agent import (
     HiringAgentCandidate,
     HiringAgentConversationResponse,
     HiringAgentCreateRequest,
+    HiringAgentDiscoveryRequest,
     HiringAgentHistoryMessage,
     HiringAgentJobDraft,
     HiringAgentMessageRequest,
@@ -192,6 +193,7 @@ def _to_candidate(match: Any, index: int, job: Any) -> HiringAgentCandidate:
     evidence, unavailable = _candidate_evidence(job, match)
     return HiringAgentCandidate(
         candidate_ref=f"Candidate {index}",
+        worker_profile_id=match.worker_profile_id,
         name=match.name,
         trade=match.trade_id,
         skills=match.skills or [],
@@ -209,7 +211,7 @@ def _to_candidate(match: Any, index: int, job: Any) -> HiringAgentCandidate:
 def _candidate_for_model(candidate: HiringAgentCandidate) -> dict[str, Any]:
     return candidate.model_dump(
         mode="json",
-        exclude={"name"},
+        exclude={"name", "worker_profile_id"},
     )
 
 
@@ -478,30 +480,46 @@ class HiringAgentService:
             ):
                 raise PermissionError("HIRING_TOOL_CONTEXT_INVALID")
 
-            matches = JobMatchService.list_for_user(user, job_id)
-            pending_matches = matches.matches[:CANDIDATE_CONTEXT_LIMIT]
-            cards = [
-                _to_candidate(match, index + 1, job)
-                for index, match in enumerate(pending_matches)
-            ]
-            tool_capture["cards"] = cards
-            tool_capture["result_status"] = "FOUND" if matches.matches else "NO_MATCHES"
-            tool_capture["result_note"] = (
-                f"Showing {len(pending_matches)} of {len(matches.matches)} current eligible pending matches."
-                if len(matches.matches) > len(pending_matches)
-                else None
+            cards, result_status, result_note, result_data = HiringAgentService._discover_candidate_data(
+                user,
+                job_id,
+                job,
             )
-            return {
-                "status": "FOUND" if matches.matches else "NO_MATCHES",
-                "total_candidate_count": len(matches.matches),
-                "returned_candidate_count": len(pending_matches),
-                "truncated": len(matches.matches) > len(pending_matches),
-                "distance_freshness": DISTANCE_FRESHNESS_NOTE,
-                "candidates": [_candidate_for_model(candidate) for candidate in cards],
-            }
+            tool_capture["cards"] = cards
+            tool_capture["result_status"] = result_status
+            tool_capture["result_note"] = result_note
+            return result_data
 
         executor.register_handler(DISCOVER_CANDIDATES_TOOL.name, discover_candidates)
         return registry, executor, tool_capture
+
+    @staticmethod
+    def _discover_candidate_data(
+        user: UserResponse,
+        job_id: str,
+        job: Any,
+    ) -> tuple[list[HiringAgentCandidate], str, str | None, dict[str, Any]]:
+        matches = JobMatchService.list_for_user(user, job_id)
+        pending_matches = matches.matches[:CANDIDATE_CONTEXT_LIMIT]
+        cards = [
+            _to_candidate(match, index + 1, job)
+            for index, match in enumerate(pending_matches)
+        ]
+        result_status = "FOUND" if matches.matches else "NO_MATCHES"
+        result_note = (
+            f"Showing {len(pending_matches)} of {len(matches.matches)} current eligible pending matches."
+            if len(matches.matches) > len(pending_matches)
+            else None
+        )
+        result_data = {
+            "status": result_status,
+            "total_candidate_count": len(matches.matches),
+            "returned_candidate_count": len(pending_matches),
+            "truncated": len(matches.matches) > len(pending_matches),
+            "distance_freshness": DISTANCE_FRESHNESS_NOTE,
+            "candidates": [_candidate_for_model(candidate) for candidate in cards],
+        }
+        return cards, result_status, result_note, result_data
 
     @classmethod
     def _persist(
@@ -739,6 +757,120 @@ class HiringAgentService:
             job_confirmation_token=confirmation_token,
             created_job_id=updated_state.get("created_job_id"),
         )
+
+    @classmethod
+    def discover_candidates(
+        cls,
+        user: UserResponse,
+        request: HiringAgentDiscoveryRequest,
+    ) -> HiringAgentConversationResponse:
+        employer = JobService._employer_profile(user)
+        employer_id = str(employer["id"])
+        job_id = str(request.job_id)
+        job = JobService.get_for_user(user, job_id)
+        if job.status != "SEARCHING":
+            raise HiringAgentConversationError("JOB_NOT_SEARCHING")
+
+        existing_state: dict[str, Any] = {}
+        selected_site_id: str | None = None
+        if request.conversation_id is not None:
+            response = (
+                supabase.table("assistant_conversations")
+                .select("structured_state")
+                .eq("id", str(request.conversation_id))
+                .eq("user_id", user.id)
+                .eq("employer_id", employer_id)
+                .execute()
+            )
+            existing = cls._row(response)
+            if not existing:
+                raise HiringAgentConversationError("CONVERSATION_NOT_FOUND")
+            existing_state = existing.get("structured_state") or {}
+            if existing_state.get("agent_kind") != AGENT_KIND:
+                raise HiringAgentConversationError("CONVERSATION_MODE_MISMATCH")
+            if existing_state.get("job_creation_status") == "CREATING":
+                raise HiringAgentConversationError("JOB_CREATION_IN_PROGRESS")
+            stored_job_id = str(existing_state.get("job_id") or "")
+            if stored_job_id and stored_job_id != job_id:
+                raise HiringAgentConversationError("CONVERSATION_JOB_MISMATCH")
+            selected_site_id = str(existing_state["create_job_site_id"]) if existing_state.get("create_job_site_id") else None
+
+        site_id = selected_site_id
+        site_name = str(existing_state.get("create_job_site_name") or "") or None
+        conversation_request = HiringAgentMessageRequest(
+            message="Find matching candidates for the selected searching job.",
+            conversation_id=request.conversation_id,
+            job_id=request.job_id,
+            state_revision=request.state_revision,
+        )
+        conversation_id, revision, history, task, task_state, state = cls._load_or_create(
+            user,
+            employer_id,
+            conversation_request,
+            job_id,
+            job,
+            site_id,
+            site_name,
+        )
+
+        now = datetime.now(timezone.utc).isoformat()
+        try:
+            cards, result_status, result_note, _ = cls._discover_candidate_data(user, job_id, job)
+            assistant_message = (
+                f"I found {len(cards)} current eligible pending match"
+                f"{'' if len(cards) == 1 else 'es'} for this job."
+            )
+            if result_note:
+                assistant_message = f"{assistant_message} {result_note}"
+        except (JobNotFound, PermissionError):
+            raise
+        except Exception:
+            logger.exception(
+                "Hiring Agent deterministic candidate discovery failed: user_id=%s job_id=%s conversation_id=%s",
+                user.id,
+                job_id,
+                conversation_id,
+            )
+            cards = []
+            result_status = "FAILED"
+            result_note = "Candidate retrieval did not complete. Retry the discovery request."
+            assistant_message = result_note
+
+        updated_task_state = task_state.model_copy(update={
+            "data": {
+                **task_state.data,
+                "job_id": job_id,
+                "job": _job_context(job),
+                "create_job_site_id": site_id,
+                "create_job_site_name": site_name,
+            },
+        })
+        updated_state = {
+            **state,
+            "agent_kind": AGENT_KIND,
+            "job_id": job_id,
+            "create_job_site_id": site_id,
+            "create_job_site_name": site_name,
+            "task": task.model_dump(mode="json"),
+            "task_state": updated_task_state.model_dump(mode="json"),
+            "candidate_cards": [candidate.model_dump(mode="json") for candidate in cards],
+            "candidate_result_status": result_status,
+            "candidate_result_note": result_note,
+            "candidate_retrieved_at": now,
+        }
+        next_history = [
+            *history,
+            AgentConversationMessage(
+                role="user",
+                content="Find matching candidates for the selected searching job.",
+            ),
+            AgentConversationMessage(role="assistant", content=assistant_message),
+        ][-HISTORY_LIMIT:]
+        job = JobService.get_for_user(user, job_id)
+        if job.status != "SEARCHING":
+            raise HiringAgentConversationError("JOB_NOT_SEARCHING")
+        cls._persist(user, employer_id, conversation_id, revision, updated_state, next_history)
+        return cls.get_conversation(user, UUID(conversation_id))
 
     @classmethod
     def get_conversation(

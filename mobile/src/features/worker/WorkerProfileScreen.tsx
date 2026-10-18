@@ -41,7 +41,7 @@ type LocationSelection = {
   location_source: "SEARCH" | "MAP" | "PROFILE" | "GPS";
 };
 
-type DetectedLocation = LocationSelection & { accuracy_m: number };
+type DetectedLocation = LocationSelection & { accuracy_m: number; captured_at: string };
 
 function getCurrentPosition(options: PositionOptions): Promise<GeolocationPosition> {
   return new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve, reject, options));
@@ -159,6 +159,10 @@ export default function WorkerProfileScreen() {
         position = await getCurrentPosition({ enableHighAccuracy: true, maximumAge: 0, timeout: 45000 });
       }
       const { latitude, longitude, accuracy } = position.coords;
+      const locationAgeMs = Date.now() - position.timestamp;
+      if (!Number.isFinite(position.timestamp) || locationAgeMs < -30000 || locationAgeMs > 10 * 60 * 1000) {
+        throw new Error("The device returned a stale location. Enable device location and try again.");
+      }
       if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || accuracy <= 0 || accuracy > 1000) {
         throw new Error(`Location accuracy is too low (${Math.round(accuracy)}m). Enable device location services or search for your address.`);
       }
@@ -169,6 +173,7 @@ export default function WorkerProfileScreen() {
         latitude,
         longitude,
         accuracy_m: accuracy,
+        captured_at: new Date(position.timestamp).toISOString(),
         location_source: "GPS",
       });
     } catch (locationError) {
@@ -189,6 +194,7 @@ export default function WorkerProfileScreen() {
         latitude: detectedLocation.latitude,
         longitude: detectedLocation.longitude,
         accuracy_m: detectedLocation.accuracy_m,
+        captured_at: detectedLocation.captured_at,
       });
       const updatedProfile = await apiPut<WorkerProfile>("/api/v1/workers/me", {
         address: detectedLocation.address,

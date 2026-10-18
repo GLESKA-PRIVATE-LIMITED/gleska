@@ -59,6 +59,12 @@ class HiringAgentCreateRequest(BaseModel):
     confirmation_token: str = Field(min_length=1)
 
 
+class HiringAgentDiscoveryRequest(BaseModel):
+    job_id: UUID
+    conversation_id: UUID | None = None
+    state_revision: int | None = Field(default=None, ge=0)
+
+
 class HiringAgentHistoryMessage(BaseModel):
     role: Literal["user", "assistant"]
     content: str
@@ -67,6 +73,7 @@ class HiringAgentHistoryMessage(BaseModel):
 
 class HiringAgentCandidate(BaseModel):
     candidate_ref: str
+    worker_profile_id: UUID | None = None
     name: str | None = None
     trade: str | None = None
     skills: list[str] = Field(default_factory=list)

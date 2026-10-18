@@ -63,7 +63,7 @@ type WorkerMatch = {
   distance_m?: number | null;
   status: string;
 };
-type JobMatches = { matching_status: string; matches: WorkerMatch[]; selected_workers: WorkerMatch[]; headcount_required: number; selected_count: number; remaining_count: number };
+type JobMatches = { matching_status: string; matches: WorkerMatch[]; selected_workers: WorkerMatch[]; rejected_workers?: WorkerMatch[]; headcount_required: number; selected_count: number; remaining_count: number };
 type JobDetails = Job & { job_site: Pick<JobSite, "id" | "name" | "address" | "latitude" | "longitude"> };
 type LocationResult = { address: string; city?: string | null; state?: string | null; pincode?: string | null; latitude: number; longitude: number };
 type PendingCommission = { orderId: string; jobId: string; workerProfileId: string };
@@ -72,9 +72,10 @@ type HiringAgentConversation = {
   job_id: string | null;
   state_revision: number;
   history: { role: "user" | "assistant"; content: string }[];
-  candidate_results: { candidate_ref: string; name?: string | null; trade?: string | null; skills: string[]; experience_years?: number | null; expected_daily_wage?: number | null; availability_status?: string | null; projected_distance_m?: number | null }[];
+  candidate_results: { candidate_ref: string; worker_profile_id?: string | null; name?: string | null; trade?: string | null; skills: string[]; experience_years?: number | null; expected_daily_wage?: number | null; availability_status?: string | null; projected_distance_m?: number | null; verified_evidence: string[]; unavailable_fields: string[] }[];
   candidate_result_status: "FOUND" | "NO_MATCHES" | "NOT_RETRIEVED" | "FAILED";
   candidate_result_note?: string | null;
+  candidate_retrieved_at?: string | null;
   job_draft: { title?: string | null; headcount_required?: number | null; max_daily_salary?: number | null; min_experience?: number | null; work_duration_days?: number | null; work_timing?: string | null; trade_id?: string | null; required_skills: string[] };
   job_site_id?: string | null;
   job_site_name?: string | null;
@@ -87,6 +88,19 @@ const PENDING_COMMISSION_KEY = "gleska_pending_commission";
 function errorText(error: unknown): string {
   if (error instanceof ApiError) return error.message;
   return error instanceof Error ? error.message : "Something went wrong. Please try again.";
+}
+
+function assistantErrorText(error: unknown): string {
+  if (error instanceof ApiError) {
+    if (error.detail === "STALE_ASSISTANT_STATE") return "This conversation changed elsewhere. Reload the latest saved conversation, then review and resend your message.";
+    if (error.detail === "JOB_NOT_SEARCHING") return "This job is no longer searching for workers. Your job selection and message are preserved; choose an eligible searching job in a new chat.";
+    if (error.detail === "CONVERSATION_JOB_MISMATCH") return "This conversation is linked to a different job. Your job selection and message are preserved; start a new chat to use another job.";
+    if (error.detail === "JOB_CREATION_IN_PROGRESS") return "Job creation is still being finalized. Reload the saved conversation before trying another action.";
+    if (error.status === 403) return "You are not authorized to use this conversation. Your job selection and message are preserved.";
+    if (error.status === 404) return "The selected job or conversation is no longer available. Your job selection and message are preserved; refresh jobs or start a new chat.";
+    if (error.status >= 500) return "Candidate discovery is temporarily unavailable. Your selected job and chat input are preserved; retry.";
+  }
+  return errorText(error);
 }
 
 async function loadCashfree() {
@@ -128,6 +142,7 @@ export default function EmployerDashboardScreen() {
   const [workerCount, setWorkerCount] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
+  const [jobsLoadError, setJobsLoadError] = useState("");
   const [busy, setBusy] = useState("");
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
@@ -150,20 +165,57 @@ export default function EmployerDashboardScreen() {
   const [locationLoading, setLocationLoading] = useState(false);
   const [selectedJob, setSelectedJob] = useState<JobDetails | null>(null);
   const [jobMatches, setJobMatches] = useState<JobMatches | null>(null);
+  const [jobViewMode, setJobViewMode] = useState<"details" | "matches">("details");
+  const [jobMatchesError, setJobMatchesError] = useState("");
+  const [jobMatchesLoading, setJobMatchesLoading] = useState(false);
   const [modalLoading, setModalLoading] = useState(false);
   const [recovery, setRecovery] = useState<PendingCommission | null>(null);
   const [paymentStatus, setPaymentStatus] = useState("");
   const [assistantConversation, setAssistantConversation] = useState<HiringAgentConversation | null>(null);
+  const [assistantSelectedJobId, setAssistantSelectedJobId] = useState("");
   const [assistantInput, setAssistantInput] = useState("");
   const [assistantLoading, setAssistantLoading] = useState(false);
   const [assistantError, setAssistantError] = useState("");
+  const [assistantCandidateDecisionStatuses, setAssistantCandidateDecisionStatuses] = useState<Record<string, string>>({});
+  const [assistantCandidateDecisionStatusLoading, setAssistantCandidateDecisionStatusLoading] = useState(false);
+  const [assistantCandidateDecisionWorkerId, setAssistantCandidateDecisionWorkerId] = useState<string | null>(null);
+  const [assistantCandidateDecisionError, setAssistantCandidateDecisionError] = useState("");
   const searchTimer = useRef<number | undefined>(undefined);
   const locationSearchSequence = useRef(0);
   const submitting = useRef(false);
   const scrollToJobAfterLoad = useRef(location.hash === "#create-job");
 
-  const refresh = useCallback(async () => {
-    if (!user || user.role !== "EMPLOYER") return;
+  const refreshAssistantCandidateDecisionStatuses = useCallback(async (jobId: string) => {
+    const data = await apiGet<JobMatches>(`/api/v1/jobs/${encodeURIComponent(jobId)}/matches`);
+    return Object.fromEntries(
+      [...data.matches, ...data.selected_workers, ...(data.rejected_workers || [])]
+        .map((match) => [match.worker_profile_id, match.status]),
+    );
+  }, []);
+
+  useEffect(() => {
+    const jobId = assistantConversation?.job_id;
+    const candidates = assistantConversation?.candidate_results || [];
+    if (!jobId || candidates.length === 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setAssistantCandidateDecisionStatuses({});
+      setAssistantCandidateDecisionStatusLoading(false);
+      return;
+    }
+    let active = true;
+    setAssistantCandidateDecisionStatusLoading(true);
+    setAssistantCandidateDecisionError("");
+    void refreshAssistantCandidateDecisionStatuses(jobId)
+      .then((statuses) => { if (active) setAssistantCandidateDecisionStatuses(statuses); })
+      .catch(() => {
+        if (active) setAssistantCandidateDecisionError("Candidate statuses could not be refreshed. The backend will validate any decision before applying it.");
+      })
+      .finally(() => { if (active) setAssistantCandidateDecisionStatusLoading(false); });
+    return () => { active = false; };
+  }, [assistantConversation?.candidate_results, assistantConversation?.job_id, refreshAssistantCandidateDecisionStatuses]);
+
+  const refresh = useCallback(async (): Promise<Job[] | undefined> => {
+    if (!user || user.role !== "EMPLOYER") return undefined;
     setLoading(true);
     setLoadError("");
     const results = await Promise.allSettled([
@@ -176,8 +228,13 @@ export default function EmployerDashboardScreen() {
     const failures: string[] = [];
     if (results[0].status === "fulfilled") setProfile(results[0].value);
     else failures.push(`Employer profile: ${errorText(results[0].reason)}`);
-    if (results[1].status === "fulfilled") setJobs(results[1].value);
-    else failures.push(`Jobs: ${errorText(results[1].reason)}`);
+    if (results[1].status === "fulfilled") {
+      setJobs(results[1].value);
+      setJobsLoadError("");
+    } else {
+      setJobsLoadError(errorText(results[1].reason));
+      failures.push(`Jobs: ${errorText(results[1].reason)}`);
+    }
     if (results[2].status === "fulfilled") setSites(results[2].value);
     else failures.push(`Work sites: ${errorText(results[2].reason)}`);
     if (results[3].status === "fulfilled") setSummaries(Object.fromEntries(results[3].value.map((item) => [item.job_id, item])));
@@ -186,9 +243,12 @@ export default function EmployerDashboardScreen() {
     else failures.push(`Available workers: ${errorText(results[4].reason)}`);
     setLoadError(failures.join(" "));
     setLoading(false);
+    return results[1].status === "fulfilled" ? results[1].value : undefined;
   }, [user]);
 
-  useRefreshOnFocus(refresh, !authLoading && user?.role === "EMPLOYER" && nextStep === "DASHBOARD");
+  useRefreshOnFocus(async () => {
+    await refresh();
+  }, !authLoading && user?.role === "EMPLOYER" && nextStep === "DASHBOARD");
 
   useEffect(() => {
     if (authLoading) return;
@@ -218,7 +278,10 @@ export default function EmployerDashboardScreen() {
     let active = true;
     void apiGet<HiringAgentConversation>(`/api/v1/jobs/assistant/agent/${encodeURIComponent(savedId)}`)
       .then((conversation) => {
-        if (active) setAssistantConversation(conversation);
+        if (active) {
+          setAssistantConversation(conversation);
+          setAssistantSelectedJobId(conversation.job_id || "");
+        }
       })
       .catch((loadError) => {
         if (!active) return;
@@ -231,32 +294,142 @@ export default function EmployerDashboardScreen() {
     if (assistantLoading) return;
     if (user?.id) localStorage.removeItem(`gleska_hiring_agent_conversation:${user.id}`);
     setAssistantConversation(null);
+    setAssistantSelectedJobId("");
     setAssistantInput("");
     setAssistantError("");
   };
 
-  const sendAssistantMessage = async (event: FormEvent) => {
-    event.preventDefault();
-    const message = assistantInput.trim();
-    if (!message || assistantLoading) return;
+  const reloadAssistantConversation = async () => {
+    if (!assistantConversation?.conversation_id || assistantLoading) return;
     setAssistantLoading(true);
     setAssistantError("");
-    setAssistantInput("");
+    try {
+      const conversation = await apiGet<HiringAgentConversation>(
+        `/api/v1/jobs/assistant/agent/${encodeURIComponent(assistantConversation.conversation_id)}`,
+      );
+      setAssistantConversation(conversation);
+      setAssistantSelectedJobId(conversation.job_id || assistantSelectedJobId);
+    } catch (loadError) {
+      setAssistantError(`Couldn't reload the saved conversation: ${assistantErrorText(loadError)} Your message and job selection are preserved.`);
+    } finally {
+      setAssistantLoading(false);
+    }
+  };
+
+  const sendAssistantMessage = async (messageText = assistantInput) => {
+    const message = messageText.trim();
+    if (!message || assistantLoading) return;
+    const consumesInput = message === assistantInput.trim();
+    setAssistantLoading(true);
+    setAssistantError("");
+    if (consumesInput) setAssistantInput("");
+    const selectedJobId = assistantSelectedJobId;
     try {
       const conversation = await apiPost<HiringAgentConversation>("/api/v1/jobs/assistant/agent/message", {
         message,
         conversation_id: assistantConversation?.conversation_id,
-        job_id: assistantConversation?.job_id || undefined,
+        job_id: selectedJobId || undefined,
         selected_job_site_id: siteId || undefined,
         state_revision: assistantConversation?.state_revision,
       });
       setAssistantConversation(conversation);
+      setAssistantSelectedJobId(conversation.job_id || selectedJobId);
       if (user?.id) localStorage.setItem(`gleska_hiring_agent_conversation:${user.id}`, conversation.conversation_id);
     } catch (requestError) {
-      setAssistantInput(message);
-      setAssistantError(errorText(requestError));
+      if (consumesInput) setAssistantInput(message);
+      setAssistantError(assistantErrorText(requestError));
     } finally {
       setAssistantLoading(false);
+    }
+  };
+
+  const discoverAssistantCandidates = async () => {
+    const selectedJobId = assistantSelectedJobId;
+    if (
+      !selectedJobId
+      || !assistantEligibleJobs.some((job) => job.id === selectedJobId)
+      || assistantLoading
+      || jobsLoadError
+    ) return;
+
+    setAssistantLoading(true);
+    setAssistantError("");
+    try {
+      const conversation = await apiPost<HiringAgentConversation>("/api/v1/jobs/assistant/agent/discover", {
+        job_id: selectedJobId,
+        conversation_id: assistantConversation?.conversation_id,
+        state_revision: assistantConversation?.state_revision,
+      });
+      setAssistantConversation(conversation);
+      setAssistantSelectedJobId(conversation.job_id || selectedJobId);
+      if (user?.id) localStorage.setItem(`gleska_hiring_agent_conversation:${user.id}`, conversation.conversation_id);
+    } catch (discoveryError) {
+      if (assistantConversation?.conversation_id) {
+        try {
+          const latest = await apiGet<HiringAgentConversation>(
+            `/api/v1/jobs/assistant/agent/${encodeURIComponent(assistantConversation.conversation_id)}`,
+          );
+          setAssistantConversation(latest);
+          setAssistantSelectedJobId(latest.job_id || selectedJobId);
+        } catch {
+          setAssistantSelectedJobId(selectedJobId);
+        }
+      }
+      setAssistantError(`${assistantErrorText(discoveryError)} Your selected job and chat input are preserved.`);
+    } finally {
+      setAssistantLoading(false);
+    }
+  };
+
+  const decideAssistantCandidate = async (
+    candidate: HiringAgentConversation["candidate_results"][number],
+    decision: "accept" | "reject",
+  ) => {
+    const jobId = assistantConversation?.job_id || assistantSelectedJobId;
+    const workerProfileId = candidate.worker_profile_id;
+    if (!workerProfileId || !jobId || !assistantSelectedJobIsEligible || assistantCandidateDecisionWorkerId) return;
+    setAssistantCandidateDecisionWorkerId(workerProfileId);
+    setAssistantCandidateDecisionError("");
+    try {
+      if (decision === "accept") {
+        const result = await apiPost<{ match_status: string; job_status: string }>(
+          `/api/v1/jobs/${encodeURIComponent(jobId)}/matches/accept`,
+          { worker_profile_id: workerProfileId },
+        );
+        setAssistantCandidateDecisionStatuses((current) => ({
+          ...current,
+          [workerProfileId]: result.match_status,
+        }));
+        setJobs((current) => current.map((job) => job.id === jobId ? { ...job, status: result.job_status } : job));
+        setNotice("Worker selected successfully.");
+      } else {
+        const result = await apiPost<{ match_status: string }>(
+          `/api/v1/jobs/${encodeURIComponent(jobId)}/matches/reject`,
+          { worker_profile_id: workerProfileId },
+        );
+        setAssistantCandidateDecisionStatuses((current) => ({
+          ...current,
+          [workerProfileId]: result.match_status,
+        }));
+        setNotice("Candidate declined for this job.");
+      }
+    } catch (decisionError) {
+      if (decision === "accept" && decisionError instanceof ApiError && decisionError.status === 402
+        && typeof decisionError.detail === "object" && decisionError.detail !== null
+        && "code" in decisionError.detail && decisionError.detail.code === "COMMISSION_REQUIRED") {
+        await startCommissionPayment(jobId, workerProfileId);
+        setAssistantCandidateDecisionError("Commission payment is required to select this worker. Check the payment status below and verify it to finish.");
+      } else if (decisionError instanceof ApiError
+        && ["MATCH_NOT_FOUND", "MATCH_NOT_PENDING", "MATCH_EXPIRED", "WORKER_NOT_ELIGIBLE", "JOB_NOT_OPEN_FOR_HIRING", "HEADCOUNT_FILLED"].includes(String(decisionError.detail))) {
+        setAssistantCandidateDecisionError("This candidate or job is no longer available for that action. Refresh candidate discovery before deciding.");
+        void refreshAssistantCandidateDecisionStatuses(jobId)
+          .then(setAssistantCandidateDecisionStatuses)
+          .catch(() => setAssistantCandidateDecisionError("Candidate statuses could not be refreshed. Retry discovery."));
+      } else {
+        setAssistantCandidateDecisionError(errorText(decisionError));
+      }
+    } finally {
+      setAssistantCandidateDecisionWorkerId(null);
     }
   };
 
@@ -272,9 +445,12 @@ export default function EmployerDashboardScreen() {
       });
       setAssistantConversation(conversation);
       setNotice("AI-assisted job created successfully.");
-      await refresh();
+      const refreshedJobs = await refresh();
+      const createdJob = refreshedJobs?.find((job) => job.id === conversation.created_job_id);
+      if (createdJob?.status === "SEARCHING") setAssistantSelectedJobId(createdJob.id);
+      else if (conversation.created_job_id) setAssistantError("The job was created, but it is not currently eligible for candidate discovery.");
     } catch (requestError) {
-      setAssistantError(errorText(requestError));
+      setAssistantError(assistantErrorText(requestError));
     } finally {
       setAssistantLoading(false);
     }
@@ -410,17 +586,33 @@ export default function EmployerDashboardScreen() {
     }
   };
 
+  const loadJobMatches = async (jobId: string) => {
+    setJobMatches(null);
+    setJobMatchesError("");
+    setJobMatchesLoading(true);
+    try {
+      setJobMatches(await apiGet<JobMatches>(`/api/v1/jobs/${encodeURIComponent(jobId)}/matches`));
+    } catch (requestError) {
+      setJobMatchesError(errorText(requestError));
+    } finally {
+      setJobMatchesLoading(false);
+    }
+  };
+
   const openJob = async (job: Job, mode: "details" | "matches") => {
     setSelectedJob(null);
     setJobMatches(null);
+    setJobMatchesError("");
+    setJobViewMode(mode);
     setError("");
     setModalLoading(true);
     try {
       const details = await apiGet<JobDetails>(`/api/v1/jobs/${job.id}`);
       setSelectedJob(details);
-      if (mode === "matches") setJobMatches(await apiGet<JobMatches>(`/api/v1/jobs/${job.id}/matches`));
+      if (mode === "matches") await loadJobMatches(job.id);
     } catch (requestError) {
       setError(errorText(requestError));
+      if (mode === "matches") setJobMatchesError(errorText(requestError));
       setSelectedJob(job as JobDetails);
     } finally {
       setModalLoading(false);
@@ -430,6 +622,8 @@ export default function EmployerDashboardScreen() {
   const closeJob = () => {
     setSelectedJob(null);
     setJobMatches(null);
+    setJobMatchesError("");
+    setJobViewMode("details");
     setPaymentStatus("");
   };
 
@@ -492,6 +686,10 @@ export default function EmployerDashboardScreen() {
         return;
       }
       await apiPost(`/api/v1/jobs/${pending.jobId}/matches/accept`, { worker_profile_id: pending.workerProfileId });
+      setAssistantCandidateDecisionStatuses((current) => ({
+        ...current,
+        [pending.workerProfileId]: "ACCEPTED",
+      }));
       localStorage.removeItem(PENDING_COMMISSION_KEY);
       setRecovery(null);
       setPaymentStatus("Payment verified and worker selected.");
@@ -549,6 +747,17 @@ export default function EmployerDashboardScreen() {
   if (!user || user.role !== "EMPLOYER" || nextStep !== "DASHBOARD") return null;
 
   const activeJobCount = jobs.filter((job) => !["CANCELLED", "COMPLETED"].includes(job.status)).length;
+  const assistantEligibleJobs = jobs.filter((job) => job.status === "SEARCHING");
+  const assistantSelectedJob = jobs.find((job) => job.id === assistantSelectedJobId);
+  const assistantSelectedJobIsEligible = assistantEligibleJobs.some((job) => job.id === assistantSelectedJobId);
+  const selectAssistantJob = (jobId: string) => {
+    if (assistantConversation?.job_id && jobId !== assistantConversation.job_id) {
+      setAssistantError("This conversation is already linked to another job. Start a new chat before selecting a different job.");
+      return;
+    }
+    setAssistantSelectedJobId(jobId);
+    setAssistantError("");
+  };
   const employerName = profile?.contact_person_name || user.name || "Employer";
   const scrollToCreateJob = () => {
     setShowJobForm(true);
@@ -589,15 +798,49 @@ export default function EmployerDashboardScreen() {
           </div>
           {jobCreationMode === "assistant" ? <div className="employer-assistant">
             <div className="employer-assistant-heading"><div><Sparkles size={18} /><strong>AI hiring assistant</strong></div><button className="employer-subtle-button" type="button" disabled={assistantLoading} onClick={resetAssistantConversation}><RotateCcw size={15} />New chat</button></div>
+            <label className="employer-field">Searching job for candidate discovery
+              <select
+                value={assistantSelectedJobId}
+                disabled={assistantLoading || Boolean(jobsLoadError)}
+                onChange={(event) => selectAssistantJob(event.target.value)}
+              >
+                <option value="">Draft a new job</option>
+                {assistantEligibleJobs.map((job) => <option key={job.id} value={job.id}>{job.title}</option>)}
+                {assistantSelectedJobId && !assistantSelectedJobIsEligible && (
+                  <option value={assistantSelectedJobId} disabled>
+                    {assistantSelectedJob?.title || "Selected job"} — no longer searching
+                  </option>
+                )}
+              </select>
+            </label>
+            {jobsLoadError
+              ? <p className="employer-inline-note" role="alert">Unable to load your jobs. Retry before discovering candidates. <button type="button" onClick={() => void refresh()}>Retry</button></p>
+              : assistantSelectedJobId
+                ? <div className="employer-alert" role="status">
+                    <span>{assistantSelectedJobIsEligible
+                      ? `Candidate discovery is scoped to “${assistantSelectedJob?.title}”. Discovery does not create a job.`
+                      : "The selected job is not currently eligible for candidate discovery."}</span>
+                    <button
+                      className="employer-primary-button"
+                      type="button"
+                      disabled={!assistantSelectedJobIsEligible || assistantLoading || Boolean(jobsLoadError)}
+                      onClick={() => void discoverAssistantCandidates()}
+                    >
+                      Find matching candidates
+                    </button>
+                  </div>
+                : <p className="employer-inline-note">{assistantEligibleJobs.length
+                  ? "Select one of your searching jobs to request its current eligible matches from the Hiring Agent."
+                  : "You have no searching jobs available for candidate discovery. Create a job first; it will appear here while it is searching for workers."}</p>}
             <label className="employer-field">Work site for the draft<select value={siteId} onChange={(event) => setSiteId(event.target.value)}><option value="">Select a work site</option>{sites.map((site) => <option key={site.id} value={site.id}>{site.name}</option>)}</select></label>
             {!sites.length && <p className="employer-inline-note">Add a work site before confirming a job.</p>}
-            {assistantError && <div className="employer-alert is-error" role="alert"><AlertCircle size={17} /><span>{assistantError}</span><button type="button" onClick={() => setAssistantError("")} aria-label="Dismiss assistant error"><X size={17} /></button></div>}
+            {assistantError && <div className="employer-alert is-error" role="alert"><AlertCircle size={17} /><span>{assistantError}</span>{assistantConversation?.conversation_id && <button type="button" onClick={() => void reloadAssistantConversation()} disabled={assistantLoading}>Reload saved conversation</button>}<button type="button" onClick={() => setAssistantError("")} aria-label="Dismiss assistant error"><X size={17} /></button></div>}
             <div className="employer-assistant-messages" aria-live="polite">
               {(assistantConversation?.history?.length ? assistantConversation.history : [{ role: "assistant" as const, content: "Tell me what kind of job you need. I can help shape a job draft and discuss current candidates." }]).map((message, index) =>
                 <div key={`${index}-${message.role}`} className={`employer-chat-message ${message.role}`}><span>{message.content}</span></div>)}
               {assistantLoading && <p className="employer-inline-note"><LoaderCircle size={15} className="spin" />Assistant is working…</p>}
             </div>
-            <form className="employer-assistant-compose" onSubmit={(event) => void sendAssistantMessage(event)}>
+            <form className="employer-assistant-compose" onSubmit={(event) => { event.preventDefault(); void sendAssistantMessage(); }}>
               <input maxLength={4000} value={assistantInput} onChange={(event) => setAssistantInput(event.target.value)} placeholder="Describe the job, wage, workers, or timing…" disabled={assistantLoading} />
               <button className="employer-primary-button" type="submit" disabled={assistantLoading || !assistantInput.trim()} aria-label="Send message"><Send size={17} /></button>
             </form>
@@ -613,10 +856,41 @@ export default function EmployerDashboardScreen() {
               </dl>
               {!!assistantConversation.job_draft.required_skills.length && <p><strong>Skills:</strong> {assistantConversation.job_draft.required_skills.join(", ")}</p>}
               {assistantConversation.created_job_id ? <p className="employer-inline-note"><CheckCircle2 size={16} />Job created.</p>
-                : assistantConversation.job_confirmation_token && <button className="employer-primary-button" type="button" disabled={assistantLoading || !siteId} onClick={() => void confirmAssistantJob()}>{assistantLoading ? "Creating…" : <><CheckCircle2 size={17} />Confirm &amp; create job</>}</button>}
+                : assistantConversation.job_confirmation_token && !assistantSelectedJobId && <button className="employer-primary-button" type="button" disabled={assistantLoading || !siteId} onClick={() => void confirmAssistantJob()}>{assistantLoading ? "Creating…" : <><CheckCircle2 size={17} />Confirm &amp; create job</>}</button>}
             </div>}
-            {assistantConversation?.candidate_result_status === "NO_MATCHES" && <p className="employer-inline-note">{assistantConversation.candidate_result_note || "No matching workers were found yet."}</p>}
-            {assistantConversation?.candidate_result_status === "FOUND" && <div className="employer-assistant-candidates"><h3>Candidate matches</h3>{assistantConversation.candidate_results.map((candidate) => <article key={candidate.candidate_ref}><strong>{candidate.name || "Worker"}</strong><p>{[candidate.trade, candidate.experience_years != null ? `${candidate.experience_years} years` : null].filter(Boolean).join(" · ")}</p><p>{candidate.skills.join(", ") || "No skills listed"} · {money(candidate.expected_daily_wage)} / day</p></article>)}</div>}
+            {assistantSelectedJobId && assistantConversation?.candidate_result_status === "NOT_RETRIEVED" && <p className="employer-inline-note">Candidate matches have not been requested for this conversation yet.</p>}
+            {assistantConversation?.candidate_result_status === "NO_MATCHES" && <div className="employer-alert" role="status"><span>{assistantConversation.candidate_result_note || "No eligible matching workers were found for this job."}</span></div>}
+            {assistantConversation?.candidate_result_status === "FAILED" && <div className="employer-alert is-error" role="alert"><span>{assistantConversation.candidate_result_note || "Candidate discovery failed. Your job selection is preserved; retry the request."}</span></div>}
+            {assistantConversation?.candidate_result_status === "FOUND" && <div className="employer-assistant-candidates">
+              <h3>{assistantSelectedJobIsEligible ? "Eligible matches returned by the backend" : "Previously retrieved matches — job no longer searching"}</h3>
+              {assistantConversation.candidate_retrieved_at && <p>Retrieved {new Date(assistantConversation.candidate_retrieved_at).toLocaleString()}</p>}
+              {assistantConversation.candidate_result_note && <p>{assistantConversation.candidate_result_note}</p>}
+              {assistantConversation.candidate_results.map((candidate) => {
+                const decisionStatus = candidate.worker_profile_id
+                  ? assistantCandidateDecisionStatuses[candidate.worker_profile_id]
+                  : undefined;
+                return <article key={candidate.candidate_ref}>
+                  <strong>{candidate.name || candidate.candidate_ref}</strong>
+                  <p>{[candidate.trade || "Trade unavailable", candidate.experience_years != null ? `${candidate.experience_years} years` : "Experience unavailable"].join(" · ")}</p>
+                  <p>{candidate.skills.length ? candidate.skills.join(", ") : "Skills unavailable"} · {money(candidate.expected_daily_wage)} / day</p>
+                  <p>{candidate.availability_status || "Availability unavailable"}{candidate.projected_distance_m != null ? ` · Projected: ${distanceLabel(candidate.projected_distance_m)}` : ""}</p>
+                  {candidate.verified_evidence.length > 0 && <div><strong>Match evidence returned by the backend</strong><ul>{candidate.verified_evidence.map((item) => <li key={item}>{item}</li>)}</ul></div>}
+                  {candidate.unavailable_fields.length > 0 && <p>Not available: {candidate.unavailable_fields.join(", ")}</p>}
+                  <div className="employer-candidate-actions">
+                    {!candidate.worker_profile_id ? <span>Refresh candidate discovery to enable decisions for this saved result.</span>
+                      : decisionStatus === "ACCEPTED" ? <strong>Selected for this job</strong>
+                      : decisionStatus === "REJECTED" ? <strong>Declined for this job</strong>
+                        : <>
+                          <button className="employer-primary-button" type="button" disabled={!assistantSelectedJobIsEligible || assistantCandidateDecisionStatusLoading || assistantCandidateDecisionWorkerId !== null} onClick={() => void decideAssistantCandidate(candidate, "accept")}>
+                            {assistantCandidateDecisionWorkerId === candidate.worker_profile_id ? "Updating…" : "Select worker"}
+                          </button>
+                          <button className="employer-subtle-button" type="button" disabled={!assistantSelectedJobIsEligible || assistantCandidateDecisionStatusLoading || assistantCandidateDecisionWorkerId !== null} onClick={() => void decideAssistantCandidate(candidate, "reject")}>Decline</button>
+                        </>}
+                  </div>
+                </article>;
+              })}
+              {assistantCandidateDecisionError && <p className="employer-alert is-error" role="alert">{assistantCandidateDecisionError}</p>}
+            </div>}
           </div> : <form className="employer-form-grid" onSubmit={(event) => void submitJob(event)}>
           <label className="employer-field employer-field-wide">Job title<input required maxLength={120} value={jobTitle} onChange={(event) => setJobTitle(event.target.value)} placeholder="e.g. Construction worker" /></label>
           <label className="employer-field">Work site<select required value={siteId} onChange={(event) => setSiteId(event.target.value)}><option value="">Select a work site</option>{sites.map((site) => <option key={site.id} value={site.id}>{site.name}</option>)}</select></label>
@@ -667,13 +941,15 @@ export default function EmployerDashboardScreen() {
 
       {selectedJob && <div className="employer-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeJob(); }}>
         <section className="employer-job-modal" role="dialog" aria-modal="true" aria-labelledby="employer-modal-title">
-          <header><div><p className="employer-eyebrow">{jobMatches ? "Suitable workers" : "Job details"}</p><h2 id="employer-modal-title">{selectedJob.title}</h2></div><button type="button" onClick={closeJob} aria-label="Close job details"><X size={22} /></button></header>
+        <header><div><p className="employer-eyebrow">{jobViewMode === "matches" ? "Suitable workers" : "Job details"}</p><h2 id="employer-modal-title">{selectedJob.title}</h2></div><button type="button" onClick={closeJob} aria-label="Close job details"><X size={22} /></button></header>
           {modalLoading ? <div className="employer-dashboard-state"><LoaderCircle className="spin" size={22} />Loading job details…</div> : <>
-            {!jobMatches ? <div className="employer-detail-grid"><p><strong>Status</strong>{statusLabel(selectedJob.status)}</p><p><strong>Work site</strong>{selectedJob.job_site?.name || "Unknown"}</p><p><strong>Address</strong>{selectedJob.job_site?.address || "Not provided"}</p><p><strong>Workers</strong>{selectedJob.headcount_required}</p><p><strong>Daily wage</strong>{money(selectedJob.max_daily_salary)}</p><p><strong>Duration</strong>{selectedJob.work_duration_days ?? "Not specified"} days</p><p><strong>Experience</strong>{selectedJob.min_experience ?? "Not specified"} years</p><p><strong>Work timing</strong>{selectedJob.work_timing || "Not specified"}</p></div>
-              : <><div className="employer-match-summary"><strong>{jobMatches.matching_status.replaceAll("_", " ")}</strong><span>{jobMatches.selected_count} selected · {jobMatches.remaining_count} slots remaining</span></div>
-                {jobMatches.matches.length === 0 ? <div className="employer-empty-state"><Users size={24} /><strong>No suitable workers right now</strong><p>Check back later for refreshed matches.</p></div> : <div className="employer-worker-list">{jobMatches.matches.map((worker) => <article key={worker.worker_profile_id} className="employer-worker-item"><div className="employer-worker-avatar">{worker.name?.charAt(0).toUpperCase() || "W"}</div><div className="employer-worker-copy"><strong>{worker.name || "Worker"}</strong><p>{[worker.trade_id, worker.experience_years != null ? `${worker.experience_years} years experience` : null, distanceLabel(worker.distance_m)].filter(Boolean).join(" · ")}</p><p>{worker.skills.join(", ") || "No skills listed"} · {money(worker.expected_daily_wage)} / day</p><small>{statusLabel(worker.status)}{worker.availability_status ? ` · ${statusLabel(worker.availability_status)}` : ""}</small></div>{worker.status === "PENDING" && <button type="button" className="employer-primary-button" disabled={busy === `accept-${worker.worker_profile_id}`} onClick={() => void acceptWorker(selectedJob.id, worker.worker_profile_id)}>{busy === `accept-${worker.worker_profile_id}` ? "Selecting…" : "Select worker"}</button>}</article>)}</div>}
-                {jobMatches.selected_workers.length > 0 && <section className="employer-selected-workers"><h3>Selected workers</h3>{jobMatches.selected_workers.map((worker) => <p key={worker.worker_profile_id}><CheckCircle2 size={16} />{worker.name || "Worker"} · {statusLabel(worker.status)}</p>)}</section>}
-              </>}
+          {jobViewMode !== "matches" ? <div className="employer-detail-grid"><p><strong>Status</strong>{statusLabel(selectedJob.status)}</p><p><strong>Work site</strong>{selectedJob.job_site?.name || "Unknown"}</p><p><strong>Address</strong>{selectedJob.job_site?.address || "Not provided"}</p><p><strong>Workers</strong>{selectedJob.headcount_required}</p><p><strong>Daily wage</strong>{money(selectedJob.max_daily_salary)}</p><p><strong>Duration</strong>{selectedJob.work_duration_days ?? "Not specified"} days</p><p><strong>Experience</strong>{selectedJob.min_experience ?? "Not specified"} years</p><p><strong>Work timing</strong>{selectedJob.work_timing || "Not specified"}</p></div>
+            : jobMatchesLoading ? <div className="employer-dashboard-state"><LoaderCircle className="spin" size={22} />Refreshing matching workers…</div>
+            : jobMatchesError ? <div className="employer-alert is-error" role="alert"><p>{jobMatchesError}</p><button type="button" className="employer-secondary-button" onClick={() => void loadJobMatches(selectedJob.id)}><RefreshCw size={16} />Try again</button></div>
+            : jobMatches ? <><div className="employer-match-summary"><strong>{jobMatches.matching_status.replaceAll("_", " ")}</strong><span>{jobMatches.selected_count} selected · {jobMatches.remaining_count} slots remaining</span></div>
+              {jobMatches.matches.length === 0 ? <div className="employer-empty-state"><Users size={24} /><strong>No suitable workers right now</strong><p>Check back later for refreshed matches.</p></div> : <div className="employer-worker-list">{jobMatches.matches.map((worker) => <article key={worker.worker_profile_id} className="employer-worker-item"><div className="employer-worker-avatar">{worker.name?.charAt(0).toUpperCase() || "W"}</div><div className="employer-worker-copy"><strong>{worker.name || "Worker"}</strong><p>{[worker.trade_id, worker.experience_years != null ? `${worker.experience_years} years experience` : null, distanceLabel(worker.distance_m)].filter(Boolean).join(" · ")}</p><p>{worker.skills.join(", ") || "No skills listed"} · {money(worker.expected_daily_wage)} / day</p><small>{statusLabel(worker.status)}{worker.availability_status ? ` · ${statusLabel(worker.availability_status)}` : ""}</small></div>{worker.status === "PENDING" && <button type="button" className="employer-primary-button" disabled={busy === `accept-${worker.worker_profile_id}`} onClick={() => void acceptWorker(selectedJob.id, worker.worker_profile_id)}>{busy === `accept-${worker.worker_profile_id}` ? "Selecting…" : "Select worker"}</button>}</article>)}</div>}
+              {jobMatches.selected_workers.length > 0 && <section className="employer-selected-workers"><h3>Selected workers</h3>{jobMatches.selected_workers.map((worker) => <p key={worker.worker_profile_id}><CheckCircle2 size={16} />{worker.name || "Worker"} · {statusLabel(worker.status)}</p>)}</section>}
+            </> : null}
           </>}
         </section>
       </div>}

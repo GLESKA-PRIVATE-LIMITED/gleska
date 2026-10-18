@@ -107,7 +107,8 @@ def _is_current_location_fresh(updated_at: Any) -> bool:
         updated_at = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
     if updated_at.tzinfo is None:
         updated_at = updated_at.replace(tzinfo=timezone.utc)
-    return datetime.now(timezone.utc) - updated_at <= CURRENT_LOCATION_MAX_AGE
+    age = datetime.now(timezone.utc) - updated_at
+    return timedelta(0) <= age <= CURRENT_LOCATION_MAX_AGE
 
 
 def _valid_profile_current_location(response: Any) -> dict[str, Any] | None:
@@ -574,8 +575,15 @@ async def update_worker_location(
     location: WorkerLocationUpdate,
     user: UserResponse = Depends(require_worker),
 ):
-    """Save a fresh GPS fix or explicitly selected saved profile location."""
+    """Save a fresh current GPS fix without changing permanent address fields."""
+    if location.location_source != "GPS":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="CURRENT_GPS_REQUIRED")
     request_timestamp = datetime.now(timezone.utc).isoformat()
+    if location.captured_at.tzinfo is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="GPS_CAPTURE_TIMESTAMP_REQUIRED")
+    location_age = datetime.now(timezone.utc) - location.captured_at.astimezone(timezone.utc)
+    if location_age < timedelta(seconds=-30) or location_age > CURRENT_LOCATION_MAX_AGE:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="GPS_LOCATION_STALE")
     logger.debug(
         "[Location Trace][Backend IN] worker_id=%s lat=%s lng=%s accuracy_m=%s request_timestamp=%s",
         user.id,
@@ -593,7 +601,7 @@ async def update_worker_location(
     try:
         profile_response = (
             supabase.table("worker_profiles")
-            .select("id, latitude, longitude")
+            .select("id")
             .eq("user_id", user.id)
             .single()
             .execute()
@@ -603,43 +611,9 @@ async def update_worker_location(
             profile = profile[0] if profile else {}
         if not profile.get("id"):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Worker profile not found")
-        if location.location_source == "PROFILE":
-            latitude = profile.get("latitude")
-            longitude = profile.get("longitude")
-            if (
-                latitude is None
-                or longitude is None
-                or isinstance(latitude, bool)
-                or isinstance(longitude, bool)
-            ):
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="PROFILE_LOCATION_UNAVAILABLE")
-            latitude = float(latitude)
-            longitude = float(longitude)
-            if (
-                not math.isfinite(latitude)
-                or not math.isfinite(longitude)
-                or not -90 <= latitude <= 90
-                or not -180 <= longitude <= 180
-                or (latitude == 0 and longitude == 0)
-            ):
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="PROFILE_LOCATION_UNAVAILABLE")
-            accuracy_m = 1000
-        else:
-            latitude = location.latitude
-            longitude = location.longitude
-            accuracy_m = location.accuracy_m
-        previous_location_response = (
-            supabase.table("worker_current_locations")
-            .select("latitude, longitude")
-            .eq("worker_profile_id", profile["id"])
-            .maybe_single()
-            .execute()
-        )
-        previous_location = (
-            previous_location_response.data
-            if previous_location_response
-            else None
-        ) or {}
+        latitude = location.latitude
+        longitude = location.longitude
+        accuracy_m = location.accuracy_m
         try:
             address = await GeocodingService.reverse_geocode(latitude, longitude)
         except GeocodingError:
@@ -677,14 +651,14 @@ async def update_worker_location(
             saved_location.get("accuracy_m"),
             saved_location.get("updated_at"),
         )
-        if (
-            previous_location.get("latitude") != latitude
-            or previous_location.get("longitude") != longitude
-        ):
-            try:
-                MatchingService.reconcile_worker(str(profile["id"]), "WORKER_LOCATION_UPDATED")
-            except MatchingError:
-                logger.exception("Worker location reconciliation failed: worker_profile_id=%s", profile.get("id"))
+        try:
+            MatchingService.reconcile_worker(str(profile["id"]), "WORKER_LOCATION_UPDATED")
+        except MatchingError as exc:
+            logger.exception("Worker location reconciliation failed: worker_profile_id=%s", profile.get("id"))
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="MATCHING_RPC_UNAVAILABLE" if str(exc) == "MATCHING_RPC_UNAVAILABLE" else "WORKER_REMATCH_FAILED",
+            ) from exc
         return WorkerCurrentLocationResponse(**{
             **response.data[0],
             "location_source": location.location_source,
@@ -696,6 +670,60 @@ async def update_worker_location(
     except Exception as exc:
         logger.exception("Worker location update failed: user_id=%s", user.id)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="WORKER_LOCATION_UPDATE_FAILED") from exc
+
+
+@router.post("/me/available-jobs/refresh")
+async def refresh_available_jobs(
+    user: UserResponse = Depends(require_worker),
+):
+    """Retry candidate reconciliation using the worker's already-saved current GPS."""
+    try:
+        profile_response = (
+            supabase.table("worker_profiles")
+            .select("id")
+            .eq("user_id", user.id)
+            .single()
+            .execute()
+        )
+        profile = profile_response.data or {}
+        if isinstance(profile, list):
+            profile = profile[0] if profile else {}
+        if not profile.get("id"):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Worker profile not found")
+
+        location_response = (
+            supabase.table("worker_current_locations")
+            .select("latitude, longitude, accuracy_m, updated_at")
+            .eq("worker_profile_id", profile["id"])
+            .maybe_single()
+            .execute()
+        )
+        current_location = _valid_profile_current_location(location_response)
+        if (
+            current_location is None
+            or (current_location["latitude"] == 0 and current_location["longitude"] == 0)
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="CURRENT_LOCATION_REQUIRED",
+            )
+
+        MatchingService.reconcile_worker(str(profile["id"]), "WORKER_MATCHING_RETRY")
+        return {"refreshed": True}
+    except HTTPException:
+        raise
+    except MatchingError as exc:
+        logger.exception("Worker matching retry failed: user_id=%s", user.id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="MATCHING_RPC_UNAVAILABLE" if str(exc) == "MATCHING_RPC_UNAVAILABLE" else "WORKER_REMATCH_FAILED",
+        ) from exc
+    except Exception as exc:
+        logger.exception("Worker matching retry failed: user_id=%s", user.id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="WORKER_MATCH_REFRESH_FAILED",
+        ) from exc
 
 
 @router.get("/me/available-jobs")

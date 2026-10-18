@@ -130,7 +130,12 @@ describe("Worker Dashboard current location", () => {
 
     await waitFor(() => expect(mocks.apiPut).toHaveBeenCalledWith(
       "/api/v1/workers/me/location",
-      { latitude: 17.385, longitude: 78.4867, accuracy_m: 500 },
+      expect.objectContaining({
+        latitude: 17.385,
+        longitude: 78.4867,
+        accuracy_m: 500,
+        captured_at: expect.any(String),
+      }),
     ));
     await waitFor(() => expect(mocks.apiGet).toHaveBeenCalledWith("/api/v1/workers/me/available-jobs"));
     expect(mocks.apiPut.mock.invocationCallOrder[0]).toBeLessThan(

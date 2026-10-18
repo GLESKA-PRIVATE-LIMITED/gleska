@@ -120,6 +120,7 @@ class JobMatchesResponse(BaseModel):
     matching_status: str
     matches: list[JobMatchWorkerResponse] = Field(default_factory=list)
     selected_workers: list[JobMatchWorkerResponse] = Field(default_factory=list)
+    rejected_workers: list[JobMatchWorkerResponse] = Field(default_factory=list)
     headcount_required: int = 0
     selected_count: int = 0
     remaining_count: int = 0
@@ -142,3 +143,11 @@ class JobMatchAcceptResponse(BaseModel):
     match_status: str
     job_status: str
     accepted_count: int
+
+
+class JobMatchRejectResponse(BaseModel):
+    match_id: str
+    worker_profile_id: str
+    match_status: str
+    job_status: str
+    rejected_count: int

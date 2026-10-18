@@ -134,20 +134,18 @@ class UpdateWorkerProfileSchema(BaseModel):
 
 
 class WorkerLocationUpdate(BaseModel):
-    """A fresh GPS position or an explicit selection of saved profile coordinates."""
+    """A current location update; the endpoint accepts GPS, not saved profile coordinates."""
 
     latitude: Optional[float] = Field(default=None, ge=-90, le=90)
     longitude: Optional[float] = Field(default=None, ge=-180, le=180)
     accuracy_m: Optional[float] = Field(default=None, gt=0, le=1000)
-    location_source: Literal["GPS", "PROFILE"] = "GPS"
+    captured_at: datetime
+    location_source: Literal["GPS"] = "GPS"
 
     @model_validator(mode="after")
     def validate_location_source(self) -> "WorkerLocationUpdate":
-        if self.location_source == "GPS":
-            if self.latitude is None or self.longitude is None or self.accuracy_m is None:
-                raise ValueError("GPS locations require coordinates and accuracy")
-        elif self.latitude is not None or self.longitude is not None or self.accuracy_m is not None:
-            raise ValueError("Profile location selection must use the saved profile coordinates")
+        if self.latitude is None or self.longitude is None or self.accuracy_m is None:
+            raise ValueError("GPS locations require coordinates and accuracy")
         if self.latitude == 0 and self.longitude == 0:
             raise ValueError("latitude and longitude cannot both be zero")
         return self

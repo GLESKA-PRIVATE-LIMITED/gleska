@@ -145,10 +145,12 @@ describe("Worker Profile location", () => {
   });
 
   it("writes detected GPS only to current-location data and preserves permanent address fields", async () => {
+    const capturedAt = new Date().toISOString();
     mocks.getBrowserLocation.mockResolvedValue({
       latitude: currentLocation.latitude,
       longitude: currentLocation.longitude,
       accuracy: currentLocation.accuracy_m,
+      captured_at: capturedAt,
     });
     setupProfile();
 
@@ -161,6 +163,7 @@ describe("Worker Profile location", () => {
       latitude: currentLocation.latitude,
       longitude: currentLocation.longitude,
       accuracy_m: currentLocation.accuracy_m,
+      captured_at: capturedAt,
     });
     expect(mocks.apiPut).not.toHaveBeenCalledWith("/api/v1/workers/me", expect.anything());
     expect(screen.getByText("Nanded, Maharashtra, India")).toBeTruthy();

@@ -38,7 +38,8 @@ export type LocationErrorCategory =
   | "TIMEOUT"
   | "LOCATION_UNAVAILABLE"
   | "INVALID_COORDINATES"
-  | "INACCURATE_LOCATION";
+  | "INACCURATE_LOCATION"
+  | "STALE_LOCATION";
 
 export class InaccurateLocationError extends Error {
   code = "INACCURATE";
@@ -67,13 +68,23 @@ export class InvalidCoordinatesError extends Error {
   }
 }
 
+export class StaleLocationError extends Error {
+  code = "STALE_LOCATION";
+
+  constructor() {
+    super("The device returned a stale current location. Please wait for a fresh GPS fix and try again.");
+  }
+}
+
 export function getLocationErrorCategory(error: unknown): LocationErrorCategory {
   if (error instanceof InvalidCoordinatesError) return "INVALID_COORDINATES";
   if (error instanceof InaccurateLocationError) return "INACCURATE_LOCATION";
+  if (error instanceof StaleLocationError) return "STALE_LOCATION";
 
   const code = typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
   if (code === "INVALID_COORDINATES") return "INVALID_COORDINATES";
   if (code === "INACCURATE") return "INACCURATE_LOCATION";
+  if (code === "STALE_LOCATION") return "STALE_LOCATION";
   if (code === "LOCATION_UNAVAILABLE") return "LOCATION_UNAVAILABLE";
   if (code === 1) return "PERMISSION_DENIED";
   if (code === 2) return "POSITION_UNAVAILABLE";
@@ -113,7 +124,7 @@ export type WatchBrowserLocationOptions = {
   onPosition?: (location: NormalizedLocation) => void;
 };
 
-export function watchBrowserLocation({ policy, signal, onPosition: onLocation }: WatchBrowserLocationOptions): Promise<NormalizedLocation> {
+export function watchBrowserLocation({ policy, signal, onPosition: onLocation }: WatchBrowserLocationOptions): Promise<NormalizedLocation & { captured_at: string }> {
   if (typeof navigator === "undefined" || !navigator.geolocation) return Promise.reject(new LocationUnavailableError());
   if (signal?.aborted) return Promise.reject(new DOMException("Location request cancelled", "AbortError"));
 
@@ -122,6 +133,7 @@ export function watchBrowserLocation({ policy, signal, onPosition: onLocation }:
     let watcherId: number | null = null;
     let settled = false;
     let lastInaccurateAccuracy: number | null = null;
+    let receivedStalePosition = false;
     let lastPositionError: GeolocationPositionError | null = null;
 
     const clearAcquisition = () => {
@@ -139,6 +151,8 @@ export function watchBrowserLocation({ policy, signal, onPosition: onLocation }:
       finish(() => {
         if (lastInaccurateAccuracy !== null) {
           reject(new InaccurateLocationError(lastInaccurateAccuracy));
+        } else if (receivedStalePosition) {
+          reject(new StaleLocationError());
         } else if (lastPositionError) {
           reject(lastPositionError);
         } else {
@@ -150,6 +164,14 @@ export function watchBrowserLocation({ policy, signal, onPosition: onLocation }:
 
     const onPosition: PositionCallback = (position) => {
       if (settled) return;
+      const positionAgeMs = Date.now() - position.timestamp;
+      if (
+        policy === "MATCHING"
+        && (!Number.isFinite(position.timestamp) || positionAgeMs < -30_000 || positionAgeMs > 10 * 60 * 1000)
+      ) {
+        receivedStalePosition = true;
+        return;
+      }
       const { latitude, longitude, accuracy } = position.coords;
       if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
         finish(() => reject(new InvalidCoordinatesError()));
@@ -179,7 +201,10 @@ export function watchBrowserLocation({ policy, signal, onPosition: onLocation }:
         finish(() => reject(error));
         return;
       }
-      finish(() => resolve(acceptedLocation));
+      finish(() => resolve({
+        ...acceptedLocation,
+        captured_at: new Date(position.timestamp).toISOString(),
+      }));
     };
     const onError: PositionErrorCallback = (error) => {
       if (settled) return;
@@ -268,6 +293,6 @@ export function shouldSendLiveLocationUpdate(current: LiveLocationSnapshot | nul
   return hasHeartbeat || movementMeters >= MIN_LOCATION_MOVEMENT_METERS;
 }
 
-export function getBrowserLocation(policy: LocationAccuracyPolicy = "MATCHING"): Promise<NormalizedLocation> {
+export function getBrowserLocation(policy: LocationAccuracyPolicy = "MATCHING"): Promise<NormalizedLocation & { captured_at: string }> {
   return watchBrowserLocation({ policy });
 }
