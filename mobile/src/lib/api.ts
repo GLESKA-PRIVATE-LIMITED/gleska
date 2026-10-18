@@ -58,7 +58,8 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
   const { body, skipSupabaseAuth = false, timeoutMs = 20000, headers: inputHeaders, ...requestOptions } = options;
   const headers = new Headers(inputHeaders);
   headers.set("Accept", "application/json");
-  if (body !== undefined) headers.set("Content-Type", "application/json");
+  const formDataBody = typeof FormData !== "undefined" && body instanceof FormData ? body : undefined;
+  if (body !== undefined && !formDataBody) headers.set("Content-Type", "application/json");
 
   const sessionKey = localStorage.getItem("goleska_sec_session_key");
   if (sessionKey) headers.set("X-Goleska-Session-Key", sessionKey);
@@ -76,7 +77,7 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
       headers,
       credentials: "include",
       signal: controller.signal,
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: body === undefined ? undefined : formDataBody ? formDataBody : JSON.stringify(body),
     });
 
     if (response.status === 204) return undefined as T;

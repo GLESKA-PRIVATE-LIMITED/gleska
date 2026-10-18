@@ -1,19 +1,53 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Menu, X } from "lucide-react";
 import AgentSidebar from "@/components/agent-dashboard/AgentSidebar";
 import { supplierWorkspaceConfig } from "@/components/agents/procurement/supplierWorkspaceConfig";
-import { useSupplier } from "@/context/SupplierContext";
+import { SupplierProvider, useSupplier } from "@/context/SupplierContext";
 import { useAuth } from "@/context/AuthContext";
+import { getRouteForNextStep } from "@/lib/auth-routing";
 
 export default function SupplierLayoutShell({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const { user, isLoading, nextStep } = useAuth();
+
+  useEffect(() => {
+    if (isLoading) return;
+    if (!user) {
+      router.replace(`/auth/signin?next=${encodeURIComponent(pathname)}`);
+      return;
+    }
+    if (user.role !== "EMPLOYER" || nextStep !== "DASHBOARD") {
+      router.replace(getRouteForNextStep(user.role, nextStep));
+    }
+  }, [isLoading, nextStep, pathname, router, user]);
+
+  if (isLoading || !user || user.role !== "EMPLOYER" || nextStep !== "DASHBOARD") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#eef1fb] dark:bg-slate-950">
+        <p className="text-sm font-semibold text-slate-600 dark:text-slate-400">
+          {isLoading ? "Checking your account..." : "Redirecting..."}
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <SupplierProvider>
+      <SupplierWorkspaceContent>{children}</SupplierWorkspaceContent>
+    </SupplierProvider>
+  );
+}
+
+function SupplierWorkspaceContent({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const [isCollapsed, setIsCollapsed] = useState(false);

@@ -115,7 +115,6 @@ export default function AccountManagementShell({
     { href: "/worker/documents", label: "Documents", icon: FileText, isPage: true },
     { href: "/worker/subscription", label: "Subscription", icon: CreditCard, isPage: true },
     { href: "/worker/settings-security", label: "Settings & Security", icon: ShieldCheck, isPage: true },
-    { href: "/supplier", label: "Supplier Workspace", icon: Building2, isPage: true },
   ];
 
   const helpHref = employer ? "/employer/help" : "/worker/help";

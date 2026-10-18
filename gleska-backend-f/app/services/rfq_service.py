@@ -18,6 +18,9 @@ from app.schemas.rfq import (
     ProcurementQuotationSelectionRequest,
     ProcurementRFQCreateRequest,
     ProcurementRFQListResponse,
+    ProcurementRFQRecoveryListItem,
+    ProcurementRFQRecoveryListResponse,
+    ProcurementRFQRecoveryResponse,
     ProcurementRFQRecipient,
     ProcurementRFQResponse,
     ProcurementRFQUpdateRequest,
@@ -77,6 +80,138 @@ class RFQService:
         if isinstance(data, list):
             return data[0] if data else {}
         return data or {}
+
+    @staticmethod
+    def _request_fingerprint(request: ProcurementRFQCreateRequest) -> str:
+        payload = {
+            "material_request_id": str(request.material_request_id),
+            "supplier_company_ids": sorted(str(company_id) for company_id in request.supplier_company_ids),
+            "delivery_location": request.delivery_location,
+            "quotation_deadline": request.quotation_deadline.isoformat(),
+            "buyer_notes": request.buyer_notes,
+        }
+        return hashlib.sha256(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+
+    @classmethod
+    def _complete_preflight_failure(
+        cls,
+        user: UserResponse,
+        employer_id: str,
+        request: ProcurementRFQCreateRequest,
+        request_fingerprint: str,
+        error_code: str,
+        http_status: int,
+    ) -> ProcurementRFQResponse:
+        try:
+            result = cls._row(
+                supabase.rpc(
+                    "mark_procurement_rfq_attempt_not_created",
+                    {
+                        "p_user_id": str(user.id),
+                        "p_employer_id": employer_id,
+                        "p_idempotency_key": str(request.idempotency_key),
+                        "p_request_fingerprint": request_fingerprint,
+                        "p_error_code": error_code,
+                    },
+                ).execute()
+            )
+        except Exception as exc:
+            logger.error(
+                "RFQ attempt terminalization failed: user_id=%s exception_type=%s",
+                user.id,
+                type(exc).__name__,
+            )
+            raise RFQServiceError("RFQ_ATTEMPT_RECOVERY_FAILED") from exc
+
+        if result.get("ok") is not True:
+            raise RFQServiceError(str(result.get("error_code") or "RFQ_ATTEMPT_RECOVERY_FAILED"))
+        if result.get("status") == "SUCCEEDED" and result.get("rfq_id"):
+            return cls.get_buyer(user, UUID(str(result["rfq_id"])))
+        raise RFQServiceError(error_code, http_status)
+
+    @classmethod
+    def recover_attempt(
+        cls,
+        user: UserResponse,
+        idempotency_key: UUID,
+    ) -> ProcurementRFQRecoveryResponse:
+        employer_id = cls._employer_id(user)
+        row = cls._row(
+            supabase.table("procurement_rfq_idempotency_attempts")
+            .select("status, rfq_id, error_code")
+            .eq("user_id", str(user.id))
+            .eq("employer_id", employer_id)
+            .eq("idempotency_key", str(idempotency_key))
+            .maybe_single()
+            .execute()
+        )
+        if row:
+            rfq = (
+                cls.get_buyer(user, UUID(str(row["rfq_id"])))
+                if row.get("status") == "SUCCEEDED" and row.get("rfq_id")
+                else None
+            )
+            return ProcurementRFQRecoveryResponse(
+                idempotency_key=idempotency_key,
+                status=row["status"],
+                rfq=rfq,
+                error_code=row.get("error_code"),
+            )
+
+        legacy = cls._row(
+            supabase.table("procurement_rfqs")
+            .select(
+                "id, material_request_id, item_name, specification, quantity, unit, "
+                "delivery_location, quotation_deadline, buyer_notes, status, created_at"
+            )
+            .eq("user_id", str(user.id))
+            .eq("employer_id", employer_id)
+            .eq("idempotency_key", str(idempotency_key))
+            .maybe_single()
+            .execute()
+        )
+        if legacy:
+            return ProcurementRFQRecoveryResponse(
+                idempotency_key=idempotency_key,
+                status="SUCCEEDED",
+                rfq=cls._buyer_response(legacy),
+                legacy_attempt=True,
+            )
+        return ProcurementRFQRecoveryResponse(
+            idempotency_key=idempotency_key,
+            status="NOT_FOUND",
+        )
+
+    @classmethod
+    def list_unresolved_attempts(
+        cls,
+        user: UserResponse,
+        page: int = 1,
+        page_size: int = DEFAULT_PAGE_SIZE,
+    ) -> ProcurementRFQRecoveryListResponse:
+        employer_id = cls._employer_id(user)
+        offset = (page - 1) * page_size
+        rows = cls._rows(
+            supabase.table("procurement_rfq_idempotency_attempts")
+            .select("idempotency_key, status, created_at")
+            .eq("user_id", str(user.id))
+            .eq("employer_id", employer_id)
+            .eq("status", "PENDING")
+            .order("created_at")
+            .range(offset, offset + page_size)
+            .execute()
+        )
+        return ProcurementRFQRecoveryListResponse(
+            items=[
+                ProcurementRFQRecoveryListItem.model_validate(row)
+                for row in rows[:page_size]
+            ],
+            page=page,
+            page_size=page_size,
+            has_more=len(rows) > page_size,
+        )
 
     @staticmethod
     def _visible_rfq(row: dict[str, Any]) -> dict[str, Any]:
@@ -566,64 +701,164 @@ class RFQService:
         request: ProcurementRFQCreateRequest,
     ) -> ProcurementRFQResponse:
         employer_id = cls._employer_id(user)
+        request_fingerprint = cls._request_fingerprint(request)
+
+        existing_attempt = cls._row(
+            supabase.table("procurement_rfq_idempotency_attempts")
+            .select("idempotency_key")
+            .eq("user_id", str(user.id))
+            .eq("employer_id", employer_id)
+            .eq("idempotency_key", str(request.idempotency_key))
+            .maybe_single()
+            .execute()
+        )
+        if not existing_attempt:
+            legacy = cls._row(
+                supabase.table("procurement_rfqs")
+                .select("id")
+                .eq("user_id", str(user.id))
+                .eq("employer_id", employer_id)
+                .eq("idempotency_key", str(request.idempotency_key))
+                .maybe_single()
+                .execute()
+            )
+            if legacy:
+                raise RFQServiceError(
+                    "RFQ_LEGACY_ATTEMPT_RECOVERY_REQUIRED",
+                    status.HTTP_409_CONFLICT,
+                )
+
         try:
-            material_request = ProcurementService._owned_request(
-                request.material_request_id,
+            attempt = cls._row(
+                supabase.rpc(
+                    "begin_procurement_rfq_attempt",
+                    {
+                        "p_user_id": str(user.id),
+                        "p_employer_id": employer_id,
+                        "p_idempotency_key": str(request.idempotency_key),
+                        "p_request_fingerprint": request_fingerprint,
+                    },
+                ).execute()
+            )
+        except Exception as exc:
+            logger.error(
+                "RFQ attempt registration failed: user_id=%s exception_type=%s",
+                user.id,
+                type(exc).__name__,
+            )
+            raise RFQServiceError("RFQ_ATTEMPT_REGISTER_FAILED") from exc
+        if attempt.get("ok") is not True:
+            error_code = str(attempt.get("error_code") or "RFQ_ATTEMPT_REGISTER_FAILED")
+            http_status = (
+                status.HTTP_409_CONFLICT
+                if error_code == "RFQ_IDEMPOTENCY_CONFLICT"
+                else status.HTTP_403_FORBIDDEN
+                if error_code == "PROCUREMENT_FORBIDDEN"
+                else status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+            raise RFQServiceError(error_code, http_status)
+        if attempt.get("status") == "SUCCEEDED" and attempt.get("rfq_id"):
+            return cls.get_buyer(user, UUID(str(attempt["rfq_id"])))
+        if attempt.get("status") == "NOT_CREATED":
+            raise RFQServiceError("RFQ_ATTEMPT_NOT_CREATED", status.HTTP_409_CONFLICT)
+
+        try:
+            snapshot_result = cls._row(
+                supabase.rpc(
+                    "capture_procurement_rfq_requirement_snapshot",
+                    {
+                        "p_user_id": str(user.id),
+                        "p_employer_id": employer_id,
+                        "p_idempotency_key": str(request.idempotency_key),
+                        "p_request_fingerprint": request_fingerprint,
+                        "p_material_request_id": str(request.material_request_id),
+                    },
+                ).execute()
+            )
+        except Exception as exc:
+            logger.error(
+                "RFQ requirement snapshot failed: user_id=%s exception_type=%s",
+                user.id,
+                type(exc).__name__,
+            )
+            raise RFQServiceError("RFQ_REQUIREMENT_SNAPSHOT_FAILED") from exc
+
+        if snapshot_result.get("ok") is not True:
+            code = str(snapshot_result.get("error_code") or "RFQ_REQUIREMENT_SNAPSHOT_FAILED")
+            errors = {
+                "PROCUREMENT_FORBIDDEN": (code, status.HTTP_403_FORBIDDEN),
+                "RFQ_IDEMPOTENCY_CONFLICT": (code, status.HTTP_409_CONFLICT),
+            }
+            error_code, http_status = errors.get(
+                code,
+                (code, status.HTTP_409_CONFLICT),
+            )
+            raise RFQServiceError(error_code, http_status)
+
+        if snapshot_result.get("status") == "SUCCEEDED" and snapshot_result.get("rfq_id"):
+            return cls.get_buyer(user, UUID(str(snapshot_result["rfq_id"])))
+        if snapshot_result.get("status") == "NOT_CREATED":
+            error_code = str(
+                snapshot_result.get("error_code")
+                or "RFQ_REQUIREMENT_SNAPSHOT_UNAVAILABLE"
+            )
+            http_status = (
+                status.HTTP_404_NOT_FOUND
+                if error_code == "MATERIAL_REQUEST_NOT_FOUND"
+                else status.HTTP_409_CONFLICT
+            )
+            raise RFQServiceError(error_code, http_status)
+
+        material_request = snapshot_result.get("requirement_snapshot")
+        if not isinstance(material_request, dict):
+            raise RFQServiceError(
+                "RFQ_REQUIREMENT_SNAPSHOT_UNAVAILABLE",
+                status.HTTP_409_CONFLICT,
+            )
+
+        if request.quotation_deadline <= datetime.now(timezone.utc):
+            return cls._complete_preflight_failure(
                 user,
                 employer_id,
+                request,
+                request_fingerprint,
+                "RFQ_DEADLINE_INVALID",
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
             )
-        except ProcurementNotFound as exc:
-            raise RFQServiceError(str(exc), status.HTTP_404_NOT_FOUND) from exc
+
         delivery_location = (
             material_request.get("delivery_location")
             or request.delivery_location
             or ProcurementService._procurement_settings(user).default_delivery_location
         )
         if not delivery_location:
-            raise RFQServiceError("RFQ_DELIVERY_LOCATION_REQUIRED", status.HTTP_422_UNPROCESSABLE_ENTITY)
+            return cls._complete_preflight_failure(
+                user,
+                employer_id,
+                request,
+                request_fingerprint,
+                "RFQ_DELIVERY_LOCATION_REQUIRED",
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
 
         payload = {
             "material_request_id": str(request.material_request_id),
             "item_name": str(material_request["item_name"]),
             "specification": material_request.get("specification"),
-            "quantity": str(Decimal(str(material_request["quantity"]))),
+            "quantity": format(
+                Decimal(str(material_request["quantity"])).normalize(),
+                "f",
+            ),
             "unit": str(material_request["unit"]),
             "delivery_location": delivery_location,
-            "quotation_deadline": request.quotation_deadline.isoformat(),
+            "quotation_deadline": request.quotation_deadline.astimezone(timezone.utc).isoformat(
+                timespec="microseconds"
+            ),
             "buyer_notes": request.buyer_notes,
+            "requirement_snapshot": material_request,
+            "requirement_revision": material_request["revision"],
             "supplier_company_ids": sorted(str(company_id) for company_id in request.supplier_company_ids),
         }
-        payload_hash = hashlib.sha256(
-            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
-        ).hexdigest()
-        try:
-            existing = cls._row(
-                supabase.table("procurement_rfqs")
-                .select(
-                    "id, user_id, employer_id, material_request_id, idempotency_key, "
-                    "payload_hash, item_name, specification, quantity, unit, "
-                    "delivery_location, quotation_deadline, buyer_notes, status, created_at"
-                )
-                .eq("employer_id", employer_id)
-                .eq("user_id", str(user.id))
-                .eq("idempotency_key", str(request.idempotency_key))
-                .maybe_single()
-                .execute()
-            )
-        except Exception as exc:
-            logger.error(
-                "RFQ idempotency lookup failed: user_id=%s exception_type=%s",
-                user.id,
-                type(exc).__name__,
-            )
-            raise RFQServiceError("RFQ_CREATE_FAILED") from exc
-        if existing:
-            if (
-                existing.get("payload_hash") != payload_hash
-                or str(existing.get("material_request_id")) != str(request.material_request_id)
-            ):
-                raise RFQServiceError("RFQ_IDEMPOTENCY_CONFLICT", status.HTTP_409_CONFLICT)
-            return cls._buyer_response(existing)
 
         try:
             discovery = ProcurementService.discover_supplier_offerings(
@@ -646,7 +881,11 @@ class RFQService:
             if str(company_id) not in offering_by_company
         ]
         if missing_companies:
-            raise RFQServiceError(
+            return cls._complete_preflight_failure(
+                user,
+                employer_id,
+                request,
+                request_fingerprint,
                 "RFQ_SUPPLIER_INELIGIBLE",
                 status.HTTP_409_CONFLICT,
             )
@@ -656,18 +895,63 @@ class RFQService:
                 "company_id": str(company_id),
                 "offering_id": offering_by_company[str(company_id)],
             }
-            for company_id in request.supplier_company_ids
+            for company_id in sorted(
+                request.supplier_company_ids,
+                key=lambda supplier_id: str(supplier_id),
+            )
         ]
+        payload["recipients"] = recipients
+
+        try:
+            prepared = cls._row(
+                supabase.rpc(
+                    "prepare_procurement_rfq_attempt_payload_v2",
+                    {
+                        "p_user_id": str(user.id),
+                        "p_employer_id": employer_id,
+                        "p_idempotency_key": str(request.idempotency_key),
+                        "p_request_fingerprint": request_fingerprint,
+                        "p_material_request_id": str(request.material_request_id),
+                        "p_requirement_revision": material_request["revision"],
+                        "p_payload": payload,
+                    },
+                ).execute()
+            )
+        except Exception as exc:
+            logger.error(
+                "RFQ attempt payload preparation failed: user_id=%s exception_type=%s",
+                user.id,
+                type(exc).__name__,
+            )
+            raise RFQServiceError("RFQ_ATTEMPT_PREPARATION_FAILED") from exc
+        if prepared.get("ok") is not True:
+            code = str(prepared.get("error_code") or "RFQ_ATTEMPT_PREPARATION_FAILED")
+            http_status = (
+                status.HTTP_403_FORBIDDEN
+                if code == "PROCUREMENT_FORBIDDEN"
+                else status.HTTP_409_CONFLICT
+            )
+            raise RFQServiceError(code, http_status)
+        if prepared.get("status") == "SUCCEEDED" and prepared.get("rfq_id"):
+            return cls.get_buyer(user, UUID(str(prepared["rfq_id"])))
+        if prepared.get("status") == "NOT_CREATED":
+            code = str(prepared.get("error_code") or "RFQ_ATTEMPT_NOT_CREATED")
+            raise RFQServiceError(code, status.HTTP_409_CONFLICT)
+        payload_hash = prepared.get("payload_hash")
+        if not isinstance(payload_hash, str) or len(payload_hash) != 64:
+            raise RFQServiceError("RFQ_ATTEMPT_PREPARATION_FAILED")
 
         try:
             result = cls._row(
                 supabase.rpc(
-                    "create_procurement_rfq",
+                    "create_procurement_rfq_with_attempt",
                     {
                         "p_user_id": str(user.id),
                         "p_employer_id": employer_id,
                         "p_material_request_id": str(request.material_request_id),
                         "p_idempotency_key": str(request.idempotency_key),
+                        "p_request_fingerprint": request_fingerprint,
+                        "p_requirement_revision": material_request["revision"],
                         "p_payload_hash": payload_hash,
                         "p_item_name": payload["item_name"],
                         "p_specification": payload["specification"],
@@ -688,17 +972,25 @@ class RFQService:
             )
             error_message = str(getattr(exc, "message", None) or exc)
             if "RFQ_SUPPLIER_INELIGIBLE" in error_message:
-                raise RFQServiceError(
+                return cls._complete_preflight_failure(
+                    user,
+                    employer_id,
+                    request,
+                    request_fingerprint,
                     "RFQ_SUPPLIER_INELIGIBLE",
                     status.HTTP_409_CONFLICT,
-                ) from exc
+                )
             raise RFQServiceError("RFQ_CREATE_FAILED") from exc
 
         if result.get("ok") is not True:
             code = str(result.get("error_code") or "RFQ_CREATE_FAILED")
+            if code == "RFQ_ATTEMPT_NOT_CREATED":
+                raise RFQServiceError(code, status.HTTP_409_CONFLICT)
             errors = {
                 "PROCUREMENT_FORBIDDEN": (code, status.HTTP_403_FORBIDDEN),
                 "MATERIAL_REQUEST_NOT_FOUND": (code, status.HTTP_404_NOT_FOUND),
+                "RFQ_REQUIREMENT_CHANGED": (code, status.HTTP_409_CONFLICT),
+                "RFQ_REQUIREMENT_SNAPSHOT_UNAVAILABLE": (code, status.HTTP_409_CONFLICT),
                 "RFQ_SUPPLIER_INELIGIBLE": (code, status.HTTP_409_CONFLICT),
                 "RFQ_DEADLINE_INVALID": (code, status.HTTP_422_UNPROCESSABLE_ENTITY),
                 "RFQ_RECIPIENTS_INVALID": (code, status.HTTP_422_UNPROCESSABLE_ENTITY),
@@ -710,21 +1002,7 @@ class RFQService:
         rfq_id = result.get("rfq_id")
         if not rfq_id:
             raise RFQServiceError("RFQ_CREATE_FAILED")
-        row = cls._row(
-            supabase.table("procurement_rfqs")
-            .select(
-                "id, material_request_id, item_name, specification, quantity, unit, "
-                "delivery_location, quotation_deadline, buyer_notes, status, created_at"
-            )
-            .eq("id", str(rfq_id))
-            .eq("user_id", str(user.id))
-            .eq("employer_id", employer_id)
-            .single()
-            .execute()
-        )
-        if not row:
-            raise RFQServiceError("RFQ_CREATE_RESULT_NOT_FOUND")
-        return cls._buyer_response(row)
+        return cls.get_buyer(user, UUID(str(rfq_id)))
 
     @classmethod
     def update_buyer(

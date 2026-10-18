@@ -1,5 +1,4 @@
 import React from "react";
-import { SupplierProvider } from "@/context/SupplierContext";
 import SupplierLayoutShell from "@/components/supplier/SupplierLayoutShell";
 
 export const metadata = {
@@ -13,9 +12,5 @@ export default function SupplierLayout({
 }: {
   children: React.ReactNode;
 }) {
-  return (
-    <SupplierProvider>
-      <SupplierLayoutShell>{children}</SupplierLayoutShell>
-    </SupplierProvider>
-  );
+  return <SupplierLayoutShell>{children}</SupplierLayoutShell>;
 }

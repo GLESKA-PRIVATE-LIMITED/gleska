@@ -28,6 +28,8 @@ from app.schemas.rfq import (
     ProcurementQuotationSelectionRequest,
     ProcurementRFQCreateRequest,
     ProcurementRFQListResponse,
+    ProcurementRFQRecoveryListResponse,
+    ProcurementRFQRecoveryResponse,
     ProcurementRFQResponse,
     ProcurementRFQUpdateRequest,
     PurchaseOrderListResponse,
@@ -275,6 +277,31 @@ async def list_procurement_rfqs(
         ) from exc
 
 
+@router.get(
+    "/rfqs/recovery",
+    response_model=ProcurementRFQRecoveryListResponse,
+)
+async def list_unresolved_procurement_rfq_attempts(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
+    user: UserResponse = Depends(require_employer),
+):
+    try:
+        return RFQService.list_unresolved_attempts(user, page, page_size)
+    except RFQServiceError as exc:
+        _raise_rfq_error(exc)
+    except Exception as exc:
+        logger.error(
+            "Procurement RFQ recovery list failed: user_id=%s exception_type=%s",
+            user.id,
+            type(exc).__name__,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="RFQ_RECOVERY_LIST_FAILED",
+        ) from exc
+
+
 @router.get("/rfqs/{rfq_id}", response_model=ProcurementRFQResponse)
 async def get_procurement_rfq(
     rfq_id: UUID,
@@ -294,6 +321,30 @@ async def get_procurement_rfq(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="RFQ_LOAD_FAILED",
+        ) from exc
+
+
+@router.get(
+    "/rfqs/recovery/{idempotency_key}",
+    response_model=ProcurementRFQRecoveryResponse,
+)
+async def recover_procurement_rfq_attempt(
+    idempotency_key: UUID,
+    user: UserResponse = Depends(require_employer),
+):
+    try:
+        return RFQService.recover_attempt(user, idempotency_key)
+    except RFQServiceError as exc:
+        _raise_rfq_error(exc)
+    except Exception as exc:
+        logger.error(
+            "Procurement RFQ recovery failed: user_id=%s exception_type=%s",
+            user.id,
+            type(exc).__name__,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="RFQ_RECOVERY_FAILED",
         ) from exc
 
 

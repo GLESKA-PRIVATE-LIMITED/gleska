@@ -12,6 +12,8 @@ import EmployerAttendanceScreen from "./features/employer/EmployerAttendanceScre
 import EmployerSubscriptionScreen from "./features/employer/EmployerSubscriptionScreen";
 import EmployerSecurityScreen from "./features/employer/EmployerSecurityScreen";
 import EmployerWorkersScreen from "./features/employer/EmployerWorkersScreen";
+import ProcurementScreen from "./features/employer/ProcurementScreen";
+import SupplierScreen from "./features/employer/SupplierScreen";
 import {
   ForgotPasswordScreen,
   LoadingScreen,
@@ -210,7 +212,27 @@ function AppRoutes() {
       <Route path="/employer/onboarding" element={<EmployerOnboardingScreen />} />
       <Route path="/employer/*" element={<EmployerUnavailableScreen />} />
       <Route path="/financial" element={<EmployerUnavailableScreen />} />
-      <Route path="/procurement/*" element={<EmployerUnavailableScreen />} />
+      <Route path="/procurement" element={<ProcurementScreen />} />
+      <Route path="/procurement/get" element={<ProcurementScreen destination="get" />} />
+      <Route path="/procurement/requirements" element={<ProcurementScreen destination="requirements" />} />
+      <Route path="/procurement/rfqs" element={<ProcurementScreen destination="rfqs" />} />
+      <Route path="/procurement/orders" element={<ProcurementScreen destination="orders" />} />
+      <Route path="/procurement/details" element={<ProcurementScreen destination="details" />} />
+      <Route path="/procurement/settings" element={<ProcurementScreen destination="settings" />} />
+      <Route path="/procurement/provide" element={<Navigate to="/supplier" replace />} />
+      <Route path="/procurement/companies" element={<Navigate to="/supplier/company" replace />} />
+      <Route path="/procurement/workspaces" element={<Navigate to="/procurement" replace />} />
+      <Route path="/procurement/*" element={<Navigate to="/procurement" replace />} />
+      <Route path="/supplier" element={<SupplierScreen section="dashboard" />} />
+      <Route path="/supplier/offerings" element={<SupplierScreen section="offerings" />} />
+      <Route path="/supplier/rfqs" element={<SupplierScreen section="rfqs" />} />
+      <Route path="/supplier/orders" element={<SupplierScreen section="orders" />} />
+      <Route path="/supplier/history" element={<SupplierScreen section="history" />} />
+      <Route path="/supplier/company" element={<SupplierScreen section="companies" />} />
+      <Route path="/supplier/company-profile" element={<Navigate to="/supplier/company" replace />} />
+      <Route path="/supplier/profile" element={<Navigate to="/supplier/company" replace />} />
+      <Route path="/supplier/settings" element={<SupplierScreen section="settings" />} />
+      <Route path="/supplier/*" element={<Navigate to="/supplier" replace />} />
     </>}
     <Route path="*" element={<Navigate to="/" replace />} />
   </Routes>;

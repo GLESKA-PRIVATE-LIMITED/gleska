@@ -72,7 +72,11 @@ export function getRouteForAuthenticatedUser(
     }
 
     if (isRouteOrChild(parsed.pathname, "/supplier")) {
-      return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+      if (role !== "EMPLOYER") return fallback;
+      const destination = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+      return nextStep === "DASHBOARD"
+        ? destination
+        : `/employer/onboarding?next=${encodeURIComponent(destination)}`;
     }
 
     if (role === "WORKER") {

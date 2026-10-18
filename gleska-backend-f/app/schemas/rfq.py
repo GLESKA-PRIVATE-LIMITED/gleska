@@ -46,11 +46,9 @@ class ProcurementRFQCreateRequest(RFQModel):
 
     @field_validator("quotation_deadline")
     @classmethod
-    def require_future_deadline(cls, value: datetime) -> datetime:
+    def require_aware_deadline(cls, value: datetime) -> datetime:
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("Quotation deadline must include a timezone.")
-        if value <= datetime.now(timezone.utc):
-            raise ValueError("Quotation deadline must be in the future.")
         return value.astimezone(timezone.utc)
 
 
@@ -245,6 +243,27 @@ class ProcurementRFQResponse(BaseModel):
 
 class ProcurementRFQListResponse(BaseModel):
     items: list[ProcurementRFQResponse]
+    page: int
+    page_size: int
+    has_more: bool
+
+
+class ProcurementRFQRecoveryResponse(RFQModel):
+    idempotency_key: UUID
+    status: Literal["NOT_FOUND", "PENDING", "SUCCEEDED", "NOT_CREATED"]
+    rfq: ProcurementRFQResponse | None = None
+    error_code: str | None = None
+    legacy_attempt: bool = False
+
+
+class ProcurementRFQRecoveryListItem(RFQModel):
+    idempotency_key: UUID
+    status: Literal["PENDING"]
+    created_at: datetime
+
+
+class ProcurementRFQRecoveryListResponse(RFQModel):
+    items: list[ProcurementRFQRecoveryListItem]
     page: int
     page_size: int
     has_more: bool

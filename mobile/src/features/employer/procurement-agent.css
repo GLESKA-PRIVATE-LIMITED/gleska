@@ -1,0 +1,3627 @@
+.procurement-agent {
+  display: flex;
+  min-height: calc(100dvh - 3.75rem);
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem;
+  color: #0f172a;
+  background: #eef1fb;
+}
+
+.procurement-dashboard-shell {
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: #eef1fb;
+  color: #0f172a;
+}
+
+.procurement-dashboard-header {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  min-height: 3.75rem;
+  align-items: center;
+  gap: 0.8rem;
+  border-bottom: 1px solid #e2e8f0;
+  background: #fff;
+  padding: max(0.5rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) 0.5rem max(1rem, env(safe-area-inset-left));
+}
+
+.procurement-menu-trigger,
+.procurement-menu-close {
+  display: grid;
+  width: 2.5rem;
+  height: 2.5rem;
+  flex: none;
+  place-items: center;
+  border: 0;
+  border-radius: 0.75rem;
+  background: transparent;
+  color: #475569;
+}
+
+.procurement-menu-trigger:hover,
+.procurement-menu-close:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.procurement-dashboard-brand,
+.procurement-menu-brand {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.65rem;
+  color: #0f172a;
+  text-decoration: none;
+}
+
+.procurement-dashboard-brand {
+  gap: 0.55rem;
+  font-size: 0.8rem;
+  letter-spacing: 0.01em;
+}
+
+.procurement-dashboard-brand img {
+  width: 1.75rem;
+  height: 1.75rem;
+  flex: none;
+  border-radius: 0.35rem;
+  object-fit: contain;
+}
+
+.procurement-dashboard-brand strong {
+  display: block;
+  color: #334155;
+  font-size: 0.95rem;
+  font-weight: 500;
+  line-height: 1.15;
+}
+
+.procurement-dashboard-brand small,
+.procurement-menu-brand small {
+  color: #7e22ce;
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.procurement-header-spacer {
+  flex: 1;
+}
+
+.procurement-dashboard-content {
+  min-height: calc(100dvh - 3.75rem);
+}
+
+.procurement-menu-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.procurement-menu-overlay.is-open {
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.procurement-menu-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  border: 0;
+  background: rgb(15 23 42 / 48%);
+  opacity: 0;
+  transition: opacity 180ms ease;
+}
+
+.procurement-menu-overlay.is-open .procurement-menu-backdrop {
+  opacity: 1;
+}
+
+.procurement-menu-drawer {
+  position: absolute;
+  inset: 0 auto 0 0;
+  display: flex;
+  width: min(16rem, 88vw);
+  flex-direction: column;
+  gap: 0.5rem;
+  border-right: 1px solid #e2e8f0;
+  background: #fff;
+  padding: max(1rem, env(safe-area-inset-top)) 1rem max(1rem, env(safe-area-inset-bottom));
+  box-shadow: 0 20px 40px rgb(15 23 42 / 18%);
+  transform: translateX(-100%);
+  transition: transform 180ms ease;
+}
+
+.procurement-menu-overlay.is-open .procurement-menu-drawer {
+  transform: translateX(0);
+}
+
+.procurement-menu-top {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.procurement-menu-heading {
+  display: flex;
+  min-height: 3.25rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border-bottom: 1px solid #f1f5f9;
+  padding-bottom: 0.8rem;
+}
+
+.procurement-menu-brand strong {
+  display: block;
+  color: #334155;
+  font-size: 0.92rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+.procurement-menu-logo {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  flex: none;
+  place-items: center;
+  border-radius: 0.6rem;
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.procurement-menu-navigation {
+  display: grid;
+  flex: 1;
+  min-height: 0;
+  gap: 0.25rem;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 0.8rem 0;
+}
+
+.procurement-menu-item {
+  display: flex;
+  min-height: 2.55rem;
+  align-items: center;
+  gap: 0.65rem;
+  border: 0;
+  border-radius: 0.7rem;
+  background: transparent;
+  padding: 0.55rem 0.65rem;
+  color: #475569;
+  font: inherit;
+  font-size: 0.83rem;
+  font-weight: 600;
+  text-align: left;
+  text-decoration: none;
+}
+
+.procurement-menu-item svg {
+  flex: none;
+  color: #64748b;
+}
+
+.procurement-menu-item:hover:not(:disabled) {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.procurement-menu-item.is-active {
+  background: #2563eb;
+  color: #fff;
+}
+
+.procurement-menu-item.is-active svg {
+  color: #fff;
+}
+
+.procurement-menu-bottom {
+  flex: none;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 0.65rem;
+}
+
+.procurement-profile-identity {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.7rem;
+  border-bottom: 1px solid #e2e8f0;
+  min-height: 3.5rem;
+  padding: 0.25rem 0.1rem 0.7rem;
+  color: inherit;
+  text-decoration: none;
+}
+
+.procurement-account-avatar {
+  display: grid;
+  width: 2.5rem;
+  height: 2.5rem;
+  flex: none;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 50%;
+  background: #2563eb;
+  color: #fff;
+  font-weight: 700;
+}
+
+.procurement-account-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.procurement-account-copy {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 0.15rem;
+}
+
+.procurement-account-copy strong,
+.procurement-account-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.procurement-account-copy strong {
+  color: #0f172a;
+  font-size: 0.82rem;
+}
+
+.procurement-account-copy small {
+  color: #64748b;
+  font-size: 0.68rem;
+}
+
+.procurement-menu-account-action {
+  display: flex;
+  min-height: 2.65rem;
+  align-items: center;
+  gap: 0.65rem;
+  border: 0;
+  border-radius: 0.65rem;
+  background: transparent;
+  padding: 0.45rem 0.6rem;
+  color: #334155;
+  font: inherit;
+  font-size: 0.82rem;
+  text-decoration: none;
+}
+
+.procurement-menu-account-action:hover {
+  background: #f1f5f9;
+}
+
+.procurement-menu-account-action.is-logout {
+  width: 100%;
+  color: #dc2626;
+  text-align: left;
+}
+
+.procurement-mobile-placeholder {
+  width: min(100%, 52rem);
+  margin: 0 auto;
+  padding: 1.25rem 1rem;
+}
+
+.procurement-mobile-placeholder-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.procurement-mobile-placeholder h2 {
+  margin: 0;
+  font-size: 1.3rem;
+}
+
+.procurement-mobile-placeholder p {
+  color: #475569;
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+.procurement-overview {
+  width: min(100%, 52rem);
+  min-height: calc(100dvh - 3.75rem);
+  margin: 0 auto;
+  padding: 1.2rem 1rem 2rem;
+  color: #334155;
+}
+
+.procurement-overview-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: stretch;
+  gap: 0.35rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 95%);
+  padding: 0.3rem;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 10%);
+}
+
+.procurement-overview-action {
+  display: flex;
+  min-height: 2.65rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  border-radius: 999px;
+  padding: 0.35rem 0.45rem;
+  color: #475569;
+  font-size: 0.69rem;
+  font-weight: 650;
+  line-height: 1.2;
+  text-align: center;
+  text-decoration: none;
+}
+
+.procurement-overview-action span {
+  max-width: 8rem;
+}
+
+.procurement-overview-action.is-active {
+  background: #9810fa;
+  color: #fff;
+  box-shadow: 0 1px 2px rgb(88 28 135 / 20%);
+}
+
+.procurement-overview-search {
+  display: flex;
+  min-height: 2.65rem;
+  align-items: center;
+  gap: 0.55rem;
+  margin-top: 5rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 95%);
+  padding: 0 0.9rem;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 10%);
+  color: #94a3b8;
+  font-size: 0.69rem;
+  font-weight: 550;
+  text-decoration: none;
+}
+
+.procurement-overview-search svg {
+  flex: none;
+}
+
+.procurement-overview-description {
+  margin: 0.75rem 0 0;
+  color: #64748b;
+  font-size: 0.67rem;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.procurement-overview-stats {
+  display: grid;
+  gap: 0.7rem;
+  margin-top: 1.9rem;
+}
+
+.procurement-overview-stat {
+  display: grid;
+  min-height: 4.55rem;
+  justify-items: center;
+  align-content: center;
+  gap: 0.25rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 1rem;
+  background: rgb(255 255 255 / 92%);
+  padding: 0.7rem 0.85rem;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 8%);
+  text-align: center;
+}
+
+.procurement-overview-stat > strong {
+  color: #0f172a;
+  font-size: 1.35rem;
+  font-weight: 750;
+  line-height: 1;
+}
+
+.procurement-overview-stat > span:not(.procurement-overview-stat-icon) {
+  color: #64748b;
+  font-size: 0.69rem;
+  font-weight: 550;
+}
+
+.procurement-overview-stat > a {
+  color: #7e22ce;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.procurement-overview-stat-icon {
+  display: none;
+}
+
+.procurement-overview-loading {
+  display: flex;
+  min-height: 5rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  margin-top: 1.9rem;
+  color: #64748b;
+  font-size: 0.8rem;
+}
+
+.procurement-overview-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  border: 1px solid #fecdd3;
+  border-radius: 0.85rem;
+  background: #fff1f2;
+  padding: 0.7rem;
+  color: #9f1239;
+  font-size: 0.73rem;
+  line-height: 1.4;
+}
+
+.procurement-overview-error span {
+  flex: 1;
+}
+
+.procurement-overview-error button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-weight: 750;
+  text-decoration: underline;
+}
+
+.procurement-agent-heading h1 {
+  margin: 0;
+  font-size: 1.45rem;
+  font-weight: 750;
+  line-height: 1.2;
+}
+
+.procurement-agent-heading p {
+  margin: 0.35rem 0 0;
+  color: #64748b;
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+
+.procurement-agent-heading .procurement-agent-eyebrow {
+  margin: 0 0 0.25rem;
+  color: #7e22ce;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.procurement-agent-chat {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  border-radius: 1.25rem;
+  background: #fff;
+  box-shadow: 0 2px 8px rgb(15 23 42 / 5%);
+}
+
+.procurement-agent-chat-header {
+  display: flex;
+  min-height: 4.25rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border-bottom: 1px solid #e2e8f0;
+  padding: 0.7rem 0.8rem;
+}
+
+.procurement-agent-current {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.procurement-agent-icon,
+.procurement-agent-message-icon,
+.procurement-agent-empty-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  border-radius: 0.75rem;
+  background: #faf5ff;
+  color: #7e22ce;
+}
+
+.procurement-agent-icon {
+  width: 2.25rem;
+  height: 2.25rem;
+}
+
+.procurement-agent-current-copy {
+  display: grid;
+  min-width: 0;
+  gap: 0.15rem;
+}
+
+.procurement-agent-current-copy strong {
+  overflow: hidden;
+  color: #0f172a;
+  font-size: 0.8rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.procurement-agent-current-copy span {
+  color: #64748b;
+  font-size: 0.68rem;
+}
+
+.procurement-agent-current-copy span.is-active {
+  color: #047857;
+}
+
+.procurement-agent-status {
+  display: none;
+  flex: none;
+  border-radius: 999px;
+  background: #ecfdf5;
+  padding: 0.25rem 0.5rem;
+  color: #047857;
+  font-size: 0.65rem;
+  font-weight: 750;
+}
+
+.procurement-agent-chat-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.procurement-agent-primary-button,
+.procurement-agent-secondary-button {
+  display: inline-flex;
+  min-height: 2.5rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  border: 1px solid transparent;
+  border-radius: 0.75rem;
+  padding: 0.45rem 0.65rem;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 750;
+  text-decoration: none;
+}
+
+.procurement-agent-primary-button {
+  background: #7e22ce;
+  color: #fff;
+}
+
+.procurement-agent-secondary-button {
+  border-color: #cbd5e1;
+  background: #fff;
+  color: #334155;
+}
+
+.procurement-agent-primary-button:disabled,
+.procurement-agent-secondary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.procurement-agent-messages {
+  display: flex;
+  min-height: 11rem;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.85rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0.9rem 0.75rem;
+}
+
+.procurement-agent-state {
+  display: flex;
+  min-height: 10rem;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  color: #64748b;
+  text-align: center;
+}
+
+.procurement-agent-state strong {
+  color: #1e293b;
+  font-size: 0.9rem;
+}
+
+.procurement-agent-state p {
+  max-width: 25rem;
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.procurement-agent-empty-icon {
+  width: 2.8rem;
+  height: 2.8rem;
+}
+
+.procurement-agent-message {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+}
+
+.procurement-agent-message.from-user {
+  justify-content: flex-end;
+}
+
+.procurement-agent-message-icon {
+  width: 1.8rem;
+  height: 1.8rem;
+  margin-top: 0.15rem;
+  border-radius: 0.6rem;
+}
+
+.procurement-agent-bubble {
+  max-width: 88%;
+  border: 1px solid #e2e8f0;
+  border-radius: 1rem;
+  background: #f8fafc;
+  padding: 0.65rem 0.8rem 0.45rem;
+  color: #1e293b;
+}
+
+.from-user .procurement-agent-bubble {
+  border-color: #7e22ce;
+  border-bottom-right-radius: 0.25rem;
+  background: #7e22ce;
+  color: #fff;
+}
+
+.from-agent .procurement-agent-bubble {
+  border-bottom-left-radius: 0.25rem;
+}
+
+.procurement-agent-bubble p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 0.83rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.procurement-agent-bubble time {
+  display: block;
+  margin-top: 0.35rem;
+  color: #64748b;
+  font-size: 0.62rem;
+}
+
+.from-user .procurement-agent-bubble time {
+  color: #e9d5ff;
+  text-align: right;
+}
+
+.procurement-agent-thinking {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  align-self: flex-start;
+  border-radius: 0.75rem;
+  background: #faf5ff;
+  padding: 0.55rem 0.7rem;
+  color: #6b21a8;
+  font-size: 0.75rem;
+}
+
+.procurement-agent-composer {
+  flex: none;
+  border-top: 1px solid #e2e8f0;
+  background: #fff;
+  padding: 0.7rem 0.75rem max(0.75rem, env(safe-area-inset-bottom));
+}
+
+.procurement-agent-composer-box {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.45rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 1rem;
+  background: #f8fafc;
+  padding: 0.4rem;
+}
+
+.procurement-agent-composer-box:focus-within {
+  border-color: #a855f7;
+  box-shadow: 0 0 0 2px rgb(168 85 247 / 15%);
+}
+
+.procurement-agent-composer textarea {
+  width: 100%;
+  min-height: 2.8rem;
+  max-height: 8rem;
+  resize: vertical;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  padding: 0.45rem 0.5rem;
+  color: #0f172a;
+  font: inherit;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.procurement-agent-composer textarea::placeholder {
+  color: #94a3b8;
+}
+
+.procurement-agent-send-button {
+  display: grid;
+  width: 2.65rem;
+  height: 2.65rem;
+  flex: none;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: #7e22ce;
+  color: #fff;
+}
+
+.procurement-agent-send-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.procurement-agent-composer-hint {
+  margin: 0.35rem 0 0;
+  color: #94a3b8;
+  font-size: 0.62rem;
+}
+
+.procurement-agent-alert,
+.procurement-agent-conflict,
+.procurement-agent-history-notice,
+.procurement-agent-send-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  border: 1px solid #fecaca;
+  border-radius: 0.85rem;
+  background: #fef2f2;
+  padding: 0.65rem 0.75rem;
+  color: #991b1b;
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.procurement-agent-alert span,
+.procurement-agent-conflict span,
+.procurement-agent-send-error span {
+  flex: 1;
+}
+
+.procurement-agent-alert button,
+.procurement-agent-conflict button,
+.procurement-agent-send-error button {
+  flex: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 750;
+  text-decoration: underline;
+}
+
+.procurement-agent-alert.is-inline {
+  margin: 0.6rem 0.7rem 0;
+}
+
+.procurement-agent-conflict {
+  align-items: center;
+  margin: 0.6rem 0.7rem 0;
+  border-color: #fcd34d;
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.procurement-agent-history-notice {
+  margin: 0.5rem 0.7rem 0;
+  border-color: #fde68a;
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.procurement-agent-history-button,
+.procurement-agent-load-conversations {
+  display: inline-flex;
+  min-height: 2.4rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  align-self: center;
+  border: 0;
+  background: transparent;
+  padding: 0.35rem 0.7rem;
+  color: #7e22ce;
+  font-size: 0.75rem;
+  font-weight: 750;
+}
+
+.procurement-agent-completed {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  border-top: 1px solid #e2e8f0;
+  padding: 0.85rem;
+  color: #64748b;
+  font-size: 0.75rem;
+}
+
+.procurement-agent-completed button {
+  display: inline-flex;
+  min-height: 2.4rem;
+  align-items: center;
+  gap: 0.35rem;
+  border: 0;
+  border-radius: 0.7rem;
+  background: #7e22ce;
+  padding: 0.45rem 0.65rem;
+  color: #fff;
+  font: inherit;
+  font-weight: 750;
+}
+
+.procurement-agent-picker-layer {
+  position: fixed;
+  z-index: 60;
+  inset: 0;
+}
+
+.procurement-agent-picker-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  border: 0;
+  background: rgb(15 23 42 / 52%);
+}
+
+.procurement-agent-picker {
+  position: absolute;
+  inset: auto 0 0;
+  display: flex;
+  max-height: min(78dvh, 40rem);
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  border-radius: 1.25rem 1.25rem 0 0;
+  background: #fff;
+  padding: 1rem 1rem max(1rem, env(safe-area-inset-bottom));
+  box-shadow: 0 -12px 40px rgb(15 23 42 / 18%);
+}
+
+.procurement-agent-picker > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding-bottom: 0.75rem;
+}
+
+.procurement-agent-picker h2 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 1rem;
+}
+
+.procurement-agent-picker header p {
+  margin: 0.25rem 0 0;
+  color: #64748b;
+  font-size: 0.75rem;
+}
+
+.procurement-agent-picker-close {
+  display: grid;
+  width: 2.5rem;
+  height: 2.5rem;
+  place-items: center;
+  border: 0;
+  border-radius: 0.75rem;
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.procurement-agent-picker-new {
+  flex: none;
+  margin-bottom: 0.65rem;
+}
+
+.procurement-agent-picker > ul {
+  display: grid;
+  gap: 0.4rem;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.procurement-agent-picker > ul button {
+  display: grid;
+  width: 100%;
+  min-height: 3.5rem;
+  gap: 0.35rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.8rem;
+  background: #fff;
+  padding: 0.6rem 0.75rem;
+  text-align: left;
+}
+
+.procurement-agent-picker > ul button.is-selected {
+  border-color: #c084fc;
+  background: #faf5ff;
+}
+
+.procurement-agent-picker-title {
+  overflow: hidden;
+  color: #1e293b;
+  font-size: 0.8rem;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.procurement-agent-picker-meta {
+  display: flex;
+  justify-content: space-between;
+  color: #64748b;
+  font-size: 0.68rem;
+}
+
+.procurement-agent-picker-state {
+  display: flex;
+  min-height: 5rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  color: #64748b;
+  font-size: 0.8rem;
+}
+
+.procurement-agent-send-error {
+  align-items: center;
+  margin-bottom: 0.55rem;
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.is-spinning {
+  animation: procurement-agent-spin 1s linear infinite;
+}
+
+@keyframes procurement-agent-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (min-width: 700px) {
+  .procurement-overview {
+    padding: 1.5rem;
+  }
+
+  .procurement-overview-actions {
+    width: max-content;
+    margin: 0 auto;
+    gap: 0.3rem;
+    padding: 0.35rem;
+  }
+
+  .procurement-overview-action {
+    min-width: 10rem;
+    min-height: 2.9rem;
+    padding: 0.6rem 1.2rem;
+    font-size: 0.8rem;
+  }
+
+  .procurement-overview-search {
+    max-width: 38rem;
+    min-height: 3rem;
+    margin: 10rem auto 0;
+    padding: 0 1rem;
+    font-size: 0.82rem;
+  }
+
+  .procurement-overview-description {
+    max-width: 38rem;
+    margin: 0.75rem auto 0;
+    font-size: 0.78rem;
+  }
+
+  .procurement-overview-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    max-width: 38rem;
+    margin: 1.9rem auto 0;
+  }
+
+  .procurement-overview-stat {
+    min-height: 5rem;
+  }
+
+  .procurement-agent {
+    min-height: calc(100dvh - 3.75rem);
+    max-width: 68rem;
+    margin: 0 auto;
+    padding: 1.5rem;
+  }
+
+  .procurement-agent-heading h1 {
+    font-size: 1.8rem;
+  }
+
+  .procurement-agent-status {
+    display: inline-flex;
+  }
+
+  .procurement-agent-chat-header {
+    padding-right: 1rem;
+    padding-left: 1rem;
+  }
+
+  .procurement-agent-messages {
+    padding: 1.25rem;
+  }
+
+  .procurement-agent-bubble {
+    max-width: min(82%, 44rem);
+    padding: 0.8rem 1rem 0.55rem;
+  }
+
+  .procurement-agent-picker {
+    inset: 50% auto auto 50%;
+    width: min(34rem, calc(100vw - 2rem));
+    max-height: min(75dvh, 42rem);
+    transform: translate(-50%, -50%);
+    border-radius: 1.25rem;
+    padding: 1.25rem;
+  }
+}
+
+.dark .procurement-agent {
+  color: #e2e8f0;
+  background: #020617;
+}
+
+.dark .procurement-overview {
+  color: #cbd5e1;
+}
+
+.dark .procurement-overview-actions,
+.dark .procurement-overview-search,
+.dark .procurement-overview-stat {
+  border-color: #334155;
+  background: rgb(15 23 42 / 95%);
+}
+
+.dark .procurement-overview-action:not(.is-active),
+.dark .procurement-overview-search {
+  color: #cbd5e1;
+}
+
+.dark .procurement-overview-stat > strong {
+  color: #f8fafc;
+}
+
+.dark .procurement-overview-stat > span:not(.procurement-overview-stat-icon),
+.dark .procurement-overview-description,
+.dark .procurement-overview-loading {
+  color: #94a3b8;
+}
+
+.dark .procurement-overview-error {
+  border-color: #881337;
+  background: rgb(76 5 25 / 40%);
+  color: #fecdd3;
+}
+
+.dark .procurement-dashboard-shell {
+  background: #020617;
+  color: #e2e8f0;
+}
+
+.dark .procurement-dashboard-header,
+.dark .procurement-menu-drawer {
+  border-color: #334155;
+  background: rgb(15 23 42 / 95%);
+}
+
+.dark .procurement-dashboard-brand,
+.dark .procurement-menu-brand strong,
+.dark .procurement-account-copy strong,
+.dark .procurement-mobile-placeholder h2 {
+  color: #f8fafc;
+}
+
+.dark .procurement-menu-heading,
+.dark .procurement-profile-identity {
+  border-color: #334155;
+}
+
+.dark .procurement-menu-trigger,
+.dark .procurement-menu-close,
+.dark .procurement-menu-item,
+.dark .procurement-menu-account-action {
+  color: #cbd5e1;
+}
+
+.dark .procurement-menu-item svg {
+  color: #94a3b8;
+}
+
+.dark .procurement-menu-item:hover:not(:disabled),
+.dark .procurement-menu-trigger:hover,
+.dark .procurement-menu-close:hover,
+.dark .procurement-menu-account-action:hover {
+  background: #1e293b;
+  color: #f8fafc;
+}
+
+.dark .procurement-menu-item.is-active,
+.dark .procurement-menu-item.is-active svg {
+  color: #fff;
+}
+
+.dark .procurement-menu-logo,
+.dark .procurement-account-avatar {
+  background: #2563eb;
+  color: #fff;
+}
+
+.dark .procurement-account-copy small,
+.dark .procurement-mobile-placeholder p {
+  color: #94a3b8;
+}
+
+.dark .procurement-agent-heading p,
+.dark .procurement-agent-current-copy span,
+.dark .procurement-agent-picker header p {
+  color: #94a3b8;
+}
+
+.dark .procurement-agent-heading h1,
+.dark .procurement-agent-current-copy strong,
+.dark .procurement-agent-picker h2,
+.dark .procurement-agent-picker-title {
+  color: #f8fafc;
+}
+
+.dark .procurement-agent-chat,
+.dark .procurement-agent-composer,
+.dark .procurement-agent-picker,
+.dark .procurement-agent-picker > ul button {
+  border-color: #334155;
+  background: #0f172a;
+}
+
+.dark .procurement-agent-secondary-button {
+  color: #cbd5e1;
+}
+
+.dark .procurement-agent-chat-header,
+.dark .procurement-agent-composer,
+.dark .procurement-agent-completed {
+  border-color: #334155;
+}
+
+.dark .procurement-agent-icon,
+.dark .procurement-agent-message-icon,
+.dark .procurement-agent-empty-icon,
+.dark .procurement-agent-thinking {
+  background: #3b0764;
+  color: #e9d5ff;
+}
+
+.dark .procurement-agent-secondary-button,
+.dark .procurement-agent-picker-close {
+  border-color: #475569;
+  background: #1e293b;
+  color: #e2e8f0;
+}
+
+.dark .procurement-agent-state,
+.dark .procurement-agent-state p,
+.dark .procurement-agent-bubble time,
+.dark .procurement-agent-picker-meta,
+.dark .procurement-agent-picker-state,
+.dark .procurement-agent-completed {
+  color: #94a3b8;
+}
+
+.dark .procurement-agent-state strong,
+.dark .procurement-agent-bubble,
+.dark .from-agent .procurement-agent-bubble {
+  border-color: #334155;
+  background: #1e293b;
+  color: #e2e8f0;
+}
+
+.dark .from-user .procurement-agent-bubble {
+  border-color: #7e22ce;
+  background: #7e22ce;
+  color: #fff;
+}
+
+.dark .procurement-agent-composer-box {
+  border-color: #475569;
+  background: #1e293b;
+}
+
+.dark .procurement-agent-composer textarea {
+  color: #f8fafc;
+}
+
+.dark .procurement-agent-picker > ul button.is-selected {
+  border-color: #7e22ce;
+  background: #2e1065;
+}
+
+.procurement-workspace {
+  display: grid;
+  width: min(100%, 68rem);
+  gap: 0.9rem;
+  margin: 0 auto;
+  padding: 1rem 0.85rem max(2rem, env(safe-area-inset-bottom));
+  color: #334155;
+}
+
+.procurement-workspace-heading,
+.procurement-workspace-panel-heading,
+.procurement-workspace-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.procurement-workspace-heading {
+  min-height: 3rem;
+  border-bottom: 1px solid #e2e8f0;
+  padding: 0.2rem 0 0.85rem;
+}
+
+.procurement-workspace-heading h1 {
+  margin: 0;
+  color: #0f172a;
+  font-family: var(--font-anton, inherit);
+  font-size: 1.3rem;
+  font-weight: 500;
+  letter-spacing: 0.025em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.procurement-workspace-heading .procurement-agent-eyebrow {
+  margin: 0 0 0.2rem;
+}
+
+.procurement-workspace-title {
+  min-width: 0;
+}
+
+.procurement-workspace-heading-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.procurement-workspace-company-picker,
+.procurement-workspace-rfq-picker {
+  min-width: 0;
+}
+
+.procurement-workspace-company-picker select,
+.procurement-workspace-rfq-picker select {
+  min-height: 2.3rem !important;
+  max-width: min(16rem, 62vw);
+  border-radius: 0.6rem !important;
+  padding: 0.4rem 1.9rem 0.4rem 0.65rem !important;
+  font-size: 0.72rem !important;
+}
+
+.procurement-workspace-onboarding {
+  justify-items: center;
+  padding: 1.5rem;
+  text-align: center;
+}
+
+.procurement-workspace-onboarding > svg {
+  color: #7e22ce;
+}
+
+.procurement-workspace-onboarding > p {
+  max-width: 28rem;
+}
+
+.procurement-workspace-invitations {
+  display: grid;
+  width: 100%;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+  text-align: left;
+}
+
+.procurement-workspace-invitations > h3 {
+  margin: 0;
+}
+
+.procurement-workspace-panel {
+  display: grid;
+  min-width: 0;
+  gap: 0.85rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 1rem;
+  background: #fff;
+  padding: 0.95rem;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 6%);
+}
+
+.procurement-workspace-panel h2,
+.procurement-workspace-card h3 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 1rem;
+  line-height: 1.35;
+}
+
+.procurement-workspace-panel > p,
+.procurement-workspace-card > p,
+.procurement-workspace-panel-heading p {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.procurement-workspace label {
+  display: grid;
+  min-width: 0;
+  gap: 0.35rem;
+  color: #475569;
+  font-size: 0.76rem;
+  font-weight: 650;
+}
+
+.procurement-workspace input:not([type="checkbox"]):not([type="file"]),
+.procurement-workspace select,
+.procurement-workspace textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 2.7rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.7rem;
+  outline: none;
+  background: #fff;
+  padding: 0.65rem 0.75rem;
+  color: #0f172a;
+  font: inherit;
+  font-size: 0.82rem;
+}
+
+.procurement-workspace textarea {
+  min-height: 5.25rem;
+  resize: vertical;
+}
+
+.procurement-workspace input:focus,
+.procurement-workspace select:focus,
+.procurement-workspace textarea:focus {
+  border-color: #a855f7;
+  box-shadow: 0 0 0 3px rgb(168 85 247 / 15%);
+}
+
+.procurement-workspace-form {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.procurement-workspace-inline {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.procurement-requirement-unit-field {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 0.35rem;
+}
+
+.procurement-workspace-check {
+  display: flex !important;
+  align-items: center;
+  gap: 0.5rem !important;
+}
+
+.procurement-workspace-check input,
+.procurement-workspace-unit-list input,
+.procurement-workspace-supplier-list input {
+  width: 1rem;
+  height: 1rem;
+  flex: none;
+  accent-color: #9810fa;
+}
+
+.procurement-workspace-primary,
+.procurement-workspace-secondary,
+.procurement-workspace-danger,
+.procurement-workspace-icon-button {
+  display: inline-flex;
+  min-height: 2.55rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  border: 1px solid transparent;
+  border-radius: 0.7rem;
+  padding: 0.5rem 0.75rem;
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.procurement-workspace-primary {
+  background: #9810fa;
+  color: #fff;
+}
+
+.procurement-workspace-secondary,
+.procurement-workspace-icon-button {
+  border-color: #cbd5e1;
+  background: #fff;
+  color: #334155;
+}
+
+.procurement-workspace-danger {
+  border-color: #fecaca;
+  background: #fff;
+  color: #b91c1c;
+}
+
+.procurement-workspace button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.procurement-workspace-actions,
+.procurement-workspace-tabs,
+.procurement-workspace-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.procurement-workspace-tabs {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 0.45rem;
+}
+
+.procurement-workspace-tabs button {
+  display: inline-flex;
+  min-height: 2.55rem;
+  flex: none;
+  align-items: center;
+  gap: 0.4rem;
+  border: 0;
+  border-radius: 0.7rem;
+  background: transparent;
+  padding: 0.5rem 0.7rem;
+  color: #475569;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.procurement-workspace-tabs button.is-active {
+  background: #f3e8ff;
+  color: #7e22ce;
+}
+
+.procurement-workspace-card {
+  display: grid;
+  gap: 0.75rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.85rem;
+  background: #fff;
+  padding: 0.85rem;
+}
+
+.procurement-workspace-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
+  gap: 0.65rem;
+  margin-top: 1rem;
+}
+
+.procurement-workspace-summary a {
+  display: grid;
+  gap: 0.35rem;
+  color: inherit;
+  text-decoration: none;
+}
+
+.procurement-workspace-summary a:hover {
+  border-color: #c084fc;
+}
+
+.procurement-workspace-summary strong {
+  color: #7e22ce;
+  font-size: 1.15rem;
+}
+
+.procurement-workspace-summary span {
+  color: #64748b;
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.procurement-supplier-summary {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.85rem;
+}
+
+.procurement-supplier-summary-card {
+  display: flex;
+  min-height: 7.5rem;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.3rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 1rem;
+  background: #fff;
+  padding: 1.05rem;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 6%);
+  text-decoration: none;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.procurement-supplier-summary-card:hover {
+  box-shadow: 0 4px 12px rgb(15 23 42 / 8%);
+}
+
+.procurement-supplier-summary-top {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  color: #7e22ce;
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.procurement-supplier-summary-icon {
+  display: grid;
+  width: 1.8rem;
+  height: 1.8rem;
+  flex: none;
+  place-items: center;
+  border-radius: 0.55rem;
+  background: #faf5ff;
+  color: #9333ea;
+}
+
+.procurement-supplier-summary-card > strong {
+  margin-top: 0.3rem;
+  color: #0f172a;
+  font-size: 1.75rem;
+  line-height: 1.15;
+}
+
+.procurement-supplier-summary-card > strong.is-label {
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.procurement-supplier-summary-card > small {
+  color: #64748b;
+  font-size: 0.68rem;
+}
+
+.procurement-supplier-summary-card.is-blue .procurement-supplier-summary-top,
+.procurement-supplier-summary-card.is-blue .procurement-supplier-summary-icon {
+  color: #2563eb;
+}
+
+.procurement-supplier-summary-card.is-blue .procurement-supplier-summary-icon {
+  background: #eff6ff;
+}
+
+.procurement-supplier-summary-card.is-emerald .procurement-supplier-summary-top,
+.procurement-supplier-summary-card.is-emerald .procurement-supplier-summary-icon {
+  color: #059669;
+}
+
+.procurement-supplier-summary-card.is-emerald .procurement-supplier-summary-icon {
+  background: #ecfdf5;
+}
+
+.procurement-supplier-summary-card.is-indigo .procurement-supplier-summary-top,
+.procurement-supplier-summary-card.is-indigo .procurement-supplier-summary-icon {
+  color: #4f46e5;
+}
+
+.procurement-supplier-summary-card.is-indigo .procurement-supplier-summary-icon {
+  background: #eef2ff;
+}
+
+.procurement-supplier-quick-access {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.procurement-supplier-quick-access > h2 {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.procurement-supplier-quick-access > div {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.procurement-supplier-quick-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.8rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 1rem;
+  background: #fff;
+  padding: 0.9rem;
+  text-decoration: none;
+}
+
+.procurement-supplier-quick-card > span:first-child {
+  display: grid;
+  width: 2.5rem;
+  height: 2.5rem;
+  flex: none;
+  place-items: center;
+  border-radius: 0.75rem;
+  background: #faf5ff;
+  color: #9333ea;
+}
+
+.procurement-supplier-quick-card > span:last-child {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.procurement-supplier-quick-card strong {
+  color: #0f172a;
+  font-size: 0.8rem;
+}
+
+.procurement-supplier-quick-card small {
+  color: #64748b;
+  font-size: 0.7rem;
+  line-height: 1.45;
+}
+
+.procurement-supplier-quick-card.is-blue > span:first-child {
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+.procurement-supplier-quick-card.is-emerald > span:first-child {
+  background: #ecfdf5;
+  color: #059669;
+}
+
+.procurement-rfq-inbox {
+  gap: 1rem;
+}
+
+.procurement-rfq-toolbar,
+.procurement-rfq-title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+}
+
+.procurement-rfq-title {
+  justify-content: flex-start;
+}
+
+.procurement-rfq-title > span:last-child {
+  display: grid;
+  min-width: 0;
+  gap: 0.2rem;
+}
+
+.procurement-rfq-title strong {
+  color: #0f172a;
+  font-size: 0.9rem;
+}
+
+.procurement-rfq-title small {
+  overflow: hidden;
+  color: #64748b;
+  font-size: 0.67rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.procurement-rfq-icon {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  flex: none;
+  place-items: center;
+  border-radius: 0.6rem;
+  background: #faf5ff;
+  color: #9333ea;
+}
+
+.procurement-workspace-rfq-detail {
+  display: grid;
+  min-width: 0;
+  gap: 1rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 1rem;
+  background: #fff;
+  padding: 0.9rem;
+}
+
+.procurement-rfq-detail-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.65rem;
+  border-bottom: 1px solid #f1f5f9;
+  padding-bottom: 0.8rem;
+}
+
+.procurement-rfq-detail-heading h2 {
+  margin: 0.4rem 0 0;
+  color: #0f172a;
+  font-size: 1rem;
+}
+
+.procurement-rfq-buyer-badge {
+  border-radius: 0.35rem;
+  background: #faf5ff;
+  padding: 0.18rem 0.4rem;
+  color: #7e22ce;
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.procurement-workspace-status.is-open {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.procurement-workspace-status.is-invited {
+  background: #fffbeb;
+  color: #b45309;
+}
+
+.procurement-rfq-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin: 0;
+}
+
+.procurement-rfq-facts > div {
+  min-width: 0;
+  border-radius: 0.7rem;
+  background: #f8fafc;
+  padding: 0.65rem;
+}
+
+.procurement-rfq-facts > div.is-wide {
+  grid-column: 1 / -1;
+}
+
+.procurement-rfq-facts dt,
+.procurement-rfq-existing-quote dt {
+  color: #94a3b8;
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.procurement-rfq-facts dd,
+.procurement-rfq-existing-quote dd {
+  margin: 0.25rem 0 0;
+  color: #334155;
+  font-size: 0.75rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.procurement-rfq-notes,
+.procurement-rfq-response,
+.procurement-rfq-existing-quote,
+.procurement-rfq-response-actions,
+.procurement-rfq-quotation,
+.procurement-rfq-review {
+  display: grid;
+  gap: 0.75rem;
+  border-radius: 0.8rem;
+  background: #f8fafc;
+  padding: 0.8rem;
+}
+
+.procurement-rfq-review h3 {
+  margin: 0;
+  color: #581c87;
+  font-size: 0.85rem;
+}
+
+.procurement-workspace-note.is-error {
+  color: #b91c1c;
+}
+
+.procurement-rfq-review .procurement-workspace-facts {
+  margin: 0;
+}
+
+.procurement-rfq-review .procurement-workspace-facts > div.is-wide {
+  grid-column: 1 / -1;
+}
+
+.procurement-rfq-review .procurement-workspace-facts dt {
+  color: #64748b;
+  font-size: 0.66rem;
+  font-weight: 750;
+}
+
+.procurement-rfq-review .procurement-workspace-facts dd {
+  margin: 0.2rem 0 0;
+  color: #1e293b;
+  font-size: 0.76rem;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.dark .procurement-rfq-review {
+  border-color: #581c87;
+  background: rgb(59 7 100 / 25%);
+}
+
+.dark .procurement-rfq-review h3,
+.dark .procurement-rfq-review .procurement-workspace-facts dd {
+  color: #e9d5ff;
+}
+
+.dark .procurement-rfq-review .procurement-workspace-facts dt {
+  color: #a1a1aa;
+}
+
+.dark .procurement-workspace-note.is-error {
+  color: #fda4af;
+}
+
+.procurement-rfq-notes h3,
+.procurement-rfq-existing-quote h3,
+.procurement-rfq-quotation h3,
+.procurement-rfq-review h4 {
+  margin: 0;
+  color: #334155;
+  font-size: 0.76rem;
+  font-weight: 750;
+}
+
+.procurement-rfq-notes p,
+.procurement-rfq-response p {
+  margin: 0.25rem 0 0;
+  color: #475569;
+  font-size: 0.73rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.procurement-rfq-notes > div + div {
+  border-top: 1px solid #e2e8f0;
+  padding-top: 0.7rem;
+}
+
+.procurement-rfq-response {
+  border: 1px solid #e9d5ff;
+  background: #faf5ff;
+}
+
+.procurement-rfq-response > strong {
+  color: #7e22ce;
+  font-size: 0.63rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.procurement-rfq-existing-quote .procurement-rfq-facts {
+  grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+}
+
+.procurement-rfq-quotation {
+  border-top: 1px solid #e2e8f0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0.85rem 0 0;
+}
+
+.procurement-rfq-quotation > header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.procurement-rfq-quotation > header p {
+  margin: 0.25rem 0 0;
+  color: #64748b;
+  font-size: 0.68rem;
+}
+
+.procurement-rfq-review {
+  border: 1px solid #e9d5ff;
+  background: #faf5ff;
+}
+
+.procurement-workspace-load-more {
+  display: flex;
+  justify-content: center;
+}
+
+.procurement-workspace-load-more .procurement-workspace-secondary {
+  width: 100%;
+}
+
+.procurement-workspace-card-head > div {
+  min-width: 0;
+}
+
+.procurement-workspace-card-head p {
+  margin: 0.2rem 0 0;
+  color: #64748b;
+  font-size: 0.74rem;
+  line-height: 1.4;
+}
+
+.procurement-workspace-status {
+  flex: none;
+  border-radius: 999px;
+  background: #f1f5f9;
+  padding: 0.3rem 0.55rem;
+  color: #475569;
+  font-size: 0.65rem;
+  font-weight: 750;
+}
+
+.procurement-workspace-facts {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0;
+}
+
+.procurement-workspace-facts > div {
+  display: grid;
+  grid-template-columns: minmax(6rem, 0.7fr) minmax(0, 1.3fr);
+  gap: 0.5rem;
+  font-size: 0.75rem;
+}
+
+.procurement-workspace-facts dt {
+  color: #64748b;
+}
+
+.procurement-workspace-facts dd {
+  margin: 0;
+  color: #334155;
+  overflow-wrap: anywhere;
+}
+
+.procurement-workspace-description,
+.procurement-workspace-note,
+.procurement-workspace-event {
+  color: #64748b;
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+
+.procurement-workspace-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  border: 1px solid;
+  border-radius: 0.8rem;
+  padding: 0.75rem;
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.procurement-workspace-alert span {
+  flex: 1;
+}
+
+.procurement-workspace-alert button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 750;
+  text-decoration: underline;
+}
+
+.procurement-workspace-alert.is-error {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.procurement-workspace-alert.is-success {
+  border-color: #a7f3d0;
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.procurement-workspace-empty,
+.procurement-workspace-state {
+  color: #64748b;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.procurement-workspace-state {
+  display: flex;
+  min-height: 8rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+}
+
+.procurement-workspace-list,
+.procurement-workspace-supplier-list,
+.procurement-workspace-unit-list {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.procurement-workspace-request-choice,
+.procurement-workspace-supplier-list label,
+.procurement-workspace-unit-list label {
+  display: flex;
+  min-height: 2.75rem;
+  align-items: center;
+  gap: 0.55rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.7rem;
+  background: #fff;
+  padding: 0.55rem 0.65rem;
+  color: #334155;
+  font: inherit;
+  font-size: 0.75rem;
+  text-align: left;
+}
+
+.procurement-workspace-request-choice {
+  justify-content: space-between;
+}
+
+.procurement-workspace-request-choice.is-selected {
+  border-color: #c084fc;
+  background: #faf5ff;
+}
+
+.procurement-workspace-request-choice small,
+.procurement-workspace-supplier-list small {
+  display: block;
+  color: #64748b;
+  font-size: 0.67rem;
+}
+
+.procurement-workspace-panel details summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  list-style-position: inside;
+  color: #334155;
+  font-size: 0.8rem;
+}
+
+.procurement-workspace-panel details summary small {
+  display: block;
+  margin-top: 0.2rem;
+  color: #64748b;
+  font-size: 0.68rem;
+}
+
+.procurement-workspace-quote {
+  display: grid;
+  gap: 0.45rem;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 0.75rem;
+  font-size: 0.76rem;
+}
+
+.procurement-workspace-quote p {
+  margin: 0;
+  color: #64748b;
+  line-height: 1.45;
+}
+
+.procurement-workspace-unit-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.procurement-workspace-panel fieldset {
+  min-width: 0;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  padding: 0.7rem;
+}
+
+.procurement-workspace-panel legend {
+  padding: 0 0.3rem;
+  color: #475569;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.procurement-workspace-pagination {
+  justify-content: center;
+  margin-top: 0.5rem;
+  color: #64748b;
+  font-size: 0.72rem;
+}
+
+.procurement-requirement-mode {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.25rem;
+  border-radius: 0.8rem;
+  background: #f1f5f9;
+  padding: 0.25rem;
+}
+
+.procurement-requirement-mode button {
+  display: inline-flex;
+  min-width: 0;
+  min-height: 2.65rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  border: 0;
+  border-radius: 0.6rem;
+  background: transparent;
+  padding: 0.45rem;
+  color: #475569;
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.procurement-requirement-mode button.is-active {
+  background: #fff;
+  color: #7e22ce;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 8%);
+}
+
+.procurement-requirement-mode button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.procurement-requirement-ai-grid {
+  display: grid;
+  min-width: 0;
+  align-items: stretch;
+  gap: 1rem;
+}
+
+.procurement-requirement-ai-grid .procurement-requirement-assistant,
+.procurement-requirement-draft {
+  min-width: 0;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.85rem;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 4%);
+}
+
+.procurement-requirement-ai-grid .procurement-requirement-assistant {
+  min-height: 28rem;
+  grid-template-rows: auto minmax(14rem, 1fr) auto auto;
+  padding: 1rem;
+}
+
+.procurement-requirement-ai-grid .procurement-requirement-assistant > header {
+  min-width: 0;
+  border-color: #e2e8f0;
+  padding-bottom: 0.8rem;
+}
+
+.procurement-requirement-icon {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  flex: none;
+  place-items: center;
+  border-radius: 0.65rem;
+  background: #f3e8ff;
+  color: #7e22ce;
+}
+
+.procurement-requirement-assistant-title,
+.procurement-requirement-draft-title {
+  display: grid;
+  min-width: 0;
+  gap: 0.2rem;
+}
+
+.procurement-requirement-ai-grid .procurement-requirement-assistant-title {
+  flex: 1;
+}
+
+.procurement-requirement-ai-grid .procurement-requirement-assistant-title strong,
+.procurement-requirement-draft-title strong {
+  color: #1e293b;
+  font-size: 0.88rem;
+}
+
+.procurement-requirement-ai-grid .procurement-requirement-assistant-title small,
+.procurement-requirement-draft-title small {
+  color: #64748b;
+  font-size: 0.7rem;
+  line-height: 1.4;
+}
+
+.procurement-requirement-status {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 0.35rem;
+  border-radius: 999px;
+  background: #f1f5f9;
+  padding: 0.3rem 0.55rem;
+  color: #64748b;
+  font-size: 0.64rem;
+  font-weight: 700;
+}
+
+.procurement-requirement-status i {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  background: #94a3b8;
+}
+
+.procurement-requirement-status.is-active {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.procurement-requirement-status.is-active i {
+  background: #22c55e;
+}
+
+.procurement-requirement-ai-grid .procurement-requirement-messages {
+  max-height: 26rem;
+  gap: 0.8rem;
+  padding: 0.65rem 0.1rem;
+}
+
+.procurement-requirement-message {
+  display: grid;
+  max-width: 92%;
+  gap: 0.3rem;
+  align-self: flex-start;
+}
+
+.procurement-requirement-message.is-user {
+  align-self: flex-end;
+}
+
+.procurement-requirement-message p {
+  max-width: none;
+  border-radius: 0.8rem 0.8rem 0.8rem 0.2rem;
+  background: #f1f5f9;
+  padding: 0.7rem 0.8rem;
+  color: #334155;
+  font-size: 0.76rem;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.procurement-requirement-message.is-user p {
+  border-radius: 0.8rem 0.8rem 0.2rem 0.8rem;
+  background: #f3e8ff;
+  color: #581c87;
+}
+
+.procurement-requirement-message time {
+  padding-inline: 0.3rem;
+  color: #94a3b8;
+  font-size: 0.6rem;
+}
+
+.procurement-requirement-empty-chat {
+  display: grid;
+  max-width: 23rem;
+  align-content: center;
+  justify-items: center;
+  gap: 0.6rem;
+  align-self: center;
+  margin: auto;
+  color: #64748b;
+  text-align: center;
+}
+
+.procurement-requirement-empty-chat > span {
+  display: grid;
+  width: 2.5rem;
+  height: 2.5rem;
+  place-items: center;
+  border-radius: 50%;
+  background: #f3e8ff;
+  color: #7e22ce;
+}
+
+.procurement-requirement-empty-chat strong {
+  color: #334155;
+  font-size: 0.85rem;
+}
+
+.procurement-requirement-empty-chat p {
+  max-width: 22rem;
+  background: transparent;
+  color: #64748b;
+  font-size: 0.72rem;
+  line-height: 1.55;
+}
+
+.procurement-requirement-thinking {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: #64748b;
+  font-size: 0.7rem;
+}
+
+.procurement-requirement-ai-grid .procurement-requirement-composer {
+  border-color: #e2e8f0;
+}
+
+.procurement-requirement-ai-grid .procurement-requirement-composer input {
+  min-height: 2.8rem;
+  border-radius: 0.7rem;
+  font-size: 0.75rem;
+}
+
+.procurement-requirement-ai-grid .procurement-requirement-composer button {
+  display: grid;
+  width: 2.8rem;
+  min-width: 2.8rem;
+  min-height: 2.8rem;
+  place-items: center;
+  border: 0;
+  border-radius: 0.7rem;
+  background: #7e22ce;
+  color: #fff;
+}
+
+.procurement-requirement-ai-grid .procurement-requirement-composer button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.procurement-requirement-draft {
+  display: flex;
+  min-height: 28rem;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.procurement-requirement-draft > header {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.6rem;
+  border-bottom: 1px solid #e2e8f0;
+  padding: 0.85rem;
+}
+
+.procurement-requirement-count {
+  flex: none;
+  border-radius: 999px;
+  background: #f1f5f9;
+  padding: 0.3rem 0.5rem;
+  color: #475569;
+  font-size: 0.62rem;
+  font-weight: 700;
+}
+
+.procurement-requirement-count.is-ready {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.procurement-requirement-expand {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  flex: none;
+  place-items: center;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.55rem;
+  background: #fff;
+  color: #475569;
+}
+
+.procurement-requirement-draft-rows {
+  display: none;
+  flex: 1;
+  align-content: start;
+  padding: 0.25rem 0.85rem;
+}
+
+.procurement-requirement-draft-rows.is-expanded {
+  display: grid;
+}
+
+.procurement-requirement-draft-row {
+  display: grid;
+  grid-template-columns: minmax(8rem, 0.8fr) minmax(0, 1.2fr);
+  gap: 0.75rem;
+  border-bottom: 1px solid #f1f5f9;
+  padding: 0.65rem 0;
+}
+
+.procurement-requirement-draft-row > span:first-child,
+.procurement-requirement-additional > span {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: #64748b;
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+
+.procurement-requirement-draft-row > span:first-child svg,
+.procurement-requirement-additional > span svg {
+  flex: none;
+  color: #94a3b8;
+}
+
+.procurement-requirement-draft-row b {
+  color: #dc2626;
+}
+
+.procurement-requirement-draft-row > span:last-child {
+  display: grid;
+  min-width: 0;
+  gap: 0.2rem;
+  color: #1e293b;
+  font-size: 0.72rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.procurement-requirement-draft-row > span:last-child.is-empty {
+  color: #94a3b8;
+  font-weight: 400;
+}
+
+.procurement-requirement-draft-row small {
+  color: #94a3b8;
+  font-size: 0.59rem;
+  font-weight: 400;
+}
+
+.procurement-requirement-additional {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.7rem 0;
+}
+
+.procurement-requirement-additional > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.procurement-requirement-additional > div span {
+  border-radius: 999px;
+  background: #f1f5f9;
+  padding: 0.3rem 0.5rem;
+  color: #475569;
+  font-size: 0.62rem;
+}
+
+.procurement-requirement-additional > small {
+  color: #94a3b8;
+  font-size: 0.68rem;
+}
+
+.procurement-requirement-draft-actions {
+  position: sticky;
+  bottom: 0;
+  display: grid;
+  gap: 0.5rem;
+  border-top: 1px solid #e2e8f0;
+  background: #fff;
+  padding: 0.8rem 0.85rem;
+}
+
+.procurement-requirement-draft-actions button {
+  display: flex;
+  min-height: 2.7rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  border-radius: 0.65rem;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.procurement-requirement-draft-actions button.is-primary {
+  border: 0;
+  background: #7e22ce;
+  color: #fff;
+}
+
+.procurement-requirement-draft-actions button.is-primary:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.procurement-requirement-draft-actions button.is-secondary {
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #475569;
+}
+
+.procurement-requirement-draft-actions p {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 0.62rem;
+  text-align: center;
+}
+
+.procurement-requirement-form-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.procurement-requirement-form-heading > span {
+  flex: none;
+  border-radius: 999px;
+  background: #fef3c7;
+  padding: 0.35rem 0.55rem;
+  color: #92400e;
+  font-size: 0.62rem;
+  font-weight: 700;
+}
+
+.procurement-requirement-form-heading > span.is-ready {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.procurement-requirement-unit-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.procurement-requirement-unit-options button {
+  border: 0;
+  border-radius: 0.35rem;
+  background: #f1f5f9;
+  padding: 0.2rem 0.4rem;
+  color: #475569;
+  font: inherit;
+  font-size: 0.62rem;
+  font-weight: 600;
+}
+
+.procurement-requirement-unit-options button.is-selected {
+  background: #7e22ce;
+  color: #fff;
+}
+
+.procurement-requirement-unit-options button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+@media (min-width: 900px) {
+  .procurement-requirement-ai-grid {
+    grid-template-columns: minmax(0, 1.1fr) minmax(20rem, 0.9fr);
+  }
+
+  .procurement-requirement-draft-rows {
+    display: grid;
+  }
+
+  .procurement-requirement-expand {
+    display: none;
+  }
+}
+
+@media (max-width: 420px) {
+  .procurement-requirement-ai-grid .procurement-requirement-assistant {
+    min-height: 25rem;
+    padding: 0.7rem;
+  }
+
+  .procurement-requirement-ai-grid .procurement-requirement-assistant > header {
+    flex-wrap: wrap;
+  }
+
+  .procurement-requirement-status {
+    margin-left: auto;
+  }
+
+  .procurement-requirement-draft > header {
+    gap: 0.4rem;
+    padding: 0.7rem;
+  }
+
+  .procurement-requirement-count {
+    margin-left: auto;
+  }
+
+  .procurement-requirement-draft-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.35rem;
+  }
+}
+
+.procurement-workspace-requirements-title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.procurement-workspace-requirements-title > div {
+  min-width: 0;
+}
+
+.procurement-workspace-requirements-title > span {
+  flex: none;
+  border-radius: 999px;
+  background: #f1f5f9;
+  padding: 0.3rem 0.55rem;
+  color: #475569;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.procurement-workspace-card-meta {
+  color: #64748b;
+  font-size: 0.7rem !important;
+}
+
+.procurement-requirement-assistant {
+  display: grid;
+  min-width: 0;
+  gap: 0.7rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.85rem;
+  background: #fff;
+  padding: 0.8rem;
+}
+
+.procurement-requirement-assistant > header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  border-bottom: 1px solid #f1f5f9;
+  padding-bottom: 0.65rem;
+  color: #7e22ce;
+}
+
+.procurement-requirement-assistant > header div {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.procurement-requirement-assistant > header strong {
+  color: #1e293b;
+  font-size: 0.82rem;
+}
+
+.procurement-requirement-assistant > header small {
+  color: #64748b;
+  font-size: 0.7rem;
+  line-height: 1.4;
+}
+
+.procurement-requirement-messages {
+  display: flex;
+  min-height: 7rem;
+  max-height: 17rem;
+  flex-direction: column;
+  gap: 0.55rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0.25rem 0.1rem;
+}
+
+.procurement-requirement-messages p {
+  max-width: 92%;
+  margin: 0;
+  border-radius: 0.75rem;
+  background: #f1f5f9;
+  padding: 0.6rem 0.7rem;
+  color: #334155;
+  font-size: 0.76rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.procurement-requirement-messages p.is-user {
+  align-self: flex-end;
+  background: #f3e8ff;
+  color: #581c87;
+}
+
+.procurement-requirement-messages p.is-empty {
+  max-width: none;
+  align-self: center;
+  margin: auto;
+  background: transparent;
+  color: #64748b;
+  text-align: center;
+}
+
+.procurement-requirement-composer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.45rem;
+  border-top: 1px solid #f1f5f9;
+  padding-top: 0.65rem;
+}
+
+.procurement-requirement-composer input {
+  min-width: 0;
+}
+
+.procurement-requirement-composer button {
+  min-width: 2.7rem;
+  padding-inline: 0.6rem;
+}
+
+@media (min-width: 700px) {
+  .procurement-workspace {
+    padding: 1.5rem 1.25rem 2rem;
+  }
+
+  .procurement-workspace-heading h1 {
+    font-size: 1.7rem;
+  }
+
+  .procurement-workspace-panel {
+    padding: 1.15rem;
+  }
+
+  .procurement-workspace-unit-list {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .procurement-supplier-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .procurement-supplier-quick-access > div {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1024px) {
+  .procurement-supplier-summary {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .procurement-workspace-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .procurement-workspace-heading-actions,
+  .procurement-workspace-company-picker,
+  .procurement-workspace-company-picker select {
+    width: 100%;
+    max-width: none;
+  }
+
+  .procurement-workspace-heading-actions {
+    justify-content: space-between;
+  }
+
+  .procurement-rfq-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .procurement-rfq-toolbar > .procurement-workspace-actions {
+    width: 100%;
+  }
+
+  .procurement-workspace-rfq-picker,
+  .procurement-workspace-rfq-picker select {
+    width: 100%;
+    max-width: none;
+  }
+
+  .procurement-rfq-detail-heading > .procurement-workspace-actions {
+    width: 100%;
+  }
+
+  .procurement-workspace-panel-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .procurement-workspace-panel-heading > button {
+    width: 100%;
+  }
+
+  .procurement-requirement-form .procurement-workspace-inline {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .procurement-requirement-assistant {
+    padding: 0.65rem;
+  }
+
+  .procurement-requirement-messages {
+    max-height: 13rem;
+  }
+
+  .procurement-requirement-composer input {
+    font-size: 0.76rem !important;
+  }
+}
+
+.dark .procurement-workspace {
+  color: #cbd5e1;
+}
+
+.dark .procurement-workspace-heading h1,
+.dark .procurement-workspace-panel h2,
+.dark .procurement-workspace-card h3 {
+  color: #f8fafc;
+}
+
+.dark .procurement-workspace-panel,
+.dark .procurement-workspace-card,
+.dark .procurement-supplier-summary-card,
+.dark .procurement-supplier-quick-card,
+.dark .procurement-workspace-rfq-detail,
+.dark .procurement-workspace-request-choice,
+.dark .procurement-workspace-supplier-list label,
+.dark .procurement-workspace-unit-list label {
+  border-color: #334155;
+  background: #0f172a;
+}
+
+.dark .procurement-workspace-panel > p,
+.dark .procurement-workspace-card > p,
+.dark .procurement-supplier-summary-card > small,
+.dark .procurement-supplier-quick-card small,
+.dark .procurement-rfq-title small,
+.dark .procurement-rfq-quotation > header p,
+.dark .procurement-rfq-notes p,
+.dark .procurement-rfq-response p,
+.dark .procurement-workspace-summary span,
+.dark .procurement-workspace-panel-heading p,
+.dark .procurement-workspace label,
+.dark .procurement-workspace-description,
+.dark .procurement-workspace-note,
+.dark .procurement-workspace-event,
+.dark .procurement-workspace-card-head p,
+.dark .procurement-workspace-empty,
+.dark .procurement-workspace-pagination,
+.dark .procurement-workspace-facts dt {
+  color: #94a3b8;
+}
+
+.dark .procurement-workspace input:not([type="checkbox"]):not([type="file"]),
+.dark .procurement-workspace select,
+.dark .procurement-workspace textarea {
+  border-color: #475569;
+  background: #1e293b;
+  color: #f8fafc;
+}
+
+.dark .procurement-workspace-secondary,
+.dark .procurement-workspace-icon-button {
+  border-color: #475569;
+  background: #1e293b;
+  color: #e2e8f0;
+}
+
+.dark .procurement-workspace-danger {
+  border-color: #7f1d1d;
+  background: #1e293b;
+  color: #fca5a5;
+}
+
+.dark .procurement-workspace-tabs {
+  border-color: #334155;
+}
+
+.dark .procurement-workspace-tabs button {
+  color: #cbd5e1;
+}
+
+.dark .procurement-workspace-tabs button.is-active {
+  background: #3b0764;
+  color: #e9d5ff;
+}
+
+.dark .procurement-workspace-status {
+  background: #1e293b;
+  color: #cbd5e1;
+}
+
+.dark .procurement-requirement-mode {
+  background: #1e293b;
+}
+
+.dark .procurement-requirement-mode button {
+  color: #cbd5e1;
+}
+
+.dark .procurement-requirement-mode button.is-active {
+  background: #334155;
+  color: #e9d5ff;
+}
+
+.dark .procurement-workspace-requirements-title > span {
+  background: #1e293b;
+  color: #cbd5e1;
+}
+
+.dark .procurement-workspace-card-meta {
+  color: #94a3b8;
+}
+
+.dark .procurement-requirement-assistant {
+  border-color: #334155;
+  background: #0f172a;
+}
+
+.dark .procurement-requirement-ai-grid .procurement-requirement-assistant,
+.dark .procurement-requirement-draft {
+  border-color: #334155;
+  background: #0f172a;
+}
+
+.dark .procurement-requirement-assistant > header {
+  border-color: #334155;
+}
+
+.dark .procurement-requirement-ai-grid .procurement-requirement-assistant-title strong,
+.dark .procurement-requirement-draft-title strong,
+.dark .procurement-requirement-empty-chat strong,
+.dark .procurement-requirement-draft-row > span:last-child {
+  color: #f8fafc;
+}
+
+.dark .procurement-requirement-ai-grid .procurement-requirement-assistant-title small,
+.dark .procurement-requirement-draft-title small,
+.dark .procurement-requirement-draft-row > span:first-child,
+.dark .procurement-requirement-additional > span {
+  color: #94a3b8;
+}
+
+.dark .procurement-requirement-icon,
+.dark .procurement-requirement-empty-chat > span {
+  background: #3b0764;
+  color: #e9d5ff;
+}
+
+.dark .procurement-requirement-status {
+  background: #1e293b;
+  color: #cbd5e1;
+}
+
+.dark .procurement-requirement-status.is-active {
+  background: #14532d;
+  color: #bbf7d0;
+}
+
+.dark .procurement-requirement-assistant > header strong,
+.dark .procurement-requirement-messages p {
+  color: #e2e8f0;
+}
+
+.dark .procurement-requirement-assistant > header small,
+.dark .procurement-requirement-messages p.is-empty {
+  color: #94a3b8;
+}
+
+.dark .procurement-requirement-messages p {
+  background: #1e293b;
+}
+
+.dark .procurement-requirement-messages p.is-user {
+  background: #3b0764;
+  color: #e9d5ff;
+}
+
+.dark .procurement-requirement-message p {
+  background: #1e293b;
+  color: #e2e8f0;
+}
+
+.dark .procurement-requirement-message.is-user p {
+  background: #3b0764;
+  color: #e9d5ff;
+}
+
+.dark .procurement-requirement-draft > header,
+.dark .procurement-requirement-draft-row,
+.dark .procurement-requirement-draft-actions,
+.dark .procurement-requirement-ai-grid .procurement-requirement-composer {
+  border-color: #334155;
+}
+
+.dark .procurement-requirement-count,
+.dark .procurement-requirement-additional > div span {
+  background: #1e293b;
+  color: #cbd5e1;
+}
+
+.dark .procurement-requirement-count.is-ready {
+  background: #14532d;
+  color: #bbf7d0;
+}
+
+.dark .procurement-requirement-unit-options button {
+  background: #1e293b;
+  color: #cbd5e1;
+}
+
+.dark .procurement-requirement-unit-options button.is-selected {
+  background: #7e22ce;
+  color: #fff;
+}
+
+.dark .procurement-requirement-expand,
+.dark .procurement-requirement-draft-actions {
+  background: #0f172a;
+}
+
+.dark .procurement-requirement-draft-actions button.is-secondary {
+  border-color: #475569;
+  background: #1e293b;
+  color: #e2e8f0;
+}
+
+.dark .procurement-requirement-composer {
+  border-color: #334155;
+}
+
+.dark .procurement-supplier-summary-card > strong,
+.dark .procurement-supplier-quick-card strong,
+.dark .procurement-rfq-title strong,
+.dark .procurement-rfq-detail-heading h2 {
+  color: #f8fafc;
+}
+
+.dark .procurement-rfq-facts > div,
+.dark .procurement-rfq-notes,
+.dark .procurement-rfq-existing-quote,
+.dark .procurement-rfq-response-actions,
+.dark .procurement-rfq-review {
+  background: #1e293b;
+}
+
+.dark .procurement-rfq-response {
+  border-color: #581c87;
+  background: rgb(59 7 100 / 35%);
+}
+
+.dark .procurement-rfq-facts dd,
+.dark .procurement-rfq-existing-quote dd,
+.dark .procurement-rfq-notes h3,
+.dark .procurement-rfq-existing-quote h3,
+.dark .procurement-rfq-quotation h3,
+.dark .procurement-rfq-review h4 {
+  color: #e2e8f0;
+}
+
+.dark .procurement-rfq-detail-heading {
+  border-color: #1e293b;
+}
+
+.dark .procurement-rfq-notes > div + div,
+.dark .procurement-rfq-quotation {
+  border-color: #334155;
+}
+
+.dark .procurement-rfq-review {
+  border-color: #581c87;
+}
+
+.dark .procurement-supplier-summary-card.is-blue .procurement-supplier-summary-icon {
+  background: rgb(30 58 138 / 35%);
+}
+
+.dark .procurement-supplier-summary-card.is-emerald .procurement-supplier-summary-icon {
+  background: rgb(6 78 59 / 35%);
+}
+
+.dark .procurement-supplier-summary-card.is-indigo .procurement-supplier-summary-icon {
+  background: rgb(49 46 129 / 35%);
+}
+
+.dark .procurement-supplier-quick-card.is-blue > span:first-child {
+  background: rgb(30 58 138 / 35%);
+}
+
+.dark .procurement-supplier-quick-card.is-emerald > span:first-child {
+  background: rgb(6 78 59 / 35%);
+}
+
+.dark .procurement-workspace-facts dd,
+.dark .procurement-workspace-request-choice {
+  color: #e2e8f0;
+}
+
+.dark .procurement-workspace-request-choice.is-selected {
+  border-color: #7e22ce;
+  background: #2e1065;
+}
+
+.dark .procurement-workspace-quote,
+.dark .procurement-workspace-panel fieldset {
+  border-color: #334155;
+}
+
+.dark .procurement-workspace-panel legend,
+.dark .procurement-workspace-panel details summary {
+  color: #cbd5e1;
+}
+
+.dark .procurement-workspace-panel details summary small,
+.dark .procurement-workspace-quote p,
+.dark .procurement-workspace-request-choice small,
+.dark .procurement-workspace-supplier-list small {
+  color: #94a3b8;
+}
+
+.dark .procurement-workspace-alert.is-error {
+  border-color: #881337;
+  background: rgb(76 5 25 / 40%);
+  color: #fecdd3;
+}
+
+.dark .procurement-workspace-alert.is-success {
+  border-color: #065f46;
+  background: rgb(6 78 59 / 30%);
+  color: #a7f3d0;
+}
+
+.procurement-agent-requirement {
+  display: grid;
+  min-width: 0;
+  gap: 0.85rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 1rem;
+  background: #fff;
+  padding: 0.9rem;
+  color: #334155;
+}
+
+.procurement-agent-requirement-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.procurement-agent-requirement-header h2 {
+  margin: 0.25rem 0;
+  color: #0f172a;
+  font-size: 1rem;
+}
+
+.procurement-agent-requirement-header p:not(.procurement-agent-eyebrow),
+.procurement-agent-requirement-context,
+.procurement-agent-requirement-empty {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.73rem;
+  line-height: 1.45;
+}
+
+.procurement-agent-requirement-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.procurement-agent-requirement-actions button,
+.procurement-agent-draft-field-actions button,
+.procurement-agent-conflict button {
+  display: inline-flex;
+  min-height: 2.4rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.7rem;
+  background: #fff;
+  padding: 0.45rem 0.7rem;
+  color: #334155;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.procurement-agent-requirement-actions button.is-primary {
+  border-color: #7e22ce;
+  background: #7e22ce;
+  color: #fff;
+}
+
+.procurement-agent-requirement-actions button.is-selected {
+  border-color: #c084fc;
+  background: #faf5ff;
+  color: #7e22ce;
+}
+
+.procurement-agent-requirement button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.procurement-agent-draft-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.7rem;
+}
+
+.procurement-agent-draft-field {
+  display: grid;
+  min-width: 0;
+  gap: 0.35rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  background: #f8fafc;
+  padding: 0.65rem;
+}
+
+.procurement-agent-draft-field > label {
+  color: #334155;
+  font-size: 0.73rem;
+  font-weight: 750;
+}
+
+.procurement-agent-draft-field > label span {
+  color: #be123c;
+}
+
+.procurement-agent-draft-field input,
+.procurement-agent-draft-field textarea {
+  width: 100%;
+  }
+
+  .procurement-workspace-requirements-title {
+  justify-content: space-between;
+  min-width: 0;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.6rem;
+  background: #fff;
+  padding: 0.6rem;
+  color: #0f172a;
+  font: inherit;
+  font-size: 0.8rem;
+}
+
+.procurement-agent-draft-field textarea {
+  min-height: 4rem;
+  resize: vertical;
+}
+
+.procurement-agent-draft-field input:focus,
+.procurement-agent-draft-field textarea:focus {
+  border-color: #a855f7;
+  outline: 2px solid rgb(168 85 247 / 20%);
+}
+
+.procurement-agent-draft-field-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.procurement-agent-draft-field-actions > span {
+  flex: 1 1 100%;
+  color: #64748b;
+  font-size: 0.66rem;
+}
+
+.procurement-agent-draft-field-actions > span.is-confirmed {
+  color: #047857;
+  font-weight: 700;
+}
+
+.procurement-agent-draft-field-actions > span.is-cleared {
+  color: #b45309;
+  font-weight: 700;
+}
+
+.procurement-agent-draft-field-actions button {
+  min-height: 2rem;
+  padding: 0.3rem 0.55rem;
+  font-size: 0.67rem;
+}
+
+.procurement-agent-draft-error {
+  color: #b91c1c;
+  font-size: 0.7rem;
+  line-height: 1.4;
+}
+
+.procurement-agent-requirement-review {
+  display: grid;
+  gap: 0.8rem;
+  border: 1px solid #e9d5ff;
+  border-radius: 0.8rem;
+  background: #faf5ff;
+  padding: 0.8rem;
+}
+
+.procurement-agent-requirement-review h3 {
+  margin: 0;
+  color: #581c87;
+  font-size: 0.9rem;
+}
+
+.procurement-agent-requirement-review dl {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0;
+}
+
+.procurement-agent-requirement-review dl > div {
+  display: grid;
+  grid-template-columns: minmax(7rem, 0.7fr) minmax(0, 1.3fr);
+  gap: 0.5rem;
+  border-bottom: 1px solid #e9d5ff;
+  padding-bottom: 0.45rem;
+}
+
+.procurement-agent-requirement-review dt {
+  color: #64748b;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.procurement-agent-requirement-review dd {
+  margin: 0;
+  color: #1e293b;
+  font-size: 0.73rem;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.procurement-agent-manual-confirm {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  color: #334155;
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.procurement-agent-manual-confirm input {
+  width: 1rem;
+  height: 1rem;
+  flex: none;
+  accent-color: #7e22ce;
+}
+
+.procurement-agent-requirement-success,
+.procurement-agent-conflict {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 0.75rem;
+  padding: 0.65rem;
+  font-size: 0.73rem;
+  line-height: 1.4;
+}
+
+.procurement-agent-requirement-success {
+  border: 1px solid #a7f3d0;
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.procurement-agent-requirement-success span {
+  flex: 1 1 auto;
+}
+
+.procurement-agent-requirement-success a {
+  color: #065f46;
+  font-weight: 750;
+  text-decoration: underline;
+}
+
+.procurement-agent-conflict {
+  border: 1px solid #fcd34d;
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.procurement-agent-conflict > span {
+  flex: 1 1 12rem;
+}
+
+.procurement-agent-conflict button {
+  border-color: #fbbf24;
+  color: #92400e;
+}
+
+.dark .procurement-agent-requirement,
+.dark .procurement-agent-draft-field {
+  border-color: #334155;
+  background: #0f172a;
+  color: #cbd5e1;
+}
+
+.dark .procurement-agent-requirement-header h2,
+.dark .procurement-agent-draft-field > label,
+.dark .procurement-agent-requirement-review dd,
+.dark .procurement-agent-manual-confirm {
+  color: #e2e8f0;
+}
+
+.dark .procurement-agent-requirement-header p:not(.procurement-agent-eyebrow),
+.dark .procurement-agent-requirement-context,
+.dark .procurement-agent-requirement-empty,
+.dark .procurement-agent-draft-field-actions > span,
+.dark .procurement-agent-requirement-review dt {
+  color: #94a3b8;
+}
+
+.dark .procurement-agent-draft-field input,
+.dark .procurement-agent-draft-field textarea,
+.dark .procurement-agent-requirement-actions button,
+.dark .procurement-agent-draft-field-actions button {
+  border-color: #475569;
+  background: #1e293b;
+  color: #e2e8f0;
+}
+
+.dark .procurement-agent-requirement-actions button.is-primary {
+  border-color: #7e22ce;
+  background: #7e22ce;
+  color: #fff;
+}
+
+.dark .procurement-agent-requirement-actions button.is-selected {
+  border-color: #7e22ce;
+  background: #2e1065;
+  color: #e9d5ff;
+}
+
+.dark .procurement-agent-requirement-review {
+  border-color: #6b21a8;
+  background: #2e1065;
+}
+
+.dark .procurement-agent-requirement-review h3 {
+  color: #e9d5ff;
+}
+
+.dark .procurement-agent-requirement-review dl > div {
+  border-color: #6b21a8;
+}
+
+.dark .procurement-agent-requirement-success {
+  border-color: #065f46;
+  background: rgb(6 78 59 / 30%);
+  color: #a7f3d0;
+}
+
+.dark .procurement-agent-requirement-success a {
+  color: #a7f3d0;
+}
+
+.dark .procurement-agent-conflict {
+  border-color: #92400e;
+  background: rgb(120 53 15 / 25%);
+  color: #fde68a;
+}
+
+.dark .procurement-agent-conflict button {
+  border-color: #92400e;
+  background: #422006;
+  color: #fde68a;
+}
+
+@media (min-width: 700px) {
+  .procurement-agent-requirement {
+    padding: 1.1rem;
+  }
+
+  .procurement-agent-draft-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .procurement-agent-draft-field:nth-child(3),
+  .procurement-agent-draft-field:nth-child(8),
+  .procurement-agent-draft-field:nth-child(9) {
+    grid-column: 1 / -1;
+  }
+}
