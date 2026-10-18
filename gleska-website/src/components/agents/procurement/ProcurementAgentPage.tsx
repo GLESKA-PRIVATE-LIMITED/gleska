@@ -27,7 +27,6 @@ import {
 import AgentLayout from "@/components/agent-dashboard/AgentLayout";
 import AgentHeader from "@/components/agent-dashboard/AgentHeader";
 import AgentSearchBar from "@/components/agent-dashboard/AgentSearchBar";
-import ProcurementWorkspaceSwitch from "@/components/procurement/ProcurementWorkspaceSwitch";
 import {
   MaterialRequestDraft,
   ProcurementConversation,
@@ -40,7 +39,7 @@ import {
   ProcurementUnit,
   procurementApi,
 } from "@/lib/procurement-api";
-import { procurementConfig, procurementWorkspacesPath } from "./procurementConfig";
+import { procurementConfig } from "./procurementConfig";
 import ProcurementRFQPanel from "./ProcurementRFQPanel";
 
 type Section =
@@ -1657,22 +1656,6 @@ export default function ProcurementAgentPage() {
   };
 
   const onSectionChange = async (id: string) => {
-    if (id === "switch-workspace") {
-      try {
-        const ws = await procurementApi.getWorkspaces();
-        const hasSupplier = ws.available_workspaces.some((w) => w.kind === "SUPPLIER");
-        if (hasSupplier) {
-          await procurementApi.updateWorkspacePreference("SUPPLIER");
-          router.push("/supplier");
-          return;
-        }
-      } catch {
-        // Fall back to selector
-      }
-      router.push("/procurement/workspaces?switch=1");
-      return;
-    }
-
     const destinations: Record<string, Section> = {
       dashboard: "dashboard",
       details: "details",
@@ -1893,8 +1876,8 @@ export default function ProcurementAgentPage() {
             <AgentHeader
               config={procurementConfig}
               onOptionClick={(optionId) => {
-                if (optionId === "workspaces") {
-                  router.push(procurementWorkspacesPath);
+                if (optionId === "assistant") {
+                  onSectionChange("material-details");
                 } else if (optionId === "get") {
                   onSectionChange("get-procurement");
                 }

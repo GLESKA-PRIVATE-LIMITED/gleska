@@ -35,7 +35,7 @@ const DASHBOARD_PATHS: Record<string, string> = {
   "01": "/employer/dashboard",
   "02": "/logistics",
   "03": "/tender-filing",
-  "04": "/procurement/workspaces",
+  "04": "/procurement",
   "05": "/financial",
   "06": "/tender-tracking",
 };

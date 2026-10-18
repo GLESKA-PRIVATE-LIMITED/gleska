@@ -6,13 +6,11 @@ import {
   Boxes,
   ClipboardList,
   Settings,
-  ArrowLeftRight,
-  Package,
   Briefcase,
+  Building2,
+  Truck,
 } from "lucide-react";
 import { AgentConfig } from "@/components/agent-dashboard/types";
-
-export const procurementWorkspacesPath = "/procurement/workspaces?switch=1";
 
 export const procurementConfig: AgentConfig = {
   agentId: "procurement",
@@ -22,23 +20,24 @@ export const procurementConfig: AgentConfig = {
   variant: "compact-centered",
   accentColor: "purple",
   sidebarItems: [
-    { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, isTab: true },
-    { id: "material-details", label: "Requirement Details", icon: Boxes, isTab: true },
-    { id: "details", label: "Procurement Details", icon: FileText, isTab: true },
-    { id: "status", label: "Current Status", icon: Activity, isTab: true },
+    { id: "dashboard", label: "Overview", icon: LayoutDashboard, isTab: true },
     { id: "get-procurement", label: "Get Procurement", icon: ShoppingCart, isTab: true },
-    { id: "rfqs", label: "Requests for Quote", icon: ClipboardList, isTab: true },
+    { id: "material-details", label: "Requirements", icon: Boxes, isTab: true },
+    { id: "rfqs", label: "RFQs & Quotations", icon: ClipboardList, isTab: true },
+    { id: "status", label: "Orders & Fulfilment", icon: Truck, isTab: true },
+    { id: "details", label: "Procurement Details", icon: FileText, isTab: true },
     { id: "settings", label: "Settings", icon: Settings, isTab: true },
-    { id: "switch-workspace", label: "Switch Workspace", icon: ArrowLeftRight, isTab: false },
+    { id: "provide-procurement", label: "Provide Procurement", icon: Building2, href: "/supplier" },
+    { id: "companies-verification", label: "Companies & Verification", icon: Building2, href: "/supplier/company" },
     { id: "employer-dashboard", label: "Employer Dashboard", icon: Briefcase, href: "/employer/dashboard" },
   ],
   actionOptions: [
     {
-      id: "workspaces",
+      id: "assistant",
       optionNumber: "OPTION 01",
-      title: "Choose a Procurement Workspace",
-      description: "Open the Buyer or Supplier workspace available to your account.",
-      icon: Package,
+      title: "AI Procurement Assistant",
+      description: "Draft a material requirement and get read-only guidance from the Procurement Agent.",
+      icon: Boxes,
       badgeColor: "text-purple-600 dark:text-purple-400",
       iconBg: "bg-purple-50 text-purple-600 border-purple-100 dark:bg-purple-950/60 dark:text-purple-400 dark:border-purple-800",
       topBorderColor: "border-t-purple-500",

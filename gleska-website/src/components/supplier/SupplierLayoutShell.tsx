@@ -7,7 +7,7 @@ import { Menu, X } from "lucide-react";
 import AgentSidebar from "@/components/agent-dashboard/AgentSidebar";
 import { supplierWorkspaceConfig } from "@/components/agents/procurement/supplierWorkspaceConfig";
 import { useSupplier } from "@/context/SupplierContext";
-import { procurementApi } from "@/lib/procurement-api";
+import { useAuth } from "@/context/AuthContext";
 
 export default function SupplierLayoutShell({
   children,
@@ -25,9 +25,19 @@ export default function SupplierLayoutShell({
     setSelectedCompanyId,
     error,
   } = useSupplier();
+  const { user, nextStep } = useAuth();
+  const canGetProcurement = user?.role === "EMPLOYER" && nextStep === "DASHBOARD";
+  const navigationConfig = {
+    ...supplierWorkspaceConfig,
+    sidebarItems: supplierWorkspaceConfig.sidebarItems.filter(
+      (item) => item.id !== "get-procurement" || canGetProcurement,
+    ).map((item) => item.id === "dashboard" && canGetProcurement
+      ? { ...item, href: "/procurement" }
+      : item),
+  };
 
   // Derive active tab from current URL pathname
-  let activeTab = "dashboard";
+  let activeTab = pathname === "/supplier" ? "provide-procurement" : "dashboard";
   if (pathname.startsWith("/supplier/rfqs")) {
     activeTab = "rfqs";
   } else if (pathname.startsWith("/supplier/orders")) {
@@ -45,27 +55,8 @@ export default function SupplierLayoutShell({
     activeTab = "settings";
   }
 
-  const handleSwitchWorkspace = async () => {
-    try {
-      const ws = await procurementApi.getWorkspaces();
-      const hasBuyer = ws.available_workspaces.some((w) => w.kind === "BUYER");
-      if (hasBuyer) {
-        await procurementApi.updateWorkspacePreference("BUYER");
-        router.push("/procurement");
-        return;
-      }
-    } catch {
-      // Fall back safely to selector
-    }
-    router.push("/procurement/workspaces?switch=1");
-  };
-
   const handleTabChange = (tabId: string) => {
-    if (tabId === "switch-workspace") {
-      void handleSwitchWorkspace();
-      return;
-    }
-    const item = supplierWorkspaceConfig.sidebarItems.find(
+    const item = navigationConfig.sidebarItems.find(
       (entry) => entry.id === tabId,
     );
     if (item?.href) {
@@ -99,7 +90,7 @@ export default function SupplierLayoutShell({
 
       {/* Shared Sidebar */}
       <AgentSidebar
-        config={supplierWorkspaceConfig}
+        config={navigationConfig}
         activeTab={activeTab}
         setActiveTab={handleTabChange}
         isCollapsed={isCollapsed}
@@ -123,6 +114,7 @@ export default function SupplierLayoutShell({
             <div className="min-w-0">
               <h1 className="font-[var(--font-anton)] text-2xl uppercase tracking-wide text-slate-900 dark:text-white sm:text-2xl md:text-3xl leading-tight">
                 {activeTab === "dashboard" && "Supplier Dashboard"}
+                {activeTab === "provide-procurement" && "Provide Procurement"}
                 {activeTab === "rfqs" && "RFQs & Quotations"}
                 {activeTab === "orders" && "Purchase Orders"}
                 {activeTab === "history" && "Order History"}

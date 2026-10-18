@@ -3,9 +3,9 @@ import { SupplierProvider } from "@/context/SupplierContext";
 import SupplierLayoutShell from "@/components/supplier/SupplierLayoutShell";
 
 export const metadata = {
-  title: "Supplier Workspace | GLESKA AI",
+  title: "Procurement | GLESKA AI",
   description:
-    "Manage RFQs, quotations, purchase orders, fulfillment, and material offerings.",
+    "Provide procurement by managing company offerings, RFQs, quotations, orders, and fulfillment.",
 };
 
 export default function SupplierLayout({
