@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 import { ApiError } from "../../lib/api";
+import DeleteAccountSection from "../auth/DeleteAccountSection";
 import { useAuth } from "../auth/AuthProvider";
 import {
   procurementWorkspaceApi,
@@ -1522,6 +1523,7 @@ export default function ProcurementBuyerScreen({ section }: { section: BuyerSect
       )}
 
       {section === "settings" && settingsDraft && (
+        <>
         <form className="procurement-workspace-panel procurement-workspace-form" onSubmit={(event) => void saveSettings(event)}>
           <h2>Procurement preferences</h2>
           <label>Default delivery location<input value={settingsDraft.default_delivery_location || ""} onChange={(event) => setSettingsDraft({ ...settingsDraft, default_delivery_location: event.target.value || null })} /></label>
@@ -1532,6 +1534,8 @@ export default function ProcurementBuyerScreen({ section }: { section: BuyerSect
           <button className="procurement-workspace-primary" type="submit" disabled={busy === "settings"}><Save size={16} />{busy === "settings" ? "Saving…" : "Save settings"}</button>
           {settings?.updated_at && <small>Last updated {new Date(settings.updated_at).toLocaleString()}</small>}
         </form>
+        <DeleteAccountSection roleLabel="Buyer" />
+        </>
       )}
 
       {section === "rfqs" && (

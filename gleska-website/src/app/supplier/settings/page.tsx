@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useSupplier } from "@/context/SupplierContext";
+import DeleteAccountSection from "@/components/DeleteAccountSection";
 
 // ---------------------------------------------------------------------------
 // Reusable sub-components
@@ -270,6 +271,8 @@ export default function SupplierSettingsPage() {
           </button>
         </div>
       </section>
+
+      <DeleteAccountSection roleLabel="Supplier" />
     </div>
   );
 }

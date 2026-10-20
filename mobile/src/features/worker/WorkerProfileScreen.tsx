@@ -7,6 +7,7 @@ import { apiGet, apiPost, apiPut } from "../../lib/api";
 import { useRefreshOnFocus } from "../../lib/useRefreshOnFocus";
 import { getSupabaseClient } from "../../lib/supabase";
 import WorkerMobileShell from "./WorkerMobileShell";
+import DeleteAccountSection from "../auth/DeleteAccountSection";
 
 type AvailabilityStatus = "AVAILABLE" | "ON_JOB" | "OFFLINE";
 type WorkerProfile = {
@@ -399,6 +400,7 @@ export default function WorkerProfileScreen() {
         </section>
 
         <section className="worker-profile-privacy"><span><ShieldCheck size={24} /></span><div><h2>Your information is safe with us</h2><p>We use enterprise-grade encryption to protect your data and privacy at all times.</p></div></section>
+        <DeleteAccountSection roleLabel="Worker" />
         <footer className="worker-profile-save-bar"><button className="worker-profile-button worker-profile-button--primary" type="submit" disabled={saving || photoUploading}>{saving ? <LoaderCircle size={18} className="spin" /> : <Save size={18} />}{saving ? "Saving..." : "Save Changes"}</button></footer>
       </form>
     </main>

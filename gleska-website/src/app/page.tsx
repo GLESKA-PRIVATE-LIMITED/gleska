@@ -198,6 +198,11 @@ export default function LandingPage() {
                         {t('footer.privacy')}
                       </Link>
                     </li>
+                    <li>
+                      <Link href="/delete-account" className="transition-colors hover:text-white hover:underline">
+                        Delete Account
+                      </Link>
+                    </li>
                   </ul>
                 </div>
 

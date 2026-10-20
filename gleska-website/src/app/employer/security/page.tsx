@@ -6,6 +6,7 @@ import { Bell, CheckCircle2, Loader2, Monitor, RefreshCw, ShieldCheck, Smartphon
 import { toast } from "sonner";
 import AccountManagementShell, { formatEmployerType } from "@/components/AccountManagementShell";
 import NotificationCenter from "@/components/notifications/NotificationCenter";
+import DeleteAccountSection from "@/components/DeleteAccountSection";
 import { useAuth } from "@/context/AuthContext";
 import apiClient from "@/lib/api";
 import { getApproximateIpCountry, getSessionKey } from "@/lib/security";
@@ -285,6 +286,8 @@ export default function EmployerSecurityPage() {
               </div>
             )}
           </WorkspaceCard>
+
+          <DeleteAccountSection roleLabel="Employer" className="mt-8" />
         </div>
 
         {sessionToRevoke && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/50 p-4" role="presentation">

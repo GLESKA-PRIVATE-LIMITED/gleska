@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import AccountManagementShell, { formatEmployerType } from "@/components/AccountManagementShell";
+import DeleteAccountSection from "@/components/DeleteAccountSection";
 
 interface EmployerProfile {
   id: string;
@@ -1003,6 +1004,8 @@ export default function CompanyProfilePage() {
                 </button>
               </div>
             </form>
+
+            <DeleteAccountSection roleLabel="Employer" className="mt-8" />
           </div>
 
           {/* Right Column (Span 1): Account Overview + Informational/Safety Card */}

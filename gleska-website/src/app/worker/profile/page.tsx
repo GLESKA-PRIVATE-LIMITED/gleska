@@ -24,6 +24,7 @@ import LocationPicker, { LocationSelection } from "@/components/LocationPicker";
 import { getLocationErrorMessage, watchBrowserLocation } from "@/lib/location";
 import { useWorkerProfilePhoto } from "@/lib/useWorkerProfilePhoto";
 import AccountManagementShell from "@/components/AccountManagementShell";
+import DeleteAccountSection from "@/components/DeleteAccountSection";
 import { WorkerErrorState, WorkerPageFrame, WorkerPageHeader } from "@/components/worker/WorkspaceUI";
 
 type Profile = {
@@ -943,6 +944,8 @@ export default function WorkerProfilePage() {
                   <span className="h-2 w-2 rounded-full bg-white/40" />
                 </div>
               </section>
+
+              <DeleteAccountSection roleLabel="Worker" />
             </div>
           </div>
         </main>

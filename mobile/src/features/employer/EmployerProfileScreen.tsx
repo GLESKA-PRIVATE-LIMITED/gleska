@@ -24,6 +24,7 @@ import { useRefreshOnFocus } from "../../lib/useRefreshOnFocus";
 import { getSupabaseClient } from "../../lib/supabase";
 import type { EmployerType } from "../../types/auth";
 import { useAuth } from "../auth/AuthProvider";
+import DeleteAccountSection from "../auth/DeleteAccountSection";
 import { Link } from "react-router-dom";
 import EmployerMobileShell from "./EmployerMobileShell";
 import "./EmployerProfileScreen.css";
@@ -638,6 +639,8 @@ export default function EmployerProfileScreen() {
                   <Detail label="Onboarding status" value={employer.onboarding_status} icon={ShieldCheck} />
                 </div>
               </section>
+
+              <DeleteAccountSection roleLabel="Employer" />
 
               {editing && (
                 <div className="employer-profile-save-row">

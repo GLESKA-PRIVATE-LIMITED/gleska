@@ -13,7 +13,21 @@ from app.services.auth_service import AuthService
 from app.services.entitlements import employer_state, worker_state
 from app.services.msg91_service import MSG91Service, OTPResendCooldown
 from app.services.onboarding_service import OnboardingService
-from app.schemas.auth import UserResponse, ProvisionUserSchema, RegisterSessionSchema, SignupPreflightSchema, LoginPreflightSchema, MobileVerifiedSignupSchema, PasswordResetRequestSchema, PasswordResetVerifySchema, PasswordResetCompleteSchema, ResendOTPSchema
+from app.schemas.auth import (
+    UserResponse,
+    ProvisionUserSchema,
+    RegisterSessionSchema,
+    SignupPreflightSchema,
+    LoginPreflightSchema,
+    MobileVerifiedSignupSchema,
+    PasswordResetRequestSchema,
+    PasswordResetVerifySchema,
+    PasswordResetCompleteSchema,
+    ResendOTPSchema,
+    DeleteAccountRequest,
+    DeleteAccountResponse,
+)
+from app.services.account_deletion_service import AccountDeletionService
 from app.services.password_reset_service import PasswordResetService
 from app.services.profile_photo_service import get_signed_profile_photo_url
 
@@ -656,3 +670,30 @@ async def logout(
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="SESSION_LOGOUT_FAILED") from exc
     response.delete_cookie(key="goleska_session", path="/")
     return {"success": True, "message": "Logged out successfully"}
+
+
+@router.post("/delete-account", response_model=DeleteAccountResponse)
+@router.delete("/delete-account", response_model=DeleteAccountResponse)
+@router.delete("/me", response_model=DeleteAccountResponse)
+async def delete_user_account(
+    response: Response,
+    request: DeleteAccountRequest,
+    user: UserResponse = Depends(get_current_user),
+):
+    """Permanently delete authenticated user's account and personal data.
+    
+    Verifies user identity from verified auth session, enforces admin safety policy,
+    cleans up storage files, cascades database cleanup, and revokes Supabase Auth identity.
+    """
+    AccountDeletionService.delete_account(
+        user=user,
+        confirmation=request.confirmation,
+        reason=request.reason,
+    )
+
+    response.delete_cookie(key="goleska_session", path="/")
+
+    return DeleteAccountResponse(
+        success=True,
+        message="Your account and associated personal data have been permanently deleted.",
+    )

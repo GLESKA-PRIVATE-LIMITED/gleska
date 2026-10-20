@@ -155,3 +155,15 @@ class HealthCheckResponse(BaseModel):
     """Health check response."""
     status: str
     message: str
+
+
+class DeleteAccountRequest(BaseModel):
+    """Request to permanently delete an authenticated user's account."""
+    confirmation: str = Field(..., description="Must explicitly match 'DELETE' or 'DELETE MY ACCOUNT'")
+    reason: Optional[str] = Field(default=None, max_length=500, description="Optional deletion reason feedback")
+
+
+class DeleteAccountResponse(BaseModel):
+    """Response after successful account deletion."""
+    success: bool
+    message: str

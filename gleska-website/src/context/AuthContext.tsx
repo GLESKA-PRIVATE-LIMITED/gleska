@@ -49,6 +49,7 @@ interface AuthContextType {
   login: (mobile: string, otp: string, name: string, role: "WORKER" | "EMPLOYER" | "ADMIN") => Promise<void>;
   loginWithMobile: (mobile: string, otp: string) => Promise<{ user: AuthUser; nextStep: NextStep | null }>;
   logout: () => Promise<void>;
+  deleteAccount: (confirmation: string, reason?: string) => Promise<void>;
   refreshUser: (propagateError?: boolean) => Promise<NextStep | null>;
   requestOTP: (mobile: string) => Promise<{ requestId: string | null }>;
   resendOTP: (mobile: string, requestId: string | null, channel: "SMS" | "EMAIL") => Promise<string | null>;
@@ -75,6 +76,7 @@ export const AuthContext = createContext<AuthContextType>({
   login: async () => {},
   loginWithMobile: async () => ({ user: {} as AuthUser, nextStep: null }),
   logout: async () => {},
+  deleteAccount: async () => {},
   refreshUser: async () => null,
   requestOTP: async () => ({ requestId: null }),
   resendOTP: async () => null,
@@ -740,6 +742,37 @@ const resendOTP = async (mobile: string, requestId: string | null, channel: "SMS
     }
   };
 
+  const deleteAccount = async (confirmation: string, reason?: string): Promise<void> => {
+    beginAuthTransition();
+    setError(null);
+    setIsLoading(true);
+    try {
+      await apiClient.post(
+        "/api/v1/auth/delete-account",
+        { confirmation, reason },
+        { withCredentials: true }
+      );
+    } catch (err) {
+      setIsLoading(false);
+      throw err;
+    }
+
+    try {
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.error("Supabase signout after deletion error:", err);
+    }
+    commitAuthState(null, null);
+    clearClientAuthCookie();
+    clearLanguageCache();
+    clearSessionKey();
+    notifyAuthStateChange();
+    setIsLoading(false);
+    if (typeof window !== "undefined") {
+      window.location.replace("/?account_deleted=1");
+    }
+  };
+
   async function refreshUser(propagateError = false): Promise<NextStep | null> {
     const requestVersion = authStateVersion.current;
     try {
@@ -801,6 +834,7 @@ const resendOTP = async (mobile: string, requestId: string | null, channel: "SMS
         login,
         loginWithMobile,
         logout,
+        deleteAccount,
         refreshUser,
         requestOTP,
         resendOTP,

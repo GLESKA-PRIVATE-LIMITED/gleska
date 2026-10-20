@@ -5,6 +5,7 @@ import { useAuth, errorMessage } from "../auth/AuthProvider";
 import { apiGet, apiPost, apiPut } from "../../lib/api";
 import { getSessionKey } from "../../lib/session";
 import WorkerMobileShell from "./WorkerMobileShell";
+import DeleteAccountSection from "../auth/DeleteAccountSection";
 import "./WorkerSettingsSecurityScreen.css";
 
 type WorkerPreferences = {
@@ -247,6 +248,8 @@ export default function WorkerSettingsSecurityScreen() {
             </div>
           )}
         </section>
+
+        <DeleteAccountSection roleLabel="Worker" />
 
         {sessionToRevoke && <div className="worker-settings-security-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && revokingId === null) setSessionToRevoke(null); }}>
           <section className="worker-settings-security-dialog" role="dialog" aria-modal="true" aria-labelledby="worker-revoke-session-title">

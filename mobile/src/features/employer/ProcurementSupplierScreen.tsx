@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { ApiError } from "../../lib/api";
+import DeleteAccountSection from "../auth/DeleteAccountSection";
 import {
   procurementWorkspaceApi,
   type ProcurementCompanyMembership,
@@ -1413,6 +1414,7 @@ export default function ProcurementSupplierScreen({ section }: { section: Suppli
               </div>
             )}
           </section>
+          <DeleteAccountSection roleLabel="Supplier" />
         </>
       )}
 

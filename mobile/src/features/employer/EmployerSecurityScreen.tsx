@@ -14,6 +14,7 @@ import { Navigate, useNavigate } from "react-router-dom";
 import { ApiError, apiGet, apiPost, apiPut } from "../../lib/api";
 import { getSessionKey } from "../../lib/session";
 import { useAuth } from "../auth/AuthProvider";
+import DeleteAccountSection from "../auth/DeleteAccountSection";
 import EmployerMobileShell from "./EmployerMobileShell";
 
 type EmployerPreferences = {
@@ -466,6 +467,8 @@ export default function EmployerSecurityScreen() {
             </div>
           )}
         </section>
+
+        <DeleteAccountSection roleLabel="Employer" />
 
         {sessionToRevoke && (
           <div className="employer-security-dialog-backdrop">

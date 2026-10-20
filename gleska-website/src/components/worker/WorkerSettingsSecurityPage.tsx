@@ -10,6 +10,7 @@ import apiClient from "@/lib/api";
 import { getApproximateIpCountry, getSessionKey, updateLastActive } from "@/lib/security";
 import { supabase } from "@/lib/supabase";
 import NotificationCenter from "@/components/notifications/NotificationCenter";
+import DeleteAccountSection from "@/components/DeleteAccountSection";
 import { WorkerEmptyState, WorkerErrorState, WorkerLoadingState, WorkerPageFrame, WorkerPageHeader, WorkspaceCard } from "@/components/worker/WorkspaceUI";
 
 type WorkerPreferences = {
@@ -282,6 +283,8 @@ export default function WorkerSettingsSecurityPage() {
               </div>
             )}
           </WorkspaceCard>
+
+          <DeleteAccountSection roleLabel="Worker" className="mt-8" />
         </div>
 
         {sessionToRevoke && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/50 p-4" role="presentation">

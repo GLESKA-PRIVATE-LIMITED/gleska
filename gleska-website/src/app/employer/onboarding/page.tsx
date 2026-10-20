@@ -1972,7 +1972,7 @@ export default function EmployerOnboarding() {
                                       <div className="flex items-center gap-2">
                                         <input
                                           value={aadhaarOtp}
-                                          onChange={(event) => setAadhaarOtp(event.target.value.replace(/\D/g, "").slice(0, 8))}
+                                          onChange={(event: React.ChangeEvent<HTMLInputElement>) => setAadhaarOtp(event.target.value.replace(/\D/g, "").slice(0, 8))}
                                           inputMode="numeric"
                                           autoComplete="one-time-code"
                                           placeholder="OTP"
@@ -2097,7 +2097,7 @@ export default function EmployerOnboarding() {
                                       <div className="flex items-center gap-2">
                                         <input
                                           value={aadhaarOtp}
-                                          onChange={(event) => setAadhaarOtp(event.target.value.replace(/\D/g, "").slice(0, 8))}
+                                          onChange={(event: React.ChangeEvent<HTMLInputElement>) => setAadhaarOtp(event.target.value.replace(/\D/g, "").slice(0, 8))}
                                           inputMode="numeric"
                                           autoComplete="one-time-code"
                                           placeholder="OTP"
@@ -2182,7 +2182,7 @@ export default function EmployerOnboarding() {
                                       <div className="flex items-center gap-2">
                                         <input
                                           value={aadhaarOtp}
-                                          onChange={(event) => setAadhaarOtp(event.target.value.replace(/\D/g, "").slice(0, 8))}
+                                          onChange={(event: React.ChangeEvent<HTMLInputElement>) => setAadhaarOtp(event.target.value.replace(/\D/g, "").slice(0, 8))}
                                           inputMode="numeric"
                                           autoComplete="one-time-code"
                                           placeholder="OTP"
@@ -2413,12 +2413,13 @@ function FormField({
   type = "text",
   min,
 }: {
+  key?: React.Key;
   label: string;
   field: string;
   value?: string;
   onChange: (field: string, value: string) => void;
   placeholder?: string;
-  icon?: React.ComponentType<{ size?: number; className?: string }>;
+  icon?: React.ElementType | React.ComponentType<any>;
   error?: string;
   wide?: boolean;
   readOnly?: boolean;
@@ -2442,7 +2443,7 @@ function FormField({
           min={min}
           readOnly={readOnly}
           placeholder={placeholder}
-          onChange={(event) => onChange(field, event.target.value)}
+          onChange={(event: React.ChangeEvent<HTMLInputElement>) => onChange(field, event.target.value)}
           className={`w-full rounded-2xl border ${
             error
               ? "border-red-400 ring-2 ring-red-100 dark:border-red-700 dark:ring-red-950"
@@ -2471,6 +2472,7 @@ function SelectFormField({
   error,
   wide = false,
 }: {
+  key?: React.Key;
   label: string;
   field: string;
   value?: string;
@@ -2478,7 +2480,7 @@ function SelectFormField({
   onChange: (field: string, value: string) => void;
   placeholder?: string;
   customPlaceholder?: string;
-  icon?: React.ComponentType<{ size?: number; className?: string }>;
+  icon?: React.ElementType | React.ComponentType<any>;
   error?: string;
   wide?: boolean;
 }) {
@@ -2549,7 +2551,7 @@ function SelectFormField({
             type="text"
             value={value || ""}
             placeholder={customPlaceholder}
-            onChange={(e) => onChange(field, e.target.value)}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => onChange(field, e.target.value)}
             className={`w-full rounded-2xl border ${
               error
                 ? "border-red-400 ring-2 ring-red-100 dark:border-red-700 dark:ring-red-950"

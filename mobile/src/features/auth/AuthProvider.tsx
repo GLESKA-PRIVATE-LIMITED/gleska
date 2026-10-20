@@ -41,6 +41,7 @@ interface AuthContextValue {
   resetPasswordWithAuthorization: (authorization: string, password: string, confirmPassword: string) => Promise<void>;
   resetPasswordWithRecoverySession: (password: string) => Promise<void>;
   logout: () => Promise<void>;
+  deleteAccount: (confirmation: string, reason?: string) => Promise<void>;
   clearError: () => void;
 }
 
@@ -546,6 +547,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const deleteAccount = async (confirmation: string, reason?: string) => {
+    setIsLoading(true);
+    try {
+      await apiPost("/api/v1/auth/delete-account", { confirmation, reason });
+    } finally {
+      if (!missingSupabaseConfiguration()) {
+        try {
+          await getSupabaseClient().auth.signOut();
+        } catch {
+          // Clear local app state regardless
+        }
+      }
+      clearSessionKey();
+      clearOAuthState();
+      setUser(null);
+      setNextStep(null);
+      setError("");
+      setIsLoading(false);
+    }
+  };
+
   const value: AuthContextValue = {
     user,
     nextStep,
@@ -567,6 +589,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     resetPasswordWithAuthorization,
     resetPasswordWithRecoverySession,
     logout,
+    deleteAccount,
     clearError: () => setError(""),
   };
 

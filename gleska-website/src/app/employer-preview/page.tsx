@@ -200,6 +200,7 @@ export default function EmployerDashboardPreviewPage() {
       completePasswordReset: async () => {},
       signupPreflight: async () => {},
       setAuthState: () => {},
+      deleteAccount: async () => {},
     }),
     []
   );
