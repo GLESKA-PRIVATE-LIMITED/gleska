@@ -1,0 +1,82 @@
+// Release signing for the GLESKA Android apps.
+//
+// Signing credentials are never stored in this repository. Each value is read from an
+// environment variable first, then from the untracked mobile/android/keystore.properties
+// file (see keystore.properties.example and mobile/README.md).
+//
+// Debug builds use the Android debug keystore and need none of these values. Any release
+// build fails before compiling when a value is missing or the keystore file does not exist.
+
+def keystorePropertiesFile = rootProject.file('keystore.properties')
+def keystoreProperties = new Properties()
+if (keystorePropertiesFile.isFile()) {
+    keystorePropertiesFile.withInputStream { keystoreProperties.load(it) }
+}
+
+// keystore.properties key -> environment variable
+def releaseSigningSettings = [
+    storeFile    : 'GLESKA_UPLOAD_STORE_FILE',
+    storePassword: 'GLESKA_UPLOAD_STORE_PASSWORD',
+    keyAlias     : 'GLESKA_UPLOAD_KEY_ALIAS',
+    keyPassword  : 'GLESKA_UPLOAD_KEY_PASSWORD',
+]
+
+def releaseSigningValues = releaseSigningSettings.collectEntries { property, envName ->
+    def value = providers.environmentVariable(envName).getOrNull() ?: keystoreProperties.getProperty(property)
+    [(property): value ?: null]
+}
+
+def releaseSigningProblems = releaseSigningSettings
+    .findAll { property, envName -> !releaseSigningValues[property] }
+    .collect { property, envName -> "${property} (environment variable ${envName})".toString() }
+
+// Relative paths resolve against mobile/android/app.
+def releaseStoreFile = releaseSigningValues.storeFile ? file(releaseSigningValues.storeFile.trim()) : null
+if (releaseStoreFile != null && !releaseStoreFile.isFile()) {
+    releaseSigningProblems << "storeFile does not exist: ${releaseStoreFile}".toString()
+}
+
+def releaseSigningReady = releaseSigningProblems.isEmpty()
+
+android {
+    signingConfigs {
+        release {
+            if (releaseSigningReady) {
+                storeFile releaseStoreFile
+                storePassword releaseSigningValues.storePassword
+                keyAlias releaseSigningValues.keyAlias
+                keyPassword releaseSigningValues.keyPassword
+            }
+        }
+    }
+    buildTypes {
+        release {
+            if (releaseSigningReady) {
+                signingConfig android.signingConfigs.release
+            }
+        }
+    }
+}
+
+def verifyReleaseSigning = tasks.register('verifyReleaseSigning') {
+    group = 'verification'
+    description = 'Fails when release signing credentials are not configured.'
+    def problems = releaseSigningProblems.collect()
+    doLast {
+        if (!problems.isEmpty()) {
+            throw new GradleException(
+                "Release signing is not configured. Missing or invalid:\n" +
+                problems.collect { "  - ${it}" }.join('\n') + '\n' +
+                'Set the GLESKA_UPLOAD_* environment variables or create mobile/android/keystore.properties ' +
+                'from keystore.properties.example (see mobile/README.md). Debug builds do not need these values.'
+            )
+        }
+    }
+}
+
+// Every release variant task (assemble, bundle, install, package) runs pre<Variant>ReleaseBuild first.
+tasks.configureEach { task ->
+    if (task.name ==~ /pre\w*ReleaseBuild/) {
+        task.dependsOn(verifyReleaseSigning)
+    }
+}

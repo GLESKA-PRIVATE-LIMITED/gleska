@@ -69,6 +69,10 @@ Thumbs.db
 *.key
 *.jks
 *.keystore
+*.p12
+*.pfx
+*.pepk
+keystore.properties
 
 # =========================
 # Temporary files

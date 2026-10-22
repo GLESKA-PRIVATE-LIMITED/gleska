@@ -29,17 +29,8 @@ android {
             manifestPlaceholders = [appAuthScheme: "com.gleska.employer"]
         }
     }
-    signingConfigs {
-        release {
-            storeFile file('upload-keystore.jks')
-            storePassword 'Gleska@2026'
-            keyAlias 'upload'
-            keyPassword 'Gleska@2026'
-        }
-    }
     buildTypes {
         release {
-            signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
@@ -75,6 +66,7 @@ dependencies {
 }
 
 apply from: 'capacitor.build.gradle'
+apply from: 'release-signing.gradle'
 
 try {
     def servicesJSON = file('google-services.json')
