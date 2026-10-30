@@ -4,6 +4,7 @@ import React from "react";
 import Link from "next/link";
 import {
   Users,
+  Briefcase,
   Truck,
   FileText,
   ShoppingCart,
@@ -110,6 +111,17 @@ export default function ServicesSection() {
       ctaColor: "text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300",
       dashboardCtaColor: "text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300",
       hoverGlow: "hover:border-blue-400/80 hover:shadow-[0_10px_25px_-5px_rgba(37,99,235,0.22),0_4px_10px_-3px_rgba(37,99,235,0.15)] focus-within:border-blue-400 focus-within:shadow-[0_10px_25px_-5px_rgba(37,99,235,0.22)] active:shadow-[0_4px_12px_-2px_rgba(37,99,235,0.2)]",
+    },
+    {
+      id: "general-work",
+      title: t('services.agentGeneralWork'),
+      status: t('services.comingSoon'),
+      icon: Briefcase,
+      iconBoxStyle: "bg-orange-50 border-orange-100 dark:bg-orange-950/60 dark:border-orange-800",
+      statusColor: "bg-orange-50 text-orange-600 border border-orange-200/60 dark:bg-orange-950/60 dark:text-orange-400 dark:border-orange-800",
+      ctaColor: "text-orange-600 hover:text-orange-700 dark:text-orange-400 dark:hover:text-orange-300",
+      dashboardCtaColor: "text-orange-600 hover:text-orange-700 dark:text-orange-400 dark:hover:text-orange-300",
+      hoverGlow: "hover:border-orange-400/80 hover:shadow-[0_10px_25px_-5px_rgba(249,115,22,0.22),0_4px_10px_-3px_rgba(249,115,22,0.15)] focus-within:border-orange-400 focus-within:shadow-[0_10px_25px_-5px_rgba(249,115,22,0.22)] active:shadow-[0_4px_12px_-2px_rgba(249,115,22,0.2)]",
     },
     {
       id: "02",
