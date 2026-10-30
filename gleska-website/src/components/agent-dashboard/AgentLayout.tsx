@@ -17,6 +17,10 @@ interface AgentLayoutProps {
   activeTab?: string;
   setActiveTab?: (tabId: string) => void;
   fullWidth?: boolean;
+  /** Agent-specific content shown in the sidebar below the navigation. */
+  sidebarContent?: React.ReactNode | ((helpers: { closeMobileSidebar: () => void }) => React.ReactNode);
+  /** Full-height, unpadded main area for app-style workspaces (e.g. chat). */
+  workspace?: boolean;
 }
 
 export default function AgentLayout({
@@ -25,6 +29,8 @@ export default function AgentLayout({
   activeTab: externalActiveTab,
   setActiveTab: externalSetActiveTab,
   fullWidth = false,
+  sidebarContent,
+  workspace = false,
 }: AgentLayoutProps) {
   const router = useRouter();
   const { user, isLoading, nextStep } = useAuth();
@@ -109,9 +115,21 @@ export default function AgentLayout({
         setIsCollapsed={setIsCollapsed}
         mobileSidebarOpen={mobileSidebarOpen}
         setMobileSidebarOpen={setMobileSidebarOpen}
-      />
+      >
+        {typeof sidebarContent === "function"
+          ? sidebarContent({ closeMobileSidebar: () => setMobileSidebarOpen(false) })
+          : sidebarContent}
+      </AgentSidebar>
 
-      {/* Main Content Area */}
+      {workspace ? (
+        <main
+          className={`flex h-[100dvh] min-w-0 max-w-full flex-1 flex-col overflow-hidden pt-16 transition-all duration-300 md:pt-0 ${
+            isCollapsed ? "md:ml-20" : "md:ml-64"
+          }`}
+        >
+          {children}
+        </main>
+      ) : (
       <main
         className={`min-w-0 max-w-full flex-1 overflow-x-hidden transition-all duration-300 min-h-screen pt-20 md:pt-8 p-3 sm:p-6 lg:p-12 ${
           isCollapsed ? "md:ml-20" : "md:ml-64"
@@ -136,6 +154,7 @@ export default function AgentLayout({
           )}
         </div>
       </main>
+      )}
     </div>
   );
 }

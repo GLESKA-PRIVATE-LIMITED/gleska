@@ -9,6 +9,7 @@ const EMPLOYER_AGENT_ROUTES = new Set([
   "/procurement/workspaces",
   "/financial",
   "/tender-tracking",
+  "/general-work",
 ]);
 
 function isRouteOrChild(pathname: string, route: string): boolean {

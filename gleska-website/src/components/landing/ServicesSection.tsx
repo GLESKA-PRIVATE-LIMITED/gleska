@@ -39,6 +39,7 @@ const DASHBOARD_PATHS: Record<string, string> = {
   "04": "/procurement",
   "05": "/financial",
   "06": "/tender-tracking",
+  "general-work": "/general-work",
 };
 
 function getDashboardHref(agentId: string, user: AuthUser | null, nextStep: NextStep | null): string {

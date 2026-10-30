@@ -103,6 +103,24 @@ class AccountDeletionService:
         except Exception as exc:
             logger.warning("Storage cleanup for profile photo encountered error: %s", exc)
 
+        # 3. General Work library files (rows cascade with the user; storage objects do not)
+        if user.role == "EMPLOYER":
+            try:
+                files_res = (
+                    supabase.table("general_work_files")
+                    .select("storage_bucket, storage_path")
+                    .eq("user_id", user.id)
+                    .execute()
+                )
+                paths_by_bucket: dict[str, list[str]] = {}
+                for row in files_res.data or []:
+                    if row.get("storage_bucket") and row.get("storage_path"):
+                        paths_by_bucket.setdefault(row["storage_bucket"], []).append(row["storage_path"])
+                for bucket, paths in paths_by_bucket.items():
+                    supabase.storage.from_(bucket).remove(paths)
+            except Exception as exc:
+                logger.warning("Storage cleanup for General Work files encountered error: %s", exc)
+
     @classmethod
     def execute_database_deletion(cls, user_id: str) -> None:
         """Delete user records in database, trying the atomic RPC first with sequential fallback."""

@@ -17,6 +17,8 @@ interface AgentSidebarProps {
   profileHref?: string;
   onProfileClick?: () => void;
   profileRoleLabel?: string;
+  /** Optional agent-specific content rendered below the navigation (scrolls independently). */
+  children?: React.ReactNode;
 }
 
 export default function AgentSidebar({
@@ -30,8 +32,10 @@ export default function AgentSidebar({
   profileHref,
   onProfileClick,
   profileRoleLabel,
+  children,
 }: AgentSidebarProps) {
   const isCompact = isCollapsed && !mobileSidebarOpen;
+  const hasExtraContent = Boolean(children) && !isCompact;
 
   return (
     <>
@@ -54,7 +58,7 @@ export default function AgentSidebar({
           mobileSidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
         }`}
       >
-        <div className="space-y-6">
+        <div className={hasExtraContent ? "flex min-h-0 flex-1 flex-col space-y-6" : "space-y-6"}>
           {/* Logo & Header */}
           <div className="flex items-center justify-between border-b border-slate-100 pb-5 dark:border-slate-800">
             <Link href="/" className="flex items-center gap-3 group min-w-0">
@@ -97,7 +101,7 @@ export default function AgentSidebar({
           </div>
 
           {/* Navigation Items */}
-          <nav className="space-y-1.5 overflow-y-auto max-h-[calc(100vh-220px)] scrollbar-none">
+          <nav className={`space-y-1.5 overflow-y-auto scrollbar-none ${hasExtraContent ? "shrink-0" : "max-h-[calc(100vh-220px)]"}`}>
             {config.sidebarItems.map((item) => {
               const Icon = item.icon;
               const isSelected = activeTab === item.id;
@@ -166,6 +170,10 @@ export default function AgentSidebar({
               );
             })}
           </nav>
+
+          {hasExtraContent && (
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">{children}</div>
+          )}
         </div>
 
         {/* Profile Component at Bottom */}
