@@ -26,6 +26,10 @@ import {
   Eye,
   Sparkles,
   CheckCircle2,
+  Paperclip,
+  Mic,
+  MicOff,
+  Plug,
 } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
@@ -272,6 +276,11 @@ export default function EmployerDashboard() {
   const [manualJobState, setManualJobState] = React.useState<ManualJobFormState>({ required_skills: [] });
   const [isHiringAgentSending, setIsHiringAgentSending] = React.useState(false);
   const [hiringAgentInput, setHiringAgentInput] = React.useState("");
+  const [hiringAttachedFiles, setHiringAttachedFiles] = React.useState<File[]>([]);
+  const [isVoiceRecording, setIsVoiceRecording] = React.useState(false);
+  const hiringFileInputRef = React.useRef<HTMLInputElement>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const speechRecognitionRef = React.useRef<any>(null);
   const [isJobSaving, setIsJobSaving] = React.useState(false);
   const [isWorkSiteModalOpen, setIsWorkSiteModalOpen] = React.useState(false);
   const [workSiteModalMode, setWorkSiteModalMode] = React.useState<WorkSiteModalMode>(null);
@@ -1291,19 +1300,52 @@ export default function EmployerDashboard() {
 
   const handleSendHiringAgentMessage = async (messageText = hiringAgentInput) => {
     const text = messageText.trim();
-    if (!text || hiringSendInFlightRef.current || isHiringConversationLoading) return;
+    const hasAttachments = hiringAttachedFiles.length > 0;
+    if ((!text && !hasAttachments) || hiringSendInFlightRef.current || isHiringConversationLoading) return;
     const consumesInput = text === hiringAgentInput.trim();
     const selectedJobId = hiringJobId;
     hiringSendInFlightRef.current = true;
     if (consumesInput) setHiringAgentInput("");
     setHiringConversationError("");
-    setHiringHistory((current) => [...current, { role: "user", content: text }]);
+
+    const uploadedFileKeys: { file_key: string; filename: string }[] = [];
+    if (hasAttachments) {
+      try {
+        for (const file of hiringAttachedFiles) {
+          const formData = new FormData();
+          formData.append("file", file);
+          const uploadResp = await apiClient.post<{ file_key: string; filename: string }>(
+            "/api/v1/jobs/assistant/agent/upload",
+            formData,
+            { withCredentials: true, headers: { "Content-Type": "multipart/form-data" } },
+          );
+          uploadedFileKeys.push({
+            file_key: uploadResp.data.file_key,
+            filename: uploadResp.data.filename,
+          });
+        }
+      } catch {
+        setHiringConversationError("Failed to upload one or more attachments. Please try again.");
+        hiringSendInFlightRef.current = false;
+        return;
+      }
+    }
+
+    const fileContext = uploadedFileKeys.length
+      ? "\n\n[Attached files for analysis: " +
+        uploadedFileKeys.map((f) => `${f.filename} (file_key: ${f.file_key})`).join(", ") +
+        "]"
+      : "";
+    const finalMessage = (text || "Please analyze the attached file(s).") + fileContext;
+
+    const displayText = text + (uploadedFileKeys.length ? ` (${uploadedFileKeys.length} file${uploadedFileKeys.length === 1 ? "" : "s"} attached)` : "");
+    setHiringHistory((current) => [...current, { role: "user", content: displayText }]);
     setIsHiringAgentSending(true);
     try {
       const response = await apiClient.post<HiringAgentConversation>(
         "/api/v1/jobs/assistant/agent/message",
         {
-          message: text,
+          message: finalMessage,
           conversation_id: hiringConversationId,
           job_id: hiringJobId || undefined,
           selected_job_site_id: hiringSelectedJobSiteId || undefined,
@@ -1371,6 +1413,52 @@ export default function EmployerDashboard() {
       setIsHiringAgentSending(false);
       hiringSendInFlightRef.current = false;
     }
+  };
+
+  const HIRING_ACCEPTED_FILE_TYPES = ".pdf,.png,.jpg,.jpeg,.gif,.webp,.mp4,.mov,.webm,.xlsx,.xls,.csv,.pptx,.ppt,.doc,.docx,.txt";
+
+  const handleHiringFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files) return;
+    setHiringAttachedFiles((prev) => [...prev, ...Array.from(files)]);
+    if (hiringFileInputRef.current) hiringFileInputRef.current.value = "";
+  };
+
+  const removeHiringAttachedFile = (index: number) => {
+    setHiringAttachedFiles((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const toggleVoiceRecording = () => {
+    if (isVoiceRecording) {
+      speechRecognitionRef.current?.stop();
+      setIsVoiceRecording(false);
+      return;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const SpeechRecognitionAPI = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognitionAPI) {
+      toast.error("Voice input is not supported in this browser.");
+      return;
+    }
+    const recognition = new SpeechRecognitionAPI();
+    recognition.lang = "en-US";
+    recognition.interimResults = false;
+    recognition.continuous = false;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    recognition.onresult = (event: any) => {
+      const transcript = event?.results?.[0]?.[0]?.transcript as string | undefined;
+      if (transcript) {
+        setHiringAgentInput((prev) => (prev ? prev + " " + transcript : transcript));
+      }
+    };
+    recognition.onerror = () => {
+      setIsVoiceRecording(false);
+      toast.error("Could not capture voice. Please check microphone permissions.");
+    };
+    recognition.onend = () => setIsVoiceRecording(false);
+    speechRecognitionRef.current = recognition;
+    recognition.start();
+    setIsVoiceRecording(true);
   };
 
   const handleFindHiringCandidates = async () => {
@@ -1888,9 +1976,9 @@ export default function EmployerDashboard() {
                 className="p-4 sm:p-6"
               >
                 <div className="grid min-h-0 items-stretch gap-5 lg:grid-cols-12">
-                  <section className="flex h-[440px] sm:h-[480px] lg:h-[500px] min-h-0 flex-col rounded-2xl border border-slate-200 bg-white p-3.5 sm:p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900 lg:col-span-6">
+                  <section className="flex h-[380px] sm:h-[480px] lg:h-[500px] min-h-0 flex-col rounded-2xl border border-slate-200 bg-white p-3.5 sm:p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900 lg:col-span-6">
                     {/* Header Toolbar */}
-                    <div className="flex flex-none items-center justify-between gap-2.5 border-b border-slate-100 pb-3 dark:border-slate-800">
+                    <div className="flex flex-none flex-col gap-2.5 border-b border-slate-100 pb-3 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between">
                       <div className="flex items-center gap-2.5 min-w-0">
                         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950/60 dark:text-blue-400">
                           <Sparkles size={16} />
@@ -1911,13 +1999,13 @@ export default function EmployerDashboard() {
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2 shrink-0">
+                      <div className="flex flex-wrap items-center gap-2">
                         <select
                           value={hiringJobId}
                           disabled={isHiringAgentSending || isHiringConversationLoading || isHiringJobsLoading || Boolean(hiringJobsError)}
                           onChange={(event) => handleHiringJobSelection(event.target.value)}
                           aria-label="Select a searching job for candidate discovery"
-                          className="h-8 max-w-[150px] sm:max-w-[210px] truncate rounded-lg border border-slate-200 bg-slate-50 px-2 text-xs font-semibold text-slate-700 focus:border-blue-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                          className="h-8 min-w-0 flex-1 sm:flex-none max-w-full sm:max-w-[210px] truncate rounded-lg border border-slate-200 bg-slate-50 px-2 text-xs font-semibold text-slate-700 focus:border-blue-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
                         >
                           <option value="">Draft a new job</option>
                           {hiringEligibleJobs.map((job) => (
@@ -1930,7 +2018,7 @@ export default function EmployerDashboard() {
                           )}
                         </select>
                         {/* Work Site Selector Pill */}
-                        <div className="relative flex items-center">
+                        <div className="relative flex min-w-0 flex-1 sm:flex-none items-center">
                           <MapPin size={13} className="pointer-events-none absolute left-2.5 text-blue-600 dark:text-blue-400" />
                           <select
                             value={hiringSelectedJobSiteId}
@@ -1950,7 +2038,7 @@ export default function EmployerDashboard() {
                               }
                             }}
                             aria-label="Select Work Site"
-                            className="h-8 max-w-[130px] sm:max-w-[190px] truncate rounded-lg border border-slate-200 bg-slate-50 pl-7 pr-6 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 focus:border-blue-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 cursor-pointer"
+                            className="h-8 w-full sm:max-w-[190px] truncate rounded-lg border border-slate-200 bg-slate-50 pl-7 pr-6 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 focus:border-blue-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 cursor-pointer"
                           >
                             <option value="">Select work site</option>
                             {jobSites.map((site) => (
@@ -1970,6 +2058,17 @@ export default function EmployerDashboard() {
                         >
                           <RotateCcw size={12} />
                           <span className="hidden sm:inline">New chat</span>
+                        </button>
+
+                        {/* Connectors link */}
+                        <button
+                          type="button"
+                          onClick={() => router.push("/employer/connectors")}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-xs font-semibold text-blue-700 transition hover:bg-blue-100 active:scale-95 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300 cursor-pointer"
+                          title="Manage AI connectors"
+                        >
+                          <Plug size={12} />
+                          <span className="hidden sm:inline">Connectors</span>
                         </button>
                       </div>
                     </div>
@@ -2061,35 +2160,100 @@ export default function EmployerDashboard() {
                     </div>
 
                     {/* Chat Input Bar */}
-                    <form
-                      className="mt-auto flex flex-none items-center gap-2 border-t border-slate-100 pt-3 dark:border-slate-800"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        void handleSendHiringAgentMessage();
-                      }}
-                    >
-                      <div className="relative flex flex-1 items-center rounded-full border border-slate-200 bg-slate-50/90 p-1 shadow-2xs transition focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-800/80">
-                        <input
-                          value={hiringAgentInput}
-                          disabled={isHiringAgentSending || isHiringConversationLoading}
-                          onChange={(event) => setHiringAgentInput(event.target.value)}
-                          placeholder="Describe a job, workers needed, wage, or timing..."
-                          className="w-full bg-transparent px-3.5 py-1.5 text-xs sm:text-sm font-medium text-slate-900 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-slate-500"
-                        />
-                        <button
-                          type="submit"
-                          disabled={isHiringAgentSending || isHiringConversationLoading || !hiringAgentInput.trim()}
-                          className="flex h-8 w-8 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white shadow-xs transition hover:bg-blue-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 cursor-pointer"
-                          aria-label="Send message to AI Assistant"
-                        >
-                          {isHiringAgentSending ? <Loader2 size={15} className="animate-spin" /> : <ArrowRight size={15} />}
-                        </button>
-                      </div>
-                    </form>
+                    <div className="mt-auto flex-none border-t border-slate-100 pt-3 dark:border-slate-800">
+                      {/* Attached files preview */}
+                      {hiringAttachedFiles.length > 0 && (
+                        <div className="mb-2 flex flex-wrap gap-1.5">
+                          {hiringAttachedFiles.map((file, idx) => (
+                            <span
+                              key={`${file.name}-${idx}`}
+                              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-medium text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                            >
+                              <Paperclip size={10} className="shrink-0" />
+                              <span className="max-w-[120px] truncate">{file.name}</span>
+                              <button
+                                type="button"
+                                onClick={() => removeHiringAttachedFile(idx)}
+                                className="ml-0.5 text-slate-400 hover:text-red-500 cursor-pointer"
+                                aria-label={`Remove ${file.name}`}
+                              >
+                                <X size={10} />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
+                      <form
+                        className="flex items-center gap-2"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          void handleSendHiringAgentMessage();
+                          setHiringAttachedFiles([]);
+                        }}
+                      >
+                        <div className="relative flex flex-1 items-center rounded-full border border-slate-200 bg-slate-50/90 p-1 shadow-2xs transition focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-800/80">
+                          {/* File upload button */}
+                          <input
+                            ref={hiringFileInputRef}
+                            type="file"
+                            multiple
+                            accept={HIRING_ACCEPTED_FILE_TYPES}
+                            onChange={handleHiringFileSelect}
+                            className="hidden"
+                            aria-label="Attach files"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => hiringFileInputRef.current?.click()}
+                            disabled={isHiringAgentSending || isHiringConversationLoading}
+                            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-400 transition hover:text-blue-600 hover:bg-blue-50 disabled:opacity-40 cursor-pointer dark:hover:text-blue-400 dark:hover:bg-blue-950/40"
+                            title="Attach files (PDF, images, videos, documents)"
+                            aria-label="Attach files"
+                          >
+                            <Paperclip size={15} />
+                          </button>
+
+                          <input
+                            value={hiringAgentInput}
+                            disabled={isHiringAgentSending || isHiringConversationLoading}
+                            onChange={(event) => setHiringAgentInput(event.target.value)}
+                            placeholder="Describe a job, workers needed, wage, or timing..."
+                            className="w-full bg-transparent px-2 py-1.5 text-xs sm:text-sm font-medium text-slate-900 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-slate-500"
+                          />
+
+                          {/* Voice input button */}
+                          <button
+                            type="button"
+                            onClick={toggleVoiceRecording}
+                            disabled={isHiringAgentSending || isHiringConversationLoading}
+                            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition cursor-pointer disabled:opacity-40 ${
+                              isVoiceRecording
+                                ? "bg-red-100 text-red-600 animate-pulse dark:bg-red-950/40 dark:text-red-400"
+                                : "text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:text-blue-400 dark:hover:bg-blue-950/40"
+                            }`}
+                            title={isVoiceRecording ? "Stop recording" : "Voice input"}
+                            aria-label={isVoiceRecording ? "Stop voice recording" : "Start voice input"}
+                          >
+                            {isVoiceRecording ? <MicOff size={15} /> : <Mic size={15} />}
+                          </button>
+
+                          {/* Send button */}
+                          <button
+                            type="submit"
+                            disabled={isHiringAgentSending || isHiringConversationLoading || (!hiringAgentInput.trim() && hiringAttachedFiles.length === 0)}
+                            className="flex h-8 w-8 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white shadow-xs transition hover:bg-blue-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 cursor-pointer"
+                            aria-label="Send message to AI Assistant"
+                          >
+                            {isHiringAgentSending ? <Loader2 size={15} className="animate-spin" /> : <ArrowRight size={15} />}
+                          </button>
+                        </div>
+                      </form>
+                    </div>
                   </section>
 
                   {/* Right Column: Live Job Draft Preview & Candidate Matches */}
-                  <aside className="flex h-[440px] sm:h-[480px] lg:h-[500px] min-h-0 flex-col justify-between rounded-2xl border border-slate-200 bg-white p-3.5 sm:p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900 lg:col-span-6">
+                  <aside className="flex h-[380px] sm:h-[480px] lg:h-[500px] min-h-0 flex-col justify-between rounded-2xl border border-slate-200 bg-white p-3.5 sm:p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900 lg:col-span-6">
                     <div className="flex flex-none items-center justify-between gap-2 border-b border-slate-100 pb-3 dark:border-slate-800">
                       <div className="flex items-center gap-2.5">
                         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950/60 dark:text-blue-400">

@@ -13,6 +13,22 @@ from uuid import UUID, uuid4
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from app.agents.hiring.tools import DISCOVER_CANDIDATES_TOOL
+from app.agents.hiring.connector_tools import (
+    ANALYZE_DOCUMENT_TOOL,
+    PARSE_SPREADSHEET_TOOL,
+    SEND_EMAIL_TOOL,
+    SEND_WHATSAPP_TOOL,
+    SCHEDULE_EVENT_TOOL,
+    FETCH_DRIVE_FILE_TOOL,
+    CREATE_FORM_TOOL,
+    LOOKUP_LINKEDIN_TOOL,
+    FETCH_GITHUB_PORTFOLIO_TOOL,
+    FETCH_TALLY_DATA_TOOL,
+    SEND_SLACK_MESSAGE_TOOL,
+    SEND_TEAMS_MESSAGE_TOOL,
+    POST_SOCIAL_MEDIA_TOOL,
+    CREATE_ZOOM_MEETING_TOOL,
+)
 from app.agents.shared.contracts import AgentExecutionContext
 from app.agents.shared.engine import AgentRuntime
 from app.agents.shared.registry import default_agent_registry
@@ -459,38 +475,230 @@ class HiringAgentService:
         user: UserResponse,
         job_id: str | None,
         job: Any | None,
+        employer_id: str | None = None,
     ) -> tuple[ToolRegistry, ToolExecutor, dict[str, Any]]:
+        from app.services.connectors.ocr_service import OCRService
+        from app.services.connectors.spreadsheet_service import SpreadsheetService
+        from app.services.connectors.email_connector_service import EmailConnectorService
+        from app.services.connectors.whatsapp_service import WhatsAppService
+        from app.services.connectors.calendar_service import CalendarService
+        from app.services.connectors.drive_service import DriveService
+        from app.services.connectors.forms_service import FormsService
+        from app.services.connectors.linkedin_service import LinkedInService
+        from app.services.connectors.github_service import GitHubService
+        from app.services.connectors.tally_service import TallyService
+        from app.services.connectors.messaging_service import SlackService, TeamsService
+        from app.services.connectors.social_service import SocialMediaService
+        from app.services.connectors.zoom_service import ZoomService
+
         registry = ToolRegistry()
         executor = ToolExecutor(registry)
         tool_capture: dict[str, Any] = {"cards": None, "result_status": None, "result_note": None}
+        eid = employer_id or ""
 
-        if job_id is None or job is None:
-            return registry, executor, tool_capture
+        # ── Candidate discovery (requires selected job) ─────────────────
+        if job_id is not None and job is not None:
+            registry.register(DISCOVER_CANDIDATES_TOOL)
 
-        registry.register(DISCOVER_CANDIDATES_TOOL)
+            async def discover_candidates(
+                _arguments: dict[str, Any],
+                context: AgentExecutionContext,
+            ) -> dict[str, Any]:
+                if (
+                    context.user_id != str(user.id)
+                    or context.role != "EMPLOYER"
+                    or context.metadata.get("job_id") != job_id
+                ):
+                    raise PermissionError("HIRING_TOOL_CONTEXT_INVALID")
 
-        async def discover_candidates(
-            _arguments: dict[str, Any],
-            context: AgentExecutionContext,
-        ) -> dict[str, Any]:
-            if (
-                context.user_id != str(user.id)
-                or context.role != "EMPLOYER"
-                or context.metadata.get("job_id") != job_id
-            ):
-                raise PermissionError("HIRING_TOOL_CONTEXT_INVALID")
+                cards, result_status, result_note, result_data = HiringAgentService._discover_candidate_data(
+                    user, job_id, job,
+                )
+                tool_capture["cards"] = cards
+                tool_capture["result_status"] = result_status
+                tool_capture["result_note"] = result_note
+                return result_data
 
-            cards, result_status, result_note, result_data = HiringAgentService._discover_candidate_data(
-                user,
-                job_id,
-                job,
+            executor.register_handler(DISCOVER_CANDIDATES_TOOL.name, discover_candidates)
+
+        # ── 1. OCR & Document Intelligence ──────────────────────────────
+        registry.register(ANALYZE_DOCUMENT_TOOL)
+
+        async def analyze_document(arguments: dict[str, Any], context: AgentExecutionContext) -> dict[str, Any]:
+            return await OCRService.analyze_document(
+                file_key=arguments["file_key"],
+                analysis_intent=arguments["analysis_intent"],
+                employer_id=eid,
             )
-            tool_capture["cards"] = cards
-            tool_capture["result_status"] = result_status
-            tool_capture["result_note"] = result_note
-            return result_data
 
-        executor.register_handler(DISCOVER_CANDIDATES_TOOL.name, discover_candidates)
+        executor.register_handler(ANALYZE_DOCUMENT_TOOL.name, analyze_document)
+
+        # ── 2. Spreadsheet Parsing ──────────────────────────────────────
+        registry.register(PARSE_SPREADSHEET_TOOL)
+
+        async def parse_spreadsheet(arguments: dict[str, Any], context: AgentExecutionContext) -> dict[str, Any]:
+            return await SpreadsheetService.parse_spreadsheet(
+                file_key=arguments["file_key"],
+                sheet_name=arguments.get("sheet_name"),
+                max_rows=arguments.get("max_rows", 100),
+            )
+
+        executor.register_handler(PARSE_SPREADSHEET_TOOL.name, parse_spreadsheet)
+
+        # ── 3. Email ────────────────────────────────────────────────────
+        registry.register(SEND_EMAIL_TOOL)
+
+        async def send_email(arguments: dict[str, Any], context: AgentExecutionContext) -> dict[str, Any]:
+            return await EmailConnectorService.send_email(
+                to=arguments["to"],
+                subject=arguments["subject"],
+                body=arguments["body"],
+                purpose=arguments["purpose"],
+            )
+
+        executor.register_handler(SEND_EMAIL_TOOL.name, send_email)
+
+        # ── 4. WhatsApp ─────────────────────────────────────────────────
+        registry.register(SEND_WHATSAPP_TOOL)
+
+        async def send_whatsapp(arguments: dict[str, Any], context: AgentExecutionContext) -> dict[str, Any]:
+            return await WhatsAppService.send_message(
+                phone=arguments["phone"],
+                message=arguments["message"],
+                template_name=arguments.get("template_name"),
+            )
+
+        executor.register_handler(SEND_WHATSAPP_TOOL.name, send_whatsapp)
+
+        # ── 5. Google Calendar ──────────────────────────────────────────
+        registry.register(SCHEDULE_EVENT_TOOL)
+
+        async def schedule_event(arguments: dict[str, Any], context: AgentExecutionContext) -> dict[str, Any]:
+            return await CalendarService.schedule_event(
+                title=arguments["title"],
+                start_time=arguments["start_time"],
+                duration_minutes=arguments["duration_minutes"],
+                employer_id=eid,
+                attendees=arguments.get("attendees"),
+                location=arguments.get("location"),
+                description=arguments.get("description"),
+                add_video_meeting=arguments.get("add_video_meeting", False),
+            )
+
+        executor.register_handler(SCHEDULE_EVENT_TOOL.name, schedule_event)
+
+        # ── 6. Google Drive ─────────────────────────────────────────────
+        registry.register(FETCH_DRIVE_FILE_TOOL)
+
+        async def fetch_drive_file(arguments: dict[str, Any], context: AgentExecutionContext) -> dict[str, Any]:
+            return await DriveService.fetch_file(
+                file_url=arguments["file_url"],
+                employer_id=eid,
+                extract_text=arguments.get("extract_text", True),
+            )
+
+        executor.register_handler(FETCH_DRIVE_FILE_TOOL.name, fetch_drive_file)
+
+        # ── 7. Google Forms ─────────────────────────────────────────────
+        registry.register(CREATE_FORM_TOOL)
+
+        async def create_form(arguments: dict[str, Any], context: AgentExecutionContext) -> dict[str, Any]:
+            return await FormsService.create_form(
+                job_title=arguments["job_title"],
+                questions=arguments["questions"],
+                employer_id=eid,
+                collect_email=arguments.get("collect_email", True),
+            )
+
+        executor.register_handler(CREATE_FORM_TOOL.name, create_form)
+
+        # ── 8. LinkedIn ─────────────────────────────────────────────────
+        registry.register(LOOKUP_LINKEDIN_TOOL)
+
+        async def lookup_linkedin(arguments: dict[str, Any], context: AgentExecutionContext) -> dict[str, Any]:
+            return await LinkedInService.lookup_profile(
+                employer_id=eid,
+                profile_url=arguments.get("profile_url"),
+                name=arguments.get("name"),
+            )
+
+        executor.register_handler(LOOKUP_LINKEDIN_TOOL.name, lookup_linkedin)
+
+        # ── 9. GitHub ───────────────────────────────────────────────────
+        registry.register(FETCH_GITHUB_PORTFOLIO_TOOL)
+
+        async def fetch_github(arguments: dict[str, Any], context: AgentExecutionContext) -> dict[str, Any]:
+            return await GitHubService.fetch_portfolio(username=arguments["username"])
+
+        executor.register_handler(FETCH_GITHUB_PORTFOLIO_TOOL.name, fetch_github)
+
+        # ── 10. TallyPrime ──────────────────────────────────────────────
+        registry.register(FETCH_TALLY_DATA_TOOL)
+
+        async def fetch_tally(arguments: dict[str, Any], context: AgentExecutionContext) -> dict[str, Any]:
+            return await TallyService.fetch_data(
+                query_type=arguments["query_type"],
+                employer_id=eid,
+                company_name=arguments.get("company_name"),
+                date_from=arguments.get("date_from"),
+                date_to=arguments.get("date_to"),
+            )
+
+        executor.register_handler(FETCH_TALLY_DATA_TOOL.name, fetch_tally)
+
+        # ── 11. Slack ───────────────────────────────────────────────────
+        registry.register(SEND_SLACK_MESSAGE_TOOL)
+
+        async def send_slack(arguments: dict[str, Any], context: AgentExecutionContext) -> dict[str, Any]:
+            return await SlackService.send_message(
+                channel=arguments["channel"],
+                message=arguments["message"],
+                employer_id=eid,
+            )
+
+        executor.register_handler(SEND_SLACK_MESSAGE_TOOL.name, send_slack)
+
+        # ── 12. Microsoft Teams ─────────────────────────────────────────
+        registry.register(SEND_TEAMS_MESSAGE_TOOL)
+
+        async def send_teams(arguments: dict[str, Any], context: AgentExecutionContext) -> dict[str, Any]:
+            return await TeamsService.send_message(
+                webhook_url=arguments["webhook_url"],
+                title=arguments["title"],
+                message=arguments["message"],
+            )
+
+        executor.register_handler(SEND_TEAMS_MESSAGE_TOOL.name, send_teams)
+
+        # ── 13. Social Media (Instagram / Facebook) ─────────────────────
+        registry.register(POST_SOCIAL_MEDIA_TOOL)
+
+        async def post_social(arguments: dict[str, Any], context: AgentExecutionContext) -> dict[str, Any]:
+            return await SocialMediaService.post_to_platform(
+                platform=arguments["platform"],
+                caption=arguments["caption"],
+                job_title=arguments["job_title"],
+                employer_id=eid,
+                location=arguments.get("location"),
+                hashtags=arguments.get("hashtags"),
+            )
+
+        executor.register_handler(POST_SOCIAL_MEDIA_TOOL.name, post_social)
+
+        # ── 14. Zoom ───────────────────────────────────────────────────
+        registry.register(CREATE_ZOOM_MEETING_TOOL)
+
+        async def create_zoom(arguments: dict[str, Any], context: AgentExecutionContext) -> dict[str, Any]:
+            return await ZoomService.create_meeting(
+                topic=arguments["topic"],
+                start_time=arguments["start_time"],
+                duration_minutes=arguments["duration_minutes"],
+                employer_id=eid,
+                password=arguments.get("password"),
+            )
+
+        executor.register_handler(CREATE_ZOOM_MEETING_TOOL.name, create_zoom)
+
         return registry, executor, tool_capture
 
     @staticmethod
@@ -615,7 +823,7 @@ class HiringAgentService:
             site_id,
             site_name,
         )
-        registry, executor, tool_capture = cls._build_tooling(user, job_id, job)
+        registry, executor, tool_capture = cls._build_tooling(user, job_id, job, employer_id)
         context = AgentExecutionContext(
             agent_id="hiring",
             user_id=str(user.id),

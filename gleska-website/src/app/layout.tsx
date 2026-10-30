@@ -13,6 +13,7 @@ export const metadata: Metadata = {
 import { LanguageProvider } from "@/context/LanguageContext";
 import { AuthProvider } from "@/context/AuthContext";
 import { IntlProvider } from "@/components/providers/IntlProvider";
+import MSG91Cleanup from "@/components/providers/MSG91Cleanup";
 import { Toaster } from "sonner";
 
 export default function RootLayout({
@@ -29,6 +30,7 @@ export default function RootLayout({
         <AuthProvider>
           <LanguageProvider>
             <IntlProvider>
+              <MSG91Cleanup />
               {children}
               <Toaster position="top-right" richColors closeButton />
             </IntlProvider>

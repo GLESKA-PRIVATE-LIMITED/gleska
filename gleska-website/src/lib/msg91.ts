@@ -42,6 +42,24 @@ export type Msg91OperationLock = symbol;
 let activeOtpOperation: { operation: OtpOperation; lock: Msg91OperationLock } | null = null;
 let verificationCompleted = false;
 
+export function cleanupMSG91Widget(): void {
+  if (typeof window === "undefined") return;
+  sdkPromise = null;
+  activeOtpOperation = null;
+  verificationCompleted = false;
+  const globalWindow = window as Msg91Window;
+  globalWindow.__msg91_widget_initialized__ = false;
+  globalWindow.__msg91_widget_ready__ = false;
+  const script = document.querySelector('script[data-msg91-sdk="true"]') as HTMLScriptElement | null;
+  if (script) {
+    script.remove();
+    delete globalWindow.sendOtp;
+    delete globalWindow.verifyOtp;
+    delete globalWindow.retryOtp;
+    delete globalWindow.initSendOTP;
+  }
+}
+
 export function otpUserMessage(error: unknown, operation: "send" | "verify" | "resend" | "auth" = "verify"): string {
   if (error instanceof SignupFlowError) return error.message;
   const errorRecord = asRecord(error);
