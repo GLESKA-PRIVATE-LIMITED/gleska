@@ -71,7 +71,10 @@ Thumbs.db
 *.keystore
 
 # =========================
-# Temporary files
+# Temporary files / Build artifacts
 # =========================
 *.tmp
 *.temp
+*.aab
+*.apk
+release-aab/
