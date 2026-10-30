@@ -45,6 +45,31 @@ cd android
 
 The target-specific Capacitor sync and Gradle product flavors assign distinct Android application IDs, launcher names, and OAuth schemes. Build and sync one target at a time because both target builds write their respective web assets to `dist`.
 
+## Release signing
+
+Debug builds (`assembleWorkerDebug`, `assembleEmployerDebug`) use the Android debug keystore and need no signing setup.
+
+Release builds are signed with the upload key. Its credentials are never committed: `android/app/release-signing.gradle` reads each value from an environment variable first, then from the untracked file `android/keystore.properties`.
+
+| `keystore.properties` key | Environment variable |
+| --- | --- |
+| `storeFile` | `GLESKA_UPLOAD_STORE_FILE` |
+| `storePassword` | `GLESKA_UPLOAD_STORE_PASSWORD` |
+| `keyAlias` | `GLESKA_UPLOAD_KEY_ALIAS` |
+| `keyPassword` | `GLESKA_UPLOAD_KEY_PASSWORD` |
+
+For a local release build, copy `android/keystore.properties.example` to `android/keystore.properties` and fill it in. Keep the keystore outside the repository and use an absolute `storeFile` path; relative paths resolve against `android/app`. On CI, set the environment variables from the CI secret store and write the keystore to a temporary path. Never echo the values in logs.
+
+```bash
+npm run sync:worker
+cd android
+.\gradlew.bat bundleWorkerRelease
+```
+
+Any release task fails at `verifyReleaseSigning` with a list of the missing values, or the missing keystore path, when the configuration is incomplete. The passwords are never printed. `keystore.properties`, `*.jks`, `*.keystore`, `*.p12`, `*.pfx` and `*.pepk` are git-ignored; do not force-add them.
+
+Keep an offline, encrypted backup of the upload keystore and its passwords (for example in the company password manager). Losing the key, or a password leak, means requesting an upload key reset in the Google Play Console. It does not mean generating a new key and changing the build.
+
 ## Validation
 
 ```bash

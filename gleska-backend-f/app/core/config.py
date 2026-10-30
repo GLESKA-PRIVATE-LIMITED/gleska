@@ -168,6 +168,29 @@ class Settings(BaseSettings):
     CASHFREE_PAYMENT_TIMEOUT_SECONDS: int = Field(default=15, validation_alias=AliasChoices("CASHFREE_PAYMENT_TIMEOUT_SECONDS", "cashfree_payment_timeout_seconds"))
     WEBHOOK_URL: str = Field(default="", validation_alias=AliasChoices("WEBHOOK_URL", "webhook_url"))
 
+    # TallyPrime
+    TALLY_API_URL: str = Field(default="", validation_alias=AliasChoices("TALLY_API_URL", "tally_api_url"))
+
+    # OAuth client credentials for AI Assistant connectors
+    GOOGLE_OAUTH_CLIENT_ID: str = Field(default="", validation_alias=AliasChoices("GOOGLE_OAUTH_CLIENT_ID", "google_oauth_client_id"))
+    GOOGLE_OAUTH_CLIENT_SECRET: str = Field(default="", validation_alias=AliasChoices("GOOGLE_OAUTH_CLIENT_SECRET", "google_oauth_client_secret"))
+    SLACK_OAUTH_CLIENT_ID: str = Field(default="", validation_alias=AliasChoices("SLACK_OAUTH_CLIENT_ID", "slack_oauth_client_id"))
+    SLACK_OAUTH_CLIENT_SECRET: str = Field(default="", validation_alias=AliasChoices("SLACK_OAUTH_CLIENT_SECRET", "slack_oauth_client_secret"))
+    ZOOM_OAUTH_CLIENT_ID: str = Field(default="", validation_alias=AliasChoices("ZOOM_OAUTH_CLIENT_ID", "zoom_oauth_client_id"))
+    ZOOM_OAUTH_CLIENT_SECRET: str = Field(default="", validation_alias=AliasChoices("ZOOM_OAUTH_CLIENT_SECRET", "zoom_oauth_client_secret"))
+    LINKEDIN_OAUTH_CLIENT_ID: str = Field(default="", validation_alias=AliasChoices("LINKEDIN_OAUTH_CLIENT_ID", "linkedin_oauth_client_id"))
+    LINKEDIN_OAUTH_CLIENT_SECRET: str = Field(default="", validation_alias=AliasChoices("LINKEDIN_OAUTH_CLIENT_SECRET", "linkedin_oauth_client_secret"))
+    FACEBOOK_OAUTH_CLIENT_ID: str = Field(default="", validation_alias=AliasChoices("FACEBOOK_OAUTH_CLIENT_ID", "facebook_oauth_client_id"))
+    FACEBOOK_OAUTH_CLIENT_SECRET: str = Field(default="", validation_alias=AliasChoices("FACEBOOK_OAUTH_CLIENT_SECRET", "facebook_oauth_client_secret"))
+    MICROSOFT_OAUTH_CLIENT_ID: str = Field(default="", validation_alias=AliasChoices("MICROSOFT_OAUTH_CLIENT_ID", "microsoft_oauth_client_id"))
+    MICROSOFT_OAUTH_CLIENT_SECRET: str = Field(default="", validation_alias=AliasChoices("MICROSOFT_OAUTH_CLIENT_SECRET", "microsoft_oauth_client_secret"))
+    GITHUB_OAUTH_CLIENT_ID: str = Field(default="", validation_alias=AliasChoices("GITHUB_OAUTH_CLIENT_ID", "github_oauth_client_id"))
+    GITHUB_OAUTH_CLIENT_SECRET: str = Field(default="", validation_alias=AliasChoices("GITHUB_OAUTH_CLIENT_SECRET", "github_oauth_client_secret"))
+    OAUTH_CALLBACK_BASE_URL: str = Field(
+        default="http://localhost:8000",
+        validation_alias=AliasChoices("OAUTH_CALLBACK_BASE_URL", "oauth_callback_base_url"),
+    )
+
     # Contact inquiry / Email notification
     CONTACT_RECIPIENT_EMAIL: str = Field(
         default="admin@goleska.in",

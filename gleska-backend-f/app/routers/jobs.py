@@ -1,10 +1,11 @@
 """Job-related endpoints."""
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 import logging
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from app.core.security import require_employer
+from app.core.supabase import supabase
 from app.schemas.auth import UserResponse
 from app.schemas.job import JobCreate, JobDetailsResponse, JobMatchAcceptRequest, JobMatchAcceptResponse, JobMatchRejectResponse, JobMatchSummary, JobMatchesResponse, JobResponse
 from app.schemas.job_extraction import JobExtractionRequest, JobExtractionResponse
@@ -24,6 +25,16 @@ from app.services.gemini_service import (
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 logger = logging.getLogger(__name__)
+
+
+ASSISTANT_UPLOAD_BUCKET = "assistant-uploads"
+MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # 25 MB per file
+ALLOWED_UPLOAD_EXTENSIONS = {
+    "pdf", "png", "jpg", "jpeg", "gif", "webp",
+    "doc", "docx", "txt", "csv",
+    "xlsx", "xls", "pptx", "ppt",
+    "mp4", "mov", "webm",
+}
 
 
 @router.post("/assistant/agent/message", response_model=HiringAgentResponse)
@@ -48,6 +59,48 @@ async def process_hiring_agent_message(
     except Exception as exc:
         logger.exception("Hiring agent message processing failed: user_id=%s", user.id)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="HIRING_AGENT_FAILED") from exc
+
+
+@router.post("/assistant/agent/upload")
+async def upload_assistant_file(
+    file: UploadFile = File(...),
+    user: UserResponse = Depends(require_employer),
+):
+    """Upload a file for the AI Assistant to analyze. Returns a file_key the agent can reference."""
+    filename = (file.filename or "upload").strip()
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if ext not in ALLOWED_UPLOAD_EXTENSIONS:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="UNSUPPORTED_FILE_TYPE")
+
+    try:
+        content = await file.read()
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="FILE_READ_FAILED") from exc
+
+    if not content:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="FILE_EMPTY")
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="FILE_TOO_LARGE")
+
+    safe_name = "".join(c for c in filename if c.isalnum() or c in ("-", "_", ".")).strip(".") or f"upload.{ext}"
+    file_key = f"{user.id}/{uuid4()}_{safe_name}"
+
+    try:
+        supabase.storage.from_(ASSISTANT_UPLOAD_BUCKET).upload(
+            path=file_key,
+            file=content,
+            file_options={"content-type": file.content_type or "application/octet-stream"},
+        )
+    except Exception as exc:
+        logger.exception("Assistant file upload failed for user_id=%s", user.id)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="UPLOAD_FAILED") from exc
+
+    return {
+        "file_key": file_key,
+        "filename": safe_name,
+        "size_bytes": len(content),
+        "content_type": file.content_type or "application/octet-stream",
+    }
 
 
 @router.post(

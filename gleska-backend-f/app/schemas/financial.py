@@ -310,10 +310,10 @@ class FinancialAuditRunCreateRequest(FinancialModel):
 
 class FinancialScanLineItem(FinancialModel):
     description: Annotated[str | None, StringConstraints(max_length=500)] = None
-    quantity: Decimal | None = Field(default=None, gt=0, max_digits=12, decimal_places=3)
-    unit_rate: Decimal | None = Field(default=None, ge=0, max_digits=14, decimal_places=2)
-    tax_amount: Decimal | None = Field(default=None, ge=0, max_digits=14, decimal_places=2)
-    total: Decimal | None = Field(default=None, ge=0, max_digits=14, decimal_places=2)
+    quantity: Annotated[Decimal, Field(gt=0, max_digits=12, decimal_places=3)] | None = None
+    unit_rate: Annotated[Decimal, Field(ge=0, max_digits=14, decimal_places=2)] | None = None
+    tax_amount: Annotated[Decimal, Field(ge=0, max_digits=14, decimal_places=2)] | None = None
+    total: Annotated[Decimal, Field(ge=0, max_digits=14, decimal_places=2)] | None = None
 
 
 class FinancialScanResult(FinancialModel):
@@ -323,9 +323,9 @@ class FinancialScanResult(FinancialModel):
     due_date: date | None = None
     currency: Literal["INR", "USD", "EUR"] | None = None
     line_items: list[FinancialScanLineItem] = Field(default_factory=list, max_length=100)
-    subtotal: Decimal | None = Field(default=None, ge=0, max_digits=14, decimal_places=2)
-    tax_amount: Decimal | None = Field(default=None, ge=0, max_digits=14, decimal_places=2)
-    total: Decimal | None = Field(default=None, ge=0, max_digits=14, decimal_places=2)
+    subtotal: Annotated[Decimal, Field(ge=0, max_digits=14, decimal_places=2)] | None = None
+    tax_amount: Annotated[Decimal, Field(ge=0, max_digits=14, decimal_places=2)] | None = None
+    total: Annotated[Decimal, Field(ge=0, max_digits=14, decimal_places=2)] | None = None
 
     @model_validator(mode="after")
     def validate_scan_date_order(self):

@@ -36,10 +36,50 @@ HIRING_AGENT_DEFINITION = AgentDefinition(
         "configuration or candidate evidence. Use conversation history as the source of truth when "
         "recalling what was said. The only permitted job mutation is the backend's validated, "
         "employer-confirmed job creation flow. Do not contact or screen workers, shortlist, accept, "
-        "reject, hire, or change availability. A pending match is not worker consent."
+        "reject, hire, or change availability. A pending match is not worker consent. "
+        "\n\n"
+        "CONNECTOR TOOLS — You have access to the following additional capabilities. Use them "
+        "when the employer's request clearly calls for it. Always explain what you intend to do "
+        "before calling a connector tool. For tools that require confirmation, describe the action "
+        "and wait for the confirmation flow. If a connector returns an error about not being connected, "
+        "tell the employer to connect the service in Settings > Connectors and continue the conversation. "
+        "\n"
+        "• hiring.analyze_document — Extract text and data from uploaded files (PDF, images, Excel, Word, etc.). "
+        "Use when the employer uploads a file and you need to understand its contents. "
+        "• hiring.parse_spreadsheet — Parse Excel/CSV files into structured rows. "
+        "Use for bulk job data, worker lists, or salary structures. "
+        "• hiring.send_email — Send professional emails (job offers, interview invites, notifications). "
+        "Always confirm recipient and content with the employer before sending. "
+        "• hiring.send_whatsapp — Send WhatsApp messages to candidates/workers. "
+        "For job notifications, reminders, or quick communication. Confirm before sending. "
+        "• hiring.schedule_event — Create Google Calendar events for interviews/meetings. "
+        "Include attendees, location, and optional video meeting link. "
+        "• hiring.fetch_drive_file — Read files from the employer's Google Drive. "
+        "Use for job description templates, policies, or reference documents. "
+        "• hiring.create_application_form — Generate Google Forms for job applications. "
+        "Creates forms with appropriate questions based on job requirements. "
+        "• hiring.lookup_linkedin — Look up candidate LinkedIn profiles for enrichment. "
+        "Use for positions where professional background matters. "
+        "• hiring.fetch_github_portfolio — Check a candidate's GitHub profile and repos. "
+        "Use for technical roles to assess coding activity. "
+        "• hiring.fetch_tally_data — Retrieve budget/payment data from TallyPrime. "
+        "Use to verify wage budgets before confirming job creation. "
+        "• hiring.send_slack_message — Post hiring updates to a Slack channel. "
+        "Use for team notifications about candidates or job status. "
+        "• hiring.send_teams_message — Post hiring updates to Microsoft Teams. "
+        "Use for team notifications via Teams webhooks. "
+        "• hiring.post_social_media — Post job listings to Instagram or Facebook. "
+        "Use when the employer wants to share jobs on social channels. "
+        "• hiring.create_zoom_meeting — Create Zoom meetings for virtual interviews. "
+        "Returns a meeting link to share with candidates."
     ),
-    version="1.0.0",
-    capabilities=("candidate_discovery", "conversation_state", "job_drafting"),
+    version="2.0.0",
+    capabilities=(
+        "candidate_discovery", "conversation_state", "job_drafting",
+        "document_analysis", "spreadsheet_parsing", "email", "whatsapp",
+        "calendar", "drive", "forms", "linkedin", "github", "tally",
+        "slack", "teams", "social_media", "zoom",
+    ),
     enabled=True,
     roles=("EMPLOYER",),
     metadata={"domain": "hiring", "status": "existing"},
