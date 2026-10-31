@@ -28,8 +28,13 @@ class FakeDB:
     def __init__(self):
         self.tables = {
             "employer_profiles": [
-                {"id": "emp-a", "user_id": EMPLOYER_A.id, "company_name": "Alpha"},
-                {"id": "emp-b", "user_id": EMPLOYER_B.id, "company_name": "Beta"},
+                {"id": "emp-a", "user_id": EMPLOYER_A.id, "contact_person_name": "Asha"},
+                {"id": "emp-b", "user_id": EMPLOYER_B.id, "contact_person_name": "Bina"},
+            ],
+            "employer_onboarding_details": [{"employer_id": "emp-a", "business_name": "Alpha"}],
+            "users": [
+                {"id": EMPLOYER_A.id, "name": "A", "email": "a@example.com", "mobile": "+91 90000 01234"},
+                {"id": EMPLOYER_B.id, "name": "B", "email": "b@example.com", "mobile": None},
             ],
             "billing_accounts": [
                 {"id": "acc-a", "employer_id": "emp-a", "status": "active", "created_at": "2026-10-01"},
@@ -203,7 +208,8 @@ def test_admin_status_lists_what_is_missing(db, client_as, ai_billing, monkeypat
 
 
 def test_admin_account_list_creates_wallets_for_employers_without_one(db, client_as):
-    db.tables["employer_profiles"].append({"id": "emp-c", "user_id": "c", "company_name": "Gamma"})
+    db.tables["employer_profiles"].append({"id": "emp-c", "user_id": "c", "contact_person_name": " "})
+    db.tables["users"].append({"id": "c", "name": "Gamma", "email": None, "mobile": "12"})
     original_rpc = db.rpc
 
     def rpc(name, params):
@@ -213,4 +219,9 @@ def test_admin_account_list_creates_wallets_for_employers_without_one(db, client
 
     db.rpc = rpc
     accounts = client_as(ADMIN).get("/api/v1/admin/billing/accounts").json()["accounts"]
-    assert {a["employer_name"] for a in accounts} == {"Alpha", "Beta", "Gamma"}
+    # Business name first, then contact person, then the user's account name.
+    assert [a["employer_name"] for a in accounts] == ["Alpha", "Bina", "Gamma"]
+    alpha = accounts[0]
+    assert (alpha["employer_email"], alpha["employer_phone_last4"]) == ("a@example.com", "1234")
+    assert accounts[2]["employer_phone_last4"] is None
+    assert all("mobile" not in a for a in accounts)

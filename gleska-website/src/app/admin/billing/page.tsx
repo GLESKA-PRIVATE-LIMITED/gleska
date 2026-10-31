@@ -47,6 +47,8 @@ interface Account {
   id: string;
   status: "active" | "suspended";
   employer_name: string | null;
+  employer_email?: string | null;
+  employer_phone_last4?: string | null;
   wallet: Wallet | null;
 }
 
@@ -400,12 +402,30 @@ function PriceList({ prices, onChanged }: { prices: PriceRow[]; onChanged: () =>
 
 function AccountsTable({ accounts, onChanged }: { accounts: Account[]; onChanged: () => void }) {
   const [editing, setEditing] = useState<Account | null>(null);
+  const [query, setQuery] = useState("");
+  const needle = query.trim().toLowerCase();
+  const shown = needle
+    ? accounts.filter((a) =>
+        [a.employer_name, a.employer_email, a.employer_phone_last4].some((v) => v?.toLowerCase().includes(needle)),
+      )
+    : accounts;
   return (
     <section className={cardClass}>
       <h2 className="text-sm font-bold uppercase tracking-wide text-slate-700">Employer wallets</h2>
       <p className="mb-3 mt-1 text-xs text-slate-500">Every employer has one shared wallet for all AI agents. 1 credit = ₹20.</p>
+      {accounts.length > 0 && (
+        <input
+          className={`${inputClass} mb-3 max-w-sm`}
+          placeholder="Search by name, email or last 4 phone digits"
+          aria-label="Search employers"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+      )}
       {accounts.length === 0 ? (
         <p className="text-sm text-slate-500">No billing accounts yet.</p>
+      ) : shown.length === 0 ? (
+        <p className="text-sm text-slate-500">No employer matches “{query}”.</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
@@ -413,9 +433,14 @@ function AccountsTable({ accounts, onChanged }: { accounts: Account[]; onChanged
               <tr><th className="py-2 pr-4">Employer</th><th className="pr-4">Available</th><th className="pr-4">Reserved</th><th className="pr-4">Consumed</th><th className="pr-4">Unrecovered</th><th className="pr-4">Status</th><th /></tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {accounts.map((a) => (
+              {shown.map((a) => (
                 <tr key={a.id}>
-                  <td className="py-2 pr-4 font-medium">{a.employer_name || "Unnamed employer"}</td>
+                  <td className="py-2 pr-4">
+                    <div className="font-medium">{a.employer_name || "Unnamed employer"}</div>
+                    <div className="text-xs text-slate-500">
+                      {[a.employer_email, a.employer_phone_last4 && `phone ••${a.employer_phone_last4}`].filter(Boolean).join(" · ") || "No contact details"}
+                    </div>
+                  </td>
                   <td className="pr-4">{a.wallet?.available ?? "0"}</td>
                   <td className="pr-4">{a.wallet?.reserved ?? "0"}</td>
                   <td className="pr-4">{a.wallet?.total_consumed ?? "0"}</td>
@@ -479,6 +504,7 @@ function AdjustDialog({ account, onClose, onDone }: { account: Account; onClose:
         }}
       >
         <h3 className="text-base font-bold text-slate-900">Adjust credits · {account.employer_name || "Employer"}</h3>
+        {account.employer_email && <p className="mt-0.5 text-xs text-slate-500">{account.employer_email}</p>}
         <p className="mb-4 mt-1 text-xs text-slate-500">Available now: {account.wallet?.available ?? "0"} credits. Use a negative number to remove credits.</p>
         <div className="space-y-3">
           <Field label="Credits (e.g. 50 or -10)"><input className={inputClass} inputMode="decimal" value={credits} onChange={(e) => setCredits(e.target.value)} required autoFocus /></Field>

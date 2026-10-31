@@ -102,6 +102,35 @@ def summarize(events: list[dict[str, Any]]) -> tuple[UsageTotals, list[AgentUsag
     return totals, sorted(agents.values(), key=lambda a: a.credits_charged, reverse=True), by_model
 
 
+
+def _employer_identities(employer_ids: list[str]) -> dict[str, dict[str, Any]]:
+    """Admin-facing label for each employer: business name, else contact person, else account name.
+
+    Email and the last 4 phone digits help the admin tell accounts apart (admin-only endpoint).
+    """
+    if not employer_ids:
+        return {}
+    profiles = _rows(supabase.table("employer_profiles").select("id, user_id, contact_person_name")
+                     .in_("id", employer_ids).execute())
+    details = {d["employer_id"]: d for d in _rows(supabase.table("employer_onboarding_details")
+               .select("employer_id, business_name").in_("employer_id", employer_ids).execute())}
+    user_ids = [p["user_id"] for p in profiles if p.get("user_id")]
+    users = {u["id"]: u for u in (_rows(supabase.table("users").select("id, name, email, mobile")
+             .in_("id", user_ids).execute()) if user_ids else [])}
+    result: dict[str, dict[str, Any]] = {}
+    for p in profiles:
+        user = users.get(p.get("user_id"), {})
+        name = next((str(v).strip() for v in (
+            details.get(p["id"], {}).get("business_name"), p.get("contact_person_name"), user.get("name"),
+        ) if v and str(v).strip()), None)
+        mobile = "".join(ch for ch in str(user.get("mobile") or "") if ch.isdigit())
+        result[p["id"]] = {
+            "employer_name": name,
+            "employer_email": user.get("email"),
+            "employer_phone_last4": mobile[-4:] if len(mobile) >= 4 else None,
+        }
+    return result
+
 class BillingService:
     # ---------- employer ----------
 
@@ -230,11 +259,10 @@ class BillingService:
         accounts = _rows(supabase.table("billing_accounts").select("id, employer_id, status, created_at").execute())
         wallets = {w["account_id"]: w for w in _rows(supabase.table("credit_wallets").select("*").execute())}
         employer_ids = [a["employer_id"] for a in accounts if a.get("employer_id")]
-        names = {
-            e["id"]: e.get("company_name") or e.get("business_name")
-            for e in (_rows(supabase.table("employer_profiles").select("*").in_("id", employer_ids).execute()) if employer_ids else [])
-        }
-        return [{**a, "employer_name": names.get(a.get("employer_id")), "wallet": wallets.get(a["id"])} for a in accounts]
+        info = _employer_identities(employer_ids)
+        rows = [{**a, **info.get(a.get("employer_id"), {"employer_name": None, "employer_email": None, "employer_phone_last4": None}),
+                 "wallet": wallets.get(a["id"])} for a in accounts]
+        return sorted(rows, key=lambda r: (r["employer_name"] is None, (r["employer_name"] or "").lower()))
 
     @staticmethod
     def adjust(admin: UserResponse, account_id: str, payload: CreditAdjustment) -> dict[str, Any]:
