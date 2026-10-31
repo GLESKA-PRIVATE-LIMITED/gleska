@@ -49,12 +49,13 @@ Last verified: 2026-10-31, commit aabb165. Update at the end of every task.
   chat with evidence-validated answers over hiring, attendance, financial, procurement, payments,
   AI usage and logistics data; document RAG (uploads, General Work files, scanned bills; FTS +
   pgvector); executive summaries; conversation history; admin health endpoint. Needs migrations
-  106 + 107. Logistics agent now stores vehicles/rental requests server-side (migration 107).
+  106 + 107: **106 applied to production 2026-10-31**; 107 rewritten without DROP statements,
+  tested locally, **not yet applied** (owner review). Logistics agent now stores vehicles/rental requests server-side (migration 107).
   Tests: `tests/test_company_brain_*.py`, `tests/test_logistics_api.py`, eval suite (44/44),
   `supabase/tests/106_company_brain_test.sql`, `src/components/agents/company-brain/companyBrain.test.tsx`.
 
 ## Waiting on the owner
-- Approve applying migrations 106 + 107 and pushing Company Brain to `main`; then add a verified
+- Approve applying migration 107 (106 done) and pushing Company Brain to `main`; then add a verified
   price for `gemini-embedding-001` in /admin/billing for semantic document search.
 - To switch AI back on: in `/admin/billing` enter the verified Gemini price for `GEMINI_MODEL`, a
   USD→INR rate, and grant credits to employers (done by the owner 2026-10-31). Still to build:
