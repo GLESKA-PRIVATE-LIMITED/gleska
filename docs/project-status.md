@@ -4,6 +4,8 @@ Last verified: 2026-10-31, commit aabb165. Update at the end of every task.
 
 ## Done (verified in code)
 - Worker/employer accounts: Supabase + MSG91 OTP auth, onboarding, verification (Cashfree), terms.
+- Registered business/industry CIN and Aadhaar checks are optional during onboarding; verification
+  remains available afterward. Completed employers default to the Hiring dashboard.
 - Jobs, job sites, PostGIS matching, attendance, subscriptions/payments (Cashfree), notifications.
 - Hiring agent with connector tools and OAuth connectors page.
   - 14 connector tools wired in `gleska-backend-f/app/agents/hiring/connector_tools.py`

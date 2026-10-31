@@ -554,8 +554,8 @@ async def test_cashfree_cin_requires_matching_identifier_and_company_name(
 def test_registered_industry_does_not_require_empty_gstin(monkeypatch):
     monkeypatch.setattr(settings, "EMPLOYER_REQUIRED_VERIFICATIONS", "REGISTERED_INDUSTRY:CIN|GSTIN")
 
-    assert VerificationService.required_for("REGISTERED_INDUSTRY", {"gstin": ""}) == ["CIN", "AADHAAR"]
-    assert VerificationService.required_for("REGISTERED_INDUSTRY", {"gstin": "27AAAAA0000A1Z5"}) == ["CIN", "AADHAAR", "GSTIN"]
+    assert VerificationService.required_for("REGISTERED_INDUSTRY", {"gstin": ""}) == []
+    assert VerificationService.required_for("REGISTERED_INDUSTRY", {"gstin": "27AAAAA0000A1Z5"}) == ["GSTIN"]
 
 
 @pytest.mark.asyncio

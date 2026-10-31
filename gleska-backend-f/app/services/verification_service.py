@@ -96,8 +96,6 @@ class VerificationService:
         required: list[str] = []
         normalized_type = employer_type.upper().strip()
         if normalized_type == "REGISTERED_INDUSTRY":
-            required.append("CIN")
-            required.append("AADHAAR")
             if details:
                 for field, verification_type in (
                     ("gstin", "GSTIN"),
@@ -109,8 +107,6 @@ class VerificationService:
             return list(dict.fromkeys(required))
 
         if normalized_type == "REGISTERED_BUSINESS":
-            required.append("CIN")
-            required.append("AADHAAR")
             if details:
                 for field, verification_type in (("gstin", "GSTIN"), ("pan_number", "PAN")):
                     if str(details.get(field) or "").strip():
@@ -128,6 +124,13 @@ class VerificationService:
                     if value.strip().upper() in VERIFICATION_TYPES
                 )
         return list(dict.fromkeys(required))
+
+    @staticmethod
+    def available_for(employer_type: str, details: dict[str, Any] | None = None) -> list[str]:
+        available = VerificationService.required_for(employer_type, details)
+        if employer_type.upper().strip() in {"REGISTERED_INDUSTRY", "REGISTERED_BUSINESS"}:
+            available.extend(("CIN", "AADHAAR"))
+        return list(dict.fromkeys(available))
 
     @staticmethod
     def list_for_employer(employer_id: str) -> list[dict[str, Any]]:
@@ -378,7 +381,7 @@ class VerificationService:
         if normalized_type not in VERIFICATION_TYPES:
             raise ValueError("Unsupported verification type")
 
-        if normalized_type not in VerificationService.required_for(employer_type, expected_details):
+        if normalized_type not in VerificationService.available_for(employer_type, expected_details):
             raise ValueError("Verification type is not configured for onboarding")
 
         if normalized_type == "GSTIN" and not re.fullmatch(r"[0-9A-Z]{15}", (reference or "").strip().upper()):
