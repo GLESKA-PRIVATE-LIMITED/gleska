@@ -67,6 +67,43 @@ AI/LLM
 
 The backend exposes the employer-protected `POST /api/v1/jobs/nlp` endpoint. Gemini returns structured fields including title, headcount, experience, salary, description, location, job type, skills, gender requirement, timing, accommodation, food, and other requirements. The API key, model, and timeout are configured server-side with `GEMINI_API_KEY`, `GEMINI_MODEL`, and `GEMINI_TIMEOUT_SECONDS`.
 
+## AI Assistant connectors
+
+The Hiring agent (`/employer/dashboard`) and General Work workspace (`/general-work`)
+share a plug-and-play connector system that lets the AI act on external services
+on behalf of the signed-in employer. The provider list, connect/disconnect, and
+OAuth flow live under `/employer/connectors`.
+
+Supported providers (configured per employer, server-side credentials in `.env`):
+
+| Group | Providers | Mechanism |
+|---|---|---|
+| Document intelligence | OCR | Gemini (always on) |
+| Candidate communication | WhatsApp, Gmail, Outlook, LinkedIn | WhatsApp via MSG91 (always on); others OAuth |
+| Scheduling | Google Calendar, Zoom | OAuth |
+| Google Workspace | Drive, Docs, Sheets, Forms | OAuth (same Google client) |
+| Microsoft 365 | Outlook, Teams, Excel/OneDrive | OAuth (shared Microsoft client); Teams also supports webhook |
+| Team notifications | Slack, Microsoft Teams | Slack OAuth; Teams webhook URL |
+| Social media | Facebook, Instagram | OAuth (shared Facebook client) |
+| Developer portfolio | GitHub | Public API (always on) |
+| Accounting | TallyPrime | Local XML server URL |
+
+OAuth tokens are stored in `connector_tokens` (RLS-scoped per employer). Init /
+callback endpoints live at `/api/v1/connectors/oauth/{provider}/init|callback`;
+the browser is redirected to the provider's consent screen and back to
+`/employer/connectors?connected={provider}` on success.
+
+File uploads from the chat go to the private `assistant-uploads` Supabase bucket
+(25 MB cap, extension allowlist). Voice input uses the browser Web Speech API
+for the Hiring chat and the backend `POST /api/v1/general-work/transcribe`
+endpoint for the General Work chat.
+
+Setup migrations:
+- `gleska-backend-f/migrations/connectors_setup.sql` — `connector_tokens` table
+  and `assistant-uploads` bucket.
+- `gleska-website/supabase/migrations/103_general_work_workspace.sql` — General
+  Work projects, conversations, messages, files.
+
 ## Matching/Search
 
 Matching is deterministic business logic, not an LLM feature:

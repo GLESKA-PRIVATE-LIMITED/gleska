@@ -32,10 +32,40 @@ Last verified: 2026-10-31, commit aabb165. Tags: [V path] verified, [A] assumpti
 | Google Routes, Nominatim | Road routing, geocoding | `GOOGLE_ROUTES_*`, `NOMINATIM_*` |
 | OAuth connectors | Google, Microsoft, Slack, Zoom, LinkedIn, Meta, GitHub, Tally (Hiring agent tools) | `connector_tokens` table, provider client vars |
 
+### OAuth connector flow
+Per-employer tokens, stored in `public.connector_tokens` (RLS: an employer only
+reads their own row). One OAuth app per provider family — a single Google client
+covers Gmail/Calendar/Drive/Docs/Sheets/Forms, one Microsoft client covers
+Outlook/Teams/Excel, one Facebook client covers Facebook+Instagram.
+
+Flow:
+1. Frontend calls `GET /api/v1/connectors/oauth/{provider}/init` and the backend
+   returns the provider's `authorize_url` with a signed-state JWT.
+2. Browser is redirected to the provider's consent screen.
+3. Provider redirects to `GET /api/v1/connectors/oauth/{provider}/callback?code=…&state=…`.
+4. Backend verifies the state, exchanges the code for an access token
+   (`oauth_service.exchange_code_for_token`), upserts the row into
+   `connector_tokens`, and 302-redirects to
+   `${FRONTEND_URL}/employer/connectors?connected={provider}`.
+
+Service modules (`gleska-backend-f/app/services/connectors/`) use the stored
+token for each provider call (e.g., `calendar_service.CalendarService.schedule_event`
+reads the employer's Google token before hitting the Calendar v3 API).
+
+Tool definitions in `app/agents/hiring/connector_tools.py` surface each
+connector action to the Hiring agent; destructive actions (email, WhatsApp,
+calendar create, forms create, slack/teams send, social post, zoom create)
+set `confirmation_required=True`.
+
+Redirect URIs must be registered on each provider's console — one URI per
+`provider` id, per environment, e.g.
+`https://gleska.onrender.com/api/v1/connectors/oauth/gmail/callback`. The
+callback host comes from `OAUTH_CALLBACK_BASE_URL`.
+
 ## Employer agents
 | Agent | Route | State |
 |---|---|---|
-| Hiring | `/employer/dashboard` | Implemented (agent runtime + connector tools) |
+| Hiring | `/employer/dashboard` | Implemented (agent runtime + 14 connector tools + file upload + voice-to-text) |
 | Procurement | `/procurement`, `/supplier/*` | Implemented (RFQ, quotations, POs) |
 | Financial | `/financial/*` | Implemented (invoices, scans, audits, receivables, vendors) |
 | General Work | `/general-work/*` | Implemented 2026-10-30 (chat, library, projects, plugins) |
