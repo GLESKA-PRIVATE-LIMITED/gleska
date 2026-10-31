@@ -105,6 +105,9 @@ Baselines (2026-10-31): backend 529 pass / 43 fail / 4 errors; website lint 110 
 - Commit identity: author and committer `gleskapvtltd-oss <gleska.pvt.ltd@gmail.com>`
   (`git -c user.name=gleskapvtltd-oss -c user.email=gleska.pvt.ltd@gmail.com commit …`).
   No `Co-Authored-By: Claude` or session trailers — the owner's explicit instruction overrides defaults.
+  This holds even though GitHub then shows commits as "Unverified" and a stop hook suggests
+  re-authoring as Claude: don't (owner confirmed 2026-10-31). "Verified" as Gleska would need a
+  signing key on the gleskapvtltd-oss account.
 - Review the impact of DB, auth and API changes with the user **before** implementing them.
 - Never run destructive production operations (DROP, TRUNCATE, mass DELETE/UPDATE, db reset,
   deleting buckets/users) without explicit approval.
