@@ -14,6 +14,7 @@ from fastapi import HTTPException
 
 from app.schemas.auth import UserResponse
 from app.services.account_deletion_service import AccountDeletionService
+from app.services.profile_photo_service import PROFILE_PHOTOS_BUCKET
 
 
 def make_user(role="WORKER", user_id="user-123"):
@@ -79,7 +80,7 @@ class FakeSupabaseForDeletion:
         )
         self.storage_buckets = {
             "worker-documents": StorageBucketMock(),
-            "worker-profile-photos": StorageBucketMock(),
+            PROFILE_PHOTOS_BUCKET: StorageBucketMock(),
         }
         self.storage = SimpleNamespace(from_=self.from_)
 
@@ -150,6 +151,23 @@ class TestAccountDeletion(unittest.TestCase):
             self.assertIn("worker-abc", fake.deleted_auth_users)
         finally:
             account_deletion_service.supabase = original_supabase
+
+    def test_profile_photo_removed_from_the_bucket_uploads_use(self):
+        # KI-19: deletion must target the same bucket profile_photo_service writes to.
+        for role in ("WORKER", "EMPLOYER"):
+            user = make_user(role=role, user_id=f"{role.lower()}-photo")
+            fake = FakeSupabaseForDeletion()
+            from app.services import account_deletion_service
+            original_supabase = account_deletion_service.supabase
+            try:
+                account_deletion_service.supabase = fake
+                AccountDeletionService.cleanup_storage_files(user)
+                self.assertEqual(
+                    fake.storage_buckets[PROFILE_PHOTOS_BUCKET].removed_paths,
+                    ["photos/user-123.jpg"],
+                )
+            finally:
+                account_deletion_service.supabase = original_supabase
 
 
 if __name__ == "__main__":

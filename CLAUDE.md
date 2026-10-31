@@ -37,7 +37,7 @@ Full picture: docs/architecture.md.
 | Mobile | `npm run lint`, `npm run build:worker`, `npm run build:employer`, `npm run sync:<target>` | R |
 | Android | `cd mobile/android && ./gradlew assembleWorkerDebug` / `bundleWorkerRelease` (needs Android SDK) | R |
 
-Baselines (2026-10-30, commit aabb165): backend 487 pass / 43 fail / 4 errors; website lint 110 errors,
+Baselines (2026-10-31): backend 488 pass / 43 fail / 4 errors; website lint 110 errors,
 88 warnings; vitest 3 failing (worker location). All failures pre-existing — **compare, don't chase**.
 
 ## 4. Database rules
@@ -108,6 +108,9 @@ Baselines (2026-10-30, commit aabb165): backend 487 pass / 43 fail / 4 errors; w
   docs/known-issues.md → `git status`. Use Grep/Glob for specifics; don't re-audit the repo.
 - **End:** update docs/project-status.md, docs/known-issues.md and ADRs if anything changed.
   Change "Last verified" only for sections you actually re-checked.
+- Enforced by hooks in `.claude/settings.json` (bash + git only): `memory-session-start.sh` lists
+  code changed since the memory was last updated (re-check those areas first);
+  `memory-stop-check.sh` blocks finishing once if code changed but the memory didn't.
 
 ## 11. Docs
 - docs/architecture.md — components, data flow, integrations, environments

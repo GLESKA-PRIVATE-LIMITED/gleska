@@ -8,6 +8,7 @@ from fastapi import HTTPException, status
 
 from app.core.supabase import supabase
 from app.schemas.auth import UserResponse
+from app.services.profile_photo_service import PROFILE_PHOTOS_BUCKET
 
 logger = logging.getLogger(__name__)
 
@@ -99,7 +100,7 @@ class AccountDeletionService:
             )
             if user_row and user_row.data and user_row.data.get("profile_photo_path"):
                 photo_path = user_row.data.get("profile_photo_path")
-                supabase.storage.from_("worker-profile-photos").remove([photo_path])
+                supabase.storage.from_(PROFILE_PHOTOS_BUCKET).remove([photo_path])
         except Exception as exc:
             logger.warning("Storage cleanup for profile photo encountered error: %s", exc)
 

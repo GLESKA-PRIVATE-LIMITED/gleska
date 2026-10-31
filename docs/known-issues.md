@@ -24,7 +24,7 @@ Severity: Critical / High / Medium / Low. Status: Open / Partial / Fixed.
 | KI-16 | Low | Tech debt | Web/mobile code duplicated; files of 2.5–3.6k lines; stray root `package.json` and `mobile/mobile/`; `next-intl` unused. | Open |
 | KI-17 | Info | Tests | Pre-existing failures: backend 43 + 4 errors, vitest 3 (worker location). | Open |
 | KI-18 | Medium | Website routing | `/general-work` missing from post-login allow-list sent employers to `/`. | Fixed — aabb165, test `src/lib/auth-routing.test.ts` |
-| KI-19 | Medium | Account deletion | Deletion removes profile photos from bucket `worker-profile-photos`, but photos are stored in `profile-photos` (`app/services/profile_photo_service.py`), so photos likely survive account deletion (DPDP). Found 2026-10-31. | Open — fix bucket name + test. |
+| KI-19 | Medium | Account deletion | Deletion removes profile photos from bucket `worker-profile-photos`, but photos are stored in `profile-photos` (`app/services/profile_photo_service.py`), so photos survived account deletion (DPDP). | Fixed 2026-10-31 — shared `PROFILE_PHOTOS_BUCKET` constant, test `tests/test_delete_account.py`. Photos of accounts deleted before the fix may still be in the bucket (cleanup needs the owner). |
 
 ## General Work limitations (2026-10-30)
 - Chat answers don't use connectors/plugins; no image generation provider (Library supports
