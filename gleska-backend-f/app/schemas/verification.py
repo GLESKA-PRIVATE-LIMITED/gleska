@@ -21,7 +21,7 @@ class VerificationRequestSchema(BaseModel):
 
 
 class VerificationOTPRequestSchema(BaseModel):
-    otp: str = Field(..., min_length=4, max_length=8)
+    otp: str = Field(..., pattern=r"^[0-9]{6}$")  # UIDAI Aadhaar OTPs are exactly 6 digits
 
 
 class VerificationRecordResponse(BaseModel):

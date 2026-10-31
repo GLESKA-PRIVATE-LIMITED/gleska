@@ -261,14 +261,8 @@ async def test_cashfree_aadhaar_otp_final_verification_uses_ref_id(
     ).startswith(f"{settings.CASHFREE_CLIENT_ID}.")
 
 
-@pytest.mark.asyncio
-async def test_cashfree_aadhaar_otp_converts_legacy_numeric_ref_id_to_integer(monkeypatch):
-    captured = {}
-
-    async def verify_otp(otp, ref_id, expected_details):
-        captured.update(otp=otp, ref_id=ref_id, expected_details=expected_details)
-        return "VERIFIED", None, {}
-
+def _pending_aadhaar_record(monkeypatch, ref_id):
+    saved = {}
     monkeypatch.setattr(
         VerificationService,
         "list_for_employer",
@@ -276,26 +270,113 @@ async def test_cashfree_aadhaar_otp_converts_legacy_numeric_ref_id_to_integer(mo
             {
                 "verification_type": "AADHAAR",
                 "status": "PENDING",
-                "provider_metadata": {"cashfree_ref_id": "85506865"},
+                "provider_metadata": {"cashfree_ref_id": ref_id},
             }
         ],
     )
+
+    def save_state(employer_id, verification_type, status, reason, reference, **kwargs):
+        saved.update(status=status, reason=reason, **kwargs)
+        return {"employer_id": employer_id, "verification_type": verification_type, "status": status}
+
+    monkeypatch.setattr(VerificationService, "_save_state", save_state)
+    return saved
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stored_ref_id", ["85506865", 85506865])
+async def test_cashfree_aadhaar_otp_sends_ref_id_back_unchanged(monkeypatch, stored_ref_id):
+    # Production stores Cashfree's ref_id as the JSON string it returned; converting it to an
+    # integer made Cashfree answer "Bad request, please check API documentation" (validation_error).
+    captured = {}
+
+    async def verify_otp(otp, ref_id, expected_details):
+        captured.update(otp=otp, ref_id=ref_id)
+        return "VERIFIED", None, {"status": "VALID"}
+
+    saved = _pending_aadhaar_record(monkeypatch, stored_ref_id)
     monkeypatch.setattr(VerificationService, "_verify_cashfree_aadhaar_otp", verify_otp)
-    monkeypatch.setattr(
-        VerificationService,
-        "_save_state",
-        lambda employer_id, verification_type, status, reason, reference, **kwargs: {
-            "employer_id": employer_id,
-            "verification_type": verification_type,
-            "status": status,
-        },
-    )
 
     result = await VerificationService.verify_aadhaar_otp("employer-id", "123456", {})
 
     assert result["status"] == "VERIFIED"
-    assert captured["otp"] == "123456"
-    assert captured["ref_id"] == 85506865
+    assert captured == {"otp": "123456", "ref_id": stored_ref_id}
+    assert type(captured["ref_id"]) is type(stored_ref_id)
+    assert saved["provider_metadata"]["cashfree_ref_id"] == stored_ref_id
+
+
+@pytest.mark.asyncio
+async def test_cashfree_aadhaar_string_ref_id_round_trips_from_otp_request_to_verification(monkeypatch):
+    monkeypatch.setattr(settings, "EMPLOYER_VERIFICATION_PROVIDER", "cashfree")
+    monkeypatch.setattr(settings, "CASHFREE_CLIENT_ID", "client")
+    monkeypatch.setattr(settings, "CASHFREE_CLIENT_SECRET", "secret")
+    calls = []
+    otp_response = SimpleNamespace(
+        status_code=200,
+        content=b"{}",
+        json=lambda: {"status": "SUCCESS", "message": "OTP sent successfully", "ref_id": "85506865"},
+    )
+    monkeypatch.setattr(verification_service.httpx, "AsyncClient", lambda **kwargs: FakeClient(otp_response, calls))
+    _, _, metadata, _ = await VerificationService._verify_cashfree_identifier("AADHAAR", "123456789012", {})
+
+    verify_response = SimpleNamespace(status_code=200, content=b"{}", json=lambda: {"status": "VALID"})
+    monkeypatch.setattr(verification_service.httpx, "AsyncClient", lambda **kwargs: FakeClient(verify_response, calls))
+    await VerificationService._verify_cashfree_aadhaar_otp("123456", metadata["cashfree_ref_id"], {})
+
+    assert calls[1][1]["json"] == {"otp": "123456", "ref_id": "85506865"}
+
+
+@pytest.mark.asyncio
+async def test_cashfree_aadhaar_otp_validation_error_is_logged_and_keeps_ref_id(monkeypatch, caplog):
+    response = SimpleNamespace(
+        status_code=400,
+        content=b"{}",
+        json=lambda: {
+            "type": "validation_error",
+            "code": "Bad request, please check API documentation",
+            "message": "Bad request, please check API documentation",
+        },
+    )
+    monkeypatch.setattr(verification_service.httpx, "AsyncClient", lambda **kwargs: FakeClient(response, []))
+    saved = _pending_aadhaar_record(monkeypatch, "85506865")
+
+    with caplog.at_level("ERROR", logger=verification_service.logger.name):
+        await VerificationService.verify_aadhaar_otp("employer-id", "123456", {})
+
+    assert saved["status"] == "FAILED"
+    assert saved["reason"] == "Bad request, please check API documentation"
+    assert saved["provider_metadata"]["http_status"] == 400
+    assert saved["provider_metadata"]["type"] == "validation_error"
+    assert saved["provider_metadata"]["cashfree_ref_id"] == "85506865"
+    log = "\n".join(record.getMessage() for record in caplog.records)
+    assert "status=400" in log and "type=validation_error" in log
+    assert "123456" not in log and "85506865" not in log
+
+
+@pytest.mark.asyncio
+async def test_cashfree_aadhaar_otp_timeout_stays_pending_with_ref_id(monkeypatch):
+    class TimeoutClient(FakeClient):
+        async def post(self, *args, **kwargs):
+            raise httpx.TimeoutException("timed out")
+
+    monkeypatch.setattr(verification_service.httpx, "AsyncClient", lambda **kwargs: TimeoutClient(None))
+    saved = _pending_aadhaar_record(monkeypatch, "85506865")
+
+    await VerificationService.verify_aadhaar_otp("employer-id", "123456", {})
+
+    assert (saved["status"], saved["reason"]) == ("PENDING", VerificationService.CASHFREE_TIMEOUT)
+    assert saved["provider_metadata"] == {"cashfree_ref_id": "85506865"}
+
+
+@pytest.mark.parametrize("otp", ["12345", "1234567", "12a456", "", " 123456"])
+def test_aadhaar_otp_request_requires_six_digits(otp):
+    from pydantic import ValidationError
+
+    from app.schemas.verification import VerificationOTPRequestSchema
+
+    with pytest.raises(ValidationError):
+        VerificationOTPRequestSchema(otp=otp)
+    assert VerificationOTPRequestSchema(otp="123456").otp == "123456"
 
 
 @pytest.mark.asyncio

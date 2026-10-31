@@ -1106,7 +1106,7 @@ export default function EmployerOnboarding() {
   };
 
   const handleVerifyAadhaarOtp = async () => {
-    if (isSubmitting || isAnimating || !aadhaarOtp.trim()) return;
+    if (isSubmitting || isAnimating || !/^\d{6}$/.test(aadhaarOtp)) return;
     setIsSubmitting(true);
     setFormError("");
     try {
@@ -1972,7 +1972,7 @@ export default function EmployerOnboarding() {
                                       <div className="flex items-center gap-2">
                                         <input
                                           value={aadhaarOtp}
-                                          onChange={(event: React.ChangeEvent<HTMLInputElement>) => setAadhaarOtp(event.target.value.replace(/\D/g, "").slice(0, 8))}
+                                          onChange={(event: React.ChangeEvent<HTMLInputElement>) => setAadhaarOtp(event.target.value.replace(/\D/g, "").slice(0, 6))}
                                           inputMode="numeric"
                                           autoComplete="one-time-code"
                                           placeholder="OTP"
@@ -1982,7 +1982,7 @@ export default function EmployerOnboarding() {
                                         <button
                                           type="button"
                                           onClick={handleVerifyAadhaarOtp}
-                                          disabled={isSubmitting || !aadhaarOtp.trim()}
+                                          disabled={isSubmitting || !/^\d{6}$/.test(aadhaarOtp)}
                                           className="inline-flex items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 px-3.5 py-2 text-xs font-bold text-blue-700 disabled:opacity-50 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-300"
                                         >
                                           <ShieldCheck size={14} /> Verify OTP
@@ -2097,7 +2097,7 @@ export default function EmployerOnboarding() {
                                       <div className="flex items-center gap-2">
                                         <input
                                           value={aadhaarOtp}
-                                          onChange={(event: React.ChangeEvent<HTMLInputElement>) => setAadhaarOtp(event.target.value.replace(/\D/g, "").slice(0, 8))}
+                                          onChange={(event: React.ChangeEvent<HTMLInputElement>) => setAadhaarOtp(event.target.value.replace(/\D/g, "").slice(0, 6))}
                                           inputMode="numeric"
                                           autoComplete="one-time-code"
                                           placeholder="OTP"
@@ -2107,7 +2107,7 @@ export default function EmployerOnboarding() {
                                         <button
                                           type="button"
                                           onClick={handleVerifyAadhaarOtp}
-                                          disabled={isSubmitting || !aadhaarOtp.trim()}
+                                          disabled={isSubmitting || !/^\d{6}$/.test(aadhaarOtp)}
                                           className="inline-flex items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 px-3.5 py-2 text-xs font-bold text-blue-700 disabled:opacity-50 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-300"
                                         >
                                           <ShieldCheck size={14} /> Verify OTP
@@ -2182,7 +2182,7 @@ export default function EmployerOnboarding() {
                                       <div className="flex items-center gap-2">
                                         <input
                                           value={aadhaarOtp}
-                                          onChange={(event: React.ChangeEvent<HTMLInputElement>) => setAadhaarOtp(event.target.value.replace(/\D/g, "").slice(0, 8))}
+                                          onChange={(event: React.ChangeEvent<HTMLInputElement>) => setAadhaarOtp(event.target.value.replace(/\D/g, "").slice(0, 6))}
                                           inputMode="numeric"
                                           autoComplete="one-time-code"
                                           placeholder="OTP"
@@ -2192,7 +2192,7 @@ export default function EmployerOnboarding() {
                                         <button
                                           type="button"
                                           onClick={handleVerifyAadhaarOtp}
-                                          disabled={isSubmitting || !aadhaarOtp.trim()}
+                                          disabled={isSubmitting || !/^\d{6}$/.test(aadhaarOtp)}
                                           className="inline-flex items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 px-3.5 py-2 text-xs font-bold text-blue-700 disabled:opacity-50 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-300"
                                         >
                                           <ShieldCheck size={14} /> Verify OTP
