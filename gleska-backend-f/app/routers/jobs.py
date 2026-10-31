@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 import logging
 from uuid import UUID, uuid4
 
+from app.ai_gateway import AIBillingError, billing_scope
 from app.core.security import require_employer
 from app.core.supabase import supabase
 from app.schemas.auth import UserResponse
@@ -334,9 +335,9 @@ async def extract_job_requirements(
     user: UserResponse = Depends(require_employer),
 ):
     """Extract job requirements without persisting or dispatching a job yet."""
-    del user
     try:
-        extraction = await GeminiService.extract_job_requirements(request.prompt)
+        with billing_scope(agent="hiring", user_id=user.id):
+            extraction = await GeminiService.extract_job_requirements(request.prompt)
     except GeminiConfigurationError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
     except GeminiProviderError as exc:
@@ -365,6 +366,8 @@ async def process_assistant_message(
         return await JobAssistantService.process_message(user, request)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except AIBillingError:
+        raise
     except Exception as exc:
         logger.exception("Assistant message processing failed: user_id=%s", user.id)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="ASSISTANT_PROCESSING_FAILED") from exc

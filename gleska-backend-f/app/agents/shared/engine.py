@@ -10,6 +10,7 @@ from uuid import uuid4
 from pydantic import ValidationError
 from pydantic_core import to_jsonable_python
 
+from app.ai_gateway import AIBillingError
 from app.agents.shared.authorization import authorize_agent_context
 from app.agents.shared.contracts import AgentDefinition, AgentExecutionContext
 from app.agents.shared.observability import AgentObserver, NoopObserver
@@ -333,6 +334,14 @@ class AgentRuntime:
                     record,
                     code,
                     "The language model could not complete the request.",
+                )
+            except AIBillingError as exc:
+                return self._fail_task(
+                    record,
+                    exc.code,
+                    "You don't have enough Gleska credits for this request. Add credits in Billing Management."
+                    if exc.code == "INSUFFICIENT_CREDITS"
+                    else "AI usage can't be billed right now, so the request wasn't sent.",
                 )
             except (ValidationError, TypeError, ValueError):
                 return self._fail_task(

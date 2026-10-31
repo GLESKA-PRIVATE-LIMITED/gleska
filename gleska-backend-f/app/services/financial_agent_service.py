@@ -4,6 +4,7 @@ import logging
 from typing import Any
 from uuid import UUID, uuid4
 
+from app.ai_gateway.context import billed_entry
 from app.agents.financial.tools import LIST_FINANCIAL_INVOICES_TOOL
 from app.agents.shared.contracts import AgentExecutionContext
 from app.agents.shared.engine import AgentRuntime
@@ -196,6 +197,7 @@ class FinancialAgentService:
             raise FinancialAgentError("FINANCIAL_AGENT_HISTORY_LOAD_FAILED") from exc
 
     @classmethod
+    @billed_entry(agent="financial")
     async def send_message(
         cls,
         user: UserResponse,

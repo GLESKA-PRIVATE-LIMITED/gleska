@@ -11,6 +11,10 @@ Read the root CLAUDE.md first. Commands and baselines are in its §3.
   tool registry; in-memory state). Used by the Hiring agent; financial partly; logistics,
   procurement and tender agent folders are empty stubs.
 - `app/services/connectors/` — OAuth/API connectors used as Hiring-agent tools.
+- `app/ai_gateway/` — **the only LLM entry point** (ADR 0007): `context.py` (billing scope,
+  `@billed_entry`), `pricing.py` (Decimal pricing engine), `providers/gemini.py` (only module that
+  knows the Gemini host/key), `backend.py` (Supabase + money SQL functions), `gateway.py` (lifecycle).
+  Tests get an in-memory billing backend from `tests/conftest.py`.
 - `tests/` — pytest, one file per area; fakes replace the Supabase client (see `test_general_work.py`
   for a reusable in-memory `FakeSupabase` with filters, inserts, updates, storage).
 

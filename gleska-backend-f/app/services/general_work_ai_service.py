@@ -12,12 +12,12 @@ from typing import Any
 
 import httpx
 
+from app import ai_gateway
+from app.ai_gateway.providers import gemini
 from app.core.config import settings
 from app.services.connectors.spreadsheet_service import SpreadsheetService
 
 logger = logging.getLogger(__name__)
-
-GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
 # Gemini inline request payloads are limited to roughly 20 MB; keep headroom for text.
 MAX_INLINE_BYTES = 15 * 1024 * 1024
@@ -66,13 +66,11 @@ class HistoryTurn:
     content: str
 
 
-def _gemini_config() -> tuple[str, str, int]:
-    api_key = settings.GEMINI_API_KEY.strip()
-    model = settings.GEMINI_MODEL.strip()
+def _gemini_timeout() -> int:
     timeout = settings.GEMINI_TIMEOUT_SECONDS
-    if not api_key or not model or timeout <= 0:
+    if not gemini.is_configured() or timeout <= 0:
         raise GeneralWorkAIError("AI_NOT_CONFIGURED")
-    return api_key, model, timeout
+    return timeout
 
 
 def _truncate(text: str) -> str:
@@ -156,15 +154,12 @@ def _response_text(body: dict[str, Any]) -> str:
     return "".join(part.get("text", "") for part in parts if isinstance(part, dict)).strip()
 
 
-async def _generate(payload: dict[str, Any], timeout_override: int | None = None) -> str:
-    api_key, model, timeout = _gemini_config()
+async def _generate(payload: dict[str, Any], operation: str, input_size_hint_bytes: int = 0) -> str:
+    timeout = _gemini_timeout()
     try:
-        async with httpx.AsyncClient(timeout=timeout_override or timeout) as client:
-            response = await client.post(
-                GEMINI_ENDPOINT.format(model=model),
-                headers={"x-goog-api-key": api_key, "content-type": "application/json"},
-                json=payload,
-            )
+        response = await ai_gateway.generate_content(
+            payload, operation=operation, timeout=timeout, input_size_hint_bytes=input_size_hint_bytes
+        )
     except httpx.TimeoutException as exc:
         raise GeneralWorkAIError("AI_TIMEOUT") from exc
     except httpx.HTTPError as exc:
@@ -208,7 +203,7 @@ class GeneralWorkAIService:
             "system_instruction": {"parts": [{"text": SYSTEM_INSTRUCTION}]},
             "contents": contents,
             "generationConfig": {"temperature": 0.6},
-        })
+        }, operation="chat_reply")
         if not text:
             raise GeneralWorkAIError("AI_EMPTY_RESPONSE")
         return text
@@ -224,4 +219,4 @@ class GeneralWorkAIService:
                 ],
             }],
             "generationConfig": {"temperature": 0},
-        })
+        }, operation="voice_transcription")

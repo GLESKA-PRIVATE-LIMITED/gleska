@@ -6,6 +6,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
+from app.ai_gateway import AIBillingError, billing_scope
 from app.core.security import get_current_user, require_employer
 from app.schemas.auth import UserResponse
 from app.schemas.procurement import (
@@ -566,7 +567,10 @@ async def send_procurement_message(
     user: UserResponse = Depends(require_employer),
 ):
     try:
-        return await ProcurementService.process_message(user, conversation_id, request)
+        with billing_scope(agent="procurement", user_id=user.id, conversation_id=str(conversation_id)):
+            return await ProcurementService.process_message(user, conversation_id, request)
+    except AIBillingError:
+        raise
     except Exception as exc:
         if isinstance(exc, ProcurementServiceError) or isinstance(exc, PermissionError):
             _raise_procurement_error(exc)

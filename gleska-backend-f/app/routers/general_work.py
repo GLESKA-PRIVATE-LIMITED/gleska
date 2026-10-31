@@ -6,6 +6,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 
+from app.ai_gateway import billing_scope
 from app.core.security import require_employer
 from app.schemas.auth import UserResponse
 from app.schemas.general_work import (
@@ -36,10 +37,13 @@ from app.services.general_work_service import (
 )
 
 router = APIRouter(prefix="/general-work", tags=["general-work"])
+AGENT = "general_work"
 logger = logging.getLogger(__name__)
 
 
 def _raise_for(exc: Exception, fallback: str) -> None:
+    if isinstance(exc, HTTPException):
+        raise exc
     if isinstance(exc, GeneralWorkNotFound):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     if isinstance(exc, GeneralWorkValidationError):
@@ -127,7 +131,8 @@ async def send_message(
     user: UserResponse = Depends(require_employer),
 ):
     try:
-        return await GeneralWorkService.send_message(user, conversation_id, payload)
+        with billing_scope(agent=AGENT, user_id=user.id, conversation_id=str(conversation_id)):
+            return await GeneralWorkService.send_message(user, conversation_id, payload)
     except Exception as exc:
         _raise_for(exc, "MESSAGE_SEND_FAILED")
 
@@ -230,7 +235,8 @@ async def transcribe(audio: UploadFile = File(...), user: UserResponse = Depends
     content = await _read_limited(audio, MAX_AUDIO_BYTES)
     try:
         mime_type = validate_audio(audio.content_type, content)
-        text = await GeneralWorkAIService.transcribe(content, mime_type)
+        with billing_scope(agent=AGENT, user_id=user.id):
+            text = await GeneralWorkAIService.transcribe(content, mime_type)
     except GeneralWorkAIError as exc:
         logger.warning("General Work transcription failed: code=%s user_id=%s", exc.code, user.id)
         code = status.HTTP_503_SERVICE_UNAVAILABLE if exc.code == "AI_NOT_CONFIGURED" else status.HTTP_502_BAD_GATEWAY

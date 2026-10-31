@@ -8,6 +8,7 @@ import re
 from typing import Any
 from uuid import UUID, uuid4
 
+from app.ai_gateway.providers import gemini
 from app.core.config import settings
 from app.core.supabase import supabase
 from app.schemas.auth import UserResponse
@@ -289,9 +290,9 @@ class FinancialService:
 
     @staticmethod
     def _financial_settings_response(row: dict[str, Any]) -> FinancialSettings:
-        model = settings.GEMINI_MODEL.strip()
+        model = gemini.default_model()
         configured = bool(
-            settings.GEMINI_API_KEY.strip()
+            gemini.api_key()
             and model
             and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}", model)
             and settings.FINANCIAL_SCAN_GEMINI_TIMEOUT_SECONDS > 0

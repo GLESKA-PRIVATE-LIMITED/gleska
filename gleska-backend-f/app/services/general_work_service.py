@@ -13,6 +13,7 @@ from typing import Any
 from urllib.parse import quote
 from uuid import UUID, uuid4
 
+from app.ai_gateway import AIBillingError
 from app.core.supabase import supabase
 from app.schemas.auth import UserResponse
 from app.schemas.general_work import (
@@ -72,6 +73,11 @@ AI_ERROR_MESSAGES = {
     "AI_TIMEOUT": "The AI service took too long to respond. Please try again.",
 }
 DEFAULT_AI_ERROR_MESSAGE = "I couldn't generate a response right now. Please try again."
+BILLING_ERROR_MESSAGES = {
+    "INSUFFICIENT_CREDITS": "You don't have enough Gleska credits for this request. Add credits in Billing Management and try again.",
+    "BILLING_ACCOUNT_SUSPENDED": "Your billing account is suspended. Please contact Gleska support.",
+}
+DEFAULT_BILLING_ERROR_MESSAGE = "AI usage can't be billed right now, so the request wasn't sent. Please try again later."
 
 
 class GeneralWorkNotFound(Exception):
@@ -606,6 +612,9 @@ class GeneralWorkService:
         except GeneralWorkAIError as exc:
             logger.warning("General Work AI reply failed: code=%s user_id=%s", exc.code, user.id)
             return AI_ERROR_MESSAGES.get(exc.code, DEFAULT_AI_ERROR_MESSAGE), "failed"
+        except AIBillingError as exc:
+            logger.warning("General Work AI reply not billed: code=%s user_id=%s", exc.code, user.id)
+            return BILLING_ERROR_MESSAGES.get(exc.code, DEFAULT_BILLING_ERROR_MESSAGE), "failed"
 
     @classmethod
     async def send_message(

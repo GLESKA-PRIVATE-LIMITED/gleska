@@ -10,6 +10,9 @@ from typing import Any
 
 import httpx
 
+from app import ai_gateway
+from app.ai_gateway import AIBillingError
+from app.ai_gateway.providers import gemini
 from app.core.config import settings
 from app.core.supabase import supabase
 
@@ -133,9 +136,7 @@ class OCRService:
         analysis_intent: str,
         employer_id: str,
     ) -> dict[str, Any]:
-        api_key = settings.GEMINI_API_KEY.strip()
-        model = settings.GEMINI_MODEL.strip()
-        if not api_key or not model:
+        if not gemini.is_configured():
             return {
                 "extracted_text": "",
                 "structured_data": {},
@@ -183,16 +184,12 @@ class OCRService:
             },
         }
 
-        endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
         timeout = settings.FINANCIAL_SCAN_GEMINI_TIMEOUT_SECONDS
 
         try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                resp = await client.post(
-                    endpoint,
-                    headers={"x-goog-api-key": api_key, "content-type": "application/json"},
-                    json=payload,
-                )
+            resp = await ai_gateway.generate_content(
+                payload, operation="document_analysis", timeout=timeout, input_size_hint_bytes=len(file_bytes)
+            )
 
             if resp.status_code >= 400:
                 logger.error("Gemini OCR failed: status=%d", resp.status_code)
@@ -213,6 +210,15 @@ class OCRService:
                 "structured_data": result.get("structured_data") or {},
                 "document_type": str(result.get("document_type", ext.lstrip("."))),
                 "confidence": float(result.get("confidence", 0.8)),
+            }
+        except AIBillingError as exc:
+            # A tool result, so the agent can explain it; the billing refusal is already recorded.
+            return {
+                "extracted_text": "",
+                "structured_data": {},
+                "document_type": ext.lstrip("."),
+                "confidence": 0.0,
+                "error": f"Document analysis was not run: {exc.code}.",
             }
         except Exception:
             logger.exception("Gemini OCR processing error for file: %s", file_key)

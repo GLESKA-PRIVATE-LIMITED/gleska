@@ -12,6 +12,7 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
+from app.ai_gateway.context import billed_entry
 from app.agents.hiring.tools import DISCOVER_CANDIDATES_TOOL
 from app.agents.hiring.connector_tools import (
     ANALYZE_DOCUMENT_TOOL,
@@ -763,6 +764,7 @@ class HiringAgentService:
         return next_revision
 
     @classmethod
+    @billed_entry(agent="hiring")
     async def process_message(
         cls,
         user: UserResponse,

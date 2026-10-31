@@ -37,11 +37,11 @@ Full picture: docs/architecture.md.
 | Mobile | `npm run lint`, `npm run build:worker`, `npm run build:employer`, `npm run sync:<target>` | R |
 | Android | `cd mobile/android && ./gradlew assembleWorkerDebug` / `bundleWorkerRelease` (needs Android SDK) | R |
 
-Baselines (2026-10-31): backend 498 pass / 43 fail / 4 errors; website lint 110 errors,
+Baselines (2026-10-31): backend 521 pass / 43 fail / 4 errors; website lint 110 errors,
 88 warnings; vitest 3 failing (worker location). All failures pre-existing — **compare, don't chase**.
 
 ## 4. Database rules
-- Schema lives only in `gleska-website/supabase/migrations/NNN_name.sql`; next free number = 104.
+- Schema lives only in `gleska-website/supabase/migrations/NNN_name.sql`; next free number = 105.
   (`gleska-backend-f/migrations/connectors_setup.sql` is a legacy exception — don't add more there.)
 - Forward-only: never edit or delete an applied migration; add a new one. Idempotent DDL
   (`IF NOT EXISTS`, `DROP POLICY IF EXISTS`), wrapped in `BEGIN; … COMMIT;`.
@@ -85,6 +85,10 @@ Baselines (2026-10-31): backend 498 pass / 43 fail / 4 errors; website lint 110 
 - Logging: `logging.getLogger(__name__)`, no secrets/tokens/PII. Minimise personal data (India DPDP Act).
 - AI (Gemini): send no unnecessary PII; treat model output and file contents as untrusted;
   render model Markdown without raw HTML.
+- **Every LLM call goes through `app.ai_gateway.generate_content` inside a billing scope**
+  (`billing_scope` / `@billed_entry`); only `app/ai_gateway/providers/` may touch the Gemini host or
+  key (enforced by `tests/test_ai_gateway.py`). Billing refusals are `AIBillingError` (an
+  `HTTPException`) — never swallow them. Money moves only via the SQL functions in migration 104.
 
 ## 8. Definition of done
 1. `git status` checked at start; unrelated user changes preserved.

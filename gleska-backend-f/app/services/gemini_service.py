@@ -7,6 +7,8 @@ from typing import Any
 
 import httpx
 
+from app import ai_gateway
+from app.ai_gateway.providers import gemini
 from app.core.config import settings
 from app.schemas.job_extraction import JobExtraction, MAX_JOB_PROMPT_LENGTH
 
@@ -83,8 +85,7 @@ class GeminiService:
         normalized_prompt = prompt.strip()
         if not normalized_prompt or len(normalized_prompt) > MAX_JOB_PROMPT_LENGTH:
             raise ValueError("JOB_PROMPT_INVALID")
-        api_key = settings.GEMINI_API_KEY.strip()
-        if not api_key:
+        if not gemini.api_key():
             raise GeminiConfigurationError("GEMINI_CONFIGURATION_ERROR")
         model = cls._model_name()
         timeout = settings.GEMINI_TIMEOUT_SECONDS
@@ -100,14 +101,10 @@ class GeminiService:
                 "responseSchema": cls._schema(),
             },
         }
-        endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
         try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                response = await client.post(
-                    endpoint,
-                    headers={"x-goog-api-key": api_key, "content-type": "application/json"},
-                    json=payload,
-                )
+            response = await ai_gateway.generate_content(
+                payload, operation="job_extraction", timeout=timeout, model=model
+            )
         except httpx.TimeoutException as exc:
             logger.exception("Gemini request timed out for model=%s timeout_seconds=%s", model, timeout)
             raise GeminiProviderError("GEMINI_TIMEOUT") from exc

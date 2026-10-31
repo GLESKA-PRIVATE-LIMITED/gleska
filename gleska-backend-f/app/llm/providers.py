@@ -10,6 +10,8 @@ from pydantic import ValidationError
 from pydantic_core import to_jsonable_python
 
 from app.agents.shared.runtime import AgentLLMRequest, StructuredAgentResponse
+from app import ai_gateway
+from app.ai_gateway.providers import gemini
 from app.core.config import settings
 from app.services.gemini_service import GeminiService
 
@@ -49,10 +51,9 @@ class GeminiLLMProvider:
         self,
         request: AgentLLMRequest,
     ) -> StructuredAgentResponse:
-        api_key = settings.GEMINI_API_KEY.strip()
-        model = settings.GEMINI_MODEL.strip()
         timeout = settings.GEMINI_TIMEOUT_SECONDS
-        if not api_key or not model or timeout <= 0:
+        model = gemini.default_model()
+        if not gemini.is_configured() or timeout <= 0:
             raise LLMProviderError("LLM_CONFIGURATION_ERROR")
 
         payload = {
@@ -96,14 +97,8 @@ class GeminiLLMProvider:
                 "responseMimeType": "application/json",
             },
         }
-        endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
         try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                response = await client.post(
-                    endpoint,
-                    headers={"x-goog-api-key": api_key, "content-type": "application/json"},
-                    json=payload,
-                )
+            response = await ai_gateway.generate_content(payload, operation="agent_turn", timeout=timeout)
         except httpx.TimeoutException as exc:
             raise LLMProviderError("LLM_TIMEOUT") from exc
         except httpx.HTTPError as exc:

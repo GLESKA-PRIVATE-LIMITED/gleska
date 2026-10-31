@@ -15,6 +15,10 @@ from uuid import UUID
 import httpx
 from pydantic import BaseModel, Field, ValidationError
 
+from app import ai_gateway
+from app.ai_gateway.context import billed_entry
+from app.ai_gateway import AIBillingError
+from app.ai_gateway.providers import gemini
 from app.core.config import settings
 from app.core.supabase import supabase
 from app.schemas.auth import UserResponse
@@ -420,9 +424,7 @@ class JobAssistantService:
         history: list[dict[str, Any]],
     ) -> dict[str, Any]:
         """Calls Gemini to interpret user message in context of current state."""
-        api_key = settings.GEMINI_API_KEY.strip()
-        model = settings.GEMINI_MODEL.strip()
-        if not api_key or not model:
+        if not gemini.is_configured():
             return cls._fallback_rule_extractor(message, current_state, language, history)
 
         user_content = (
@@ -440,14 +442,10 @@ class JobAssistantService:
                 "responseSchema": cls._gemini_schema(),
             },
         }
-        endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
         try:
-            async with httpx.AsyncClient(timeout=settings.GEMINI_TIMEOUT_SECONDS) as client:
-                response = await client.post(
-                    endpoint,
-                    headers={"x-goog-api-key": api_key, "content-type": "application/json"},
-                    json=payload,
-                )
+            response = await ai_gateway.generate_content(
+                payload, operation="job_assistant_turn", timeout=settings.GEMINI_TIMEOUT_SECONDS
+            )
             if response.status_code == 200:
                 body = response.json()
                 raw_text = body["candidates"][0]["content"]["parts"][0]["text"]
@@ -457,6 +455,8 @@ class JobAssistantService:
                 logger.info("Assistant interpretation succeeded: language=%s", language)
                 return result
             logger.warning("Gemini assistant interpretation returned status %s; using fallback extractor", response.status_code)
+        except AIBillingError:
+            raise
         except (KeyError, IndexError, TypeError, json.JSONDecodeError, ValidationError) as exc:
             logger.warning("Gemini assistant returned malformed output (%s), using fallback extractor", exc)
         except Exception as exc:
@@ -479,9 +479,7 @@ class JobAssistantService:
         ambiguity_notes: list[str],
         owned_sites: list[dict[str, Any]],
     ) -> str | None:
-        api_key = settings.GEMINI_API_KEY.strip()
-        model = settings.GEMINI_MODEL.strip()
-        if not api_key or not model:
+        if not gemini.is_configured():
             return None
 
         site_context = [
@@ -524,19 +522,17 @@ class JobAssistantService:
             ambiguity_notes,
             payload,
         )
-        endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
         try:
-            async with httpx.AsyncClient(timeout=settings.GEMINI_TIMEOUT_SECONDS) as client:
-                response = await client.post(
-                    endpoint,
-                    headers={"x-goog-api-key": api_key, "content-type": "application/json"},
-                    json=payload,
-                )
+            response = await ai_gateway.generate_content(
+                payload, operation="job_assistant_final", timeout=settings.GEMINI_TIMEOUT_SECONDS
+            )
             body = response.json() if response.status_code == 200 else {}
             raw_text = body["candidates"][0]["content"]["parts"][0]["text"]
             final = _GeminiFinalResponse.model_validate(json.loads(raw_text))
             logger.info("Assistant final response succeeded: language=%s response=%s", language, final.assistant_message)
             return final.assistant_message.strip()
+        except AIBillingError:
+            raise
         except (KeyError, IndexError, TypeError, json.JSONDecodeError, ValidationError) as exc:
             logger.warning("Gemini final response was malformed; using safe fallback: %s", exc)
         except Exception as exc:
@@ -955,6 +951,7 @@ class JobAssistantService:
         return False, None
 
     @classmethod
+    @billed_entry(agent="hiring")
     async def process_message(
         cls,
         user: UserResponse,
@@ -1290,7 +1287,7 @@ class JobAssistantService:
         # 6. Use the model for the normal conversational response after validation.
         ambiguity_notes = [str(item.get("note")) for item in ambiguous if item.get("note")]
         assistant_message = None
-        if settings.GEMINI_API_KEY.strip() and settings.GEMINI_MODEL.strip():
+        if gemini.is_configured():
             assistant_message = await cls._call_final_gemini(
                 request.message,
                 state,

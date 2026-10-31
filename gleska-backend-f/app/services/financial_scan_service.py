@@ -16,6 +16,10 @@ from xml.etree import ElementTree
 
 import httpx
 
+from app import ai_gateway
+from app.ai_gateway import AIBillingError
+from app.ai_gateway.context import billed_entry
+from app.ai_gateway.providers import gemini
 from app.core.config import settings
 from app.core.supabase import supabase
 from app.schemas.auth import UserResponse
@@ -499,6 +503,7 @@ class FinancialScanService:
             raise FinancialScanError("SCAN_SUBMIT_FAILED") from exc
 
     @classmethod
+    @billed_entry(agent="financial", user_arg="user_id")
     async def process_scan(cls, scan_id: str, user_id: str, employer_id: str) -> None:
         processing_started = time.monotonic()
         stage = "scan_lookup"
@@ -521,7 +526,7 @@ class FinancialScanService:
                 .eq("status", "QUEUED").select("*").execute())
             if not claimed:
                 return
-            if not settings.GEMINI_API_KEY.strip():
+            if not gemini.api_key():
                 raise FinancialScanError("OCR_PROVIDER_NOT_CONFIGURED", 503)
             stage = "private_storage_download"
             content = supabase.storage.from_(SCAN_BUCKET).download(row["storage_path"])
@@ -571,7 +576,11 @@ class FinancialScanService:
                     scan_id,
                 )
                 return
-            code = str(exc) if isinstance(exc, FinancialScanError) else "SCAN_PROCESSING_FAILED"
+            code = (
+                str(exc) if isinstance(exc, FinancialScanError)
+                else exc.code if isinstance(exc, AIBillingError)
+                else "SCAN_PROCESSING_FAILED"
+            )
             error_stage = (
                 exc.stage if isinstance(exc, FinancialScanError) and exc.stage else stage
             )
@@ -622,8 +631,8 @@ class FinancialScanService:
         text: str,
         scan_id: str,
     ) -> dict[str, Any]:
-        api_key = settings.GEMINI_API_KEY.strip()
-        model = settings.GEMINI_MODEL.strip()
+        api_key = gemini.api_key()
+        model = gemini.default_model()
         if not api_key or not model or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}", model):
             raise FinancialScanError("OCR_PROVIDER_NOT_CONFIGURED", 503)
         if mime_type == "image/svg+xml":
@@ -694,7 +703,6 @@ class FinancialScanService:
         scan_id: str,
         attempt: int,
     ) -> dict[str, Any]:
-        endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
         uploaded_file_name = None
 
         async def provider_request(
@@ -706,7 +714,16 @@ class FinancialScanService:
         ) -> httpx.Response:
             request_started = time.monotonic()
             try:
-                if method == "GET":
+                if request_stage == "generate_content":
+                    # Billed through the central AI gateway; the scan keeps its own logging and errors.
+                    response = await ai_gateway.generate_content(
+                        kwargs["json"],
+                        operation="invoice_scan",
+                        model=model,
+                        timeout=timeout,
+                        input_size_hint_bytes=len(content) if attach_document else 0,
+                    )
+                elif method == "GET":
                     response = await client.get(url, **kwargs)
                 else:
                     response = await client.post(url, **kwargs)
@@ -794,7 +811,7 @@ class FinancialScanService:
                             client,
                             "POST",
                             "file_upload_start",
-                            "https://generativelanguage.googleapis.com/upload/v1beta/files",
+                            gemini.files_upload_url(),
                             headers={
                                 "x-goog-api-key": api_key,
                                 "X-Goog-Upload-Protocol": "resumable",
@@ -859,7 +876,7 @@ class FinancialScanService:
                                 client,
                                 "GET",
                                 "file_processing_poll",
-                                f"https://generativelanguage.googleapis.com/v1beta/{uploaded_file_name}",
+                                gemini.file_url(uploaded_file_name),
                                 headers={"x-goog-api-key": api_key},
                                 timeout=min(timeout, 15),
                             )
@@ -906,8 +923,7 @@ class FinancialScanService:
                     client,
                     "POST",
                     "generate_content",
-                    endpoint,
-                    headers={"x-goog-api-key": api_key, "content-type": "application/json"},
+                    "",
                     json=payload,
                 )
                 ensure_provider_success(response, "generate_content")
@@ -917,7 +933,7 @@ class FinancialScanService:
                 try:
                     async with httpx.AsyncClient(timeout=timeout) as cleanup_client:
                         cleanup_response = await cleanup_client.delete(
-                            f"https://generativelanguage.googleapis.com/v1beta/{uploaded_file_name}",
+                            gemini.file_url(uploaded_file_name),
                             headers={"x-goog-api-key": api_key},
                         )
                         logger.info(
