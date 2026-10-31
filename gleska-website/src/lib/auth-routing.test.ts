@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { getRouteForAuthenticatedUser } from "@/lib/auth-routing";
+import { getRouteForAuthenticatedUser, getRouteForNextStep } from "@/lib/auth-routing";
 
 describe("getRouteForAuthenticatedUser — General Work", () => {
+  it("sends onboarded employers to the Hiring dashboard by default", () => {
+    expect(getRouteForNextStep("EMPLOYER", "DASHBOARD")).toBe("/employer/dashboard");
+    expect(getRouteForAuthenticatedUser("EMPLOYER", "DASHBOARD")).toBe("/employer/dashboard");
+  });
+
   it("sends onboarded employers to the requested General Work page", () => {
     expect(getRouteForAuthenticatedUser("EMPLOYER", "DASHBOARD", "/general-work")).toBe("/general-work");
     expect(getRouteForAuthenticatedUser("EMPLOYER", "DASHBOARD", "/general-work/library")).toBe("/general-work/library");

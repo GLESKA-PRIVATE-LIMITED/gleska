@@ -54,6 +54,8 @@ function getPostOnboardingRoute(employerType?: string): string {
   const route = getRouteForAuthenticatedUser("EMPLOYER", "DASHBOARD", requestedNext);
   return employerType === "INDIVIDUAL" && route.startsWith("/employer/onboarding")
     ? "/"
+    : route === "/"
+    ? "/employer/dashboard"
     : route;
 }
 
@@ -124,7 +126,6 @@ const REQUIRED_FIELDS: Record<EmployerType, string[]> = {
     "business_category",
     "industry_type",
     "industry_category",
-    "cin_number",
     "registered_address",
     "company_email",
     "company_phone",
@@ -133,11 +134,9 @@ const REQUIRED_FIELDS: Record<EmployerType, string[]> = {
     "director_phone",
     "director_email",
     "director_address",
-    "director_aadhaar",
   ],
   REGISTERED_BUSINESS: [
     "business_name",
-    "cin_number",
     "business_type",
     "business_category",
     "registered_address",
@@ -148,7 +147,6 @@ const REQUIRED_FIELDS: Record<EmployerType, string[]> = {
     "director_phone",
     "director_email",
     "director_address",
-    "director_aadhaar",
   ],
   UNREGISTERED_BUSINESS: [
     "business_name",
@@ -742,20 +740,6 @@ export default function EmployerOnboarding() {
     delete payload.city;
     delete payload.state;
     delete payload.pincode;
-    if (employerType === "REGISTERED_INDUSTRY") {
-      if (!hasVerifiedRecord(verification, "CIN")) {
-        delete payload.director_name;
-        delete payload.director_phone;
-        delete payload.director_email;
-        delete payload.director_address;
-        delete payload.director_aadhaar;
-      }
-      if (!hasVerifiedRecord(verification, "CIN") || !hasVerifiedRecord(verification, "AADHAAR")) {
-        delete payload.work_location;
-        delete payload.latitude;
-        delete payload.longitude;
-      }
-    }
     return payload;
   };
 
@@ -892,8 +876,8 @@ export default function EmployerOnboarding() {
       if (!formData.director_email?.trim()) {
         errors.director_email = "Authorized person email is required";
       }
-      if (!formData.director_aadhaar?.trim() || !/^\d{12}$/.test(formData.director_aadhaar.trim())) {
-        errors.director_aadhaar = "A valid 12-digit Aadhaar is required";
+      if (formData.director_aadhaar?.trim() && !/^\d{12}$/.test(formData.director_aadhaar.trim())) {
+        errors.director_aadhaar = "Aadhaar must be a valid 12-digit number";
       }
       if (!formData.director_address?.trim()) {
         errors.director_address = "Authorized person address is required";
@@ -928,30 +912,12 @@ export default function EmployerOnboarding() {
   const handleProceedFromStep3 = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSubmitting || isAnimating) return;
-    if (employerType === "REGISTERED_INDUSTRY") {
-      if (!formData.cin_number?.trim()) {
-        setFieldErrors((current) => ({ ...current, cin_number: "CIN is required" }));
-        setFormError("Enter and verify the CIN before continuing");
-        return;
-      }
-      if (!hasVerifiedRecord(verification, "CIN")) {
-        setFormError("CIN must be verified before completing onboarding");
-        return;
-      }
-    }
-    const errors: Record<string, string> = {};
-    if (!formData.director_aadhaar?.trim()) {
-      errors.director_aadhaar = "Authorized person Aadhaar is required";
-    } else if (!/^\d{12}$/.test(formData.director_aadhaar)) {
-      errors.director_aadhaar = "A valid 12-digit Director Aadhaar is required";
-    }
-    if (Object.keys(errors).length > 0) {
-      setFieldErrors(errors);
-      setFormError("Complete Authorized Person Aadhaar verification before continuing");
-      return;
-    }
-    if (!hasVerifiedRecord(verification, "AADHAAR")) {
-      setFormError("Director Aadhaar must be verified before completing onboarding");
+    if (formData.director_aadhaar?.trim() && !/^\d{12}$/.test(formData.director_aadhaar.trim())) {
+      setFieldErrors((current) => ({
+        ...current,
+        director_aadhaar: "Aadhaar must be a valid 12-digit number",
+      }));
+      setFormError("Please enter a valid Aadhaar or leave it blank for now");
       return;
     }
     await handleComplete();
@@ -1706,7 +1672,7 @@ export default function EmployerOnboarding() {
                         <div className="space-y-4 rounded-2xl border border-slate-200/80 bg-slate-50/60 p-5 dark:border-slate-800 dark:bg-slate-800/40">
                           <h3 className="text-sm font-bold text-slate-900 dark:text-white">Business verification</h3>
                           {[
-                            { type: "CIN", label: "CIN *", field: "cin_number", required: true },
+                            { type: "CIN", label: "CIN (Optional)", field: "cin_number", required: false },
                             { type: "GSTIN", label: "GSTIN (Optional)", field: "gstin", required: false },
                             { type: "PAN", label: "PAN (Optional)", field: "pan_number", required: false },
                             { type: "REGISTRATION_NUMBER", label: "Registration Number (Optional)", field: "registration_number", required: false },
@@ -1772,7 +1738,7 @@ export default function EmployerOnboarding() {
                               />
                               {employerType === "REGISTERED_BUSINESS" && (
                                 <FormField
-                                  label="Authorized Person Aadhaar *"
+                                  label="Authorized Person Aadhaar (Optional)"
                                   field="director_aadhaar"
                                   value={formData.director_aadhaar}
                                   onChange={updateField}
@@ -2134,11 +2100,11 @@ export default function EmployerOnboarding() {
                           <div className="space-y-3 rounded-2xl border border-slate-200/80 bg-white p-5 dark:border-slate-800 dark:bg-slate-800/40">
                             <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-500">Registered Business Verification</h3>
                             {[
-                              { type: "CIN", label: "CIN *", field: "cin_number", supported: true },
+                              { type: "CIN", label: "CIN (Optional)", field: "cin_number", supported: true },
                               { type: "GSTIN", label: "GSTIN (Optional)", field: "gstin", supported: true },
                               { type: "PAN", label: "PAN (Optional)", field: "pan_number", supported: true },
                               { type: "REGISTRATION_NUMBER", label: "Registration Number (Optional)", field: "registration_number", supported: false },
-                              { type: "AADHAAR", label: "Authorized Person Aadhaar *", field: "director_aadhaar", supported: true },
+                              { type: "AADHAAR", label: "Authorized Person Aadhaar (Optional)", field: "director_aadhaar", supported: true },
                             ].map((item) => {
                               const record = getVerificationRecord(item.type);
                               const provided = Boolean(formData[item.field]?.trim());
