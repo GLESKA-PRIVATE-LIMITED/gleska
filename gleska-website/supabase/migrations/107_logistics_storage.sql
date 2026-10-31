@@ -4,6 +4,8 @@
 -- RLS impact: two new tables, RLS enabled. Employers may SELECT their own rows; all writes go
 --   through the backend (service_role), which filters by the caller's employer profile.
 -- Data impact: additive. Browser data is imported once by the website through POST /logistics/import.
+-- Contains no DROP, DELETE, UPDATE or TRUNCATE. REVOKE only removes default client privileges on
+--   the two NEW tables (Supabase grants anon/authenticated full access by default).
 -- Rollback: drop both tables (the website keeps working from an empty server list; localStorage
 --   copies are removed only after a successful import).
 
@@ -73,13 +75,22 @@ REVOKE ALL ON public.logistics_vehicle_listings, public.logistics_rental_request
 GRANT SELECT ON public.logistics_vehicle_listings, public.logistics_rental_requests TO authenticated;
 GRANT ALL ON public.logistics_vehicle_listings, public.logistics_rental_requests TO service_role;
 
-DROP POLICY IF EXISTS "Employers read own vehicle listings" ON public.logistics_vehicle_listings;
-CREATE POLICY "Employers read own vehicle listings" ON public.logistics_vehicle_listings
-  FOR SELECT TO authenticated USING (EXISTS (
-    SELECT 1 FROM public.employer_profiles e WHERE e.id = employer_id AND e.user_id = auth.uid()));
-DROP POLICY IF EXISTS "Employers read own rental requests" ON public.logistics_rental_requests;
-CREATE POLICY "Employers read own rental requests" ON public.logistics_rental_requests
-  FOR SELECT TO authenticated USING (EXISTS (
-    SELECT 1 FROM public.employer_profiles e WHERE e.id = employer_id AND e.user_id = auth.uid()));
+-- Policies are created only if missing (no DROP statements), so re-running this file never removes
+-- or replaces anything that already exists.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public'
+                 AND tablename = 'logistics_vehicle_listings' AND policyname = 'Employers read own vehicle listings') THEN
+    CREATE POLICY "Employers read own vehicle listings" ON public.logistics_vehicle_listings
+      FOR SELECT TO authenticated USING (EXISTS (
+        SELECT 1 FROM public.employer_profiles e WHERE e.id = employer_id AND e.user_id = auth.uid()));
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public'
+                 AND tablename = 'logistics_rental_requests' AND policyname = 'Employers read own rental requests') THEN
+    CREATE POLICY "Employers read own rental requests" ON public.logistics_rental_requests
+      FOR SELECT TO authenticated USING (EXISTS (
+        SELECT 1 FROM public.employer_profiles e WHERE e.id = employer_id AND e.user_id = auth.uid()));
+  END IF;
+END $$;
 
 COMMIT;
