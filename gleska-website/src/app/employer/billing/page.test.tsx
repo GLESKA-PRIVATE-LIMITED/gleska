@@ -29,12 +29,12 @@ const wallet = {
 const usage = {
   totals: { requests: 2, failed_requests: 0, input_tokens: 10, output_tokens: 5, thinking_tokens: 0, total_tokens: 1500, customer_charge_inr: "22", credits_charged: "1.100000" },
   by_agent: [{ agent: "general_work", requests: 2, failed_requests: 0, input_tokens: 10, output_tokens: 5, thinking_tokens: 0, total_tokens: 1500, customer_charge_inr: "22", credits_charged: "1.100000" }],
-  events: [{ id: "e1", started_at: "2026-10-30T10:00:00Z", executing_agent: "general_work", operation: "chat_reply", model: "m", status: "succeeded", total_tokens: 1500, credits_charged: "1.100000", error_code: null }],
+  events: [{ id: "e1", started_at: "2026-10-30T10:00:00Z", executing_agent: "general_work", operation: "chat_reply", model: "m", status: "succeeded", total_tokens: 1500, credits_charged: 1.1, error_code: null }],
 };
 const ledger = [
-  { id: 3, entry_type: "settle", delta_available: "0.150000", available_after: "12.500000", credits_consumed: "1.100000", description: "AI request charged", created_at: "2026-10-30T10:00:01Z" },
-  { id: 2, entry_type: "reserve", delta_available: "-1.250000", available_after: "12.350000", credits_consumed: "0", description: "AI request reservation", created_at: "2026-10-30T10:00:00Z" },
-  { id: 1, entry_type: "adjustment", delta_available: "13.600000", available_after: "13.600000", credits_consumed: "0", description: "internal note", created_at: "2026-10-29T10:00:00Z" },
+  { id: 3, entry_type: "settle", delta_available: 0.15, available_after: 12.5, credits_consumed: 1.1, description: "AI request charged", created_at: "2026-10-30T10:00:01Z" },
+  { id: 2, entry_type: "reserve", delta_available: -1.25, available_after: 11.25, credits_consumed: 0, description: "AI request reservation", created_at: "2026-10-30T10:00:00Z" },
+  { id: 1, entry_type: "adjustment", delta_available: 13.6, available_after: 13.6, credits_consumed: 0, description: "internal note", created_at: "2026-10-29T10:00:00Z" },
 ];
 
 const purchases = [
@@ -93,6 +93,11 @@ describe("EmployerBillingPage", () => {
     expect(formatCredits("-0.004")).toBe("0");
     expect(formatCredits("2500")).toBe("2,500");
     expect(formatCredits(null)).toBe("0");
+    // Supabase sends NUMERIC columns as JSON numbers (this crashed the live page once).
+    expect(formatCredits(12.5)).toBe("12.5");
+    expect(formatCredits(-1.25)).toBe("-1.25");
+    expect(formatCredits(0)).toBe("0");
+    expect(formatCredits(1e-7)).toBe("0");
   });
 });
 

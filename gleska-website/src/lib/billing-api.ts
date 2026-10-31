@@ -1,6 +1,11 @@
 import apiClient from "@/lib/api";
 
-/** Amounts arrive as decimal strings from the backend; never do money maths with floats. */
+/**
+ * Amounts arrive as decimal strings when a backend model serialises them, but rows passed through
+ * from Supabase (ledger, usage events) carry NUMERIC columns as JSON numbers. Display helpers accept
+ * both; never do money maths with floats.
+ */
+export type Amount = string | number;
 export interface Wallet {
   account_id: string;
   status: "active" | "suspended" | string;
@@ -38,7 +43,7 @@ export interface UsageEvent {
   model: string;
   status: string;
   total_tokens: number | null;
-  credits_charged: string | null;
+  credits_charged: Amount | null;
   error_code: string | null;
 }
 
@@ -51,9 +56,9 @@ export interface UsageReport {
 export interface LedgerEntry {
   id: number;
   entry_type: "purchase" | "reserve" | "release" | "settle" | "refund" | "adjustment" | string;
-  delta_available: string;
-  available_after: string;
-  credits_consumed: string;
+  delta_available: Amount;
+  available_after: Amount;
+  credits_consumed: Amount;
   description: string | null;
   created_at: string;
 }
@@ -89,13 +94,15 @@ const ENTRY_LABELS: Record<string, string> = {
 };
 
 export function entryLabel(entry: LedgerEntry): string {
-  if (entry.entry_type === "adjustment" && entry.delta_available.startsWith("-")) return "Credits removed by GO LESKA";
+  if (entry.entry_type === "adjustment" && String(entry.delta_available).startsWith("-")) return "Credits removed by GO LESKA";
   return ENTRY_LABELS[entry.entry_type] ?? entry.entry_type;
 }
 
 /** Trim a decimal string for display ("12.500000" → "12.5", "3" → "3"). Display only. */
-export function formatCredits(value: string | null | undefined): string {
-  if (!value) return "0";
+export function formatCredits(input: Amount | null | undefined): string {
+  if (input === null || input === undefined || input === "") return "0";
+  // Numbers become plain decimal text (no exponent) before the text-based trimming below.
+  const value = typeof input === "number" ? (Number.isFinite(input) ? input.toFixed(6) : "0") : String(input);
   const negative = value.startsWith("-");
   const raw = negative ? value.slice(1) : value;
   const [whole, fraction = ""] = raw.split(".");
@@ -105,7 +112,7 @@ export function formatCredits(value: string | null | undefined): string {
 }
 
 /** Rupee value of a credit amount, for display only (credits × credit value, rounded to paise). */
-export function creditsToRupees(credits: string, creditValueInr: string): string {
+export function creditsToRupees(credits: Amount, creditValueInr: Amount): string {
   const paise = Math.round(Number(credits) * Number(creditValueInr) * 100);
   return (paise / 100).toLocaleString("en-IN", { style: "currency", currency: "INR" });
 }
@@ -171,7 +178,7 @@ export function purchaseError(value: string, options: PurchaseOptions): string |
   return null;
 }
 
-export function formatRupees(value: string): string {
+export function formatRupees(value: Amount): string {
   return Number(value).toLocaleString("en-IN", { style: "currency", currency: "INR" });
 }
 
