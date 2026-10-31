@@ -20,7 +20,10 @@ roles `anon`, `authenticated`, `service_role BYPASSRLS`; schema `auth` with
 `auth.uid()` reading `current_setting('request.jwt.claim.sub')`; `ALTER DEFAULT PRIVILEGES …
 GRANT ALL ON TABLES TO anon, authenticated, service_role` (mimics Supabase); minimal referenced
 tables. Then apply twice (idempotency) and test RLS with `SET ROLE authenticated; SET
-request.jwt.claim.sub = '<uuid>'`.
+request.jwt.claim.sub = '<uuid>'`. Billing tests (`tests/104_*`, `tests/105_*`,
+`billing_concurrency.sh`) need the stand-in rows listed in the header of `tests/105_*`, a fresh
+database, and run in that order. Use a data dir outside the scratchpad (e.g. `/var/tmp`) —
+the scratchpad parent isn't readable by the `postgres` user.
 
 ## Watch-outs
 - Migrations 001–069 revoke function EXECUTE only from PUBLIC (KI-02).

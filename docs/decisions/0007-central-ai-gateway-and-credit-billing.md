@@ -73,8 +73,14 @@ failed/unmetered requests, reconciliation, audit log).
 - Admin console page `/admin/billing` (prices, FX, settings, wallets + adjustments, usage, audit log).
 - Increment 3 (done 2026-10-31): employer page `/employer/billing` ("AI Credits" in the employer
   sidebar): balance, usage by agent (7/30/90 days), recent AI requests, credit history.
-- Next: increment 2 (Cashfree credit purchase + receipts, needs migration 105), then 4
-  (reconciliation of held/pending reservations, spending limits).
+- Increment 2 (built 2026-10-31, migration 105 not yet applied): employers buy 5–2,500 whole
+  credits on `/employer/billing`; server prices the order (credits × credit value), Cashfree
+  order id `cred_…`; credits added only by `billing_complete_purchase` after a signed webhook or a
+  server-side order lookup (idempotent, amount re-checked to the paisa); the shared Cashfree
+  webhook routes `cred_` orders away from subscription logic; printable receipts
+  (`GLK-CR-NNNNNN`, no GST); admin "Credit purchases" table.
+- Next: increment 4 (reconciliation of held/pending reservations and of payments received for
+  closed orders, spending limits).
 
 ## Consequences
 Every AI feature depends on the billing database: if it is unavailable, AI calls fail closed.

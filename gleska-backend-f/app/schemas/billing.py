@@ -136,3 +136,56 @@ class EmployerUsageReport(BaseModel):
             by_agent=[EmployerAgentUsage(**a.model_dump()) for a in report.by_agent],
             events=[{k: v for k, v in e.items() if k not in INTERNAL_EVENT_FIELDS} for e in report.events],
         )
+
+
+# ---------- credit purchases (migration 105) ----------
+
+CREDIT_PURCHASE_MIN = 5
+CREDIT_PURCHASE_MAX = 2500
+
+
+class CreditPurchaseCreate(BaseModel):
+    """Whole credits only; the rupee amount is always computed by the server."""
+
+    credits: int = Field(..., ge=CREDIT_PURCHASE_MIN, le=CREDIT_PURCHASE_MAX)
+
+
+class CreditPurchaseOptions(BaseModel):
+    min_credits: int = CREDIT_PURCHASE_MIN
+    max_credits: int = CREDIT_PURCHASE_MAX
+    credit_value_inr: Decimal
+
+
+class CreditPurchaseOrder(BaseModel):
+    order_id: str
+    payment_session_id: str
+    credits: Decimal
+    amount_inr: Decimal
+
+
+class CreditPurchase(BaseModel):
+    order_id: str
+    credits: Decimal
+    amount_inr: Decimal
+    currency: str
+    status: str
+    receipt_number: str | None = None
+    payment_method: str | None = None
+    paid_at: datetime | None = None
+    created_at: datetime
+
+
+class CreditReceipt(BaseModel):
+    receipt_number: str
+    order_id: str
+    seller_name: str
+    buyer_name: str | None
+    buyer_email: str | None
+    credits: Decimal
+    credit_value_inr: Decimal
+    amount_inr: Decimal
+    currency: str
+    payment_method: str | None
+    cf_payment_id: str | None
+    paid_at: datetime
+    note: str

@@ -105,6 +105,7 @@ export default function AdminBillingPage() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [usage, setUsage] = useState<UsageReport | null>(null);
   const [audit, setAudit] = useState<AuditEntry[]>([]);
+  const [purchases, setPurchases] = useState<AdminPurchase[] | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -128,6 +129,11 @@ export default function AdminBillingPage() {
         setAccounts(a.data.accounts);
         setUsage(u.data);
         setAudit(l.data.entries);
+        // Separate request: works (as "not available") even before migration 105 is applied.
+        await apiClient
+          .get<{ purchases: AdminPurchase[] }>(`${API}/purchases`)
+          .then((r) => setPurchases(r.data.purchases))
+          .catch(() => setPurchases(null));
       })
       .catch((error) => toast.error(errorText(error, "Couldn't load billing data.")))
       .finally(() => setLoading(false));
@@ -182,6 +188,7 @@ export default function AdminBillingPage() {
                 <PriceList prices={prices} onChanged={load} />
                 <AccountsTable accounts={accounts} onChanged={load} />
                 <UsageSummary usage={usage} />
+                <PurchasesTable purchases={purchases} />
                 <AuditLog entries={audit} />
               </>
             )}
@@ -568,6 +575,52 @@ function AuditLog({ entries }: { entries: AuditEntry[] }) {
             </li>
           ))}
         </ul>
+      )}
+    </section>
+  );
+}
+
+interface AdminPurchase {
+  order_id: string;
+  employer_name: string | null;
+  credits: string;
+  amount_inr: string;
+  status: string;
+  receipt_number: string | null;
+  last_payment_status: string | null;
+  paid_at: string | null;
+  created_at: string;
+}
+
+function PurchasesTable({ purchases }: { purchases: AdminPurchase[] | null }) {
+  return (
+    <section className={cardClass}>
+      <h2 className="text-sm font-bold uppercase tracking-wide text-slate-700">Credit purchases</h2>
+      <p className="mb-3 mt-1 text-xs text-slate-500">Employer payments via Cashfree. Credits are added automatically once Cashfree confirms payment.</p>
+      {purchases === null ? (
+        <p className="text-sm text-slate-500">Not available yet (database migration 105 not applied).</p>
+      ) : purchases.length === 0 ? (
+        <p className="text-sm text-slate-500">No purchases yet.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="text-xs uppercase text-slate-500">
+              <tr><th className="py-2 pr-4">Date</th><th className="pr-4">Employer</th><th className="pr-4">Credits</th><th className="pr-4">Amount (₹)</th><th className="pr-4">Status</th><th className="pr-4">Receipt</th></tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {purchases.map((p) => (
+                <tr key={p.order_id}>
+                  <td className="whitespace-nowrap py-2 pr-4">{new Date(p.paid_at ?? p.created_at).toLocaleString()}</td>
+                  <td className="pr-4">{p.employer_name || "Unnamed employer"}</td>
+                  <td className="pr-4">{p.credits}</td>
+                  <td className="pr-4">{p.amount_inr}</td>
+                  <td className="pr-4">{p.status}{p.status === "PENDING" && p.last_payment_status ? ` (last attempt: ${p.last_payment_status})` : ""}</td>
+                  <td className="pr-4">{p.receipt_number ?? "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </section>
   );

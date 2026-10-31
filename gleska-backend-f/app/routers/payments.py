@@ -22,6 +22,11 @@ from app.services.cashfree_payment_service import (
     CashfreePaymentError,
     CashfreePaymentService,
 )
+from app.services.credit_purchase_service import (
+    CreditPurchaseService,
+    PurchaseError,
+    is_credit_order,
+)
 from app.services.entitlements import INDIVIDUAL_COMMISSION_AMOUNT
 
 router = APIRouter(prefix="/payments", tags=["payments"])
@@ -1252,6 +1257,21 @@ async def cashfree_webhook(
 
     if not order_id:
         return {"status": "IGNORED"}
+
+    # AI credit purchases have their own table and SQL function; they must never reach the
+    # subscription processing below.
+    if is_credit_order(order_id):
+        try:
+            return CreditPurchaseService.handle_webhook(
+                event_type,
+                order,
+                (payload.get("data") or {}).get("payment") or {},
+            )
+        except PurchaseError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(exc),
+            ) from exc
 
     transaction_response = (
         supabase.table("payment_transactions")

@@ -16,6 +16,7 @@ from app.schemas.billing import (
     UsageReport,
 )
 from app.services.billing_service import BillingNotFound, BillingService
+from app.services.credit_purchase_service import CreditPurchaseService
 
 router = APIRouter(prefix="/admin/billing", tags=["admin-billing"])
 
@@ -114,3 +115,10 @@ async def platform_usage(
 @router.get("/audit-log")
 async def audit_log(limit: int = Query(default=200, ge=1, le=1000), _: UserResponse = Depends(require_admin)):
     return {"entries": BillingService.audit_log(limit)}
+
+
+@router.get("/purchases")
+async def list_purchases(_: UserResponse = Depends(require_admin)):
+    rows = CreditPurchaseService.admin_list()
+    names = {a["id"]: a.get("employer_name") for a in BillingService.list_accounts()} if rows else {}
+    return {"purchases": [{**r, "employer_name": names.get(r.get("account_id"))} for r in rows]}

@@ -51,8 +51,9 @@ class CashfreePaymentService:
         amount: float | None = None,
         order_note: str = "Employer Monthly Subscription",
         return_path: str = "/employer/subscription",
+        order_id: str | None = None,
     ) -> dict[str, Any]:
-        order_id = f"sub_{uuid.uuid4().hex[:16]}"
+        order_id = order_id or f"sub_{uuid.uuid4().hex[:16]}"
         order_meta = {"return_url": f"{settings.FRONTEND_URL}{return_path}?order_id={{order_id}}"}
         if settings.WEBHOOK_URL.strip():
             order_meta["notify_url"] = f"{settings.WEBHOOK_URL.rstrip('/')}/api/v1/payments/webhook"

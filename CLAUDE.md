@@ -41,7 +41,7 @@ Baselines (2026-10-31): backend 529 pass / 43 fail / 4 errors; website lint 110 
 88 warnings; vitest 3 failing (worker location). All failures pre-existing — **compare, don't chase**.
 
 ## 4. Database rules
-- Schema lives only in `gleska-website/supabase/migrations/NNN_name.sql`; next free number = 105.
+- Schema lives only in `gleska-website/supabase/migrations/NNN_name.sql`; next free number = 106.
   (`gleska-backend-f/migrations/connectors_setup.sql` is a legacy exception — don't add more there.)
 - Forward-only: never edit or delete an applied migration; add a new one. Idempotent DDL
   (`IF NOT EXISTS`, `DROP POLICY IF EXISTS`), wrapped in `BEGIN; … COMMIT;`.
@@ -88,7 +88,8 @@ Baselines (2026-10-31): backend 529 pass / 43 fail / 4 errors; website lint 110 
 - **Every LLM call goes through `app.ai_gateway.generate_content` inside a billing scope**
   (`billing_scope` / `@billed_entry`); only `app/ai_gateway/providers/` may touch the Gemini host or
   key (enforced by `tests/test_ai_gateway.py`). Billing refusals are `AIBillingError` (an
-  `HTTPException`) — never swallow them. Money moves only via the SQL functions in migration 104.
+  `HTTPException`) — never swallow them. Money moves only via the SQL functions in migrations 104–105 (credit purchases: `cred_` Cashfree
+  orders, credited only by `billing_complete_purchase`).
 
 ## 8. Definition of done
 1. `git status` checked at start; unrelated user changes preserved.

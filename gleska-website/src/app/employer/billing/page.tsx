@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { AlertTriangle, Coins, Loader2 } from "lucide-react";
 import AccountManagementShell, { formatEmployerType } from "@/components/AccountManagementShell";
 import { WorkerEmptyState, WorkerErrorState, WorkerLoadingState, WorkerPageFrame, WorkerPageHeader, WorkspaceCard } from "@/components/worker/WorkspaceUI";
+import { BuyCredits, PaymentReturnBanner, PurchaseHistory, confirmReturnedOrder, type ReturnState } from "@/components/billing/CreditPurchase";
 import { useAuth } from "@/context/AuthContext";
 import {
   agentLabel,
@@ -12,7 +13,10 @@ import {
   creditsToRupees,
   entryLabel,
   formatCredits,
+  purchaseApi,
+  type CreditPurchase,
   type LedgerEntry,
+  type PurchaseOptions,
   type UsageReport,
   type Wallet,
 } from "@/lib/billing-api";
@@ -55,13 +59,20 @@ export default function EmployerBillingPage() {
   const [ledger, setLedger] = React.useState<LedgerEntry[] | null>(null);
   const [showHolds, setShowHolds] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [options, setOptions] = React.useState<PurchaseOptions | null>(null);
+  const [purchases, setPurchases] = React.useState<CreditPurchase[]>([]);
+  const [returnState, setReturnState] = React.useState<ReturnState | null>(null);
 
   const load = React.useCallback((days: number) => {
-    return Promise.all([billingApi.wallet(), billingApi.usage(sinceIso(days)), billingApi.ledger()])
-      .then(([w, u, l]) => {
+    return Promise.all([
+      billingApi.wallet(), billingApi.usage(sinceIso(days)), billingApi.ledger(), purchaseApi.list(), purchaseApi.options(),
+    ])
+      .then(([w, u, l, p, o]) => {
         setWallet(w);
         setUsage(u);
         setLedger(l);
+        setPurchases(p);
+        setOptions(o);
         setError(null);
       })
       .catch(() => setError("We couldn't load your AI credits. Please try again."));
@@ -75,6 +86,23 @@ export default function EmployerBillingPage() {
   React.useEffect(() => {
     if (isEmployer) void load(period);
   }, [isEmployer, load, period]);
+
+  // Cashfree redirects back with ?order_id=…; confirm it server-side, then clean the URL.
+  React.useEffect(() => {
+    if (!isEmployer) return;
+    const orderId = new URLSearchParams(window.location.search).get("order_id");
+    if (!orderId || !orderId.startsWith("cred_")) return;
+    void Promise.resolve()
+      .then(() => setReturnState({ kind: "checking" }))
+      .then(() => confirmReturnedOrder(orderId))
+      .then((state) => {
+        setReturnState(state);
+        router.replace("/employer/billing", { scroll: false });
+        return load(period);
+      });
+    // Runs once per visit; period changes must not re-verify.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEmployer]);
 
   if (isLoading || !user || user.role !== "EMPLOYER") {
     return <div className="flex min-h-screen items-center justify-center bg-[#eef1fb] dark:bg-slate-950"><Loader2 size={36} className="animate-spin text-blue-600" /></div>;
@@ -97,6 +125,8 @@ export default function EmployerBillingPage() {
           title="AI Credits & Billing"
           description="One shared credit balance pays for every AI agent in your organisation."
         />
+
+        {returnState && <div className="mt-6"><PaymentReturnBanner state={returnState} /></div>}
 
         {error && <div className="mt-6"><WorkerErrorState message={error} onRetry={() => void load(period)} /></div>}
 
@@ -128,13 +158,18 @@ export default function EmployerBillingPage() {
                   <div><dt className="text-slate-500">Purchased</dt><dd className="font-semibold">{formatCredits(wallet.total_purchased)}</dd></div>
                 </dl>
               </div>
-              <div className={`mt-5 flex gap-3 rounded-xl p-4 text-sm ${lowBalance ? "bg-amber-50 text-amber-900 dark:bg-amber-950/30 dark:text-amber-200" : "bg-slate-50 text-slate-600 dark:bg-slate-800/60 dark:text-slate-300"}`}>
-                <Coins size={18} className="mt-0.5 shrink-0" />
-                <p>
-                  {lowBalance ? "Your credits are almost used up — AI agents stop when the balance runs out. " : ""}
-                  Online credit purchase is coming soon. Until then, contact GO LESKA support to add credits.
-                </p>
-              </div>
+              {lowBalance && (
+                <div className="mt-5 flex gap-3 rounded-xl bg-amber-50 p-4 text-sm text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+                  <Coins size={18} className="mt-0.5 shrink-0" />
+                  <p>Your credits are almost used up — AI agents stop when the balance runs out.</p>
+                </div>
+              )}
+              {wallet.status === "active" && options && <BuyCredits options={options} />}
+            </WorkspaceCard>
+
+            <WorkspaceCard>
+              <h2 className="text-lg font-bold text-slate-900 dark:text-white">Purchases &amp; receipts</h2>
+              <PurchaseHistory purchases={purchases} />
             </WorkspaceCard>
 
             <WorkspaceCard>

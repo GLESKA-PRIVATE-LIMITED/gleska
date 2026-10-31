@@ -167,6 +167,7 @@ class Settings(BaseSettings):
     CASHFREE_PG_API_VERSION: str = Field(default="2023-08-01", validation_alias=AliasChoices("CASHFREE_PG_API_VERSION", "cashfree_pg_api_version"))
     CASHFREE_PAYMENT_TIMEOUT_SECONDS: int = Field(default=15, validation_alias=AliasChoices("CASHFREE_PAYMENT_TIMEOUT_SECONDS", "cashfree_payment_timeout_seconds"))
     WEBHOOK_URL: str = Field(default="", validation_alias=AliasChoices("WEBHOOK_URL", "webhook_url"))
+    BILLING_SELLER_NAME: str = Field(default="GLESKA PRIVATE LIMITED", validation_alias=AliasChoices("BILLING_SELLER_NAME", "billing_seller_name"))
 
     # TallyPrime
     TALLY_API_URL: str = Field(default="", validation_alias=AliasChoices("TALLY_API_URL", "tally_api_url"))

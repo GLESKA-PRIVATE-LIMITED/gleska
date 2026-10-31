@@ -6,11 +6,12 @@ import { formatCredits } from "@/lib/billing-api";
 
 const mocks = vi.hoisted(() => ({
   apiGet: vi.fn(),
+  apiPost: vi.fn(),
   routerReplace: vi.fn(),
   user: { id: "employer-id", role: "EMPLOYER" as const, name: "Employer", employer_type: "REGISTERED_BUSINESS" },
 }));
 
-vi.mock("@/lib/api", () => ({ default: { get: mocks.apiGet } }));
+vi.mock("@/lib/api", () => ({ default: { get: mocks.apiGet, post: mocks.apiPost } }));
 vi.mock("@/context/AuthContext", () => ({
   useAuth: () => ({ user: mocks.user, isLoading: false, logout: vi.fn() }),
 }));
@@ -36,11 +37,21 @@ const ledger = [
   { id: 1, entry_type: "adjustment", delta_available: "13.600000", available_after: "13.600000", credits_consumed: "0", description: "internal note", created_at: "2026-10-29T10:00:00Z" },
 ];
 
+const purchases = [
+  { order_id: "cred_aaaaaaaaaaaaaaaa", credits: "25.000000", amount_inr: "500.00", currency: "INR", status: "PAID", receipt_number: "GLK-CR-000001", payment_method: "upi", paid_at: "2026-10-30T10:00:00Z", created_at: "2026-10-30T09:59:00Z" },
+  { order_id: "cred_bbbbbbbbbbbbbbbb", credits: "5.000000", amount_inr: "100.00", currency: "INR", status: "EXPIRED", receipt_number: null, payment_method: null, paid_at: null, created_at: "2026-10-29T09:00:00Z" },
+];
+
 beforeEach(() => {
+  window.history.replaceState(null, "", "/employer/billing");
   mocks.apiGet.mockReset();
+  mocks.apiPost.mockReset();
+  mocks.routerReplace.mockReset();
   mocks.apiGet.mockImplementation((url: string) => {
     if (url.endsWith("/billing/wallet")) return Promise.resolve({ data: wallet });
     if (url.endsWith("/billing/usage")) return Promise.resolve({ data: usage });
+    if (url.endsWith("/billing/purchases")) return Promise.resolve({ data: { purchases } });
+    if (url.endsWith("/billing/purchase-options")) return Promise.resolve({ data: { min_credits: 5, max_credits: 2500, credit_value_inr: "20.0000" } });
     return Promise.resolve({ data: { entries: ledger } });
   });
 });
@@ -82,5 +93,44 @@ describe("EmployerBillingPage", () => {
     expect(formatCredits("-0.004")).toBe("0");
     expect(formatCredits("2500")).toBe("2,500");
     expect(formatCredits(null)).toBe("0");
+  });
+});
+
+describe("Buying credits", () => {
+  it("validates whole credits within limits and sends only the credit count", async () => {
+    const checkout = vi.fn();
+    (window as unknown as { Cashfree: unknown }).Cashfree = vi.fn(() => ({ checkout }));
+    mocks.apiPost.mockResolvedValue({ data: { order_id: "cred_cccccccccccccccc", payment_session_id: "sess", credits: "25", amount_inr: "500.00" } });
+    render(<EmployerBillingPage />);
+    const input = await screen.findByLabelText("Credits");
+    const pay = () => screen.getByRole("button", { name: /^Pay/ }) as HTMLButtonElement;
+
+    for (const bad of ["4", "2501", "2.5", "abc"]) {
+      fireEvent.change(input, { target: { value: bad } });
+      expect(pay().disabled).toBe(true);
+    }
+    fireEvent.change(input, { target: { value: "25" } });
+    expect(pay().textContent).toBe("Pay ₹500.00");
+    fireEvent.click(pay());
+    await waitFor(() => expect(checkout).toHaveBeenCalledWith({ paymentSessionId: "sess", redirectTarget: "_self" }));
+    expect(mocks.apiPost).toHaveBeenCalledWith("/api/v1/billing/purchases", { credits: 25 });
+  });
+
+  it("lists purchases with receipt links only for paid ones", async () => {
+    render(<EmployerBillingPage />);
+    const section = (await screen.findByRole("heading", { name: "Purchases & receipts" })).closest("section")!;
+    const links = within(section).getAllByRole("link", { name: "Receipt" });
+    expect(links).toHaveLength(1);
+    expect(links[0].getAttribute("href")).toBe("/employer/billing/receipt/cred_aaaaaaaaaaaaaaaa");
+    expect(within(section).getByText("Expired")).toBeTruthy();
+  });
+
+  it("confirms the order after Cashfree redirects back", async () => {
+    window.history.replaceState(null, "", "/employer/billing?order_id=cred_aaaaaaaaaaaaaaaa");
+    mocks.apiPost.mockResolvedValue({ data: { ...purchases[0] } });
+    render(<EmployerBillingPage />);
+    expect(await screen.findByText(/25 credits added/)).toBeTruthy();
+    expect(mocks.apiPost).toHaveBeenCalledWith("/api/v1/billing/purchases/cred_aaaaaaaaaaaaaaaa/verify");
+    expect(mocks.routerReplace).toHaveBeenCalledWith("/employer/billing", { scroll: false });
   });
 });
