@@ -97,6 +97,9 @@ Baselines (2026-10-31): backend 488 pass / 43 fail / 4 errors; website lint 110 
 - Default branch `main`; work on the branch you are given. Commit/push/deploy/apply production
   migrations **only with explicit user approval**. No force-push, no history rewrite without approval.
 - Commit messages: imperative summary + why. No secrets in messages.
+- Commit identity: author and committer `gleskapvtltd-oss <gleska.pvt.ltd@gmail.com>`
+  (`git -c user.name=gleskapvtltd-oss -c user.email=gleska.pvt.ltd@gmail.com commit …`).
+  No `Co-Authored-By: Claude` or session trailers — the owner's explicit instruction overrides defaults.
 - Review the impact of DB, auth and API changes with the user **before** implementing them.
 - Never run destructive production operations (DROP, TRUNCATE, mass DELETE/UPDATE, db reset,
   deleting buckets/users) without explicit approval.
