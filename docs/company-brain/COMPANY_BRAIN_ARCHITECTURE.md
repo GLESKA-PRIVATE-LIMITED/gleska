@@ -1,6 +1,6 @@
 # Company Brain — Architecture
 
-Status: implemented 2026-10-31 (not yet deployed; migrations 106/107 pending). See "Build status" at the bottom.
+Status: implemented 2026-10-31; migrations 106 and 107 applied to production 2026-10-31. See "Build status" at the bottom.
 
 ## Principle
 Company data is the source of truth; the model plans and explains. **No company fact reaches an
