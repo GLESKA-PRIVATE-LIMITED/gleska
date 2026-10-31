@@ -40,7 +40,7 @@ Last verified: 2026-10-31, commit aabb165. Update at the end of every task.
 - AI billing increment 3: employer page `/employer/billing` ("AI Credits" in the employer sidebar) —
   balance, usage by agent, recent requests, credit history; provider cost/markup hidden from employers.
   Test `gleska-website/src/app/employer/billing/page.test.tsx`.
-- AI billing increment 2 (built, **migration 105 not yet applied**): online credit purchase via
+- AI billing increment 2 (migration 105 **applied to production 2026-10-31**): online credit purchase via
   Cashfree (custom 5–2,500 credits), purchase history, printable receipts, admin purchases table.
   Tests: `tests/test_credit_purchases.py`, `supabase/tests/105_credit_purchases_test.sql`,
   `src/app/employer/billing/**/page.test.tsx`.
@@ -48,8 +48,8 @@ Last verified: 2026-10-31, commit aabb165. Update at the end of every task.
 ## Waiting on the owner
 - To switch AI back on: in `/admin/billing` enter the verified Gemini price for `GEMINI_MODEL`, a
   USD→INR rate, and grant credits to employers (done by the owner 2026-10-31). Still to build:
-  increment 4 (reconciliation, spending limits). Apply migration 105 before deploying increment 2
-  (without it the buy box fails; nothing else breaks).
+  increment 4 (reconciliation, spending limits).
+  Owner: make one small real purchase (5 credits) to confirm the live Cashfree flow.
 - Apply migration `103_general_work_workspace.sql`; set `GEMINI_API_KEY`; confirm `assistant-uploads` bucket.
 - Rotate the exposed signing password / upload key (KI-01).
 - Optionally remove orphaned profile photos of accounts deleted before the KI-19 fix.
