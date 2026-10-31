@@ -176,7 +176,7 @@ async def test_cashfree_aadhaar_otp_initiation_is_pending_and_preserves_ref_id(
     )
 
     assert (status, reason, provider_reference) == ("PENDING", "OTP_SENT", None)
-    assert metadata["cashfree_ref_id"] == "85506865"
+    assert metadata["cashfree_ref_id"] == 85506865
     headers = calls[0][1]["headers"]
     assert headers["x-client-id"] == "client"
     assert headers["x-client-secret"] == "secret"
@@ -247,18 +247,55 @@ async def test_cashfree_aadhaar_otp_final_verification_uses_ref_id(
     monkeypatch.setattr(verification_service.httpx, "AsyncClient", lambda **kwargs: FakeClient(response, calls))
 
     status, reason, _ = await VerificationService._verify_cashfree_aadhaar_otp(
-        "123456", "85506865", {"director_name": "Authorized Signatory"}
+        "123456", 85506865, {"director_name": "Authorized Signatory"}
     )
 
     assert (status, reason) == ("VERIFIED", None)
     assert calls[0][0][0] == "https://sandbox.cashfree.com/verification/offline-aadhaar/verify"
-    assert calls[0][1]["json"] == {"otp": "123456", "ref_id": "85506865"}
+    assert calls[0][1]["json"] == {"otp": "123456", "ref_id": 85506865}
     headers = calls[0][1]["headers"]
     assert headers["x-client-id"] == settings.CASHFREE_CLIENT_ID
     assert headers["x-client-secret"] == settings.CASHFREE_CLIENT_SECRET
     assert decrypt_secure_id_signature(
         secure_id_test_keys[0], headers["x-cf-signature"]
     ).startswith(f"{settings.CASHFREE_CLIENT_ID}.")
+
+
+@pytest.mark.asyncio
+async def test_cashfree_aadhaar_otp_converts_legacy_numeric_ref_id_to_integer(monkeypatch):
+    captured = {}
+
+    async def verify_otp(otp, ref_id, expected_details):
+        captured.update(otp=otp, ref_id=ref_id, expected_details=expected_details)
+        return "VERIFIED", None, {}
+
+    monkeypatch.setattr(
+        VerificationService,
+        "list_for_employer",
+        lambda _employer_id: [
+            {
+                "verification_type": "AADHAAR",
+                "status": "PENDING",
+                "provider_metadata": {"cashfree_ref_id": "85506865"},
+            }
+        ],
+    )
+    monkeypatch.setattr(VerificationService, "_verify_cashfree_aadhaar_otp", verify_otp)
+    monkeypatch.setattr(
+        VerificationService,
+        "_save_state",
+        lambda employer_id, verification_type, status, reason, reference, **kwargs: {
+            "employer_id": employer_id,
+            "verification_type": verification_type,
+            "status": status,
+        },
+    )
+
+    result = await VerificationService.verify_aadhaar_otp("employer-id", "123456", {})
+
+    assert result["status"] == "VERIFIED"
+    assert captured["otp"] == "123456"
+    assert captured["ref_id"] == 85506865
 
 
 @pytest.mark.asyncio

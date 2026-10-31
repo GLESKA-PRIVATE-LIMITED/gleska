@@ -11,6 +11,8 @@ Last verified: 2026-10-31, commit aabb165. Update at the end of every task.
 - Android release signing from env/untracked file (3c21127).
 - General Work workspace (aabb165): chat, attachments, camera, voice, library, projects, plugins.
   Tests: backend `tests/test_general_work.py`, web `gleska-website/src/components/agents/general-work/generalWork.test.tsx`.
+- Aadhaar OTP verification preserves Cashfree's numeric `ref_id` when completing verification;
+  regression coverage in `gleska-backend-f/tests/test_cashfree_verification.py`.
 
 ## Waiting on the owner
 - Apply migration `103_general_work_workspace.sql`; set `GEMINI_API_KEY`; confirm `assistant-uploads` bucket.

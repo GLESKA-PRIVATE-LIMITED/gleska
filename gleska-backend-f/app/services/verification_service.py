@@ -557,7 +557,7 @@ class VerificationService:
         if verification_type == "AADHAAR" and str(body.get("status") or "").upper() == "SUCCESS":
             ref_id = body.get("ref_id") or body.get("reference_id")
             if ref_id is not None:
-                return "PENDING", "OTP_SENT", {**metadata, "cashfree_ref_id": str(ref_id)}, None
+                return "PENDING", "OTP_SENT", {**metadata, "cashfree_ref_id": ref_id}, None
         if body.get("valid") is False or str(body.get("status", "")).upper() in {"INVALID", "FAILED"}:
             return "FAILED", VerificationService.CASHFREE_VERIFICATION_FAILED, {**metadata, **provider_error_metadata}, provider_reference
         if verification_type == "CIN":
@@ -583,8 +583,16 @@ class VerificationService:
         ref_id = (record or {}).get("provider_metadata", {}).get("cashfree_ref_id")
         if not ref_id or (record or {}).get("status") != "PENDING":
             raise ValueError("Aadhaar OTP verification is not awaiting an OTP")
+        if isinstance(ref_id, bool) or not isinstance(ref_id, (int, str)):
+            raise ValueError("Aadhaar OTP verification is not awaiting an OTP")
+        if isinstance(ref_id, str):
+            ref_id = ref_id.strip()
+            if not ref_id:
+                raise ValueError("Aadhaar OTP verification is not awaiting an OTP")
+            if ref_id.isdigit():
+                ref_id = int(ref_id)
         status, reason, metadata = await VerificationService._verify_cashfree_aadhaar_otp(
-            otp.strip(), str(ref_id), expected_details
+            otp.strip(), ref_id, expected_details
         )
         return VerificationService._save_state(
             employer_id,
@@ -600,7 +608,7 @@ class VerificationService:
     @staticmethod
     async def _verify_cashfree_aadhaar_otp(
         otp: str,
-        ref_id: str,
+        ref_id: int | str,
         expected_details: dict[str, Any],
     ) -> tuple[str, str | None, dict[str, Any] | None]:
         endpoint = f"{VerificationService._cashfree_base_url()}/offline-aadhaar/verify"
