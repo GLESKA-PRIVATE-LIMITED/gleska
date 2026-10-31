@@ -7,6 +7,6 @@ calls the provider adapter, settles actual usage and records an immutable usage 
 
 from app.ai_gateway.context import BillingContext, billing_scope, current_billing_context
 from app.ai_gateway.errors import AIBillingError
-from app.ai_gateway.gateway import generate_content
+from app.ai_gateway.gateway import EmbeddingError, embed_texts, generate_content
 
-__all__ = ["AIBillingError", "BillingContext", "billing_scope", "current_billing_context", "generate_content"]
+__all__ = ["AIBillingError", "EmbeddingError", "embed_texts", "BillingContext", "billing_scope", "current_billing_context", "generate_content"]

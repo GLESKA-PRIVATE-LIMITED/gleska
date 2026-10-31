@@ -122,6 +122,24 @@ class AccountDeletionService:
             except Exception as exc:
                 logger.warning("Storage cleanup for General Work files encountered error: %s", exc)
 
+            # 4. Company Brain uploads (index rows cascade with the employer profile; files do not)
+            try:
+                docs_res = (
+                    supabase.table("company_brain_documents")
+                    .select("storage_bucket, storage_path")
+                    .eq("user_id", user.id)
+                    .eq("source_type", "upload")
+                    .execute()
+                )
+                brain_paths: dict[str, list[str]] = {}
+                for row in docs_res.data or []:
+                    if row.get("storage_bucket") and row.get("storage_path"):
+                        brain_paths.setdefault(row["storage_bucket"], []).append(row["storage_path"])
+                for bucket, paths in brain_paths.items():
+                    supabase.storage.from_(bucket).remove(paths)
+            except Exception as exc:
+                logger.warning("Storage cleanup for Company Brain documents encountered error: %s", exc)
+
     @classmethod
     def execute_database_deletion(cls, user_id: str) -> None:
         """Delete user records in database, trying the atomic RPC first with sequential fallback."""

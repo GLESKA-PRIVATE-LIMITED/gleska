@@ -19,7 +19,7 @@ Full picture: docs/architecture.md.
 | Path | What | Memory |
 |---|---|---|
 | `gleska-website/` | Next.js 16 + React 19 + TS + Tailwind 4; all web roles | gleska-website/CLAUDE.md |
-| `gleska-website/supabase/migrations/` | **The** DB schema (001–103 SQL files) | gleska-website/supabase/CLAUDE.md |
+| `gleska-website/supabase/migrations/` | **The** DB schema (001–107 SQL files) | gleska-website/supabase/CLAUDE.md |
 | `gleska-backend-f/` | FastAPI + Pydantic v2; sole writer to the DB | gleska-backend-f/CLAUDE.md |
 | `mobile/` | Vite + React + Capacitor 8; two Android apps from one source | mobile/CLAUDE.md |
 | `docs/` | Architecture, status, known issues, ADRs, open questions | — |
@@ -37,11 +37,11 @@ Full picture: docs/architecture.md.
 | Mobile | `npm run lint`, `npm run build:worker`, `npm run build:employer`, `npm run sync:<target>` | R |
 | Android | `cd mobile/android && ./gradlew assembleWorkerDebug` / `bundleWorkerRelease` (needs Android SDK) | R |
 
-Baselines (2026-10-31): backend 529 pass / 43 fail / 4 errors; website lint 110 errors,
+Baselines (2026-10-31): backend 586 pass / 43 fail / 4 errors; website lint 110 errors,
 88 warnings; vitest 3 failing (worker location). All failures pre-existing — **compare, don't chase**.
 
 ## 4. Database rules
-- Schema lives only in `gleska-website/supabase/migrations/NNN_name.sql`; next free number = 106.
+- Schema lives only in `gleska-website/supabase/migrations/NNN_name.sql`; next free number = 108.
   (`gleska-backend-f/migrations/connectors_setup.sql` is a legacy exception — don't add more there.)
 - Forward-only: never edit or delete an applied migration; add a new one. Idempotent DDL
   (`IF NOT EXISTS`, `DROP POLICY IF EXISTS`), wrapped in `BEGIN; … COMMIT;`.
@@ -89,7 +89,10 @@ Baselines (2026-10-31): backend 529 pass / 43 fail / 4 errors; website lint 110 
   (`billing_scope` / `@billed_entry`); only `app/ai_gateway/providers/` may touch the Gemini host or
   key (enforced by `tests/test_ai_gateway.py`). Billing refusals are `AIBillingError` (an
   `HTTPException`) — never swallow them. Money moves only via the SQL functions in migrations 104–105 (credit purchases: `cred_` Cashfree
-  orders, credited only by `billing_complete_purchase`).
+  orders, credited only by `billing_complete_purchase`). Embeddings: `ai_gateway.embed_texts` only.
+- **Company Brain** (`app/company_brain/`, docs/company-brain/): reads company data only through
+  `data_access.fetch` (table/column allowlist + org filter from auth). Never add a free-SQL tool; new
+  metrics go in `tools.py` + COMPANY_DATA_DICTIONARY.md + a ground-truth case in the eval suite.
 
 ## 8. Definition of done
 1. `git status` checked at start; unrelated user changes preserved.

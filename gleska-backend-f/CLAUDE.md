@@ -14,7 +14,11 @@ Read the root CLAUDE.md first. Commands and baselines are in its §3.
 - `app/ai_gateway/` — **the only LLM entry point** (ADR 0007): `context.py` (billing scope,
   `@billed_entry`), `pricing.py` (Decimal pricing engine), `providers/gemini.py` (only module that
   knows the Gemini host/key), `backend.py` (Supabase + money SQL functions), `gateway.py` (lifecycle).
-  Tests get an in-memory billing backend from `tests/conftest.py`.
+  Tests get an in-memory billing backend from `tests/conftest.py`. `embed_texts` = billed embeddings.
+- `app/company_brain/` — Company Brain (docs/company-brain/): `data_access` (allowlist), `tools`
+  (metrics), `planner`, `pipeline`, `answer` + `validator`, `documents` (RAG), `service`; router
+  `routers/company_brain.py`. Fixtures/eval: `tests/company_brain_fixtures.py`, `tests/company_brain_eval.py`.
+- `routers/logistics.py` — Logistics vehicle listings / rental requests (migration 107).
 - `tests/` — pytest, one file per area; fakes replace the Supabase client (see `test_general_work.py`
   for a reusable in-memory `FakeSupabase` with filters, inserts, updates, storage).
 

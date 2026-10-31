@@ -45,6 +45,7 @@ import AgentLayout from "@/components/agent-dashboard/AgentLayout";
 import { logisticsConfig } from "@/components/agents/logistics/logisticsConfig";
 import { useAuth } from "@/context/AuthContext";
 import apiClient from "@/lib/api";
+import { listingFromRow, logisticsApi, requestFromRow } from "@/lib/logistics-api";
 
 // Supported file formats for logistics documents
 const SUPPORTED_DOCUMENT_EXTENSIONS = [
@@ -387,28 +388,42 @@ export default function LogisticsDashboard() {
     }, 4500);
   };
 
-  // Load user-scoped persistence for lent and obtained vehicles
+  // Load vehicles and rental requests from the server (migration 107). Records saved by the
+  // previous browser-only version are imported once, then removed from this browser.
   useEffect(() => {
-    if (typeof window !== "undefined") {
+    if (!user?.id) return;
+    const lentKey = `gleska_logistics_${user.id}_lent`;
+    const obtainedKey = `gleska_logistics_${user.id}_obtained`;
+    const company = user.name || "My company";
+    const readLocal = <T,>(key: string): T[] => {
       try {
-        const savedLent = localStorage.getItem(`gleska_logistics_${currentUserId}_lent`);
-        if (savedLent) {
-          setLentVehicles(JSON.parse(savedLent));
-        } else {
-          setLentVehicles([]);
-        }
-
-        const savedObtained = localStorage.getItem(`gleska_logistics_${currentUserId}_obtained`);
-        if (savedObtained) {
-          setObtainedVehicles(JSON.parse(savedObtained));
-        } else {
-          setObtainedVehicles([]);
-        }
-      } catch (e) {
-        console.error("Error loading logistics records from local storage", e);
+        const raw = localStorage.getItem(key);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
       }
-    }
-  }, [currentUserId]);
+    };
+    const loadServer = () =>
+      Promise.all([logisticsApi.vehicles(), logisticsApi.requests()]).then(([vehicles, requests]) => {
+        setLentVehicles(vehicles.map((row) => listingFromRow(row, company)));
+        setObtainedVehicles(requests.map((row) => requestFromRow(row, company)));
+      });
+    const localLent = readLocal<VehicleListing>(lentKey);
+    const localObtained = readLocal<VehicleRentalRequest>(obtainedKey);
+    const migrate =
+      localLent.length || localObtained.length
+        ? logisticsApi.importBrowserData(localLent, localObtained).then(() => {
+            localStorage.removeItem(lentKey);
+            localStorage.removeItem(obtainedKey);
+          })
+        : Promise.resolve();
+    migrate
+      .catch(() => undefined) // keep local copies if the import fails; it is retried on the next visit
+      .then(loadServer)
+      .catch(() => showToast("Could not load your saved vehicles. Please refresh the page.", "error"));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
 
   // Load backend Company Settings when settings tab is opened
   useEffect(() => {
@@ -961,7 +976,7 @@ export default function LogisticsDashboard() {
   };
 
   // Handle Submit of Manual Vehicle Listing Form ("Lend Your Vehicle")
-  const handleSaveVehicleListing = (e: React.FormEvent) => {
+  const handleSaveVehicleListing = async (e: React.FormEvent) => {
     e.preventDefault();
 
     // Authoritative Indian compliance checks
@@ -1025,15 +1040,15 @@ export default function LogisticsDashboard() {
       createdAt: new Date().toISOString().split("T")[0],
     };
 
-    const updatedLent = [newVehicle, ...lentVehicles];
-    setLentVehicles(updatedLent);
-
-    // Save strictly under the authenticated user's account
+    // Saved on the server under the authenticated employer (never trusted from the client)
+    let saved: VehicleListing;
     try {
-      localStorage.setItem(`gleska_logistics_${currentUserId}_lent`, JSON.stringify(updatedLent));
-    } catch (e) {
-      console.error("Failed to save to local storage", e);
+      saved = listingFromRow(await logisticsApi.createVehicle(newVehicle), newVehicle.companyName);
+    } catch {
+      showToast("Could not save this vehicle. Please check the details and try again.", "error");
+      return;
     }
+    setLentVehicles((prev) => [saved, ...prev]);
 
     showToast(`Vehicle ${newVehicle.registrationNumber} (${newVehicle.makeModel}) listed successfully in fleet inventory.`, "success");
 
@@ -1065,7 +1080,7 @@ export default function LogisticsDashboard() {
   };
 
   // Submit Rental Request for a vehicle
-  const handleSubmitRentalRequest = (e: React.FormEvent) => {
+  const handleSubmitRentalRequest = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedVehicleForRental) return;
 
@@ -1095,14 +1110,14 @@ export default function LogisticsDashboard() {
       createdAt: new Date().toISOString().split("T")[0],
     };
 
-    const updatedObtained = [newRequest, ...obtainedVehicles];
-    setObtainedVehicles(updatedObtained);
-
+    let savedRequest: VehicleRentalRequest;
     try {
-      localStorage.setItem(`gleska_logistics_${currentUserId}_obtained`, JSON.stringify(updatedObtained));
-    } catch (e) {
-      console.error("Failed to save rental request", e);
+      savedRequest = requestFromRow(await logisticsApi.createRequest(newRequest), newRequest.companyName);
+    } catch {
+      showToast("Could not submit this rental request. Please try again.", "error");
+      return;
     }
+    setObtainedVehicles((prev) => [savedRequest, ...prev]);
 
     showToast(`Rental request for ${selectedVehicleForRental.registrationNumber} submitted successfully.`, "success");
     setSelectedVehicleForRental(null);

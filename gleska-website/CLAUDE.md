@@ -4,7 +4,9 @@ Read the root CLAUDE.md first. Commands and baselines are in its §3.
 
 ## Layout
 - `src/app/` — App Router. Roles: `worker/*`, `employer/*`, `admin/*`, `supplier/*`; employer
-  agents: `procurement`, `financial`, `logistics`, `tender-filing`, `tender-tracking`, `general-work`.
+  agents: `procurement`, `financial`, `logistics`, `tender-filing`, `tender-tracking`, `general-work`,
+  `company-brain` (`components/agents/company-brain/`, client `lib/company-brain-api.ts`).
+  Logistics data is server-side via `lib/logistics-api.ts` (was localStorage).
   Agent `page.tsx` files are thin server wrappers around a client component.
 - `src/components/agent-dashboard/` — **shared agent shell**: `AgentLayout` (employer-only guard,
   sidebar, `workspace` full-height mode, `sidebarContent` slot), `AgentSidebar`, `types.ts`

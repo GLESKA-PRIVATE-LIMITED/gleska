@@ -45,7 +45,17 @@ Last verified: 2026-10-31, commit aabb165. Update at the end of every task.
   Tests: `tests/test_credit_purchases.py`, `supabase/tests/105_credit_purchases_test.sql`,
   `src/app/employer/billing/**/page.test.tsx`.
 
+- Company Brain (ADR 0008, docs/company-brain/) **built 2026-10-31, not deployed**: `/company-brain`
+  chat with evidence-validated answers over hiring, attendance, financial, procurement, payments,
+  AI usage and logistics data; document RAG (uploads, General Work files, scanned bills; FTS +
+  pgvector); executive summaries; conversation history; admin health endpoint. Needs migrations
+  106 + 107. Logistics agent now stores vehicles/rental requests server-side (migration 107).
+  Tests: `tests/test_company_brain_*.py`, `tests/test_logistics_api.py`, eval suite (44/44),
+  `supabase/tests/106_company_brain_test.sql`, `src/components/agents/company-brain/companyBrain.test.tsx`.
+
 ## Waiting on the owner
+- Approve applying migrations 106 + 107 and pushing Company Brain to `main`; then add a verified
+  price for `gemini-embedding-001` in /admin/billing for semantic document search.
 - To switch AI back on: in `/admin/billing` enter the verified Gemini price for `GEMINI_MODEL`, a
   USD→INR rate, and grant credits to employers (done by the owner 2026-10-31). Still to build:
   increment 4 (reconciliation, spending limits).
@@ -65,7 +75,8 @@ Last verified: 2026-10-31, commit aabb165. Update at the end of every task.
   security assessment (external audit, 4–8 weeks).
 
 ## In progress / partial
-- Logistics agent: UI with hard-coded fleet; persistence in localStorage only.
+- Logistics agent: listings/rental requests persist server-side (migration 107, pending); the fleet
+  search pool is still a hard-coded demo list.
 
 ## Planned / not started
 - Tender filing & tracking backends (UI placeholders only).

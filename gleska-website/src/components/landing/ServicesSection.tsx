@@ -39,6 +39,7 @@ const DASHBOARD_PATHS: Record<string, string> = {
   "04": "/procurement",
   "05": "/financial",
   "06": "/tender-tracking",
+  "08": "/company-brain",
   "general-work": "/general-work",
 };
 

@@ -18,7 +18,7 @@ import httpx
 from app.ai_gateway.backend import get_backend
 from app.ai_gateway.context import current_billing_context
 from app.ai_gateway.errors import AIBillingError
-from app.ai_gateway.pricing import INR_IDENTITY, charge_for, provider_cost, reservation_credits
+from app.ai_gateway.pricing import INR_IDENTITY, Usage, charge_for, provider_cost, reservation_credits
 from app.ai_gateway.providers import gemini
 
 logger = logging.getLogger(__name__)
@@ -163,3 +163,95 @@ async def generate_content(
         # The provider already did the work: return it, and leave the held reservation for reconciliation.
         logger.exception("Settlement failed; reservation held for reconciliation: event_id=%s", event_id)
     return response
+
+
+EMBED_CHARS_PER_TOKEN = 3  # conservative: real text averages ~4 chars/token
+
+
+class EmbeddingError(Exception):
+    """Provider failed or returned an unusable embedding response (billing refusals raise AIBillingError)."""
+
+
+async def embed_texts(texts: list[str], *, operation: str, task_type: str, timeout: float) -> list[list[float]]:
+    """Billed embedding call through the same account, pricing and ledger as generate_content.
+
+    Gemini's embedding responses carry no token counts, so usage is an explicit estimate
+    (characters / 3) recorded with usage_status='estimated'; the price must be configured by an
+    admin for the embedding model like any other model.
+    """
+    context = current_billing_context()
+    if context is None:
+        raise AIBillingError("BILLING_CONTEXT_MISSING")
+    if not texts:
+        return []
+    model = gemini.embedding_model()
+    backend = get_backend()
+    estimate = max(sum(len(t) for t in texts) // EMBED_CHARS_PER_TOKEN, 1)
+    try:
+        account_id = backend.resolve_account(context.user_id)
+        price = backend.active_price(gemini.PROVIDER, model)
+        if price is None:
+            raise AIBillingError("AI_PRICING_NOT_CONFIGURED")
+        billing_settings = backend.active_settings()
+        fx = INR_IDENTITY if price.currency == "INR" else backend.active_fx(price.currency)
+        if fx is None:
+            raise AIBillingError("AI_FX_RATE_NOT_CONFIGURED")
+        hold = charge_for(provider_cost(Usage(input_tokens=estimate * 2), price), fx, billing_settings).credits
+        event_id = backend.create_event({
+            "request_id": str(uuid4()), "account_id": account_id, "user_id": context.user_id,
+            "initiating_agent": context.initiating_agent, "executing_agent": context.executing_agent,
+            "operation": operation, "conversation_id": context.conversation_id,
+            "parent_task_id": context.parent_task_id, "provider": gemini.PROVIDER, "model": model,
+            "pricing_id": price.id, "settings_id": billing_settings.id, "fx_rate_id": fx.id,
+            "fx_rate": str(fx.rate), "provider_currency": price.currency, "status": "reserved",
+        })
+    except AIBillingError:
+        raise
+    except Exception as exc:
+        logger.exception("Billing unavailable before embedding call: operation=%s", operation)
+        raise AIBillingError("BILLING_UNAVAILABLE") from exc
+    if hold > 0:
+        try:
+            backend.reserve(event_id, hold)
+        except AIBillingError as exc:
+            backend.update_event(event_id, {"status": "rejected", "error_code": exc.code})
+            raise
+    started = time.monotonic()
+
+    def release(code: str) -> None:
+        try:
+            if hold > 0:
+                backend.settle(event_id, Decimal(0), {"status": "failed", "error_code": code})
+            else:
+                backend.update_event(event_id, {"status": "failed", "error_code": code})
+        except Exception:
+            logger.exception("Embedding reservation release failed: event_id=%s", event_id)
+
+    try:
+        response = await gemini.batch_embed(model, texts, task_type, timeout)
+    except httpx.HTTPError as exc:
+        release(f"PROVIDER_TRANSPORT_{type(exc).__name__}"[:60])
+        raise EmbeddingError("EMBEDDING_PROVIDER_UNAVAILABLE") from exc
+    if response.status_code != 200:
+        release(f"PROVIDER_HTTP_{response.status_code}")
+        raise EmbeddingError("EMBEDDING_PROVIDER_ERROR")
+    try:
+        vectors = gemini.parse_embeddings(response.json(), len(texts))
+    except ValueError:
+        vectors = None
+    if vectors is None:
+        release("EMBEDDING_RESPONSE_INVALID")
+        raise EmbeddingError("EMBEDDING_RESPONSE_INVALID")
+
+    usage = Usage(input_tokens=estimate)
+    charge = charge_for(provider_cost(usage, price), fx, billing_settings)
+    fields = {**_usage_fields(usage, charge, {"estimated_from_characters": sum(len(t) for t in texts)}, None),
+              "usage_status": "estimated", "latency_ms": round((time.monotonic() - started) * 1000)}
+    try:
+        if hold > 0:
+            backend.settle(event_id, charge.credits, fields)
+        else:
+            backend.update_event(event_id, fields)
+    except Exception:
+        logger.exception("Embedding settlement failed; left for reconciliation: event_id=%s", event_id)
+    return vectors

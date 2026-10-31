@@ -148,6 +148,7 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = Field(default="", validation_alias=AliasChoices("GEMINI_API_KEY", "gemini_api_key"))
     GEMINI_MODEL: str = Field(default="gemini-3.6-flash", validation_alias=AliasChoices("GEMINI_MODEL", "gemini_model"))
     GEMINI_TIMEOUT_SECONDS: int = Field(default=30, validation_alias=AliasChoices("GEMINI_TIMEOUT_SECONDS", "gemini_timeout_seconds"))
+    GEMINI_EMBEDDING_MODEL: str = Field(default="gemini-embedding-001", validation_alias=AliasChoices("GEMINI_EMBEDDING_MODEL", "gemini_embedding_model"))
     FINANCIAL_SCAN_GEMINI_TIMEOUT_SECONDS: int = Field(
         default=120,
         validation_alias=AliasChoices(

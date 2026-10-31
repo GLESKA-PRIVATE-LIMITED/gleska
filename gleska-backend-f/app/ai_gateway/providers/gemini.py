@@ -37,6 +37,43 @@ def generate_content_url(model: str) -> str:
     return f"{API_ROOT}/v1beta/models/{model}:generateContent"
 
 
+EMBEDDING_DIMENSIONS = 768  # must match company_brain_chunks.embedding vector(768)
+
+
+def embedding_model() -> str:
+    return settings.GEMINI_EMBEDDING_MODEL.strip()
+
+
+def batch_embed_url(model: str) -> str:
+    return f"{API_ROOT}/v1beta/models/{model}:batchEmbedContents"
+
+
+async def batch_embed(model: str, texts: list[str], task_type: str, timeout: float) -> httpx.Response:
+    payload = {"requests": [{
+        "model": f"models/{model}",
+        "content": {"parts": [{"text": text}]},
+        "taskType": task_type,
+        "outputDimensionality": EMBEDDING_DIMENSIONS,
+    } for text in texts]}
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        return await client.post(batch_embed_url(model), headers=auth_headers({"content-type": "application/json"}),
+                                 json=payload)
+
+
+def parse_embeddings(body: Any, expected: int) -> list[list[float]] | None:
+    """Return one 768-float vector per input, or None if the response shape is not as expected."""
+    items = body.get("embeddings") if isinstance(body, dict) else None
+    if not isinstance(items, list) or len(items) != expected:
+        return None
+    vectors = []
+    for item in items:
+        values = item.get("values") if isinstance(item, dict) else None
+        if not isinstance(values, list) or len(values) != EMBEDDING_DIMENSIONS:
+            return None
+        vectors.append([float(v) for v in values])
+    return vectors
+
+
 def files_upload_url() -> str:
     return f"{API_ROOT}/upload/v1beta/files"
 

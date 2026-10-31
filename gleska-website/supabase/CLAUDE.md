@@ -3,7 +3,7 @@
 Rules are in root CLAUDE.md §4. This file holds the facts you need to apply them.
 
 ## Facts
-- Migrations: `migrations/001…103`, applied in filename order; next free number **104**.
+- Migrations: `migrations/001…107`, applied in filename order; next free number **108**.
   Duplicate numbers exist (031, 044, 058, 068, 069) — never reuse a number.
 - Applying is manual (Supabase SQL editor or `supabase db push`); there is no migration-tracking
   table in the repo [?] — whether a given file ran in production is unknown (docs/open-questions.md).
@@ -23,7 +23,9 @@ tables. Then apply twice (idempotency) and test RLS with `SET ROLE authenticated
 request.jwt.claim.sub = '<uuid>'`. Billing tests (`tests/104_*`, `tests/105_*`,
 `billing_concurrency.sh`) need the stand-in rows listed in the header of `tests/105_*`, a fresh
 database, and run in that order. Use a data dir outside the scratchpad (e.g. `/var/tmp`) —
-the scratchpad parent isn't readable by the `postgres` user.
+the scratchpad parent isn't readable by the `postgres` user. Migrations needing pgvector (106):
+the system Postgres has no pgvector — install the `pgserver` Python package in a venv and use its
+bundled Postgres 16 + vector (`.../pgserver/pginstall/bin`); test: `tests/106_company_brain_test.sql`.
 
 ## Watch-outs
 - Migrations 001–069 revoke function EXECUTE only from PUBLIC (KI-02).
