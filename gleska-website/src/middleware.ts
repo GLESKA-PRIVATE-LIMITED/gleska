@@ -15,7 +15,7 @@ const WORKER_PROTECTED_PREFIXES = [
   "/worker/settings",
   "/worker/help",
 ];
-const EMPLOYER_PROTECTED_PREFIXES = ["/employer/dashboard", "/employer/onboarding", "/employer/company-profile", "/employer/director-profile", "/employer/security", "/employer/workers", "/employer/attendance", "/employer/subscription", "/financial", "/general-work"];
+const EMPLOYER_PROTECTED_PREFIXES = ["/employer/dashboard", "/employer/onboarding", "/employer/company-profile", "/employer/director-profile", "/employer/security", "/employer/workers", "/employer/attendance", "/employer/subscription", "/employer/billing", "/financial", "/general-work"];
 const ADMIN_PROTECTED_PREFIXES = ["/admin"];
 const SUPPLIER_PROTECTED_PREFIXES = ["/supplier"];
 
@@ -100,6 +100,7 @@ export const config = {
     "/employer/workers/:path*",
     "/employer/attendance/:path*",
     "/employer/subscription/:path*",
+    "/employer/billing/:path*",
     "/logistics/:path*",
     "/tender-filing/:path*",
     "/procurement/:path*",

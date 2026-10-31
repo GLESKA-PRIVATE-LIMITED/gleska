@@ -19,6 +19,7 @@ import {
   Users,
   X,
   Clock,
+  Coins,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 
@@ -101,6 +102,7 @@ export default function AccountManagementShell({
     { href: "/employer/workers", label: "Workers", icon: Users, isPage: true },
     { href: "/employer/attendance", label: "Attendance", icon: Clock, isPage: true },
     { href: "/employer/subscription", label: "Subscription", icon: CreditCard, isPage: true },
+    { href: "/employer/billing", label: "AI Credits", icon: Coins, isPage: true },
     { href: "/employer/security", label: "Security & Settings", icon: ShieldCheck, isPage: true },
   ];
 

@@ -129,9 +129,13 @@ def test_employer_sees_only_own_wallet_and_usage(db, client_as):
     client = client_as(EMPLOYER_A)
     wallet = client.get("/api/v1/billing/wallet").json()
     assert (wallet["account_id"], wallet["available"], wallet["credit_value_inr"]) == ("acc-a", "12.500000", "20")
+    assert "markup_multiplier" not in wallet
     usage = client.get("/api/v1/billing/usage").json()
     assert [e["id"] for e in usage["events"]] == ["e1"]
     assert usage["totals"]["credits_charged"] == "0.5" and usage["by_agent"][0]["agent"] == "hiring"
+    # Gleska's provider cost (and therefore the markup) is never shown to employers.
+    assert "provider_cost_inr" not in usage["totals"] and "provider_cost_inr" not in usage["by_agent"][0]
+    assert "provider_cost_inr" not in usage["events"][0] and usage["events"][0]["customer_charge_inr"] == "10"
 
 
 def test_workers_cannot_use_billing_and_employers_cannot_use_admin(db, client_as):

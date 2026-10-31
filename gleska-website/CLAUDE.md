@@ -14,7 +14,8 @@ Read the root CLAUDE.md first. Commands and baselines are in its §3.
 - `src/components/connectors/` — shared connectors hook + list (used by `/employer/connectors`
   and General Work Plugins).
 - `src/lib/api.ts` — axios client: base URL `NEXT_PUBLIC_API_URL`, adds Supabase bearer +
-  `X-Goleska-Session-Key`. Typed per-domain clients: `procurement-api.ts`, `general-work-api.ts`.
+  `X-Goleska-Session-Key`. Typed per-domain clients: `procurement-api.ts`, `general-work-api.ts`, `billing-api.ts`
+  (money arrives as decimal strings — format for display, never compute with floats).
 - `src/lib/auth-routing.ts` — post-login redirects. **New employer agent routes must be added to
   `EMPLOYER_AGENT_ROUTES`**, or sign-in / homepage cards send users to `/`.
 - `src/middleware.ts` — cookie-presence navigation hint; add new protected prefixes + matcher.

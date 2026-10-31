@@ -103,3 +103,36 @@ class UsageReport(BaseModel):
     by_agent: list[AgentUsage]
     by_model: list[dict]
     events: list[dict]
+
+
+# Employer-facing views omit Gleska's provider cost (it would reveal the markup).
+INTERNAL_EVENT_FIELDS = frozenset({"provider_cost", "provider_currency", "provider_cost_inr", "pricing_id", "fx_rate"})
+
+
+class EmployerUsageTotals(BaseModel):
+    requests: int = 0
+    failed_requests: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    thinking_tokens: int = 0
+    total_tokens: int = 0
+    customer_charge_inr: Decimal = Decimal(0)
+    credits_charged: Decimal = Decimal(0)
+
+
+class EmployerAgentUsage(EmployerUsageTotals):
+    agent: str
+
+
+class EmployerUsageReport(BaseModel):
+    totals: EmployerUsageTotals
+    by_agent: list[EmployerAgentUsage]
+    events: list[dict]
+
+    @classmethod
+    def from_report(cls, report: "UsageReport") -> "EmployerUsageReport":
+        return cls(
+            totals=EmployerUsageTotals(**report.totals.model_dump()),
+            by_agent=[EmployerAgentUsage(**a.model_dump()) for a in report.by_agent],
+            events=[{k: v for k, v in e.items() if k not in INTERNAL_EVENT_FIELDS} for e in report.events],
+        )

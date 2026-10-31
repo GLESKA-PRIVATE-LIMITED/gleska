@@ -59,15 +59,22 @@ failed/unmetered requests, reconciliation, audit log).
    rest as `credits_unrecovered` for admin review; the empty wallet blocks further requests.
 3. **Prices and USD→INR rate are entered by admins**, versioned with effective dates and a source note.
 4. **Not GST-registered yet**: receipts without GST for now; GST fields added when registered.
+5. **Credit purchase (increment 2, decided 2026-10-31)**: custom whole-credit amount only (no packs),
+   min 5 / max 2,500 credits per payment (₹100–₹50,000 at ₹20/credit). Build after increment 3.
+6. **Employers never see Gleska's provider cost or the markup** (`/billing/usage` omits
+   `provider_cost*`; `/billing/wallet` omits `markup_multiplier`); admin adjustment reasons stay internal.
 
 ## Implementation status
-- Increment 1 (done, tested, not deployed): migration 104 + SQL tests + concurrency test;
+- Increment 1 (done; on `main`; migration 104 applied to production 2026-10-31): migration 104 + SQL tests + concurrency test;
   `app/ai_gateway/` (context, pricing, Gemini adapter, backend, gateway); all 7 call sites (G1–G7)
   migrated; architecture test; employer `/api/v1/billing/*` and admin `/api/v1/admin/billing/*` APIs.
 - No streaming call sites exist; the gateway is non-streaming until one is added.
 - Usage reports aggregate up to 5,000 events in Python — move to SQL aggregation before volume grows.
-- Increments 2 (Cashfree credit purchase + receipts), 3 (employer Billing Management UI),
-  4 (admin console + reconciliation, spending limits) are next.
+- Admin console page `/admin/billing` (prices, FX, settings, wallets + adjustments, usage, audit log).
+- Increment 3 (done 2026-10-31): employer page `/employer/billing` ("AI Credits" in the employer
+  sidebar): balance, usage by agent (7/30/90 days), recent AI requests, credit history.
+- Next: increment 2 (Cashfree credit purchase + receipts, needs migration 105), then 4
+  (reconciliation of held/pending reservations, spending limits).
 
 ## Consequences
 Every AI feature depends on the billing database: if it is unavailable, AI calls fail closed.

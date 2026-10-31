@@ -37,10 +37,14 @@ Last verified: 2026-10-31, commit aabb165. Update at the end of every task.
   billing APIs, admin page `/admin/billing` ("AI Billing": readiness, prices, FX, credit rules,
   employer wallets + credit adjustments, usage by agent, audit log). Tests: `tests/test_ai_gateway.py`, `tests/test_billing_api.py`,
   `gleska-website/supabase/tests/`.
+- AI billing increment 3: employer page `/employer/billing` ("AI Credits" in the employer sidebar) —
+  balance, usage by agent, recent requests, credit history; provider cost/markup hidden from employers.
+  Test `gleska-website/src/app/employer/billing/page.test.tsx`.
 
 ## Waiting on the owner
 - To switch AI back on: in `/admin/billing` enter the verified Gemini price for `GEMINI_MODEL`, a
-  USD→INR rate, and grant credits to employers. Still to build: increments 2–4 (credit purchase, Billing Management UI, admin console).
+  USD→INR rate, and grant credits to employers (done by the owner 2026-10-31). Still to build:
+  increment 2 (credit purchase: custom 5–2,500 credits) and 4 (reconciliation, spending limits).
 - Apply migration `103_general_work_workspace.sql`; set `GEMINI_API_KEY`; confirm `assistant-uploads` bucket.
 - Rotate the exposed signing password / upload key (KI-01).
 - Optionally remove orphaned profile photos of accounts deleted before the KI-19 fix.
