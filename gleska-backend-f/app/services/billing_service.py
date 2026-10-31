@@ -222,6 +222,11 @@ class BillingService:
 
     @staticmethod
     def list_accounts() -> list[dict[str, Any]]:
+        # Every employer gets a (zero-balance) wallet so admins can grant credits before first use.
+        known = {a["employer_id"] for a in _rows(supabase.table("billing_accounts").select("employer_id").execute())}
+        for employer in _rows(supabase.table("employer_profiles").select("id").execute()):
+            if employer["id"] not in known:
+                supabase.rpc("billing_ensure_account", {"p_employer_id": employer["id"]}).execute()
         accounts = _rows(supabase.table("billing_accounts").select("id, employer_id, status, created_at").execute())
         wallets = {w["account_id"]: w for w in _rows(supabase.table("credit_wallets").select("*").execute())}
         employer_ids = [a["employer_id"] for a in accounts if a.get("employer_id")]
@@ -256,6 +261,40 @@ class BillingService:
             raise BillingNotFound("BILLING_ACCOUNT_NOT_FOUND")
         _audit(admin.id, f"account_{payload.status}", "billing_account", account_id, {"reason": payload.reason})
         return row
+
+    @staticmethod
+    def readiness() -> dict[str, Any]:
+        """What production still needs before AI requests can be billed (and therefore run)."""
+        from app.ai_gateway.backend import get_backend
+        from app.ai_gateway.providers import gemini
+
+        model = gemini.default_model()
+        status: dict[str, Any] = {"provider": gemini.PROVIDER, "model": model or None, "api_key_configured": bool(gemini.api_key())}
+        try:
+            backend = get_backend()
+            price = backend.active_price(gemini.PROVIDER, model) if model else None
+            settings_row = backend.active_settings()
+            fx = backend.active_fx(price.currency) if price and price.currency != "INR" else None
+        except Exception:
+            return {**status, "migration_applied": False, "ready": False,
+                    "missing": ["Apply database migration 104 (billing tables)"]}
+        missing = []
+        if not status["api_key_configured"] or not model:
+            missing.append("Set the Gemini API key and model in the backend environment")
+        if price is None:
+            missing.append(f"Add a verified price for model '{model}'")
+        elif price.currency != "INR" and fx is None:
+            missing.append(f"Add a {price.currency} to INR exchange rate")
+        return {
+            **status,
+            "migration_applied": True,
+            "price": None if price is None else {"id": price.id, "version": price.version, "currency": price.currency},
+            "fx_rate": None if fx is None else str(fx.rate),
+            "credit_value_inr": str(settings_row.credit_value_inr),
+            "markup_multiplier": str(settings_row.markup_multiplier),
+            "missing": missing,
+            "ready": not missing,
+        }
 
     @staticmethod
     def audit_log(limit: int) -> list[dict[str, Any]]:

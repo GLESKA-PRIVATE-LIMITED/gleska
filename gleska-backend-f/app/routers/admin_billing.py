@@ -24,6 +24,11 @@ def _not_found(exc: Exception) -> HTTPException:
     return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
 
 
+@router.get("/status")
+async def billing_status(_: UserResponse = Depends(require_admin)):
+    return BillingService.readiness()
+
+
 @router.get("/pricing")
 async def list_pricing(_: UserResponse = Depends(require_admin)):
     return {"pricing": BillingService.list_pricing()}

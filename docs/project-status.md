@@ -33,7 +33,8 @@ Last verified: 2026-10-31, commit aabb165. Update at the end of every task.
   104 not yet applied to Supabase, so AI requests fail closed until it is, prices + FX are set and
   credits granted. Central AI gateway, versioned
   pricing, credit wallet + append-only ledger (migration 104), all 7 Gemini call sites metered,
-  billing APIs. Tests: `tests/test_ai_gateway.py`, `tests/test_billing_api.py`,
+  billing APIs, admin page `/admin/billing` ("AI Billing": readiness, prices, FX, credit rules,
+  employer wallets + credit adjustments, usage by agent, audit log). Tests: `tests/test_ai_gateway.py`, `tests/test_billing_api.py`,
   `gleska-website/supabase/tests/`.
 
 ## Waiting on the owner

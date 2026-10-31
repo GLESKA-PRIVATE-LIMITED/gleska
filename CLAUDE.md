@@ -37,7 +37,7 @@ Full picture: docs/architecture.md.
 | Mobile | `npm run lint`, `npm run build:worker`, `npm run build:employer`, `npm run sync:<target>` | R |
 | Android | `cd mobile/android && ./gradlew assembleWorkerDebug` / `bundleWorkerRelease` (needs Android SDK) | R |
 
-Baselines (2026-10-31): backend 521 pass / 43 fail / 4 errors; website lint 110 errors,
+Baselines (2026-10-31): backend 529 pass / 43 fail / 4 errors; website lint 110 errors,
 88 warnings; vitest 3 failing (worker location). All failures pre-existing — **compare, don't chase**.
 
 ## 4. Database rules

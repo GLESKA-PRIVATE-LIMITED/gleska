@@ -183,3 +183,34 @@ def test_summary_is_exact_decimal_arithmetic():
     ])
     assert totals.credits_charged == Decimal("0.3") and totals.failed_requests == 1
     assert by_agent[0].requests == 2 and by_model[0]["credits_charged"] == "0.3"
+
+
+def test_admin_status_lists_what_is_missing(db, client_as, ai_billing, monkeypatch):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "k")
+    monkeypatch.setattr(settings, "GEMINI_MODEL", "gemini-x")
+    ai_billing.active_price = lambda provider, model: None
+    body = client_as(ADMIN).get("/api/v1/admin/billing/status").json()
+    assert body["ready"] is False and body["missing"] == ["Add a verified price for model 'gemini-x'"]
+    assert client_as(EMPLOYER_A).get("/api/v1/admin/billing/status").status_code == 403
+
+    def broken():
+        raise RuntimeError("relation does not exist")
+
+    ai_billing.active_settings = broken
+    assert client_as(ADMIN).get("/api/v1/admin/billing/status").json()["migration_applied"] is False
+
+
+def test_admin_account_list_creates_wallets_for_employers_without_one(db, client_as):
+    db.tables["employer_profiles"].append({"id": "emp-c", "user_id": "c", "company_name": "Gamma"})
+    original_rpc = db.rpc
+
+    def rpc(name, params):
+        if name == "billing_ensure_account" and params["p_employer_id"] == "emp-c":
+            db.tables["billing_accounts"].append({"id": "acc-c", "employer_id": "emp-c", "status": "active"})
+        return original_rpc(name, params)
+
+    db.rpc = rpc
+    accounts = client_as(ADMIN).get("/api/v1/admin/billing/accounts").json()["accounts"]
+    assert {a["employer_name"] for a in accounts} == {"Alpha", "Beta", "Gamma"}

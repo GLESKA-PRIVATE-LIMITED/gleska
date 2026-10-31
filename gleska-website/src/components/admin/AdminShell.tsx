@@ -19,6 +19,7 @@ import {
   Shield,
   BadgeCheck,
   Wallet,
+  Coins,
 } from "lucide-react";
 
 interface AdminShellProps {
@@ -36,6 +37,7 @@ const adminNavItems = [
   { href: "/admin/financial", label: "Financials", icon: Wallet },
   { href: "/admin/jobs", label: "Jobs", icon: Briefcase },
   { href: "/admin/payments", label: "Payments", icon: CreditCard },
+  { href: "/admin/billing", label: "AI Billing", icon: Coins },
   { href: "/admin/locations", label: "Locations", icon: MapPin },
   { href: "/admin/help", label: "Help", icon: HelpCircle },
 ];
