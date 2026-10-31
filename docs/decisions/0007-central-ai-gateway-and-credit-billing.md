@@ -1,6 +1,6 @@
 # ADR 0007: Central AI gateway, metering and prepaid credit billing
 
-- Status: Accepted 2026-10-31 (increment 1 implemented on branch `claude/tender-gates-oeqcva`)
+- Status: Accepted 2026-10-31 (increment 1 merged to `main` in 4e2be7f at the owner's request)
 - Date: 2026-10-31
 - Audit: docs/audits/2026-10-31-gemini-integration-audit.md
 

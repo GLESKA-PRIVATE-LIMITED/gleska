@@ -29,7 +29,9 @@ Last verified: 2026-10-31, commit aabb165. Update at the end of every task.
   after failures/timeouts, logs sanitized provider errors (KI-20); tests in
   `gleska-backend-f/tests/test_cashfree_verification.py`. Needs a production check after deploy.
 
-- AI billing increment 1 (ADR 0007), **on branch only, not deployed**: central AI gateway, versioned
+- AI billing increment 1 (ADR 0007), **pushed to `main` 2026-10-31 (4e2be7f) at the owner's request**; migration
+  104 not yet applied to Supabase, so AI requests fail closed until it is, prices + FX are set and
+  credits granted. Central AI gateway, versioned
   pricing, credit wallet + append-only ledger (migration 104), all 7 Gemini call sites metered,
   billing APIs. Tests: `tests/test_ai_gateway.py`, `tests/test_billing_api.py`,
   `gleska-website/supabase/tests/`.
