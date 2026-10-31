@@ -264,6 +264,9 @@ async def get_onboarding_status(user: UserResponse = Depends(require_employer)):
         required_verifications = VerificationService.required_for(
             employer.get("employer_type") or "", details.model_dump() if details else {}
         )
+        available_verifications = VerificationService.available_for(
+            employer.get("employer_type") or "", details.model_dump() if details else {}
+        )
 
         return {
             "employer": EmployerProfileResponse(**employer),
@@ -274,7 +277,7 @@ async def get_onboarding_status(user: UserResponse = Depends(require_employer)):
                 records=[
                     VerificationRecordResponse(**_public_verification_record(record))
                     for record in VerificationService.list_for_employer(employer["id"])
-                    if record.get("verification_type") in required_verifications
+                    if record.get("verification_type") in available_verifications
                 ],
             ),
         }
@@ -466,8 +469,6 @@ async def update_legal_identity(
     if employer.get("employer_type") in {"REGISTERED_INDUSTRY", "REGISTERED_BUSINESS"}:
         if not str(data.get("business_name") or "").strip():
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Legal / company name is required")
-        if not str(data.get("cin_number") or "").strip():
-            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="CIN is required")
     existing_response = (
         supabase.table("employer_onboarding_details")
         .select("*")
@@ -530,13 +531,14 @@ async def get_onboarding_verifications(user: UserResponse = Depends(require_empl
         details_response.data[0] if details_response.data else {},
     )
     required = VerificationService.required_for(employer_type, details)
+    available = VerificationService.available_for(employer_type, details)
     return VerificationRequirementsResponse(
         employer_type=employer_type,
         required=required,
         records=[
             VerificationRecordResponse(**record)
             for record in VerificationService.list_for_employer(employer["id"])
-            if record.get("verification_type") in required
+            if record.get("verification_type") in available
         ],
     )
 
@@ -697,8 +699,8 @@ async def request_onboarding_verification(
         employer_type,
         details_response.data or {},
     )
-    required = VerificationService.required_for(employer_type, details)
-    if verification_type.upper() not in required:
+    available = VerificationService.available_for(employer_type, details)
+    if verification_type.upper() not in available:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=VerificationService.VERIFICATION_NOT_CONFIGURED)
     normalized_verification_type = verification_type.upper()
     if normalized_verification_type == "CIN" and not str(details.get("business_name") or "").strip():
@@ -1191,18 +1193,6 @@ async def _update_onboarding(
         previous_details = existing_details_response.data[0] if existing_details_response.data else {}
         previous_active_details = OnboardingService.active_details_for_type(employer_type, previous_details)
         merged_details = {**previous_active_details, **data}
-        if employer_type == "REGISTERED_INDUSTRY":
-            director_fields = {"director_name", "director_phone", "director_email", "director_address"}
-            if director_fields.intersection(data):
-                try:
-                    VerificationService.assert_verified_types(employer["id"], ["CIN"])
-                except ValueError as exc:
-                    raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-            if "work_location" in data:
-                try:
-                    VerificationService.assert_verified_types(employer["id"], ["CIN", "AADHAAR"])
-                except ValueError as exc:
-                    raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
         identity_changed = VerificationService.identity_changed(previous_active_details, merged_details)
         if employer.get("onboarding_status") == "COMPLETED" and identity_changed:
             raise HTTPException(

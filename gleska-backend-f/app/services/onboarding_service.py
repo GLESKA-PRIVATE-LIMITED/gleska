@@ -209,7 +209,6 @@ class OnboardingService:
                 "director_phone",
                 "director_email",
                 "director_address",
-                "director_aadhaar",
             ]
             if require_all_fields:
                 for field in required_fields:
@@ -227,7 +226,6 @@ class OnboardingService:
                 "director_phone",
                 "director_email",
                 "director_address",
-                "director_aadhaar",
             ]
             if require_registered_business_location:
                 required_fields.extend(["registered_address", "work_location"])
