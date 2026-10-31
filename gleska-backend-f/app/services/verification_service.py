@@ -589,11 +589,13 @@ class VerificationService:
             ref_id = ref_id.strip()
             if not ref_id:
                 raise ValueError("Aadhaar OTP verification is not awaiting an OTP")
-            if ref_id.isdigit():
-                ref_id = int(ref_id)
+        # Send ref_id back exactly as Cashfree issued it (its OTP response returns a JSON string);
+        # converting the type makes Cashfree reject the request as a validation_error.
         status, reason, metadata = await VerificationService._verify_cashfree_aadhaar_otp(
             otp.strip(), ref_id, expected_details
         )
+        # Keep the reference so a timed-out (still PENDING) attempt can be completed and every
+        # outcome stays traceable to its Cashfree request.
         return VerificationService._save_state(
             employer_id,
             "AADHAAR",
@@ -601,7 +603,7 @@ class VerificationService:
             reason or "",
             None,
             provider="cashfree",
-            provider_metadata=metadata,
+            provider_metadata={**(metadata or {}), "cashfree_ref_id": ref_id},
             verified=status == "VERIFIED",
         )
 
@@ -634,9 +636,17 @@ class VerificationService:
         except (httpx.HTTPError, ValueError):
             return "FAILED", VerificationService.CASHFREE_UNAVAILABLE, None
 
-        metadata = VerificationService._safe_provider_metadata(body) if isinstance(body, dict) else None
+        metadata = VerificationService._safe_provider_metadata(body) if isinstance(body, dict) else {}
+        metadata["http_status"] = response.status_code
         provider_message = str(body.get("message") or body.get("error_message") or "").strip() if isinstance(body, dict) else ""
         if response.status_code >= 400 or not isinstance(body, dict):
+            logger.error(
+                "Cashfree Aadhaar OTP verification failed: status=%s code=%s type=%s message=%s",
+                response.status_code,
+                str(body.get("code") or "")[:120] if isinstance(body, dict) else "",
+                str(body.get("type") or "")[:60] if isinstance(body, dict) else "",
+                provider_message[:240],
+            )
             return "FAILED", provider_message or VerificationService.CASHFREE_VERIFICATION_FAILED, metadata
         if body.get("valid") is False or str(body.get("status") or "").upper() in {"INVALID", "FAILED"}:
             return "FAILED", provider_message or VerificationService.CASHFREE_VERIFICATION_FAILED, metadata
