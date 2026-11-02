@@ -234,7 +234,7 @@ SEND_EMAIL_TOOL = ToolDefinition(
     },
     required_roles=("EMPLOYER",),
     required_permissions=("assistant:message",),
-    confirmation_required=True,
+    confirmation_required=False,
 )
 
 # ── 4. WhatsApp (via MSG91) ─────────────────────────────────────────────────
@@ -278,7 +278,7 @@ SEND_WHATSAPP_TOOL = ToolDefinition(
     },
     required_roles=("EMPLOYER",),
     required_permissions=("assistant:message",),
-    confirmation_required=True,
+    confirmation_required=False,
 )
 
 # ── 5. Google Calendar ──────────────────────────────────────────────────────
@@ -346,7 +346,7 @@ SCHEDULE_EVENT_TOOL = ToolDefinition(
     },
     required_roles=("EMPLOYER",),
     required_permissions=("assistant:message",),
-    confirmation_required=True,
+    confirmation_required=False,
 )
 
 # ── 6. Google Drive / Docs ──────────────────────────────────────────────────
@@ -441,7 +441,7 @@ CREATE_FORM_TOOL = ToolDefinition(
     },
     required_roles=("EMPLOYER",),
     required_permissions=("assistant:message",),
-    confirmation_required=True,
+    confirmation_required=False,
 )
 
 # ── 8. LinkedIn ─────────────────────────────────────────────────────────────
@@ -608,7 +608,7 @@ SEND_SLACK_MESSAGE_TOOL = ToolDefinition(
     },
     required_roles=("EMPLOYER",),
     required_permissions=("assistant:message",),
-    confirmation_required=True,
+    confirmation_required=False,
 )
 
 # ── 12. Microsoft Teams ────────────────────────────────────────────────────
@@ -651,7 +651,7 @@ SEND_TEAMS_MESSAGE_TOOL = ToolDefinition(
     },
     required_roles=("EMPLOYER",),
     required_permissions=("assistant:message",),
-    confirmation_required=True,
+    confirmation_required=False,
 )
 
 # ── 13. Social Media (Instagram / Facebook) ─────────────────────────────────
@@ -707,7 +707,7 @@ POST_SOCIAL_MEDIA_TOOL = ToolDefinition(
     },
     required_roles=("EMPLOYER",),
     required_permissions=("assistant:message",),
-    confirmation_required=True,
+    confirmation_required=False,
 )
 
 # ── 14. Zoom ────────────────────────────────────────────────────────────────
@@ -760,5 +760,5 @@ CREATE_ZOOM_MEETING_TOOL = ToolDefinition(
     },
     required_roles=("EMPLOYER",),
     required_permissions=("assistant:message",),
-    confirmation_required=True,
+    confirmation_required=False,
 )
