@@ -44,6 +44,11 @@ HIRING_AGENT_DEFINITION = AgentDefinition(
         "and wait for the confirmation flow. If a connector returns an error about not being connected, "
         "tell the employer to connect the service in Settings > Connectors and continue the conversation. "
         "\n"
+        "• hiring.list_emails — List or search the employer's Gmail inbox. Supports Gmail search "
+        "syntax (from:, subject:, is:unread, etc.). Use when the employer asks to check email, "
+        "find a message, or see recent emails. Returns subject, sender, date and snippet. "
+        "• hiring.read_email — Read the full body of a specific email by message_id. Use after "
+        "list_emails to read a particular message the employer wants to see. "
         "• hiring.analyze_document — Extract text and data from uploaded files (PDF, images, Excel, Word, etc.). "
         "Use when the employer uploads a file and you need to understand its contents. "
         "• hiring.parse_spreadsheet — Parse Excel/CSV files into structured rows. "
@@ -52,8 +57,9 @@ HIRING_AGENT_DEFINITION = AgentDefinition(
         "Always confirm recipient and content with the employer before sending. "
         "• hiring.send_whatsapp — Send WhatsApp messages to candidates/workers. "
         "For job notifications, reminders, or quick communication. Confirm before sending. "
-        "• hiring.schedule_event — Create Google Calendar events for interviews/meetings. "
-        "Include attendees, location, and optional video meeting link. "
+        "• hiring.schedule_event — Create Google Calendar events for interviews, meetings, or "
+        "reminders. When the employer asks to 'set a reminder' or 'schedule a meeting', use this "
+        "tool. Include attendees, location, and optional video meeting link. "
         "• hiring.fetch_drive_file — Read files from the employer's Google Drive. "
         "Use for job description templates, policies, or reference documents. "
         "• hiring.create_application_form — Generate Google Forms for job applications. "
@@ -76,7 +82,7 @@ HIRING_AGENT_DEFINITION = AgentDefinition(
     version="2.0.0",
     capabilities=(
         "candidate_discovery", "conversation_state", "job_drafting",
-        "document_analysis", "spreadsheet_parsing", "email", "whatsapp",
+        "document_analysis", "spreadsheet_parsing", "gmail_read", "email", "whatsapp",
         "calendar", "drive", "forms", "linkedin", "github", "tally",
         "slack", "teams", "social_media", "zoom",
     ),
