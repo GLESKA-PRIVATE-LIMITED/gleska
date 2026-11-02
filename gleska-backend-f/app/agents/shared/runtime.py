@@ -8,6 +8,7 @@ from app.agents.shared.contracts import AgentDefinition, AgentExecutionContext
 from app.agents.shared.task import (
     AgentTask,
     ConfirmationState,
+    ExecutionState,
     PendingAction,
     TaskState,
 )
@@ -91,3 +92,7 @@ class StructuredAgentResponse(_RuntimeModel):
     confirmation: ConfirmationState = Field(default_factory=ConfirmationState)
     completed: bool = False
     error: AgentResponseError | None = None
+
+
+AgentLLMRequest.model_rebuild()
+StructuredAgentResponse.model_rebuild()

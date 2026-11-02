@@ -1,6 +1,6 @@
 # Project status
 
-Last verified: 2026-10-31, commit aabb165. Update at the end of every task.
+Last verified: 2026-11-02, commit 401e135+. Update at the end of every task.
 
 ## Done (verified in code)
 - Worker/employer accounts: Supabase + MSG91 OTP auth, onboarding, verification (Cashfree), terms.
@@ -55,13 +55,13 @@ Last verified: 2026-10-31, commit aabb165. Update at the end of every task.
   `supabase/tests/106_company_brain_test.sql`, `src/components/agents/company-brain/companyBrain.test.tsx`.
 
 ## Waiting on the owner
-- Add a verified
-  price for `gemini-embedding-001` in /admin/billing for semantic document search.
+- Add a verified price for `gemini-embedding-001` in /admin/billing for semantic document search.
 - To switch AI back on: in `/admin/billing` enter the verified Gemini price for `GEMINI_MODEL`, a
   USD→INR rate, and grant credits to employers (done by the owner 2026-10-31). Still to build:
   increment 4 (reconciliation, spending limits).
   Owner: make one small real purchase (5 credits) to confirm the live Cashfree flow.
-- Apply migration `103_general_work_workspace.sql`; set `GEMINI_API_KEY`; confirm `assistant-uploads` bucket.
+- Apply migration `103_general_work_workspace.sql`; confirm `assistant-uploads` bucket.
+- `GEMINI_API_KEY` and `GEMINI_MODEL` set in Render; `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, and `OAUTH_CALLBACK_BASE_URL` also set.
 - Rotate the exposed signing password / upload key (KI-01).
 - Optionally remove orphaned profile photos of accounts deleted before the KI-19 fix.
 - Create production OAuth apps under the Gleska-owned account (not a developer's
