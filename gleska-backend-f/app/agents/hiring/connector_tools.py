@@ -94,7 +94,99 @@ PARSE_SPREADSHEET_TOOL = ToolDefinition(
     required_permissions=("assistant:message",),
 )
 
-# ── 3. Email (Gmail / Outlook via Resend) ───────────────────────────────────
+# ── 3a. Gmail Read ─────────────────────────────────────────────────────────
+
+LIST_EMAILS_TOOL = ToolDefinition(
+    name="hiring.list_emails",
+    description=(
+        "List recent emails from the employer's connected Gmail inbox. Can optionally "
+        "search by query (same syntax as Gmail search: from:, subject:, is:unread, etc.). "
+        "Returns subject, sender, date and snippet for each email. Use when the employer "
+        "asks to check their email, find a specific message, or see recent communications."
+    ),
+    domain="hiring",
+    agent_id="hiring",
+    input_schema={
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "maxLength": 200,
+                "description": "Gmail search query (e.g., 'from:hr@company.com', 'is:unread', 'subject:invoice'). Omit to list recent emails.",
+            },
+            "max_results": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 10,
+                "description": "Number of emails to return (default 5, max 10).",
+            },
+        },
+        "required": [],
+        "additionalProperties": False,
+    },
+    output_schema={
+        "type": "object",
+        "properties": {
+            "emails": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "message_id": {"type": "string"},
+                        "from": {"type": "string"},
+                        "to": {"type": "string"},
+                        "subject": {"type": "string"},
+                        "date": {"type": "string"},
+                        "snippet": {"type": "string"},
+                    },
+                },
+            },
+            "total_estimate": {"type": "integer"},
+        },
+        "required": ["emails"],
+    },
+    required_roles=("EMPLOYER",),
+    required_permissions=("assistant:message",),
+)
+
+READ_EMAIL_TOOL = ToolDefinition(
+    name="hiring.read_email",
+    description=(
+        "Read the full content of a specific email by its message ID. Use after listing "
+        "emails to read the complete body of a particular message the employer is "
+        "interested in. Returns the full email body along with metadata."
+    ),
+    domain="hiring",
+    agent_id="hiring",
+    input_schema={
+        "type": "object",
+        "properties": {
+            "message_id": {
+                "type": "string",
+                "description": "Gmail message ID (obtained from list_emails results).",
+            },
+        },
+        "required": ["message_id"],
+        "additionalProperties": False,
+    },
+    output_schema={
+        "type": "object",
+        "properties": {
+            "message_id": {"type": "string"},
+            "from": {"type": "string"},
+            "to": {"type": "string"},
+            "subject": {"type": "string"},
+            "date": {"type": "string"},
+            "body": {"type": "string"},
+            "labels": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": ["message_id"],
+    },
+    required_roles=("EMPLOYER",),
+    required_permissions=("assistant:message",),
+)
+
+# ── 3b. Email Send (via Resend) ────────────────────────────────────────────
 
 SEND_EMAIL_TOOL = ToolDefinition(
     name="hiring.send_email",

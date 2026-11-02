@@ -17,6 +17,8 @@ from app.agents.hiring.tools import DISCOVER_CANDIDATES_TOOL
 from app.agents.hiring.connector_tools import (
     ANALYZE_DOCUMENT_TOOL,
     PARSE_SPREADSHEET_TOOL,
+    LIST_EMAILS_TOOL,
+    READ_EMAIL_TOOL,
     SEND_EMAIL_TOOL,
     SEND_WHATSAPP_TOOL,
     SCHEDULE_EVENT_TOOL,
@@ -546,7 +548,31 @@ class HiringAgentService:
 
         executor.register_handler(PARSE_SPREADSHEET_TOOL.name, parse_spreadsheet)
 
-        # ── 3. Email ────────────────────────────────────────────────────
+        # ── 3a. Gmail Read ─────────────────────────────────────────────
+        from app.services.connectors.gmail_service import GmailService
+
+        registry.register(LIST_EMAILS_TOOL)
+
+        async def list_emails(arguments: dict[str, Any], context: AgentExecutionContext) -> dict[str, Any]:
+            return await GmailService.list_emails(
+                employer_id=eid,
+                query=arguments.get("query"),
+                max_results=arguments.get("max_results", 5),
+            )
+
+        executor.register_handler(LIST_EMAILS_TOOL.name, list_emails)
+
+        registry.register(READ_EMAIL_TOOL)
+
+        async def read_email(arguments: dict[str, Any], context: AgentExecutionContext) -> dict[str, Any]:
+            return await GmailService.read_email(
+                employer_id=eid,
+                message_id=arguments["message_id"],
+            )
+
+        executor.register_handler(READ_EMAIL_TOOL.name, read_email)
+
+        # ── 3b. Email Send ─────────────────────────────────────────────
         registry.register(SEND_EMAIL_TOOL)
 
         async def send_email(arguments: dict[str, Any], context: AgentExecutionContext) -> dict[str, Any]:

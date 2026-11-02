@@ -8,13 +8,15 @@ Last verified: 2026-11-02, commit 401e135+. Update at the end of every task.
   remains available afterward. Completed employers default to the Hiring dashboard.
 - Jobs, job sites, PostGIS matching, attendance, subscriptions/payments (Cashfree), notifications.
 - Hiring agent with connector tools and OAuth connectors page.
-  - 14 connector tools wired in `gleska-backend-f/app/agents/hiring/connector_tools.py`
+  - 16 connector tools (incl. Gmail list/read) wired in
+    `gleska-backend-f/app/agents/hiring/connector_tools.py`
     and registered per-request in `_build_tooling` of `hiring_agent_service.py`.
   - OAuth flow (`init` + `callback`) implemented for Google, Slack, Zoom, LinkedIn,
     Facebook/Instagram, Microsoft, GitHub in
     `gleska-backend-f/app/services/connectors/oauth_service.py`.
-  - OAuth client credentials configured so far: **Google** (tested end-to-end,
-    testing mode — 100 test users). Slack, Zoom, LinkedIn, Facebook, Microsoft
+  - OAuth client credentials configured so far: **Google** (production, External).
+    Gmail read requires `gmail.readonly` scope (added 2026-11-02); existing users
+    must re-authorize to grant it. Slack, Zoom, LinkedIn, Facebook, Microsoft
     still require provider-side client registration by the owner.
   - WhatsApp (via MSG91), OCR (via Gemini), GitHub (public API) marked always-on
     so employers do not need to connect them.
