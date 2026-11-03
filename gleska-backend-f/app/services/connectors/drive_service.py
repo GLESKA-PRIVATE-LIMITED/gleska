@@ -32,6 +32,63 @@ class DriveService:
         return None
 
     @staticmethod
+    async def search_files(
+        name_query: str,
+        employer_id: str,
+        max_results: int = 10,
+    ) -> dict[str, Any]:
+        """Find Drive files whose name contains name_query. Returns matches with id + link
+        so the agent can then fetch one by id."""
+        credential = await token_store.get_credential(employer_id, "google_drive")
+        access_token = credential.token
+        if not access_token:
+            return {"files": [], "error": credential.error_message("Google Drive")}
+
+        query = (name_query or "").strip()
+        if not query:
+            return {"files": [], "error": "Provide a file name to search for."}
+
+        # Drive query strings use single quotes as delimiters; escape any in the name.
+        escaped = query.replace("\\", "\\\\").replace("'", "\\'")
+        q = f"name contains '{escaped}' and trashed = false"
+        headers = {"Authorization": f"Bearer {access_token}"}
+
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.get(
+                    f"{DRIVE_API_BASE}/files",
+                    params={
+                        "q": q,
+                        "fields": "files(id,name,mimeType,size,webViewLink)",
+                        "pageSize": max(1, min(max_results, 25)),
+                        "orderBy": "modifiedTime desc",
+                    },
+                    headers=headers,
+                )
+
+            if resp.status_code != 200:
+                logger.error("Google Drive search error: status=%d", resp.status_code)
+                if resp.status_code == 401:
+                    return {"files": [], "error": "Drive token expired. Please reconnect."}
+                return {"files": [], "error": f"Drive API returned status {resp.status_code}."}
+
+            files = [
+                {
+                    "file_id": item.get("id", ""),
+                    "file_name": item.get("name", ""),
+                    "mime_type": item.get("mimeType", ""),
+                    "web_view_link": item.get("webViewLink", ""),
+                }
+                for item in resp.json().get("files", [])
+            ]
+            return {"files": files}
+
+        except httpx.TimeoutException:
+            return {"files": [], "error": "Drive service timed out."}
+        except httpx.HTTPError:
+            return {"files": [], "error": "Drive service connection error."}
+
+    @staticmethod
     async def fetch_file(
         file_url: str,
         employer_id: str,

@@ -23,6 +23,7 @@ from app.agents.hiring.connector_tools import (
     SEND_WHATSAPP_TOOL,
     SCHEDULE_EVENT_TOOL,
     FETCH_DRIVE_FILE_TOOL,
+    SEARCH_DRIVE_FILES_TOOL,
     CREATE_FORM_TOOL,
     LOOKUP_LINKEDIN_TOOL,
     FETCH_GITHUB_PORTFOLIO_TOOL,
@@ -626,6 +627,17 @@ class HiringAgentService:
             )
 
         executor.register_handler(FETCH_DRIVE_FILE_TOOL.name, fetch_drive_file)
+
+        registry.register(SEARCH_DRIVE_FILES_TOOL)
+
+        async def search_drive_files(arguments: dict[str, Any], context: AgentExecutionContext) -> dict[str, Any]:
+            return await DriveService.search_files(
+                name_query=arguments["name_query"],
+                employer_id=eid,
+                max_results=arguments.get("max_results", 10),
+            )
+
+        executor.register_handler(SEARCH_DRIVE_FILES_TOOL.name, search_drive_files)
 
         # ── 7. Google Forms ─────────────────────────────────────────────
         registry.register(CREATE_FORM_TOOL)

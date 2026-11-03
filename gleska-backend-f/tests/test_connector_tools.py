@@ -527,6 +527,39 @@ async def test_facebook_connect_stores_long_lived_token(http, monkeypatch):
     assert "fsecret" not in str(http.requests[1].url)
 
 
+# ── Google Drive search by name ─────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_drive_search_finds_files_by_name(db, http):
+    from app.services.connectors.drive_service import DriveService
+
+    db.add_token("gmail", "google-token", expires_at=_future())
+    http.route("GET", "https://www.googleapis.com/drive/v3/files", httpx.Response(
+        200, json={"files": [
+            {"id": "file-abc", "name": "full-stack-developer (6).pdf",
+             "mimeType": "application/pdf", "webViewLink": "https://drive.google.com/file/d/file-abc/view"},
+        ]},
+    ))
+
+    result = await DriveService.search_files("full-stack-developer", EMPLOYER_ID)
+
+    assert result["files"][0]["file_id"] == "file-abc"
+    assert result["files"][0]["file_name"] == "full-stack-developer (6).pdf"
+    # Uses the shared Google grant and sends a name-contains query.
+    request = http.requests[0]
+    assert request.headers["authorization"] == "Bearer google-token"
+    assert "name contains" in request.url.params["q"]
+
+
+@pytest.mark.asyncio
+async def test_drive_search_without_connection_returns_error(db):
+    from app.services.connectors.drive_service import DriveService
+
+    result = await DriveService.search_files("anything", EMPLOYER_ID)
+    assert result["files"] == []
+    assert result["error"]
+
+
 # ── Agent turn: connector failures go back to the model ─────────────────────
 
 class _GeminiReply:

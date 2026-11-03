@@ -404,6 +404,53 @@ FETCH_DRIVE_FILE_TOOL = ToolDefinition(
     metadata=CONNECTOR_TOOL_METADATA,
 )
 
+SEARCH_DRIVE_FILES_TOOL = ToolDefinition(
+    name="hiring.search_drive_files",
+    description=(
+        "Search Google Drive for files by name when the employer refers to a file by name "
+        "rather than a link. Returns matching files with their file_id; pass that file_id to "
+        "fetch_drive_file to read one."
+    ),
+    domain="hiring",
+    agent_id="hiring",
+    input_schema={
+        "type": "object",
+        "properties": {
+            "name_query": {
+                "type": "string",
+                "description": "Part or all of the file name to search for.",
+            },
+            "max_results": {
+                "type": "integer",
+                "description": "Maximum number of matches to return (default 10).",
+            },
+        },
+        "required": ["name_query"],
+        "additionalProperties": False,
+    },
+    output_schema={
+        "type": "object",
+        "properties": {
+            "files": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "file_id": {"type": "string"},
+                        "file_name": {"type": "string"},
+                        "mime_type": {"type": "string"},
+                        "web_view_link": {"type": "string"},
+                    },
+                },
+            },
+        },
+        "required": ["files"],
+    },
+    required_roles=("EMPLOYER",),
+    required_permissions=("assistant:message",),
+    metadata=CONNECTOR_TOOL_METADATA,
+)
+
 # ── 7. Google Forms ─────────────────────────────────────────────────────────
 
 CREATE_FORM_TOOL = ToolDefinition(
