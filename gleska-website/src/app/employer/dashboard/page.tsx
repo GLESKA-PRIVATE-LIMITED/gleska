@@ -279,6 +279,10 @@ export default function EmployerDashboard() {
   const [hiringAttachedFiles, setHiringAttachedFiles] = React.useState<File[]>([]);
   const [isVoiceRecording, setIsVoiceRecording] = React.useState(false);
   const hiringFileInputRef = React.useRef<HTMLInputElement>(null);
+  // Set while the attach-file dialog is open. Opening it blurs the window and closing it
+  // refocuses it, which would otherwise fire the focus refresh below and remount the composer
+  // just as the file is chosen — dropping the input's change event (no file ever attaches).
+  const fileDialogOpenRef = React.useRef(false);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const speechRecognitionRef = React.useRef<any>(null);
   const [isJobSaving, setIsJobSaving] = React.useState(false);
@@ -813,6 +817,11 @@ export default function EmployerDashboard() {
     if (isLoading || !user || user.role !== "EMPLOYER") return;
     let lastRefreshAt = 0;
     const refreshDashboard = () => {
+      // Skip the refresh caused by closing the attach-file dialog (see fileDialogOpenRef).
+      if (fileDialogOpenRef.current) {
+        fileDialogOpenRef.current = false;
+        return;
+      }
       if (document.visibilityState === "hidden") return;
       const now = Date.now();
       if (now - lastRefreshAt < 1000) return;
@@ -1418,6 +1427,7 @@ export default function EmployerDashboard() {
   const HIRING_ACCEPTED_FILE_TYPES = ".pdf,.png,.jpg,.jpeg,.gif,.webp,.mp4,.mov,.webm,.xlsx,.xls,.csv,.pptx,.ppt,.doc,.docx,.txt";
 
   const handleHiringFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    fileDialogOpenRef.current = false;
     const files = event.target.files;
     if (!files) return;
     setHiringAttachedFiles((prev) => [...prev, ...Array.from(files)]);
@@ -2205,7 +2215,10 @@ export default function EmployerDashboard() {
                           />
                           <button
                             type="button"
-                            onClick={() => hiringFileInputRef.current?.click()}
+                            onClick={() => {
+                              fileDialogOpenRef.current = true;
+                              hiringFileInputRef.current?.click();
+                            }}
                             disabled={isHiringAgentSending || isHiringConversationLoading}
                             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-400 transition hover:text-blue-600 hover:bg-blue-50 disabled:opacity-40 cursor-pointer dark:hover:text-blue-400 dark:hover:bg-blue-950/40"
                             title="Attach files (PDF, images, videos, documents)"
