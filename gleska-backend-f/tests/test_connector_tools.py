@@ -560,6 +560,42 @@ async def test_drive_search_without_connection_returns_error(db):
     assert result["error"]
 
 
+@pytest.mark.asyncio
+async def test_drive_pdf_is_read_via_ocr_not_raw_bytes(monkeypatch):
+    from app.services.connectors.drive_service import DriveService
+    from app.services.connectors import ocr_service
+
+    raw_pdf = b"%PDF-1.4\x00\x01\x02 binary noise \xff\xfe"
+
+    async def fake_extract(file_bytes, mime_type, analysis_intent="general"):
+        assert file_bytes == raw_pdf and mime_type == "application/pdf"
+        return {"extracted_text": "John Doe — Full-Stack Developer", "structured_data": {"name": "John Doe"},
+                "document_type": "resume", "confidence": 0.9}
+
+    monkeypatch.setattr(ocr_service.OCRService, "extract_from_bytes", staticmethod(fake_extract))
+
+    out = await DriveService._extract_content(raw_pdf, "application/pdf")
+
+    # Real extracted text, never the raw binary.
+    assert out["content"] == "John Doe — Full-Stack Developer"
+    assert out["structured_data"] == {"name": "John Doe"}
+    assert "%PDF" not in out["content"]
+
+
+@pytest.mark.asyncio
+async def test_drive_text_file_decodes_directly_without_ocr(monkeypatch):
+    from app.services.connectors.drive_service import DriveService
+    from app.services.connectors import ocr_service
+
+    async def fail(*a, **k):
+        raise AssertionError("OCR must not run on textual files")
+
+    monkeypatch.setattr(ocr_service.OCRService, "extract_from_bytes", staticmethod(fail))
+
+    out = await DriveService._extract_content(b"plain hiring notes", "text/plain")
+    assert out["content"] == "plain hiring notes"
+
+
 # ── Agent turn: connector failures go back to the model ─────────────────────
 
 class _GeminiReply:

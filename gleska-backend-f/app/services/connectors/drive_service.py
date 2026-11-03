@@ -32,6 +32,35 @@ class DriveService:
         return None
 
     @staticmethod
+    def _is_textual(mime: str) -> bool:
+        return (
+            mime.startswith("text/")
+            or mime in {"application/json", "application/xml", "application/csv"}
+        )
+
+    @staticmethod
+    async def _extract_content(file_bytes: bytes, mime: str) -> dict[str, Any]:
+        """Turn raw Drive bytes into readable text. Textual files decode directly; binary
+        documents (PDF, images, Office) go through Gemini-vision OCR. Never returns raw
+        binary, which would corrupt the agent's prompt."""
+        if DriveService._is_textual(mime):
+            return {"content": file_bytes.decode("utf-8", errors="replace")[:50_000]}
+
+        from app.services.connectors.ocr_service import OCRService, OCR_MIME_TYPES
+
+        if mime in OCR_MIME_TYPES:
+            ocr = await OCRService.extract_from_bytes(file_bytes, mime)
+            if ocr.get("error"):
+                return {"content": "", "extraction_error": ocr["error"]}
+            content = ocr.get("extracted_text", "")
+            out: dict[str, Any] = {"content": content}
+            if ocr.get("structured_data"):
+                out["structured_data"] = ocr["structured_data"]
+            return out
+
+        return {"content": "(Binary file — text extraction not available for this file type)"}
+
+    @staticmethod
     async def search_files(
         name_query: str,
         employer_id: str,
@@ -143,19 +172,18 @@ class DriveService:
                             result["content"] = export_resp.text[:50_000]
                     else:
                         size = int(meta.get("size", 0))
-                        if size <= 5_000_000:
+                        if size > 10_000_000:
+                            result["content"] = "(File too large for inline text extraction)"
+                        else:
                             dl_resp = await client.get(
                                 f"{DRIVE_API_BASE}/files/{file_id}",
                                 params={"alt": "media"},
                                 headers=headers,
                             )
                             if dl_resp.status_code == 200:
-                                try:
-                                    result["content"] = dl_resp.text[:50_000]
-                                except Exception:
-                                    result["content"] = "(Binary file — text extraction not available)"
-                        else:
-                            result["content"] = "(File too large for inline text extraction)"
+                                result.update(
+                                    await DriveService._extract_content(dl_resp.content, mime)
+                                )
 
                 return result
 
