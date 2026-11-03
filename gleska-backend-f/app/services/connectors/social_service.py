@@ -7,7 +7,7 @@ from typing import Any
 
 import httpx
 
-from app.core.supabase import supabase
+from app.services.connectors import token_store
 
 logger = logging.getLogger(__name__)
 
@@ -26,14 +26,12 @@ class SocialMediaService:
         location: str | None = None,
         hashtags: list[str] | None = None,
     ) -> dict[str, Any]:
-        access_token = await SocialMediaService._get_oauth_token(employer_id, platform)
+        credential = await token_store.get_credential(employer_id, platform)
+        access_token = credential.token
         if not access_token:
             return {
                 "posted": False,
-                "error": (
-                    f"{platform.title()} is not connected. Please connect your "
-                    f"{platform.title()} account in Settings > Connectors to post jobs."
-                ),
+                "error": credential.error_message(platform.title()),
             }
 
         if hashtags:
@@ -49,33 +47,45 @@ class SocialMediaService:
 
     @staticmethod
     async def _post_to_facebook(access_token: str, caption: str) -> dict[str, Any]:
+        # The stored token is a *user* token; Meta only allows publishing to a Page's feed
+        # with that Page's own access token, which /me/accounts returns.
         try:
             async with httpx.AsyncClient(timeout=15) as client:
                 resp = await client.get(
-                    f"{META_GRAPH_API}/me",
-                    params={"fields": "id", "access_token": access_token},
+                    f"{META_GRAPH_API}/me/accounts",
+                    params={"fields": "id,name,access_token"},
+                    headers={"Authorization": f"Bearer {access_token}"},
                 )
+                if resp.status_code in (400, 401, 403):
+                    return {"posted": False, "error": "Facebook refused the request. Please reconnect Facebook in Settings > Connectors."}
                 if resp.status_code != 200:
-                    return {"posted": False, "error": "Failed to retrieve Facebook page info."}
+                    return {"posted": False, "error": "Failed to retrieve Facebook Pages."}
 
-                page_id = resp.json().get("id", "")
+                pages = [p for p in resp.json().get("data", []) if p.get("id") and p.get("access_token")]
+                if not pages:
+                    return {
+                        "posted": False,
+                        "error": "No Facebook Page found. Posting requires a Facebook Page you manage, granted during connect.",
+                    }
+                page = pages[0]
 
                 post_resp = await client.post(
-                    f"{META_GRAPH_API}/{page_id}/feed",
-                    data={"message": caption, "access_token": access_token},
+                    f"{META_GRAPH_API}/{page['id']}/feed",
+                    data={"message": caption},
+                    headers={"Authorization": f"Bearer {page['access_token']}"},
                 )
 
                 if 200 <= post_resp.status_code < 300:
-                    data = post_resp.json()
-                    post_id = data.get("id", "")
+                    post_id = post_resp.json().get("id", "")
                     return {
                         "posted": True,
                         "post_id": post_id,
                         "post_url": f"https://facebook.com/{post_id}" if post_id else "",
+                        "page_name": page.get("name", ""),
                     }
 
-                if post_resp.status_code == 401:
-                    return {"posted": False, "error": "Facebook token expired. Please reconnect."}
+                if post_resp.status_code in (401, 403):
+                    return {"posted": False, "error": "Facebook refused the post. Please reconnect Facebook in Settings > Connectors."}
                 return {"posted": False, "error": f"Facebook API returned status {post_resp.status_code}."}
 
         except httpx.TimeoutException:
@@ -89,7 +99,8 @@ class SocialMediaService:
             async with httpx.AsyncClient(timeout=15) as client:
                 resp = await client.get(
                     f"{META_GRAPH_API}/me/accounts",
-                    params={"fields": "instagram_business_account", "access_token": access_token},
+                    params={"fields": "instagram_business_account"},
+                    headers={"Authorization": f"Bearer {access_token}"},
                 )
                 if resp.status_code != 200:
                     return {"posted": False, "error": "Failed to retrieve Instagram business account."}
@@ -123,23 +134,3 @@ class SocialMediaService:
             return {"posted": False, "error": "Instagram service timed out."}
         except httpx.HTTPError:
             return {"posted": False, "error": "Instagram service connection error."}
-
-    @staticmethod
-    async def _get_oauth_token(employer_id: str, provider: str) -> str | None:
-        try:
-            response = (
-                supabase.table("connector_tokens")
-                .select("access_token")
-                .eq("employer_id", employer_id)
-                .eq("provider", provider)
-                .eq("status", "active")
-                .execute()
-            )
-            data = getattr(response, "data", None)
-            if not data:
-                return None
-            row = data[0] if isinstance(data, list) else data
-            return str(row.get("access_token", "")) or None
-        except Exception:
-            logger.exception("Failed to retrieve OAuth token for provider=%s", provider)
-            return None

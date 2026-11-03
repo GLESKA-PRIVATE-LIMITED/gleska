@@ -488,6 +488,19 @@ class AgentRuntime:
                     completed=False,
                 )
 
+            if not result.success and tool is not None and tool.metadata.get("recoverable_errors"):
+                # Opt-in tools hand failures back to the model so it can explain or retry
+                # (e.g. corrected arguments) instead of ending the turn with a generic error.
+                record.pending_calls.pop(0)
+                results.append(result)
+                record.history.append(AgentConversationMessage(
+                    role="tool",
+                    content=json.dumps(asdict(result), default=to_jsonable_python),
+                    tool_name=result.tool_name,
+                    call_id=result.execution_id,
+                ))
+                continue
+
             if not result.success:
                 record.pending_calls.clear()
                 record.task = record.task.transition_to(TaskStatus.FAILED)

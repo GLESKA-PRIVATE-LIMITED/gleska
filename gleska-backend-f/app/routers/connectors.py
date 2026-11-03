@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
 from typing import Any
+
+import jwt
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import RedirectResponse
@@ -12,11 +13,13 @@ from pydantic import BaseModel, Field
 
 from app.core.config import settings
 from app.core.security import require_employer
-from app.core.supabase import supabase
 from app.schemas.auth import UserResponse
+from app.services.connectors import token_store
+from app.services.connectors.messaging_service import is_allowed_teams_webhook
 from app.services.connectors.oauth_service import (
     PROVIDER_MAP,
     build_authorize_url,
+    credential_group,
     exchange_code_for_token,
     is_oauth_configured,
 )
@@ -59,7 +62,7 @@ SUPPORTED_PROVIDERS = {
     },
     "gmail": {
         "name": "Gmail",
-        "description": "Send emails via the assistant",
+        "description": "Read your inbox and send emails from your Gmail account",
         "oauth": True,
         "icon": "gmail",
     },
@@ -77,7 +80,7 @@ SUPPORTED_PROVIDERS = {
     },
     "whatsapp": {
         "name": "WhatsApp",
-        "description": "Send WhatsApp messages to candidates (via MSG91)",
+        "description": "Send WhatsApp messages to candidates from the GO LESKA business number (via MSG91)",
         "oauth": False,
         "icon": "whatsapp",
         "always_on": True,
@@ -96,7 +99,7 @@ SUPPORTED_PROVIDERS = {
     },
     "microsoft_teams": {
         "name": "Microsoft Teams",
-        "description": "Post updates via Teams webhooks",
+        "description": "Post updates to a Teams channel (paste the channel's incoming webhook URL)",
         "oauth": False,
         "icon": "teams",
     },
@@ -160,16 +163,7 @@ async def list_connectors(user: UserResponse = Depends(require_employer)):
     employer_id = str(employer["id"])
 
     try:
-        response = (
-            supabase.table("connector_tokens")
-            .select("provider,status,connected_at,expires_at")
-            .eq("employer_id", employer_id)
-            .execute()
-        )
-        connected = {
-            row["provider"]: row
-            for row in (getattr(response, "data", None) or [])
-        }
+        connected = token_store.connection_statuses(employer_id)
     except Exception:
         logger.exception("Failed to list connectors for employer_id=%s", employer_id)
         connected = {}
@@ -178,6 +172,7 @@ async def list_connectors(user: UserResponse = Depends(require_employer)):
     for provider_id, meta in SUPPORTED_PROVIDERS.items():
         row = connected.get(provider_id, {})
         has_oauth_support = provider_id in PROVIDER_MAP
+        always_on = meta.get("always_on", False)
         connectors.append({
             "id": provider_id,
             "name": meta["name"],
@@ -185,10 +180,13 @@ async def list_connectors(user: UserResponse = Depends(require_employer)):
             "icon": meta["icon"],
             "requires_oauth": meta["oauth"],
             "oauth_configured": has_oauth_support and is_oauth_configured(provider_id),
-            "always_on": meta.get("always_on", False),
-            "connected": meta.get("always_on", False) or row.get("status") == "active",
+            "always_on": always_on,
+            "connected": always_on or row.get("status") == "active",
+            # Additive: "active" | "expired" | "disconnected" | null — "expired" means reconnect.
+            "status": "active" if always_on else row.get("status"),
             "connected_at": row.get("connected_at"),
-            "expires_at": row.get("expires_at"),
+            # A refreshable token renews itself, so its access-token expiry is not user-facing.
+            "expires_at": None if row.get("refresh_token") else row.get("expires_at"),
         })
 
     return {"connectors": connectors}
@@ -236,46 +234,42 @@ async def oauth_callback(
             status_code=302,
         )
 
+    # The URL provider_id may be a canonical name (e.g. "google") while the
+    # state token carries the original connector id (e.g. "gmail").  Use the
+    # original so exchange_code_for_token passes the state-mismatch check and
+    # the token is stored under the correct connector id.
     try:
-        result = await exchange_code_for_token(provider_id, code, state)
+        state_data = jwt.decode(state, settings.JWT_SECRET_KEY, algorithms=["HS256"])
+        original_provider = state_data.get("provider", provider_id)
+    except jwt.PyJWTError:
+        original_provider = provider_id
+
+    try:
+        result = await exchange_code_for_token(original_provider, code, state)
     except ValueError as exc:
-        logger.warning("OAuth exchange failed for provider=%s: %s", provider_id, exc)
+        logger.warning("OAuth exchange failed for provider=%s: %s", original_provider, str(exc)[:120])
         return RedirectResponse(
-            url=f"{connectors_page}?error=exchange_failed&provider={provider_id}",
+            url=f"{connectors_page}?error=exchange_failed&provider={original_provider}",
             status_code=302,
         )
 
-    now = datetime.now(timezone.utc)
-    expires_at = None
-    if result.get("expires_in"):
-        from datetime import timedelta
-        expires_at = (now + timedelta(seconds=int(result["expires_in"]))).isoformat()
-
-    row = {
-        "employer_id": result["employer_id"],
-        "provider": provider_id,
-        "access_token": result["access_token"],
-        "refresh_token": result.get("refresh_token"),
-        "expires_at": expires_at,
-        "status": "active",
-        "connected_at": now.isoformat(),
-        "connector_metadata": {},
-    }
-
     try:
-        supabase.table("connector_tokens").upsert(
-            row,
-            on_conflict="employer_id,provider",
-        ).execute()
+        token_store.store_token(
+            employer_id=result["employer_id"],
+            provider=original_provider,
+            access_token=result["access_token"],
+            refresh_token=result.get("refresh_token"),
+            expires_in=result.get("expires_in"),
+        )
     except Exception:
-        logger.exception("Failed to persist OAuth token for provider=%s", provider_id)
+        logger.exception("Failed to persist OAuth token for provider=%s", original_provider)
         return RedirectResponse(
-            url=f"{connectors_page}?error=storage_failed&provider={provider_id}",
+            url=f"{connectors_page}?error=storage_failed&provider={original_provider}",
             status_code=302,
         )
 
     return RedirectResponse(
-        url=f"{connectors_page}?connected={provider_id}",
+        url=f"{connectors_page}?connected={original_provider}",
         status_code=302,
     )
 
@@ -292,32 +286,21 @@ async def connect_provider(
     """
     if payload.provider not in SUPPORTED_PROVIDERS:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="UNSUPPORTED_PROVIDER")
+    if payload.provider == "microsoft_teams" and not is_allowed_teams_webhook(payload.access_token):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="INVALID_TEAMS_WEBHOOK_URL")
 
     employer = JobService._employer_profile(user)
     employer_id = str(employer["id"])
 
-    now = datetime.now(timezone.utc)
-    expires_at = None
-    if payload.expires_in_seconds:
-        from datetime import timedelta
-        expires_at = (now + timedelta(seconds=payload.expires_in_seconds)).isoformat()
-
-    row = {
-        "employer_id": employer_id,
-        "provider": payload.provider,
-        "access_token": payload.access_token,
-        "refresh_token": payload.refresh_token,
-        "expires_at": expires_at,
-        "status": "active",
-        "connected_at": now.isoformat(),
-        "connector_metadata": payload.metadata,
-    }
-
     try:
-        supabase.table("connector_tokens").upsert(
-            row,
-            on_conflict="employer_id,provider",
-        ).execute()
+        token_store.store_token(
+            employer_id=employer_id,
+            provider=payload.provider,
+            access_token=payload.access_token.strip(),
+            refresh_token=payload.refresh_token,
+            expires_in=payload.expires_in_seconds,
+            metadata=payload.metadata,
+        )
     except Exception as exc:
         logger.exception("Failed to store connector token for provider=%s", payload.provider)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="CONNECT_FAILED") from exc
@@ -330,7 +313,7 @@ async def disconnect_provider(
     payload: ConnectorDisconnectRequest,
     user: UserResponse = Depends(require_employer),
 ):
-    """Revoke stored credentials for a provider."""
+    """Revoke stored credentials for a provider (and connectors sharing its OAuth grant)."""
     if payload.provider not in SUPPORTED_PROVIDERS:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="UNSUPPORTED_PROVIDER")
 
@@ -338,11 +321,14 @@ async def disconnect_provider(
     employer_id = str(employer["id"])
 
     try:
-        supabase.table("connector_tokens").update({"status": "disconnected"}).eq(
-            "employer_id", employer_id,
-        ).eq("provider", payload.provider).execute()
+        token_store.disconnect(employer_id, payload.provider)
     except Exception as exc:
         logger.exception("Failed to disconnect provider=%s", payload.provider)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="DISCONNECT_FAILED") from exc
 
-    return {"disconnected": True, "provider": payload.provider}
+    return {
+        "disconnected": True,
+        "provider": payload.provider,
+        # Additive: every connector id that shared this grant and is now disconnected too.
+        "disconnected_providers": list(credential_group(payload.provider)),
+    }

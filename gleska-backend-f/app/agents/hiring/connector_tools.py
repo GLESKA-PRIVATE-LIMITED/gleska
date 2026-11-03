@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from app.tools.shared.contracts import ToolDefinition
 
+# Connector failures (not connected, provider errors, bad arguments) go back to the model
+# so it can explain or retry, instead of ending the turn with a generic error.
+CONNECTOR_TOOL_METADATA = {"recoverable_errors": True}
+
 # ── 1. OCR & Document Intelligence ──────────────────────────────────────────
 
 ANALYZE_DOCUMENT_TOOL = ToolDefinition(
@@ -44,6 +48,7 @@ ANALYZE_DOCUMENT_TOOL = ToolDefinition(
     },
     required_roles=("EMPLOYER",),
     required_permissions=("assistant:message",),
+    metadata=CONNECTOR_TOOL_METADATA,
 )
 
 # ── 2. Spreadsheet Parsing ──────────────────────────────────────────────────
@@ -92,6 +97,7 @@ PARSE_SPREADSHEET_TOOL = ToolDefinition(
     },
     required_roles=("EMPLOYER",),
     required_permissions=("assistant:message",),
+    metadata=CONNECTOR_TOOL_METADATA,
 )
 
 # ── 3a. Gmail Read ─────────────────────────────────────────────────────────
@@ -147,6 +153,7 @@ LIST_EMAILS_TOOL = ToolDefinition(
     },
     required_roles=("EMPLOYER",),
     required_permissions=("assistant:message",),
+    metadata=CONNECTOR_TOOL_METADATA,
 )
 
 READ_EMAIL_TOOL = ToolDefinition(
@@ -184,6 +191,7 @@ READ_EMAIL_TOOL = ToolDefinition(
     },
     required_roles=("EMPLOYER",),
     required_permissions=("assistant:message",),
+    metadata=CONNECTOR_TOOL_METADATA,
 )
 
 # ── 3b. Email Send (via Resend) ────────────────────────────────────────────
@@ -191,9 +199,11 @@ READ_EMAIL_TOOL = ToolDefinition(
 SEND_EMAIL_TOOL = ToolDefinition(
     name="hiring.send_email",
     description=(
-        "Send a professional email on behalf of the employer. Use for sending job offers, "
-        "interview invitations, onboarding documents, or formal communications to candidates "
-        "or team members. The employer must confirm the recipient and content before sending."
+        "Send a professional email on behalf of the employer. Sent from the employer's own "
+        "connected Gmail (or Outlook) account; if neither is connected it is sent from the GO LESKA "
+        "address. The result's sent_via says which. Use for job offers, interview invitations, "
+        "onboarding documents, or formal communications. Confirm the recipient and content with "
+        "the employer before sending."
     ),
     domain="hiring",
     agent_id="hiring",
@@ -234,6 +244,7 @@ SEND_EMAIL_TOOL = ToolDefinition(
     },
     required_roles=("EMPLOYER",),
     required_permissions=("assistant:message",),
+    metadata=CONNECTOR_TOOL_METADATA,
     confirmation_required=False,
 )
 
@@ -242,9 +253,11 @@ SEND_EMAIL_TOOL = ToolDefinition(
 SEND_WHATSAPP_TOOL = ToolDefinition(
     name="hiring.send_whatsapp",
     description=(
-        "Send a WhatsApp message to a candidate or worker. Use for job notifications, "
-        "interview reminders, status updates, or quick communication. Requires a valid "
-        "Indian mobile number. The employer must confirm the message before sending."
+        "Send a WhatsApp message to a candidate or worker from the GO LESKA WhatsApp Business "
+        "number (not the employer's personal WhatsApp). Free-form text only reaches people who "
+        "messaged that number in the last 24 hours; to start a conversation pass an approved "
+        "template_name. Requires a mobile number with country code. Confirm the message with the "
+        "employer before sending."
     ),
     domain="hiring",
     agent_id="hiring",
@@ -278,6 +291,7 @@ SEND_WHATSAPP_TOOL = ToolDefinition(
     },
     required_roles=("EMPLOYER",),
     required_permissions=("assistant:message",),
+    metadata=CONNECTOR_TOOL_METADATA,
     confirmation_required=False,
 )
 
@@ -346,6 +360,7 @@ SCHEDULE_EVENT_TOOL = ToolDefinition(
     },
     required_roles=("EMPLOYER",),
     required_permissions=("assistant:message",),
+    metadata=CONNECTOR_TOOL_METADATA,
     confirmation_required=False,
 )
 
@@ -386,6 +401,7 @@ FETCH_DRIVE_FILE_TOOL = ToolDefinition(
     },
     required_roles=("EMPLOYER",),
     required_permissions=("assistant:message",),
+    metadata=CONNECTOR_TOOL_METADATA,
 )
 
 # ── 7. Google Forms ─────────────────────────────────────────────────────────
@@ -441,6 +457,7 @@ CREATE_FORM_TOOL = ToolDefinition(
     },
     required_roles=("EMPLOYER",),
     required_permissions=("assistant:message",),
+    metadata=CONNECTOR_TOOL_METADATA,
     confirmation_required=False,
 )
 
@@ -483,6 +500,7 @@ LOOKUP_LINKEDIN_TOOL = ToolDefinition(
     },
     required_roles=("EMPLOYER",),
     required_permissions=("assistant:message",),
+    metadata=CONNECTOR_TOOL_METADATA,
 )
 
 # ── 9. GitHub Portfolio ─────────────────────────────────────────────────────
@@ -521,6 +539,7 @@ FETCH_GITHUB_PORTFOLIO_TOOL = ToolDefinition(
     },
     required_roles=("EMPLOYER",),
     required_permissions=("assistant:message",),
+    metadata=CONNECTOR_TOOL_METADATA,
 )
 
 # ── 10. TallyPrime ─────────────────────────────────────────────────────────
@@ -569,6 +588,7 @@ FETCH_TALLY_DATA_TOOL = ToolDefinition(
     },
     required_roles=("EMPLOYER",),
     required_permissions=("assistant:message",),
+    metadata=CONNECTOR_TOOL_METADATA,
 )
 
 # ── 11. Slack ───────────────────────────────────────────────────────────────
@@ -608,6 +628,7 @@ SEND_SLACK_MESSAGE_TOOL = ToolDefinition(
     },
     required_roles=("EMPLOYER",),
     required_permissions=("assistant:message",),
+    metadata=CONNECTOR_TOOL_METADATA,
     confirmation_required=False,
 )
 
@@ -616,18 +637,15 @@ SEND_SLACK_MESSAGE_TOOL = ToolDefinition(
 SEND_TEAMS_MESSAGE_TOOL = ToolDefinition(
     name="hiring.send_teams_message",
     description=(
-        "Send a notification to a Microsoft Teams channel. Use for team updates about "
-        "hiring progress, new candidate matches, or interview schedules."
+        "Send a notification to the Microsoft Teams channel the employer connected in "
+        "Settings > Connectors. Use for team updates about hiring progress, new candidate "
+        "matches, or interview schedules."
     ),
     domain="hiring",
     agent_id="hiring",
     input_schema={
         "type": "object",
         "properties": {
-            "webhook_url": {
-                "type": "string",
-                "description": "Teams incoming webhook URL for the target channel.",
-            },
             "title": {
                 "type": "string",
                 "maxLength": 200,
@@ -639,7 +657,7 @@ SEND_TEAMS_MESSAGE_TOOL = ToolDefinition(
                 "description": "Message body text.",
             },
         },
-        "required": ["webhook_url", "title", "message"],
+        "required": ["title", "message"],
         "additionalProperties": False,
     },
     output_schema={
@@ -651,6 +669,7 @@ SEND_TEAMS_MESSAGE_TOOL = ToolDefinition(
     },
     required_roles=("EMPLOYER",),
     required_permissions=("assistant:message",),
+    metadata=CONNECTOR_TOOL_METADATA,
     confirmation_required=False,
 )
 
@@ -707,6 +726,7 @@ POST_SOCIAL_MEDIA_TOOL = ToolDefinition(
     },
     required_roles=("EMPLOYER",),
     required_permissions=("assistant:message",),
+    metadata=CONNECTOR_TOOL_METADATA,
     confirmation_required=False,
 )
 
@@ -760,5 +780,6 @@ CREATE_ZOOM_MEETING_TOOL = ToolDefinition(
     },
     required_roles=("EMPLOYER",),
     required_permissions=("assistant:message",),
+    metadata=CONNECTOR_TOOL_METADATA,
     confirmation_required=False,
 )

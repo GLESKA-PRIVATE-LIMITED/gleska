@@ -63,6 +63,11 @@ export default function ConnectorsList({ state, connectedOnly = false, emptyMess
                             {connector.always_on ? "Always on" : "Connected"}
                           </span>
                         )}
+                        {!connector.connected && connector.status === "expired" && (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-600 dark:text-amber-400">
+                            Expired — reconnect
+                          </span>
+                        )}
                       </div>
                     </div>
                     <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">{connector.description}</p>
@@ -88,7 +93,7 @@ export default function ConnectorsList({ state, connectedOnly = false, emptyMess
                         disabled={actionInFlight === connector.id}
                         className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50 cursor-pointer"
                       >
-                        Connect
+                        {connector.status === "expired" ? "Reconnect" : "Connect"}
                       </button>
                     )}
                   </div>

@@ -8,7 +8,7 @@ from typing import Any
 
 import httpx
 
-from app.core.supabase import supabase
+from app.services.connectors import token_store
 
 logger = logging.getLogger(__name__)
 
@@ -24,14 +24,12 @@ class LinkedInService:
         profile_url: str | None = None,
         name: str | None = None,
     ) -> dict[str, Any]:
-        access_token = await LinkedInService._get_oauth_token(employer_id, "linkedin")
+        credential = await token_store.get_credential(employer_id, "linkedin")
+        access_token = credential.token
         if not access_token:
             return {
                 "found": False,
-                "error": (
-                    "LinkedIn is not connected. Please connect your LinkedIn account "
-                    "in Settings > Connectors to look up candidate profiles."
-                ),
+                "error": credential.error_message("LinkedIn"),
             }
 
         if profile_url:
@@ -98,23 +96,3 @@ class LinkedInService:
     def _extract_username(url: str) -> str | None:
         match = re.search(r"linkedin\.com/in/([a-zA-Z0-9_-]+)", url)
         return match.group(1) if match else None
-
-    @staticmethod
-    async def _get_oauth_token(employer_id: str, provider: str) -> str | None:
-        try:
-            response = (
-                supabase.table("connector_tokens")
-                .select("access_token")
-                .eq("employer_id", employer_id)
-                .eq("provider", provider)
-                .eq("status", "active")
-                .execute()
-            )
-            data = getattr(response, "data", None)
-            if not data:
-                return None
-            row = data[0] if isinstance(data, list) else data
-            return str(row.get("access_token", "")) or None
-        except Exception:
-            logger.exception("Failed to retrieve OAuth token for provider=%s", provider)
-            return None

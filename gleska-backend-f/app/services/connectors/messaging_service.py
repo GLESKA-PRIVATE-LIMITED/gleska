@@ -4,12 +4,31 @@ from __future__ import annotations
 
 import logging
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 
-from app.core.supabase import supabase
+from app.services.connectors import token_store
 
 logger = logging.getLogger(__name__)
+
+# Teams incoming-webhook hosts (classic connectors and Power Automate workflows).
+# The backend POSTs to this URL, so arbitrary hosts would be a server-side request forgery.
+TEAMS_WEBHOOK_HOST_SUFFIXES = (".webhook.office.com", ".logic.azure.com", ".powerplatform.com")
+
+
+def is_allowed_teams_webhook(url: str) -> bool:
+    try:
+        parsed = urlparse((url or "").strip())
+    except ValueError:
+        return False
+    host = (parsed.hostname or "").lower()
+    return (
+        parsed.scheme == "https"
+        and not parsed.username
+        and not parsed.password
+        and any(host.endswith(suffix) for suffix in TEAMS_WEBHOOK_HOST_SUFFIXES)
+    )
 
 
 class SlackService:
@@ -21,14 +40,12 @@ class SlackService:
         message: str,
         employer_id: str,
     ) -> dict[str, Any]:
-        access_token = await SlackService._get_oauth_token(employer_id, "slack")
+        credential = await token_store.get_credential(employer_id, "slack")
+        access_token = credential.token
         if not access_token:
             return {
                 "sent": False,
-                "error": (
-                    "Slack is not connected. Please connect your Slack workspace "
-                    "in Settings > Connectors to send notifications."
-                ),
+                "error": credential.error_message("Slack"),
             }
 
         channel = channel.strip().lstrip("#")
@@ -64,25 +81,6 @@ class SlackService:
         except httpx.HTTPError:
             return {"sent": False, "error": "Slack service connection error."}
 
-    @staticmethod
-    async def _get_oauth_token(employer_id: str, provider: str) -> str | None:
-        try:
-            response = (
-                supabase.table("connector_tokens")
-                .select("access_token")
-                .eq("employer_id", employer_id)
-                .eq("provider", provider)
-                .eq("status", "active")
-                .execute()
-            )
-            data = getattr(response, "data", None)
-            if not data:
-                return None
-            row = data[0] if isinstance(data, list) else data
-            return str(row.get("access_token", "")) or None
-        except Exception:
-            logger.exception("Failed to retrieve Slack OAuth token")
-            return None
 
 
 class TeamsService:
@@ -90,12 +88,21 @@ class TeamsService:
 
     @staticmethod
     async def send_message(
-        webhook_url: str,
         title: str,
         message: str,
+        employer_id: str,
     ) -> dict[str, Any]:
-        if not webhook_url or not webhook_url.startswith("https://"):
-            return {"sent": False, "error": "Invalid Teams webhook URL."}
+        # The webhook URL is the credential the employer saved in Settings > Connectors;
+        # it is never taken from model output.
+        credential = await token_store.get_credential(employer_id, "microsoft_teams")
+        webhook_url = credential.token
+        if not webhook_url:
+            return {"sent": False, "error": credential.error_message("Microsoft Teams")}
+        if not is_allowed_teams_webhook(webhook_url):
+            return {
+                "sent": False,
+                "error": "The saved Teams webhook URL is not a Microsoft webhook. Please reconnect Teams in Settings > Connectors.",
+            }
 
         card = {
             "@type": "MessageCard",

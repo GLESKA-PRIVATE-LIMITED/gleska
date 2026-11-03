@@ -139,6 +139,9 @@ class Settings(BaseSettings):
     )
     MSG91_TIMEOUT_SECONDS: int = Field(default=15, validation_alias=AliasChoices("MSG91_TIMEOUT_SECONDS", "msg91_timeout_seconds"))
     MSG91_OTP_LENGTH: int = Field(default=6, validation_alias=AliasChoices("MSG91_OTP_LENGTH", "msg91_otp_length"))
+    # WhatsApp Business sender number registered in MSG91 (digits with country code).
+    # Not the OTP widget id — MSG91 rejects outbound WhatsApp without a real integrated number.
+    MSG91_WHATSAPP_NUMBER: str = Field(default="", validation_alias=AliasChoices("MSG91_WHATSAPP_NUMBER", "msg91_whatsapp_number"))
     PASSWORD_RESET_OTP_TTL_SECONDS: int = Field(default=600, validation_alias=AliasChoices("PASSWORD_RESET_OTP_TTL_SECONDS", "password_reset_otp_ttl_seconds"))
     PASSWORD_RESET_MAX_ATTEMPTS: int = Field(default=5, validation_alias=AliasChoices("PASSWORD_RESET_MAX_ATTEMPTS", "password_reset_max_attempts"))
     PASSWORD_RESET_RESEND_COOLDOWN_SECONDS: int = Field(default=30, validation_alias=AliasChoices("PASSWORD_RESET_RESEND_COOLDOWN_SECONDS", "password_reset_resend_cooldown_seconds"))
@@ -191,6 +194,12 @@ class Settings(BaseSettings):
     OAUTH_CALLBACK_BASE_URL: str = Field(
         default="http://localhost:8000",
         validation_alias=AliasChoices("OAUTH_CALLBACK_BASE_URL", "oauth_callback_base_url"),
+    )
+    # Fernet key (urlsafe base64, 32 bytes) used to encrypt connector tokens at rest.
+    # Empty = tokens stored as plaintext (legacy behaviour); existing plaintext rows stay readable.
+    CONNECTOR_TOKEN_ENCRYPTION_KEY: str = Field(
+        default="",
+        validation_alias=AliasChoices("CONNECTOR_TOKEN_ENCRYPTION_KEY", "connector_token_encryption_key"),
     )
 
     # Contact inquiry / Email notification

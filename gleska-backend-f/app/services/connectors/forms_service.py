@@ -7,7 +7,7 @@ from typing import Any
 
 import httpx
 
-from app.core.supabase import supabase
+from app.services.connectors import token_store
 
 logger = logging.getLogger(__name__)
 
@@ -24,14 +24,12 @@ class FormsService:
         employer_id: str,
         collect_email: bool = True,
     ) -> dict[str, Any]:
-        access_token = await FormsService._get_oauth_token(employer_id, "google_forms")
+        credential = await token_store.get_credential(employer_id, "google_forms")
+        access_token = credential.token
         if not access_token:
             return {
                 "created": False,
-                "error": (
-                    "Google Forms is not connected. Please connect your Google account "
-                    "in Settings > Connectors to create application forms."
-                ),
+                "error": credential.error_message("Google Forms"),
             }
 
         headers = {
@@ -116,23 +114,3 @@ class FormsService:
         if q_type == "date":
             return {"required": required, "dateQuestion": {"includeTime": False}}
         return {"required": required, "textQuestion": {"paragraph": q_type == "text" and len(q.get("text", "")) > 50}}
-
-    @staticmethod
-    async def _get_oauth_token(employer_id: str, provider: str) -> str | None:
-        try:
-            response = (
-                supabase.table("connector_tokens")
-                .select("access_token")
-                .eq("employer_id", employer_id)
-                .eq("provider", provider)
-                .eq("status", "active")
-                .execute()
-            )
-            data = getattr(response, "data", None)
-            if not data:
-                return None
-            row = data[0] if isinstance(data, list) else data
-            return str(row.get("access_token", "")) or None
-        except Exception:
-            logger.exception("Failed to retrieve OAuth token for provider=%s", provider)
-            return None

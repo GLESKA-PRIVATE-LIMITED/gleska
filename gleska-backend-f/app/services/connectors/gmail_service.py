@@ -4,16 +4,20 @@ from __future__ import annotations
 
 import base64
 import logging
+import re
+from email.message import EmailMessage
 from typing import Any
 
 import httpx
 
-from app.core.supabase import supabase
+from app.services.connectors import token_store
 
 logger = logging.getLogger(__name__)
 
 GMAIL_API_BASE = "https://gmail.googleapis.com/gmail/v1/users/me"
 MAX_BODY_CHARS = 8000
+# Model-supplied IDs go into the URL path; Gmail IDs are short alphanumeric strings.
+_MESSAGE_ID_RE = re.compile(r"[A-Za-z0-9_-]{1,128}")
 
 
 class GmailService:
@@ -25,14 +29,12 @@ class GmailService:
         query: str | None = None,
         max_results: int = 5,
     ) -> dict[str, Any]:
-        access_token = await GmailService._get_oauth_token(employer_id)
+        credential = await token_store.get_credential(employer_id, "gmail")
+        access_token = credential.token
         if not access_token:
             return {
                 "emails": [],
-                "error": (
-                    "Gmail is not connected. Please connect your Google account "
-                    "in Settings > Connectors to access your emails."
-                ),
+                "error": credential.error_message("Gmail"),
             }
 
         max_results = min(max(max_results, 1), 10)
@@ -50,8 +52,8 @@ class GmailService:
                     headers=headers,
                 )
 
-                if list_resp.status_code == 401:
-                    return {"emails": [], "error": "Gmail token expired. Please reconnect in Settings > Connectors."}
+                if list_resp.status_code in (401, 403):
+                    return {"emails": [], "error": "Gmail refused the request. Please reconnect Gmail in Settings > Connectors."}
                 if list_resp.status_code != 200:
                     return {"emails": [], "error": f"Gmail API returned status {list_resp.status_code}."}
 
@@ -88,14 +90,15 @@ class GmailService:
         employer_id: str,
         message_id: str,
     ) -> dict[str, Any]:
-        access_token = await GmailService._get_oauth_token(employer_id)
+        credential = await token_store.get_credential(employer_id, "gmail")
+        access_token = credential.token
         if not access_token:
             return {
-                "error": (
-                    "Gmail is not connected. Please connect your Google account "
-                    "in Settings > Connectors to access your emails."
-                ),
+                "error": credential.error_message("Gmail"),
             }
+
+        if not _MESSAGE_ID_RE.fullmatch(message_id or ""):
+            return {"error": "Invalid email message ID."}
 
         headers = {"Authorization": f"Bearer {access_token}"}
 
@@ -107,8 +110,8 @@ class GmailService:
                     headers=headers,
                 )
 
-                if msg_resp.status_code == 401:
-                    return {"error": "Gmail token expired. Please reconnect in Settings > Connectors."}
+                if msg_resp.status_code in (401, 403):
+                    return {"error": "Gmail refused the request. Please reconnect Gmail in Settings > Connectors."}
                 if msg_resp.status_code == 404:
                     return {"error": "Email not found."}
                 if msg_resp.status_code != 200:
@@ -126,24 +129,36 @@ class GmailService:
             return {"error": "Gmail service connection error."}
 
     @staticmethod
-    async def _get_oauth_token(employer_id: str) -> str | None:
+    async def send_email(access_token: str, to: str, subject: str, body: str) -> dict[str, Any]:
+        """Send a plain-text email from the employer's own Gmail account (gmail.send scope)."""
+        message = EmailMessage()
         try:
-            response = (
-                supabase.table("connector_tokens")
-                .select("access_token")
-                .eq("employer_id", employer_id)
-                .eq("provider", "gmail")
-                .eq("status", "active")
-                .execute()
-            )
-            data = getattr(response, "data", None)
-            if not data:
-                return None
-            row = data[0] if isinstance(data, list) else data
-            return str(row.get("access_token", "")) or None
-        except Exception:
-            logger.exception("Failed to retrieve Gmail OAuth token")
-            return None
+            message["To"] = to
+            message["Subject"] = subject
+        except ValueError:
+            return {"sent": False, "error": "Invalid recipient or subject."}
+        message.set_content(body)
+        raw = base64.urlsafe_b64encode(message.as_bytes()).decode()
+
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                response = await client.post(
+                    f"{GMAIL_API_BASE}/messages/send",
+                    json={"raw": raw},
+                    headers={"Authorization": f"Bearer {access_token}"},
+                )
+        except httpx.TimeoutException:
+            return {"sent": False, "error": "Gmail service timed out."}
+        except httpx.HTTPError:
+            return {"sent": False, "error": "Gmail service connection error."}
+
+        if response.status_code == 200:
+            return {"sent": True, "email_id": response.json().get("id", ""), "recipient": to, "sent_via": "gmail"}
+        if response.status_code in (401, 403):
+            return {"sent": False, "error": "Gmail refused the request. Please reconnect Gmail in Settings > Connectors."}
+        logger.error("Gmail send failed: status=%d", response.status_code)
+        return {"sent": False, "error": f"Gmail API returned status {response.status_code}."}
+
 
 
 def _parse_message_metadata(msg: dict[str, Any]) -> dict[str, Any]:

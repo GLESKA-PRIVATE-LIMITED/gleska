@@ -10,7 +10,9 @@ Read the root CLAUDE.md first. Commands and baselines are in its §3.
 - `app/agents/` + `app/tools/` + `app/llm/providers.py` — generic agent runtime (structured JSON,
   tool registry; in-memory state). Used by the Hiring agent; financial partly; logistics,
   procurement and tender agent folders are empty stubs.
-- `app/services/connectors/` — OAuth/API connectors used as Hiring-agent tools.
+- `app/services/connectors/` — OAuth/API connectors used as Hiring-agent tools. Read tokens
+  **only** via `token_store.get_credential` (refresh, shared Google grant, encryption, `expired`
+  status); never query `connector_tokens` directly. Tests: `tests/test_connector_tools.py`.
 - `app/ai_gateway/` — **the only LLM entry point** (ADR 0007): `context.py` (billing scope,
   `@billed_entry`), `pricing.py` (Decimal pricing engine), `providers/gemini.py` (only module that
   knows the Gemini host/key), `backend.py` (Supabase + money SQL functions), `gateway.py` (lifecycle).

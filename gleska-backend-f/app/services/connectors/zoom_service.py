@@ -7,7 +7,7 @@ from typing import Any
 
 import httpx
 
-from app.core.supabase import supabase
+from app.services.connectors import token_store
 
 logger = logging.getLogger(__name__)
 
@@ -25,14 +25,12 @@ class ZoomService:
         employer_id: str,
         password: str | None = None,
     ) -> dict[str, Any]:
-        access_token = await ZoomService._get_oauth_token(employer_id, "zoom")
+        credential = await token_store.get_credential(employer_id, "zoom")
+        access_token = credential.token
         if not access_token:
             return {
                 "created": False,
-                "error": (
-                    "Zoom is not connected. Please connect your Zoom account "
-                    "in Settings > Connectors to create meetings."
-                ),
+                "error": credential.error_message("Zoom"),
             }
 
         meeting_data: dict[str, Any] = {
@@ -80,23 +78,3 @@ class ZoomService:
             return {"created": False, "error": "Zoom service timed out."}
         except httpx.HTTPError:
             return {"created": False, "error": "Zoom service connection error."}
-
-    @staticmethod
-    async def _get_oauth_token(employer_id: str, provider: str) -> str | None:
-        try:
-            response = (
-                supabase.table("connector_tokens")
-                .select("access_token")
-                .eq("employer_id", employer_id)
-                .eq("provider", provider)
-                .eq("status", "active")
-                .execute()
-            )
-            data = getattr(response, "data", None)
-            if not data:
-                return None
-            row = data[0] if isinstance(data, list) else data
-            return str(row.get("access_token", "")) or None
-        except Exception:
-            logger.exception("Failed to retrieve Zoom OAuth token")
-            return None

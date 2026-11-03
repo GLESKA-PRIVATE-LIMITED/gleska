@@ -33,10 +33,15 @@ Last verified: 2026-10-31, commit aabb165. Tags: [V path] verified, [A] assumpti
 | OAuth connectors | Google, Microsoft, Slack, Zoom, LinkedIn, Meta, GitHub, Tally (Hiring agent tools) | `connector_tokens` table, provider client vars |
 
 ### OAuth connector flow
-Per-employer tokens, stored in `public.connector_tokens` (RLS: an employer only
-reads their own row). One OAuth app per provider family — a single Google client
-covers Gmail/Calendar/Drive/Docs/Sheets/Forms, one Microsoft client covers
-Outlook/Teams/Excel, one Facebook client covers Facebook+Instagram.
+Per-employer tokens, stored in `public.connector_tokens`. Backend-only since
+migration 108: no client policy, no `anon`/`authenticated` privileges; the backend
+reads it with the service role, filtered by the caller's employer id. Tokens are
+Fernet-encrypted at rest (`enc:v1:` prefix) when `CONNECTOR_TOKEN_ENCRYPTION_KEY` is
+set; older plaintext rows stay readable. One OAuth app per provider family — a single
+Google client covers Gmail/Calendar/Drive/Docs/Sheets/Forms, one Microsoft client
+covers Outlook/Excel, one Facebook client covers Facebook+Instagram. Connectors that
+share a client share one grant (`oauth_service.credential_group`): connecting Gmail
+authorizes Calendar/Drive/Forms too, and disconnecting any of them disconnects all.
 
 Flow:
 1. Frontend calls `GET /api/v1/connectors/oauth/{provider}/init` and the backend
@@ -48,14 +53,29 @@ Flow:
    `connector_tokens`, and 302-redirects to
    `${FRONTEND_URL}/employer/connectors?connected={provider}`.
 
-Service modules (`gleska-backend-f/app/services/connectors/`) use the stored
-token for each provider call (e.g., `calendar_service.CalendarService.schedule_event`
-reads the employer's Google token before hitting the Calendar v3 API).
+Service modules (`gleska-backend-f/app/services/connectors/`) get tokens only through
+`token_store.get_credential(employer_id, provider)`, which refreshes access tokens
+~2 minutes before expiry (`grant_type=refresh_token`; Zoom/Microsoft rotate the refresh
+token, which is persisted) and marks the row `expired` when refresh fails, so the
+connectors page shows "Reconnect". Facebook has no refresh token: the callback exchanges
+the code-flow token for a ~60-day long-lived token, and posts use the Page token from
+`/me/accounts`.
+
+What each tool acts as:
+- Gmail/Calendar/Drive/Forms/Zoom/Slack/Facebook/LinkedIn — the employer's own account.
+- `send_email` — the employer's Gmail, else Outlook, else the platform Resend sender
+  (result `sent_via`); an expired mailbox asks to reconnect instead of falling back.
+- `send_teams_message` — the incoming-webhook URL the employer saved (allow-listed
+  Microsoft hosts only; never a model-supplied URL).
+- `send_whatsapp` — always the GO LESKA WhatsApp Business number (`MSG91_WHATSAPP_NUMBER`);
+  WhatsApp's official API cannot send from personal accounts.
 
 Tool definitions in `app/agents/hiring/connector_tools.py` surface each
-connector action to the Hiring agent; destructive actions (email, WhatsApp,
-calendar create, forms create, slack/teams send, social post, zoom create)
-set `confirmation_required=True`.
+connector action to the Hiring agent. They carry `metadata={"recoverable_errors": True}`:
+a failure (bad arguments, provider error) is returned to the model, which explains it or
+retries, instead of ending the turn (`engine.py`). Confirmation is conversational (the
+agent instructions require confirming recipient/content); `confirmation_required` is off
+because the runtime confirmation flow had no UI (7fd7b94).
 
 Redirect URIs must be registered on each provider's console — one URI per
 `provider` id, per environment, e.g.

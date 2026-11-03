@@ -155,6 +155,19 @@ PROVIDER_MAP: dict[str, OAuthProvider] = {
 }
 
 
+def credential_group(provider_id: str) -> tuple[str, ...]:
+    """Connector ids that share one OAuth grant with ``provider_id`` (itself first).
+
+    One Google consent grants every Google scope, so connecting Gmail also authorizes
+    Calendar, Drive, Docs, Sheets and Forms — and disconnecting any of them revokes all.
+    """
+    provider = PROVIDER_MAP.get(provider_id)
+    if provider is None:
+        return (provider_id,)
+    siblings = [pid for pid, p in PROVIDER_MAP.items() if p is provider and pid != provider_id]
+    return (provider_id, *siblings)
+
+
 def is_oauth_configured(provider_id: str) -> bool:
     """Return True if OAuth client credentials are set for the provider."""
     provider = PROVIDER_MAP.get(provider_id)
@@ -166,8 +179,12 @@ def is_oauth_configured(provider_id: str) -> bool:
 
 
 def get_redirect_uri(provider_id: str) -> str:
+    """Build the redirect URI using the provider's canonical name so all Google
+    connectors (gmail, google_calendar, …) share one URI: /oauth/google/callback."""
     base = settings.OAUTH_CALLBACK_BASE_URL.rstrip("/")
-    return f"{base}{settings.API_V1_PREFIX}/connectors/oauth/{provider_id}/callback"
+    provider = PROVIDER_MAP.get(provider_id)
+    canonical = provider.name if provider else provider_id
+    return f"{base}{settings.API_V1_PREFIX}/connectors/oauth/{canonical}/callback"
 
 
 def _encode_state(employer_id: str, provider_id: str) -> str:
@@ -228,18 +245,68 @@ async def exchange_code_for_token(
     if state_data.get("provider") != provider_id:
         raise ValueError("STATE_PROVIDER_MISMATCH")
 
+    body = await _token_request(provider_id, provider, {
+        "grant_type": "authorization_code",
+        "code": code,
+        "redirect_uri": get_redirect_uri(provider_id),
+    })
+
+    # Slack puts bot token in authed_user or access_token depending on scope type
+    access_token = body.get("access_token") or body.get("authed_user", {}).get("access_token")
+    if not access_token:
+        raise ValueError("TOKEN_EXCHANGE_NO_TOKEN")
+
+    refresh_token = body.get("refresh_token")
+    expires_in = body.get("expires_in")
+
+    if provider is _FACEBOOK_PROVIDER:
+        # Code-flow user tokens last ~1-2 hours and Meta issues no refresh token;
+        # exchange for a ~60-day long-lived token so posting keeps working.
+        long_lived = await _facebook_long_lived_token(access_token)
+        if long_lived:
+            access_token = long_lived.get("access_token") or access_token
+            expires_in = long_lived.get("expires_in", expires_in)
+
+    return {
+        "employer_id": state_data["employer_id"],
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "expires_in": expires_in,
+    }
+
+
+async def refresh_access_token(provider_id: str, refresh_token: str) -> dict[str, Any]:
+    """Use a stored refresh token to obtain a new access token.
+
+    Returns ``access_token``, ``refresh_token`` (the rotated one if the provider issued it,
+    otherwise the one passed in) and ``expires_in``. Raises ValueError on failure.
+    """
+    provider = PROVIDER_MAP.get(provider_id)
+    if provider is None:
+        raise ValueError("UNSUPPORTED_OAUTH_PROVIDER")
+    data = {"grant_type": "refresh_token", "refresh_token": refresh_token}
+    if provider is _MICROSOFT_PROVIDER:
+        data["scope"] = " ".join(provider.scopes)
+    body = await _token_request(provider_id, provider, data)
+    access_token = body.get("access_token")
+    if not access_token:
+        raise ValueError("TOKEN_REFRESH_NO_TOKEN")
+    return {
+        "access_token": access_token,
+        # Zoom and Microsoft rotate refresh tokens; Google keeps the original.
+        "refresh_token": body.get("refresh_token") or refresh_token,
+        "expires_in": body.get("expires_in"),
+    }
+
+
+async def _token_request(provider_id: str, provider: OAuthProvider, data: dict[str, str]) -> dict[str, Any]:
     client_id = getattr(settings, provider.client_id_setting, "")
     client_secret = getattr(settings, provider.client_secret_setting, "")
     if not client_id or not client_secret:
         raise ValueError(f"OAUTH_CLIENT_NOT_CONFIGURED:{provider_id}")
 
-    data = {
-        "grant_type": "authorization_code",
-        "code": code,
-        "redirect_uri": get_redirect_uri(provider_id),
-    }
+    data = dict(data)
     headers = {"Accept": "application/json"}
-
     if provider.uses_basic_auth:
         basic = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
         headers["Authorization"] = f"Basic {basic}"
@@ -250,34 +317,43 @@ async def exchange_code_for_token(
     async with httpx.AsyncClient(timeout=30) as http:
         resp = await http.post(provider.token_url, data=data, headers=headers)
 
-    # Slack returns 200 with {ok: false, error: ...}
     try:
         body = resp.json()
     except Exception as exc:
-        raise ValueError(f"TOKEN_EXCHANGE_INVALID_RESPONSE:{resp.text[:200]}") from exc
+        raise ValueError(f"TOKEN_ENDPOINT_INVALID_RESPONSE:{resp.status_code}") from exc
 
+    # Never log the body: it carries tokens. Provider error codes only.
     if resp.status_code >= 400:
+        error = body.get("error") if isinstance(body, dict) else None
+        if isinstance(error, dict):
+            error = error.get("code") or error.get("type")
         logger.warning(
-            "OAuth token exchange failed for provider=%s status=%s body=%s",
-            provider_id, resp.status_code, body,
+            "OAuth token request failed: provider=%s grant=%s status=%s error=%s",
+            provider_id, data.get("grant_type"), resp.status_code, error,
         )
-        raise ValueError(f"TOKEN_EXCHANGE_FAILED:{body}")
+        raise ValueError(f"TOKEN_REQUEST_FAILED:{error or resp.status_code}")
 
+    # Slack returns 200 with {ok: false, error: ...}
     if provider_id == "slack" and not body.get("ok"):
-        raise ValueError(f"TOKEN_EXCHANGE_FAILED:{body.get('error', 'unknown')}")
+        raise ValueError(f"TOKEN_REQUEST_FAILED:{body.get('error', 'unknown')}")
+    return body
 
-    # Slack puts bot token in authed_user or access_token depending on scope type
-    access_token = body.get("access_token") or body.get("authed_user", {}).get("access_token")
-    if not access_token:
-        raise ValueError(f"TOKEN_EXCHANGE_NO_TOKEN:{body}")
 
-    refresh_token = body.get("refresh_token")
-    expires_in = body.get("expires_in")
-
-    return {
-        "employer_id": state_data["employer_id"],
-        "access_token": access_token,
-        "refresh_token": refresh_token,
-        "expires_in": expires_in,
-        "raw": body,
-    }
+async def _facebook_long_lived_token(short_lived_token: str) -> dict[str, Any] | None:
+    try:
+        async with httpx.AsyncClient(timeout=30) as http:
+            resp = await http.post(
+                _FACEBOOK_PROVIDER.token_url,
+                data={
+                    "grant_type": "fb_exchange_token",
+                    "client_id": settings.FACEBOOK_OAUTH_CLIENT_ID,
+                    "client_secret": settings.FACEBOOK_OAUTH_CLIENT_SECRET,
+                    "fb_exchange_token": short_lived_token,
+                },
+            )
+        if resp.status_code == 200:
+            return resp.json()
+        logger.warning("Facebook long-lived token exchange failed: status=%s", resp.status_code)
+    except (httpx.HTTPError, ValueError):
+        logger.warning("Facebook long-lived token exchange errored")
+    return None

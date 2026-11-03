@@ -16,6 +16,8 @@ export type Connector = {
   oauth_configured?: boolean;
   always_on: boolean;
   connected: boolean;
+  /** "expired" means the grant could not be renewed and the user must reconnect. */
+  status?: "active" | "expired" | "disconnected" | null;
   connected_at?: string | null;
   expires_at?: string | null;
 };
@@ -40,6 +42,9 @@ export const CONNECTOR_CATEGORY_MAP: Record<string, { category: string; order: n
   github: { category: "Developer Portfolio", order: 8 },
   tallyprime: { category: "Accounting", order: 9 },
 };
+
+/** One Google sign-in covers all of these; the backend connects and disconnects them together. */
+const GOOGLE_CONNECTOR_IDS = new Set(["gmail", "google_calendar", "google_drive", "google_docs", "google_sheets", "google_forms"]);
 
 /** The backend OAuth callback always returns to this page with ?connected= or ?error=. */
 export const CONNECTORS_OAUTH_RETURN_PATH = "/employer/connectors";
@@ -119,7 +124,10 @@ export function useConnectors(enabled: boolean) {
   }, []);
 
   const handleDisconnect = useCallback(async (connector: Connector) => {
-    if (!confirm(`Disconnect ${connector.name}?`)) return;
+    const prompt = GOOGLE_CONNECTOR_IDS.has(connector.id)
+      ? `Disconnect your Google account? Gmail, Calendar, Drive, Docs, Sheets and Forms share one Google sign-in and will all be disconnected.`
+      : `Disconnect ${connector.name}?`;
+    if (!confirm(prompt)) return;
     try {
       setActionInFlight(connector.id);
       await apiClient.post(

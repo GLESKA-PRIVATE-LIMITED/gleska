@@ -19,7 +19,13 @@ Last verified: 2026-11-02, commit 401e135+. Update at the end of every task.
     must re-authorize to grant it. Slack, Zoom, LinkedIn, Facebook, Microsoft
     still require provider-side client registration by the owner.
   - WhatsApp (via MSG91), OCR (via Gemini), GitHub (public API) marked always-on
-    so employers do not need to connect them.
+    so employers do not need to connect them. WhatsApp sends from the GO LESKA
+    business number (`MSG91_WHATSAPP_NUMBER`), never a personal account.
+  - Branch `fix/connector-agent-tools` (2026-11-03, not merged/deployed): token refresh,
+    shared Google grant, email from the employer's Gmail/Outlook, Teams from the saved
+    webhook, Facebook Page posting, tool errors returned to the model, tokens encrypted
+    at rest, migration 108 (connector_tokens backend-only). See KI-30. Deploy needs
+    `MSG91_WHATSAPP_NUMBER` + `CONNECTOR_TOKEN_ENCRYPTION_KEY` on Render, then migration 108.
   - Chat composer supports file upload (25 MB, extension allowlist) and voice
     (Web Speech API) for Hiring; General Work uses the backend `/transcribe` route.
 - Procurement (buyer + supplier, RFQ/quotes/POs) and Financial agent (invoices, scans, audits).

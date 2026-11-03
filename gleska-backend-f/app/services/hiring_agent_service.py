@@ -581,6 +581,7 @@ class HiringAgentService:
                 subject=arguments["subject"],
                 body=arguments["body"],
                 purpose=arguments["purpose"],
+                employer_id=eid,
             )
 
         executor.register_handler(SEND_EMAIL_TOOL.name, send_email)
@@ -690,9 +691,9 @@ class HiringAgentService:
 
         async def send_teams(arguments: dict[str, Any], context: AgentExecutionContext) -> dict[str, Any]:
             return await TeamsService.send_message(
-                webhook_url=arguments["webhook_url"],
                 title=arguments["title"],
                 message=arguments["message"],
+                employer_id=eid,
             )
 
         executor.register_handler(SEND_TEAMS_MESSAGE_TOOL.name, send_teams)
@@ -894,7 +895,13 @@ class HiringAgentService:
                     call_id=tool_result.execution_id,
                 ))
         assistant_message = result.assistant_message
-        tool_failed = any(not tool_result.success for tool_result in tool_results)
+        # Only candidate discovery failures replace the reply; connector tool failures are
+        # returned to the model, which explains them in its own message.
+        tool_failed = any(
+            not tool_result.success
+            for tool_result in tool_results
+            if tool_result.tool_name == DISCOVER_CANDIDATES_TOOL.name
+        )
         candidate_tool_attempted = any(
             tool_result.tool_name == DISCOVER_CANDIDATES_TOOL.name
             for tool_result in tool_results

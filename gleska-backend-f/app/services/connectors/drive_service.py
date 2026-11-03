@@ -8,7 +8,7 @@ from typing import Any
 
 import httpx
 
-from app.core.supabase import supabase
+from app.services.connectors import token_store
 
 logger = logging.getLogger(__name__)
 
@@ -37,15 +37,13 @@ class DriveService:
         employer_id: str,
         extract_text: bool = True,
     ) -> dict[str, Any]:
-        access_token = await DriveService._get_oauth_token(employer_id, "google_drive")
+        credential = await token_store.get_credential(employer_id, "google_drive")
+        access_token = credential.token
         if not access_token:
             return {
                 "file_name": "",
                 "mime_type": "",
-                "error": (
-                    "Google Drive is not connected. Please connect your Google account "
-                    "in Settings > Connectors to access Drive files."
-                ),
+                "error": credential.error_message("Google Drive"),
             }
 
         file_id = DriveService._extract_file_id(file_url)
@@ -108,23 +106,3 @@ class DriveService:
             return {"file_name": "", "mime_type": "", "error": "Drive service timed out."}
         except httpx.HTTPError:
             return {"file_name": "", "mime_type": "", "error": "Drive service connection error."}
-
-    @staticmethod
-    async def _get_oauth_token(employer_id: str, provider: str) -> str | None:
-        try:
-            response = (
-                supabase.table("connector_tokens")
-                .select("access_token")
-                .eq("employer_id", employer_id)
-                .eq("provider", provider)
-                .eq("status", "active")
-                .execute()
-            )
-            data = getattr(response, "data", None)
-            if not data:
-                return None
-            row = data[0] if isinstance(data, list) else data
-            return str(row.get("access_token", "")) or None
-        except Exception:
-            logger.exception("Failed to retrieve OAuth token for provider=%s", provider)
-            return None
