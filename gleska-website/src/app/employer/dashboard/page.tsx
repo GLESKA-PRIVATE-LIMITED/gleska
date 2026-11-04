@@ -2203,29 +2203,30 @@ export default function EmployerDashboard() {
                         }}
                       >
                         <div className="relative flex flex-1 items-center rounded-full border border-slate-200 bg-slate-50/90 p-1 shadow-2xs transition focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-800/80">
-                          {/* File upload button */}
-                          <input
-                            ref={hiringFileInputRef}
-                            type="file"
-                            multiple
-                            accept={HIRING_ACCEPTED_FILE_TYPES}
-                            onChange={handleHiringFileSelect}
-                            className="hidden"
-                            aria-label="Attach files"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => {
-                              fileDialogOpenRef.current = true;
-                              hiringFileInputRef.current?.click();
-                            }}
-                            disabled={isHiringAgentSending || isHiringConversationLoading}
-                            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-400 transition hover:text-blue-600 hover:bg-blue-50 disabled:opacity-40 cursor-pointer dark:hover:text-blue-400 dark:hover:bg-blue-950/40"
+                          {/* File upload button — a native <label> wrapping the input so the
+                              picker's change event always reaches React (a hidden input triggered
+                              by ref.click() can silently drop it in some browsers/webviews). */}
+                          <label
+                            onClick={() => { fileDialogOpenRef.current = true; }}
+                            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-400 transition hover:text-blue-600 hover:bg-blue-50 dark:hover:text-blue-400 dark:hover:bg-blue-950/40 ${
+                              isHiringAgentSending || isHiringConversationLoading
+                                ? "opacity-40 cursor-not-allowed pointer-events-none"
+                                : "cursor-pointer"
+                            }`}
                             title="Attach files (PDF, images, videos, documents)"
                             aria-label="Attach files"
                           >
+                            <input
+                              ref={hiringFileInputRef}
+                              type="file"
+                              multiple
+                              accept={HIRING_ACCEPTED_FILE_TYPES}
+                              onChange={handleHiringFileSelect}
+                              disabled={isHiringAgentSending || isHiringConversationLoading}
+                              className="sr-only"
+                            />
                             <Paperclip size={15} />
-                          </button>
+                          </label>
 
                           <input
                             value={hiringAgentInput}
