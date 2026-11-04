@@ -70,6 +70,9 @@ Last verified: 2026-11-02, commit 401e135+. Update at the end of every task.
   Owner: make one small real purchase (5 credits) to confirm the live Cashfree flow.
 - Apply migration `103_general_work_workspace.sql`; confirm `assistant-uploads` bucket.
 - `GEMINI_API_KEY` and `GEMINI_MODEL` set in Render; `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, and `OAUTH_CALLBACK_BASE_URL` also set.
+- Apply migration `109_lock_postgis_spatial_ref_sys.sql` to production Supabase (SQL editor) to
+  clear the `rls_disabled_in_public` advisor on `public.spatial_ref_sys`; read its NOTICE/WARNING
+  output (WARNING = ask Supabase support to `ENABLE ROW LEVEL SECURITY` as the owner). See KI-31.
 - Rotate the exposed signing password / upload key (KI-01).
 - Optionally remove orphaned profile photos of accounts deleted before the KI-19 fix.
 - Create production OAuth apps under the Gleska-owned account (not a developer's
