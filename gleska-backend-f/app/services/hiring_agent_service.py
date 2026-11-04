@@ -595,6 +595,7 @@ class HiringAgentService:
                 phone=arguments["phone"],
                 message=arguments["message"],
                 template_name=arguments.get("template_name"),
+                template_variables=arguments.get("template_variables"),
             )
 
         executor.register_handler(SEND_WHATSAPP_TOOL.name, send_whatsapp)

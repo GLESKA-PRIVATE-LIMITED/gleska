@@ -394,6 +394,7 @@ async def test_read_email_rejects_path_like_message_ids(db, http):
 # ── WhatsApp ───────────────────────────────────────────────────────────────
 
 WA_SESSION_URL = "https://api.msg91.com/api/v5/whatsapp/whatsapp-outbound-message/"
+WA_TEMPLATE_URL = "https://api.msg91.com/api/v5/whatsapp/whatsapp-outbound-message/bulk/"
 
 
 @pytest.mark.asyncio
@@ -422,6 +423,32 @@ async def test_whatsapp_without_sender_number_is_not_configured(http, monkeypatc
     result = await WhatsAppService.send_message(phone="919876543210", message="hi")
     assert result["sent"] is False and "MSG91_WHATSAPP_NUMBER" in result["error"]
     assert http.requests == []
+
+
+@pytest.mark.asyncio
+async def test_whatsapp_template_sends_positional_variables(http, monkeypatch):
+    monkeypatch.setattr(settings, "MSG91_AUTH_KEY", "auth")
+    monkeypatch.setattr(settings, "MSG91_WHATSAPP_NUMBER", "919800000000")
+    http.route("POST", WA_TEMPLATE_URL, httpx.Response(200, json={"request_id": "wa-t1"}))
+
+    result = await WhatsAppService.send_message(
+        phone="9876543210", message="invite", template_name="interview_invite_message",
+        template_variables=["Asha", "Mason", "tomorrow", "3 PM"],
+    )
+
+    assert result["sent"] is True
+    payload = json.loads(http.requests[0].content)
+    template = payload["payload"]["template"]
+    assert template["name"] == "interview_invite_message"
+    assert template["language"]["code"] == "en"
+    to_entry = template["to_and_components"][0]
+    assert to_entry["to"] == ["919876543210"]
+    assert to_entry["components"] == {
+        "body_1": {"type": "text", "value": "Asha"},
+        "body_2": {"type": "text", "value": "Mason"},
+        "body_3": {"type": "text", "value": "tomorrow"},
+        "body_4": {"type": "text", "value": "3 PM"},
+    }
 
 
 @pytest.mark.asyncio

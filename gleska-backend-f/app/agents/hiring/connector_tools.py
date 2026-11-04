@@ -275,7 +275,13 @@ SEND_WHATSAPP_TOOL = ToolDefinition(
             },
             "template_name": {
                 "type": "string",
-                "description": "Pre-approved WhatsApp template name. Required for initiating conversations.",
+                "description": "Pre-approved WhatsApp template name. REQUIRED to message anyone who "
+                "has not messaged this number in the last 24 hours (i.e. almost all candidate outreach).",
+            },
+            "template_variables": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Values for the template's {{1}}, {{2}}, … body variables, in order.",
             },
         },
         "required": ["phone", "message"],

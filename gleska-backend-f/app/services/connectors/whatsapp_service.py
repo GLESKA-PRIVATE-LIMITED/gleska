@@ -28,6 +28,8 @@ class WhatsAppService:
         phone: str,
         message: str,
         template_name: str | None = None,
+        template_variables: list[str] | None = None,
+        template_language: str = "en",
     ) -> dict[str, Any]:
         auth_key = (settings.MSG91_AUTH_KEY or "").strip()
         sender = (settings.MSG91_WHATSAPP_NUMBER or "").strip().lstrip("+")
@@ -49,6 +51,13 @@ class WhatsAppService:
 
         if template_name:
             url = MSG91_WHATSAPP_TEMPLATE_URL
+            # Positional body variables ({{1}}, {{2}}, …) map to MSG91's body_1, body_2, … keys.
+            to_entry: dict[str, Any] = {"to": [phone]}
+            if template_variables:
+                to_entry["components"] = {
+                    f"body_{index}": {"type": "text", "value": str(value)}
+                    for index, value in enumerate(template_variables, start=1)
+                }
             payload: dict[str, Any] = {
                 "integrated_number": sender,
                 "content_type": "template",
@@ -57,8 +66,8 @@ class WhatsAppService:
                     "type": "template",
                     "template": {
                         "name": template_name,
-                        "language": {"code": "en", "policy": "deterministic"},
-                        "to_and_components": [{"to": [phone]}],
+                        "language": {"code": template_language, "policy": "deterministic"},
+                        "to_and_components": [to_entry],
                     },
                 },
             }
