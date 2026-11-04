@@ -277,7 +277,6 @@ export default function EmployerDashboard() {
   const [isHiringAgentSending, setIsHiringAgentSending] = React.useState(false);
   const [hiringAgentInput, setHiringAgentInput] = React.useState("");
   const [hiringAttachedFiles, setHiringAttachedFiles] = React.useState<File[]>([]);
-  const [fileUploadDebug, setFileUploadDebug] = React.useState("(no action yet)");
   const [isVoiceRecording, setIsVoiceRecording] = React.useState(false);
   const hiringFileInputRef = React.useRef<HTMLInputElement>(null);
   // Set while the attach-file dialog is open. Opening it blurs the window and closing it
@@ -1429,10 +1428,11 @@ export default function EmployerDashboard() {
 
   const handleHiringFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     fileDialogOpenRef.current = false;
-    const files = event.target.files;
-    setFileUploadDebug(`change fired @ ${new Date().toLocaleTimeString()} — files=${files ? files.length : "null"}`);
-    if (!files || files.length === 0) return;
-    setHiringAttachedFiles((prev) => [...prev, ...Array.from(files)]);
+    // Snapshot the FileList into a real array NOW. Clearing the input below empties the
+    // live FileList, and the state updater runs afterwards — reading it then yields nothing.
+    const selected = Array.from(event.target.files ?? []);
+    if (selected.length === 0) return;
+    setHiringAttachedFiles((prev) => [...prev, ...selected]);
     if (hiringFileInputRef.current) hiringFileInputRef.current.value = "";
   };
 
@@ -2173,10 +2173,6 @@ export default function EmployerDashboard() {
 
                     {/* Chat Input Bar */}
                     <div className="mt-auto flex-none border-t border-slate-100 pt-3 dark:border-slate-800">
-                      {/* TEMP DEBUG — remove after diagnosing upload */}
-                      <div className="mb-1 rounded bg-amber-100 px-2 py-1 text-[11px] font-mono text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
-                        DEBUG: {fileUploadDebug} | attached={hiringAttachedFiles.length}
-                      </div>
                       {/* Attached files preview */}
                       {hiringAttachedFiles.length > 0 && (
                         <div className="mb-2 flex flex-wrap gap-1.5">
@@ -2213,7 +2209,7 @@ export default function EmployerDashboard() {
                               picker's change event always reaches React (a hidden input triggered
                               by ref.click() can silently drop it in some browsers/webviews). */}
                           <label
-                            onClick={() => { fileDialogOpenRef.current = true; setFileUploadDebug(`paperclip clicked @ ${new Date().toLocaleTimeString()}`); }}
+                            onClick={() => { fileDialogOpenRef.current = true; }}
                             className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-400 transition hover:text-blue-600 hover:bg-blue-50 dark:hover:text-blue-400 dark:hover:bg-blue-950/40 ${
                               isHiringAgentSending || isHiringConversationLoading
                                 ? "opacity-40 cursor-not-allowed pointer-events-none"
