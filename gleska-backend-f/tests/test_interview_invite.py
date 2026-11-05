@@ -124,6 +124,9 @@ class _Query:
     def eq(self, *a, **k):
         return self
 
+    def in_(self, *a, **k):
+        return self
+
     def limit(self, *a, **k):
         return self
 

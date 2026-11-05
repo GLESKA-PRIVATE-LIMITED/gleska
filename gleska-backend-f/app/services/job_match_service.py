@@ -40,7 +40,7 @@ class JobMatchService:
     @classmethod
     def get_worker_contact_for_user(cls, user: UserResponse, job_id: str, worker_profile_id: str) -> dict[str, Any]:
         """Reveal a worker's phone/email to the employer — ONLY after that worker has been
-        selected/hired (ACCEPTED) on one of the employer's jobs. Enforces job ownership and the
+        selected/hired (ACCEPTED or COMPLETED) on one of the employer's jobs. Enforces job ownership and the
         hire gate before resolving the contact server-side."""
         job = JobService.get_for_user(user, job_id)  # raises JobNotFound if not owned
         employer_id = job.employer_id
@@ -50,7 +50,7 @@ class JobMatchService:
             .eq("job_id", job_id)
             .eq("worker_profile_id", worker_profile_id)
             .eq("jobs.employer_id", employer_id)
-            .eq("status", "ACCEPTED")
+            .in_("status", ["ACCEPTED", "COMPLETED"])
             .limit(1)
             .execute()
         )
