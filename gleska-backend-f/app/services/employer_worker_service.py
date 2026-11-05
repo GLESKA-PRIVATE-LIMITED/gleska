@@ -125,6 +125,62 @@ class EmployerWorkerService:
         )
 
     @classmethod
+    def search_available_workers(
+        cls,
+        *,
+        trade: str,
+        skill: str | None = None,
+        min_experience: int | None = None,
+        max_wage: float | None = None,
+        city: str | None = None,
+        only_available: bool = False,
+        limit: int = 10,
+    ) -> dict[str, Any]:
+        """Search the whole worker pool by trade/skill (and optional city) via the
+        list_employer_workers RPC. Not tied to a job or a prior match. Returns plain dicts
+        for the Hiring agent."""
+        capped = max(1, min(int(limit or 10), 50))
+        params = {
+            "p_page": 1,
+            "p_limit": capped,
+            "p_trade": (trade or "").strip() or None,
+            "p_skill": (skill or "").strip() or None,
+            "p_min_experience": min_experience,
+            "p_max_wage": max_wage,
+            "p_city": (city or "").strip() or None,
+            "p_availability": "AVAILABLE" if only_available else None,
+            "p_sort": "experience_desc",
+        }
+        response = supabase.rpc("list_employer_workers", params).execute()
+        rows = response.data or []
+        total = int(rows[0]["total_count"]) if rows else 0
+        workers = [
+            {
+                "worker_profile_id": str(row["worker_profile_id"]),
+                "name": row.get("name") or "Worker",
+                "trade": row.get("trade_id"),
+                "skills": row.get("skills") or [],
+                "experience_years": row.get("experience_years"),
+                "expected_daily_wage": (
+                    float(row["expected_daily_wage"]) if row.get("expected_daily_wage") is not None else None
+                ),
+                "availability_status": row.get("availability_status") or "OFFLINE",
+                "city": row.get("city"),
+                "state": row.get("state"),
+                "is_verified": bool(row.get("is_verified")),
+            }
+            for row in rows
+        ]
+        return {
+            "status": "FOUND" if workers else "NO_MATCHES",
+            "trade": trade,
+            "location_filtered": bool(city),
+            "total_count": total,
+            "returned_count": len(workers),
+            "workers": workers,
+        }
+
+    @classmethod
     def _item(cls, row: dict[str, Any]) -> EmployerWorkerResponse:
         profile = row.get("worker_profiles") or {}
         user = profile.get("users") or {}

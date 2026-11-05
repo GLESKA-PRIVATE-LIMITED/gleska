@@ -8,6 +8,12 @@ Last verified: 2026-11-02, commit 401e135+. Update at the end of every task.
   remains available afterward. Completed employers default to the Hiring dashboard.
 - Jobs, job sites, PostGIS matching, attendance, subscriptions/payments (Cashfree), notifications.
 - Hiring agent with connector tools and OAuth connectors page.
+  - Open worker-pool search (2026-11-05): `hiring.search_workers` lets the agent answer
+    free-form requirements ("I want 5 electricians") by searching the whole worker pool via the
+    `list_employer_workers` RPC (trade/skill/experience/wage, optional city for location-aware
+    results) with no job required, then offers to create a job. Service
+    `EmployerWorkerService.search_available_workers`; tool `app/agents/hiring/tools.py`; tests
+    `tests/test_employer_worker_directory.py`. (Job-tied `discover_candidates` is unchanged.)
   - 16 connector tools (incl. Gmail list/read) wired in
     `gleska-backend-f/app/agents/hiring/connector_tools.py`
     and registered per-request in `_build_tooling` of `hiring_agent_service.py`.

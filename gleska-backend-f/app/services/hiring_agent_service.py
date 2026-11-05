@@ -13,7 +13,7 @@ from uuid import UUID, uuid4
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from app.ai_gateway.context import billed_entry
-from app.agents.hiring.tools import DISCOVER_CANDIDATES_TOOL
+from app.agents.hiring.tools import DISCOVER_CANDIDATES_TOOL, SEARCH_WORKERS_TOOL
 from app.agents.hiring.connector_tools import (
     ANALYZE_DOCUMENT_TOOL,
     PARSE_SPREADSHEET_TOOL,
@@ -524,6 +524,23 @@ class HiringAgentService:
                 return result_data
 
             executor.register_handler(DISCOVER_CANDIDATES_TOOL.name, discover_candidates)
+
+        # ── Worker pool search (no job required) ────────────────────────
+        registry.register(SEARCH_WORKERS_TOOL)
+
+        async def search_workers(arguments: dict[str, Any], context: AgentExecutionContext) -> dict[str, Any]:
+            from app.services.employer_worker_service import EmployerWorkerService
+            return EmployerWorkerService.search_available_workers(
+                trade=arguments["trade"],
+                skill=arguments.get("skill"),
+                min_experience=arguments.get("min_experience"),
+                max_wage=arguments.get("max_wage"),
+                city=arguments.get("city"),
+                only_available=arguments.get("only_available", False),
+                limit=arguments.get("limit", 10),
+            )
+
+        executor.register_handler(SEARCH_WORKERS_TOOL.name, search_workers)
 
         # ── 1. OCR & Document Intelligence ──────────────────────────────
         registry.register(ANALYZE_DOCUMENT_TOOL)

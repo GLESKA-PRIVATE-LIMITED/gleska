@@ -34,6 +34,60 @@ def test_directory_projection_requires_worker_role_and_excludes_invalid_wages():
     assert "worker.email" not in MIGRATION
 
 
+class FakeRpc:
+    def __init__(self, rows):
+        self.rows = rows
+        self.calls = []
+
+    def rpc(self, name, params):
+        self.calls.append((name, params))
+        return SimpleNamespace(execute=lambda: SimpleNamespace(data=self.rows))
+
+
+def test_search_available_workers_calls_pool_rpc_and_shapes_result(monkeypatch):
+    rows = [{
+        "worker_profile_id": "w1", "name": "Asha", "trade_id": "electrician",
+        "skills": ["wiring"], "experience_years": 4, "expected_daily_wage": 700,
+        "availability_status": "AVAILABLE", "city": "Hyderabad", "state": "TS",
+        "is_verified": True, "total_count": 1,
+    }]
+    fake = FakeRpc(rows)
+    monkeypatch.setattr(employer_worker_service, "supabase", fake)
+
+    result = employer_worker_service.EmployerWorkerService.search_available_workers(
+        trade="electrician", limit=5,
+    )
+
+    name, params = fake.calls[0]
+    assert name == "list_employer_workers"
+    assert params["p_trade"] == "electrician"
+    assert params["p_limit"] == 5
+    assert params["p_availability"] is None  # only_available defaults False
+    assert params["p_city"] is None
+    assert result["status"] == "FOUND"
+    assert result["total_count"] == 1 and result["location_filtered"] is False
+    assert result["workers"][0] == {
+        "worker_profile_id": "w1", "name": "Asha", "trade": "electrician",
+        "skills": ["wiring"], "experience_years": 4, "expected_daily_wage": 700.0,
+        "availability_status": "AVAILABLE", "city": "Hyderabad", "state": "TS", "is_verified": True,
+    }
+
+
+def test_search_available_workers_applies_city_and_availability_filters(monkeypatch):
+    fake = FakeRpc([])
+    monkeypatch.setattr(employer_worker_service, "supabase", fake)
+
+    result = employer_worker_service.EmployerWorkerService.search_available_workers(
+        trade="mason", city="Pune", only_available=True, limit=100,
+    )
+
+    _, params = fake.calls[0]
+    assert params["p_city"] == "Pune"
+    assert params["p_availability"] == "AVAILABLE"
+    assert params["p_limit"] == 50  # capped at 50
+    assert result["status"] == "NO_MATCHES" and result["location_filtered"] is True
+
+
 class FakeQuery:
     def __init__(self, data, count=None):
         self.data = data
