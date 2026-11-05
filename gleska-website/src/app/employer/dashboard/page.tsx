@@ -180,6 +180,7 @@ interface HiringAgentConversation {
 
 interface ManualJobFormState {
   title?: string | null;
+  trade_id?: string | null;
   headcount_required?: number | null;
   max_daily_salary?: number | null;
   min_experience?: number | null;
@@ -654,6 +655,7 @@ export default function EmployerDashboard() {
       const payload = {
         job_site_id: manualJobState.job_site_id!,
         title: manualJobState.title!.trim(),
+        trade_id: manualJobState.trade_id?.trim() || null,
         headcount_required: Number(manualJobState.headcount_required),
         max_daily_salary: Number(manualJobState.max_daily_salary),
         work_duration_days: Number(manualJobState.work_duration_days),
@@ -2598,6 +2600,43 @@ export default function EmployerDashboard() {
                         )}
                       </div>
 
+                      {/* Required Trade */}
+                      <div className="sm:col-span-2 space-y-1">
+                        <label htmlFor="field-trade_id" className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                          Required Trade
+                        </label>
+                        <input
+                          id="field-trade_id"
+                          type="text"
+                          list="trade-options"
+                          value={manualJobState.trade_id || ""}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setManualJobState((curr) => ({ ...curr, trade_id: val }));
+                          }}
+                          placeholder="e.g. Electrician, Plumber, Mason"
+                          className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm font-medium text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white dark:border-slate-700 dark:bg-slate-800/50 dark:text-white dark:focus:bg-slate-800"
+                        />
+                        <datalist id="trade-options">
+                          <option value="Electrician" />
+                          <option value="Plumber" />
+                          <option value="Carpenter" />
+                          <option value="Mason" />
+                          <option value="Painter" />
+                          <option value="Welder" />
+                          <option value="Driver" />
+                          <option value="Cook" />
+                          <option value="AC Technician" />
+                          <option value="Housekeeping" />
+                          <option value="Gardener" />
+                          <option value="Security Guard" />
+                          <option value="Labourer" />
+                        </datalist>
+                        <p className="text-xs text-slate-400 dark:text-slate-500">
+                          Matching filters candidates by trade. Leave blank to use the job title.
+                        </p>
+                      </div>
+
                       {/* Workers Needed */}
                       <div className="space-y-1">
                         <label htmlFor="field-headcount_required" className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
@@ -3146,11 +3185,12 @@ export default function EmployerDashboard() {
       {(jobViewMode || isJobDetailsLoading || selectedJob || jobDetailsError) && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="fixed inset-0 bg-slate-900/60" onClick={closeJobDetails} />
-          <section className="relative w-full max-w-xl rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900">
-            <div className="mb-5 flex items-center justify-between border-b border-slate-100 pb-3 dark:border-slate-800">
+          <section className={`relative flex max-h-[90vh] w-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-900 ${jobViewMode === "workers" ? "max-w-2xl" : "max-w-xl"}`}>
+            <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-6 py-4 dark:border-slate-800">
               <h2 className="text-xl font-bold text-slate-900 dark:text-white">{jobViewMode === "workers" ? "Matched Workers" : "Job Details"}</h2>
               <button type="button" onClick={closeJobDetails} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Close job details"><X size={20} /></button>
             </div>
+            <div className="flex-1 overflow-y-auto px-6 py-5">
             {isJobDetailsLoading && <div className="flex items-center gap-2 text-sm text-slate-500"><Loader2 size={16} className="animate-spin" /> Loading job details...</div>}
             {jobDetailsError && <p className="text-sm text-rose-600">{jobDetailsError}</p>}
             {selectedJob && <div className="grid gap-4 text-sm sm:grid-cols-2">
@@ -3206,26 +3246,47 @@ export default function EmployerDashboard() {
                 <button type="button" onClick={() => selectedJobId && void handleViewJobWorkers(selectedJobId)} className="mt-2 text-sm font-semibold text-blue-600 underline dark:text-blue-400">Retry matching workers</button>
               </>}
               {!isJobMatchesLoading && !jobMatchesError && jobMatches?.matches.length === 0 && <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">{jobMatches.selected_count > 0 ? "No additional suitable workers found." : "No suitable workers found yet."}</p>}
-              {!isJobMatchesLoading && !jobMatchesError && jobMatches?.matches.length ? <div className="mt-3 space-y-3">{jobMatches.matches.map((match) => (
-                <div key={match.worker_profile_id} className="rounded-xl border border-slate-200 p-3 dark:border-slate-700">
-                  <p className="font-semibold text-slate-900 dark:text-white">{match.name || "Matched worker"}</p>
-                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{formatExperience(match.experience_years)} · {formatWage(match.expected_daily_wage)}</p>
-                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{match.trade_id || "Trade not specified"} · {match.availability_status || "Availability unknown"} · {match.distance_m != null ? `${(match.distance_m / 1000).toFixed(1)} km away` : "Distance unavailable"}</p>
-                  {match.skills.length > 0 && <p className="mt-1 text-xs text-slate-400">{match.skills.join(", ")}</p>}
-                  <button
-                    type="button"
-                    disabled={selectedJob?.status === "FILLED" || match.status !== "PENDING" || acceptingWorkerId === match.worker_profile_id}
-                    onClick={() => selectedJobId && void handleSelectWorker(selectedJobId, match.worker_profile_id)}
-                    className="mt-3 inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {acceptingWorkerId === match.worker_profile_id ? <Loader2 size={15} className="animate-spin" /> : null}
-                    {match.status === "ACCEPTED" ? "Selected" : "Select Worker"}
-                  </button>
+              {!isJobMatchesLoading && !jobMatchesError && jobMatches?.matches.length ? <div className="mt-3 space-y-3">{jobMatches.matches.map((match) => {
+                const isAccepted = match.status === "ACCEPTED";
+                const isBusy = acceptingWorkerId === match.worker_profile_id;
+                const disabled = selectedJob?.status === "FILLED" || match.status !== "PENDING" || isBusy;
+                const initial = (match.name || "W").trim().charAt(0).toUpperCase();
+                return (
+                <div key={match.worker_profile_id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-300 hover:shadow dark:border-slate-700 dark:bg-slate-800/40 dark:hover:border-slate-600">
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-50 text-sm font-bold text-blue-600 dark:bg-blue-950/50 dark:text-blue-300">{initial}</div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="truncate font-semibold text-slate-900 dark:text-white">{match.name || "Matched worker"}</p>
+                        <span className="shrink-0 text-sm font-bold text-slate-900 dark:text-white">{formatWage(match.expected_daily_wage)}</span>
+                      </div>
+                      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                        {match.trade_id && <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-semibold capitalize text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300">{match.trade_id}</span>}
+                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600 dark:bg-slate-700 dark:text-slate-300">{formatExperience(match.experience_years)}</span>
+                        {match.availability_status && <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${match.availability_status === "AVAILABLE" ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300" : "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"}`}>{match.availability_status}</span>}
+                        {match.distance_m != null && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600 dark:bg-slate-700 dark:text-slate-300">{(match.distance_m / 1000).toFixed(1)} km away</span>}
+                      </div>
+                      {match.skills.length > 0 && <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">{match.skills.join(" · ")}</p>}
+                    </div>
+                  </div>
+                  <div className="mt-3 flex justify-end">
+                    <button
+                      type="button"
+                      disabled={disabled}
+                      onClick={() => selectedJobId && void handleSelectWorker(selectedJobId, match.worker_profile_id)}
+                      className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed ${isAccepted ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300" : "bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"}`}
+                    >
+                      {isBusy ? <Loader2 size={15} className="animate-spin" /> : null}
+                      {isAccepted ? "Selected" : "Select Worker"}
+                    </button>
+                  </div>
                 </div>
-              ))}</div> : null}
+                );
+              })}</div> : null}
                 </>;
               })()}
             </div>}
+            </div>
           </section>
         </div>
       )}

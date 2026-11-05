@@ -145,6 +145,30 @@ def test_create_job_uses_authenticated_employer_and_searching_status(monkeypatch
     assert ("user_id", "user-id") in fake.tables["employer_profiles"].filters
 
 
+def test_create_job_falls_back_to_title_when_trade_missing(monkeypatch):
+    # Manual form sends no trade_id; matching only filters by trade when the job has one,
+    # so JobService.create falls back to the title to avoid matching every trade.
+    fake = FakeSupabase()
+    monkeypatch.setattr(job_service, "supabase", fake)
+    monkeypatch.setattr(job_service.MatchingService, "create_matches", lambda job_id: [])
+    request = JobCreate(job_site_id=SITE_ID, title="Electrician", headcount_required=5)
+
+    JobService.create(USER, request)
+
+    assert fake.rpc_params["p_trade_id"] == "Electrician"
+
+
+def test_create_job_keeps_explicit_trade_over_title(monkeypatch):
+    fake = FakeSupabase()
+    monkeypatch.setattr(job_service, "supabase", fake)
+    monkeypatch.setattr(job_service.MatchingService, "create_matches", lambda job_id: [])
+    request = JobCreate(job_site_id=SITE_ID, title="Need 5 sparkies urgently", headcount_required=5, trade_id="Electrician")
+
+    JobService.create(USER, request)
+
+    assert fake.rpc_params["p_trade_id"] == "Electrician"
+
+
 @pytest.mark.parametrize(
     ("salary", "expected"),
     [(Decimal("700"), 700.0), (Decimal("700.50"), 700.5)],

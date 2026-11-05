@@ -105,6 +105,11 @@ class JobService:
             if not entitlements["subscription_active"]:
                 raise JobPaymentRequired("SUBSCRIPTION_REQUIRED")
 
+        # Trade filter: the matcher only filters by trade when the job has a trade_id. The manual
+        # form may omit it, which would otherwise match every trade. When no trade is supplied,
+        # fall back to the job title so an "Electrician" job still filters to electricians.
+        effective_trade_id = (request.trade_id or request.title or "").strip() or None
+
         rpc_params = {
             "p_employer_id": employer["id"],
             "p_job_site_id": str(request.job_site_id),
@@ -112,7 +117,7 @@ class JobService:
             "p_headcount_required": request.headcount_required,
             "p_max_daily_salary": float(request.max_daily_salary) if request.max_daily_salary is not None else None,
             "p_min_experience": float(request.min_experience) if request.min_experience is not None else None,
-            "p_trade_id": request.trade_id,
+            "p_trade_id": effective_trade_id,
             "p_required_skills": request.required_skills or [],
         }
         if request.work_duration_days is not None:
@@ -165,7 +170,7 @@ class JobService:
                         "headcount_required": request.headcount_required,
                         "max_daily_salary": float(request.max_daily_salary) if request.max_daily_salary is not None else None,
                         "min_experience": float(request.min_experience) if request.min_experience is not None else None,
-                        "trade_id": request.trade_id,
+                        "trade_id": effective_trade_id,
                         "required_skills": request.required_skills or [],
                         "work_duration_days": request.work_duration_days,
                         "work_timing": request.work_timing,
