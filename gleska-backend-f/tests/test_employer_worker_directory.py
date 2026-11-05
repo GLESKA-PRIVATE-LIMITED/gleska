@@ -217,6 +217,21 @@ def test_multiple_job_matches_remain_distinguishable(monkeypatch):
     assert all(item.completed_at is None for item in result.items)
 
 
+def test_workers_page_only_lists_selected_or_completed_matches(monkeypatch):
+    # Auto-proposed (PENDING) and CANCELLED/REJECTED matches were never hires, so the
+    # query must be restricted to ACCEPTED/COMPLETED at the database.
+    fake = FakeSupabase([history_row("job-a", "Panel installation")])
+    monkeypatch.setattr(employer_worker_service, "supabase", fake)
+
+    employer_worker_service.EmployerWorkerService.list_workers(
+        user_id="employer-user-a", page=1, limit=12,
+    )
+
+    status_filters = [f for f in fake.match_query.filters if f[0] == "in_" and f[1] == "status"]
+    assert len(status_filters) == 1
+    assert set(status_filters[0][2]) == {"ACCEPTED", "COMPLETED"}
+
+
 def test_match_without_attendance_is_returned(monkeypatch):
     fake = FakeSupabase([history_row("job-a", "Panel installation")])
     monkeypatch.setattr(employer_worker_service, "supabase", fake)

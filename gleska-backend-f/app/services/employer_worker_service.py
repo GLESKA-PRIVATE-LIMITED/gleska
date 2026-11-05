@@ -9,6 +9,7 @@ from app.services.profile_photo_service import get_signed_profile_photo_url
 class EmployerWorkerService:
     MAX_LIMIT = 100
     SORTS = {"name_asc", "name_desc", "experience_desc", "wage_asc", "wage_desc"}
+    ENGAGED_MATCH_STATUSES = ("ACCEPTED", "COMPLETED")
 
     @classmethod
     def list_workers(
@@ -49,6 +50,10 @@ class EmployerWorkerService:
             "attendance(id,attendance_date,status,check_in_at,check_out_at)",
             count="exact",
         ).eq("jobs.employer_id", employer["id"])
+        # "My workers" = workers the employer actually selected (or finished work with). PENDING
+        # rows are auto-proposed candidates, and CANCELLED/REJECTED/expired rows were never hires,
+        # so they must not appear as work history.
+        query = query.in_("status", list(cls.ENGAGED_MATCH_STATUSES))
         if worker_id:
             query = query.eq("worker_profiles.id", worker_id)
         if search:
