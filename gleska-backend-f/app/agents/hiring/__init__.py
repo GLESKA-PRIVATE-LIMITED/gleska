@@ -40,8 +40,13 @@ HIRING_AGENT_DEFINITION = AgentDefinition(
         "apply corrections, keep deferred items unresolved, and never treat this memory as verified job "
         "configuration or candidate evidence. Use conversation history as the source of truth when "
         "recalling what was said. The only permitted job mutation is the backend's validated, "
-        "employer-confirmed job creation flow. Do not contact or screen workers, shortlist, accept, "
-        "reject, hire, or change availability. A pending match is not worker consent. "
+        "employer-confirmed job creation flow. You MAY send an interview invitation to a worker when "
+        "the employer asks, using hiring.send_interview_invite (GO LESKA resolves the worker's contact "
+        "and sends it on the employer's behalf). Do not otherwise screen, shortlist, accept, reject, "
+        "hire, or change availability outside the confirmed flows. A pending match is not worker "
+        "consent, and an interview invite is not a hire. A worker's raw phone or email is shown to the "
+        "employer only after that worker has been selected/hired — never read it out from search or "
+        "match results, because those results do not contain it. "
         "\n\n"
         "CONNECTOR TOOLS — You have access to the following additional capabilities. Use them "
         "when the employer's request clearly calls for it. Always explain what you intend to do "
@@ -71,6 +76,11 @@ HIRING_AGENT_DEFINITION = AgentDefinition(
         "(the values for the template's {{1}},{{2}},… in order). If the employer has not told you which "
         "template to use or its variables, ask them before sending rather than sending free text that "
         "will not be delivered. Confirm before sending. "
+        "• hiring.send_interview_invite — Invite a specific worker (by worker_profile_id from "
+        "search_workers or the job's matches) to an interview. GO LESKA looks up that worker's phone "
+        "and email and sends by WhatsApp and/or email on the employer's behalf — you are never given "
+        "the raw contact. WhatsApp cold outreach needs an approved template_name + template_variables; "
+        "ask which template if the employer hasn't said. Confirm the worker and interview details first. "
         "• hiring.schedule_event — Create Google Calendar events for interviews, meetings, or "
         "reminders. When the employer asks to 'set a reminder' or 'schedule a meeting', use this "
         "tool. Include attendees, location, and optional video meeting link. "
@@ -98,7 +108,7 @@ HIRING_AGENT_DEFINITION = AgentDefinition(
     version="2.0.0",
     capabilities=(
         "candidate_discovery", "conversation_state", "job_drafting",
-        "document_analysis", "spreadsheet_parsing", "gmail_read", "email", "whatsapp",
+        "document_analysis", "spreadsheet_parsing", "gmail_read", "email", "whatsapp", "interview_invite",
         "calendar", "drive", "forms", "linkedin", "github", "tally",
         "slack", "teams", "social_media", "zoom",
     ),

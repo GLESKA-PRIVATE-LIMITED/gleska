@@ -8,7 +8,7 @@ from app.ai_gateway import AIBillingError, billing_scope
 from app.core.security import require_employer
 from app.core.supabase import supabase
 from app.schemas.auth import UserResponse
-from app.schemas.job import JobCreate, JobDetailsResponse, JobMatchAcceptRequest, JobMatchAcceptResponse, JobMatchRejectResponse, JobMatchSummary, JobMatchesResponse, JobResponse
+from app.schemas.job import JobCreate, JobDetailsResponse, JobMatchAcceptRequest, JobMatchAcceptResponse, JobMatchRejectResponse, JobMatchSummary, JobMatchesResponse, JobResponse, WorkerContactResponse
 from app.schemas.job_extraction import JobExtractionRequest, JobExtractionResponse
 from app.schemas.job_assistant import JobAssistantCreateRequest, JobAssistantMessageRequest, JobAssistantResponse, JobAssistantStateUpdateRequest, JobAssistantStateUpdateResponse
 from app.schemas.hiring_agent import HiringAgentConversationResponse, HiringAgentCreateRequest, HiringAgentDiscoveryRequest, HiringAgentMessageRequest, HiringAgentResponse
@@ -306,6 +306,24 @@ async def accept_job_match(
         else:
             error_status = status.HTTP_422_UNPROCESSABLE_ENTITY
         raise HTTPException(status_code=error_status, detail=error_code) from exc
+
+
+@router.get("/{job_id}/workers/{worker_profile_id}/contact", response_model=WorkerContactResponse)
+async def get_hired_worker_contact(
+    job_id: str,
+    worker_profile_id: str,
+    user: UserResponse = Depends(require_employer),
+):
+    """Reveal a worker's phone/email — only after that worker is selected/hired on this job."""
+    try:
+        contact = JobMatchService.get_worker_contact_for_user(user, job_id, worker_profile_id)
+        return WorkerContactResponse(worker_profile_id=worker_profile_id, **contact)
+    except JobNotFound as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ValueError as exc:
+        code = str(exc)
+        http_status = status.HTTP_403_FORBIDDEN if code == "WORKER_NOT_HIRED" else status.HTTP_404_NOT_FOUND
+        raise HTTPException(status_code=http_status, detail=code) from exc
 
 
 @router.post("/{job_id}/matches/reject", response_model=JobMatchRejectResponse)

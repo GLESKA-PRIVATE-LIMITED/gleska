@@ -37,6 +37,38 @@ class JobMatchService:
         )
         return response.data or []
 
+    @classmethod
+    def get_worker_contact_for_user(cls, user: UserResponse, job_id: str, worker_profile_id: str) -> dict[str, Any]:
+        """Reveal a worker's phone/email to the employer — ONLY after that worker has been
+        selected/hired (ACCEPTED) on one of the employer's jobs. Enforces job ownership and the
+        hire gate before resolving the contact server-side."""
+        job = JobService.get_for_user(user, job_id)  # raises JobNotFound if not owned
+        employer_id = job.employer_id
+        accepted = (
+            supabase.table("job_matches")
+            .select("id,status,jobs!inner(employer_id)")
+            .eq("job_id", job_id)
+            .eq("worker_profile_id", worker_profile_id)
+            .eq("jobs.employer_id", employer_id)
+            .eq("status", "ACCEPTED")
+            .limit(1)
+            .execute()
+        )
+        if not (accepted.data or []):
+            raise ValueError("WORKER_NOT_HIRED")
+        response = supabase.rpc(
+            "get_worker_contact_secure", {"p_worker_profile_id": worker_profile_id}
+        ).execute()
+        rows = response.data or []
+        if not rows:
+            raise ValueError("WORKER_NOT_FOUND")
+        row = rows[0]
+        return {
+            "name": (row.get("name") or "").strip() or None,
+            "mobile": (row.get("mobile") or "").strip() or None,
+            "email": (row.get("email") or "").strip() or None,
+        }
+
     @staticmethod
     def _rejected_rows(employer_id: str, job_id: str) -> list[dict[str, Any]]:
         response = (

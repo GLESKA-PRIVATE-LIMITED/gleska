@@ -301,6 +301,86 @@ SEND_WHATSAPP_TOOL = ToolDefinition(
     confirmation_required=False,
 )
 
+# ── 4b. Interview invite (relay — worker contact resolved server-side) ───────
+
+SEND_INTERVIEW_INVITE_TOOL = ToolDefinition(
+    name="hiring.send_interview_invite",
+    description=(
+        "Send an interview invitation to a specific worker identified by worker_profile_id (the id "
+        "returned by hiring.search_workers or the job's matched/selected workers). GO LESKA resolves "
+        "that worker's phone and email itself and sends the invite on the employer's behalf by "
+        "WhatsApp and/or email — you never need, and will never be given, the worker's raw phone or "
+        "email. Use this when the employer asks to invite, contact, or message a candidate for an "
+        "interview. WhatsApp to a worker who has not messaged GO LESKA in the last 24h needs an "
+        "approved template_name plus template_variables (the values for the template's {{1}},{{2}},… "
+        "in order); if the employer has not specified a template, ask which one before sending. Email "
+        "is sent only when the worker has one on file. Confirm the worker and the interview details "
+        "with the employer before sending. The result reports, per channel, whether it was sent."
+    ),
+    domain="hiring",
+    agent_id="hiring",
+    input_schema={
+        "type": "object",
+        "properties": {
+            "worker_profile_id": {
+                "type": "string",
+                "description": "The worker's profile id (from search_workers or the job's matches).",
+            },
+            "job_title": {
+                "type": "string",
+                "description": "Role the interview is for, e.g. 'Electrician'. Used in the message.",
+            },
+            "interview_time": {
+                "type": "string",
+                "description": "When the interview is, as free text the worker will read, e.g. "
+                "'Tomorrow 11 AM' or '12 Nov, 3 PM'.",
+            },
+            "location": {
+                "type": "string",
+                "description": "Where to attend, or a video link. Optional.",
+            },
+            "channel": {
+                "type": "string",
+                "enum": ["both", "whatsapp", "email"],
+                "description": "Which channel(s) to use. Default 'both'.",
+            },
+            "template_name": {
+                "type": "string",
+                "description": "Approved WhatsApp template name for cold outreach (required to reach "
+                "a worker outside the 24h window).",
+            },
+            "template_variables": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Values for the WhatsApp template's {{1}},{{2}},… body variables, in order.",
+            },
+            "message": {
+                "type": "string",
+                "maxLength": 1000,
+                "description": "Optional custom message body; a default invite is used if omitted.",
+            },
+        },
+        "required": ["worker_profile_id"],
+        "additionalProperties": False,
+    },
+    output_schema={
+        "type": "object",
+        "properties": {
+            "sent_any": {"type": "boolean"},
+            "worker_name": {"type": "string"},
+            "channels_attempted": {"type": "array", "items": {"type": "string"}},
+            "channels_delivered": {"type": "array", "items": {"type": "string"}},
+            "whatsapp": {"type": "object"},
+            "email": {"type": "object"},
+        },
+        "required": ["sent_any"],
+    },
+    required_roles=("EMPLOYER",),
+    required_permissions=("assistant:message",),
+    metadata=CONNECTOR_TOOL_METADATA,
+    confirmation_required=False,
+)
+
 # ── 5. Google Calendar ──────────────────────────────────────────────────────
 
 SCHEDULE_EVENT_TOOL = ToolDefinition(

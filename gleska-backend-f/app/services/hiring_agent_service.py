@@ -21,6 +21,7 @@ from app.agents.hiring.connector_tools import (
     READ_EMAIL_TOOL,
     SEND_EMAIL_TOOL,
     SEND_WHATSAPP_TOOL,
+    SEND_INTERVIEW_INVITE_TOOL,
     SCHEDULE_EVENT_TOOL,
     FETCH_DRIVE_FILE_TOOL,
     SEARCH_DRIVE_FILES_TOOL,
@@ -616,6 +617,28 @@ class HiringAgentService:
             )
 
         executor.register_handler(SEND_WHATSAPP_TOOL.name, send_whatsapp)
+
+        # ── 4b. Interview invite (relay; worker contact resolved server-side) ──
+        registry.register(SEND_INTERVIEW_INVITE_TOOL)
+
+        async def send_interview_invite(arguments: dict[str, Any], context: AgentExecutionContext) -> dict[str, Any]:
+            from app.services.interview_invite_service import InterviewInviteService, InterviewInviteError
+            try:
+                return await InterviewInviteService.send_invite(
+                    employer_id=eid,
+                    worker_profile_id=arguments["worker_profile_id"],
+                    job_title=arguments.get("job_title"),
+                    interview_time=arguments.get("interview_time"),
+                    location=arguments.get("location"),
+                    channel=arguments.get("channel", "both"),
+                    template_name=arguments.get("template_name"),
+                    template_variables=arguments.get("template_variables"),
+                    message=arguments.get("message"),
+                )
+            except InterviewInviteError as exc:
+                return {"sent_any": False, "error": str(exc)}
+
+        executor.register_handler(SEND_INTERVIEW_INVITE_TOOL.name, send_interview_invite)
 
         # ── 5. Google Calendar ──────────────────────────────────────────
         registry.register(SCHEDULE_EVENT_TOOL)

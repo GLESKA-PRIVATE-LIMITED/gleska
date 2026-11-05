@@ -151,3 +151,11 @@ class JobMatchRejectResponse(BaseModel):
     match_status: str
     job_status: str
     rejected_count: int
+
+
+class WorkerContactResponse(BaseModel):
+    """Worker contact revealed to the employer only after the worker is selected/hired."""
+    worker_profile_id: str
+    name: str | None = None
+    mobile: str | None = None
+    email: str | None = None

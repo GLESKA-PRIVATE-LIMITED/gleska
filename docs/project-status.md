@@ -14,6 +14,15 @@ Last verified: 2026-11-02, commit 401e135+. Update at the end of every task.
     results) with no job required, then offers to create a job. Service
     `EmployerWorkerService.search_available_workers`; tool `app/agents/hiring/tools.py`; tests
     `tests/test_employer_worker_directory.py`. (Job-tied `discover_candidates` is unchanged.)
+  - Interview invites + hire-gated worker contact (2026-11-05): `hiring.send_interview_invite`
+    lets the agent invite a worker by `worker_profile_id` — the backend resolves the worker's
+    phone/email via `get_worker_contact_secure` (migration 113, revoked from anon/authenticated)
+    and sends by WhatsApp (approved template) and/or email without exposing the raw contact.
+    The employer sees a worker's phone/email only AFTER selecting/hiring them, via
+    `GET /jobs/{job_id}/workers/{worker_profile_id}/contact` (`JobMatchService.get_worker_contact_for_user`,
+    ACCEPTED-gated) and the "Show contact" button on selected-worker cards. The manual job form
+    also now captures a Required Trade (falls back to the title) so matching filters by trade.
+    Service `app/services/interview_invite_service.py`; tests `tests/test_interview_invite.py`.
   - 16 connector tools (incl. Gmail list/read) wired in
     `gleska-backend-f/app/agents/hiring/connector_tools.py`
     and registered per-request in `_build_tooling` of `hiring_agent_service.py`.

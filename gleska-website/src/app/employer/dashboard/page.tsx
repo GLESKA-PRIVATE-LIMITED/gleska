@@ -27,6 +27,8 @@ import {
   Sparkles,
   CheckCircle2,
   Paperclip,
+  Phone,
+  Mail,
   Mic,
   MicOff,
   Plug,
@@ -300,6 +302,9 @@ export default function EmployerDashboard() {
   const [isJobMatchesLoading, setIsJobMatchesLoading] = React.useState(false);
   const [jobMatchesError, setJobMatchesError] = React.useState("");
   const [acceptingWorkerId, setAcceptingWorkerId] = React.useState<string | null>(null);
+  const [revealedContacts, setRevealedContacts] = React.useState<Record<string, { name?: string | null; mobile?: string | null; email?: string | null }>>({});
+  const [revealingContactId, setRevealingContactId] = React.useState<string | null>(null);
+  const [contactErrors, setContactErrors] = React.useState<Record<string, string>>({});
   const [jobMatchSummaries, setJobMatchSummaries] = React.useState<Record<string, JobMatchSummary>>({});
   const [jobMatchSummaryState, setJobMatchSummaryState] = React.useState<MatchSummaryState>("LOADING");
   const [lifecycleUpdatingJobId, setLifecycleUpdatingJobId] = React.useState<string | null>(null);
@@ -1181,6 +1186,22 @@ export default function EmployerDashboard() {
       setLifecycleUpdatingJobId(null);
     }
   };
+
+  async function handleRevealContact(jobId: string, workerProfileId: string) {
+    setRevealingContactId(workerProfileId);
+    setContactErrors((prev) => ({ ...prev, [workerProfileId]: "" }));
+    try {
+      const { data } = await apiClient.get<{ worker_profile_id: string; name?: string | null; mobile?: string | null; email?: string | null }>(
+        `/api/v1/jobs/${jobId}/workers/${workerProfileId}/contact`,
+        { withCredentials: true },
+      );
+      setRevealedContacts((prev) => ({ ...prev, [workerProfileId]: { name: data.name, mobile: data.mobile, email: data.email } }));
+    } catch {
+      setContactErrors((prev) => ({ ...prev, [workerProfileId]: "Could not load contact. Only selected workers have contact details." }));
+    } finally {
+      setRevealingContactId(null);
+    }
+  }
 
   async function dispatchPaidCommission(jobId: string, workerProfileId: string) {
     const response = await apiClient.post<{ match_id: string; worker_profile_id: string; match_status: string; job_status: string; accepted_count: number }>(
@@ -3228,6 +3249,37 @@ export default function EmployerDashboard() {
                       </div>
                       <span className="shrink-0 rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300">Selected</span>
                     </div>
+                    {revealedContacts[match.worker_profile_id] ? (
+                      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-emerald-200/70 pt-2.5 text-sm dark:border-emerald-900/70">
+                        {revealedContacts[match.worker_profile_id].mobile && (
+                          <a href={`tel:${revealedContacts[match.worker_profile_id].mobile}`} className="inline-flex items-center gap-1.5 font-medium text-emerald-700 hover:underline dark:text-emerald-300">
+                            <Phone size={14} /> {revealedContacts[match.worker_profile_id].mobile}
+                          </a>
+                        )}
+                        {revealedContacts[match.worker_profile_id].email ? (
+                          <a href={`mailto:${revealedContacts[match.worker_profile_id].email}`} className="inline-flex items-center gap-1.5 font-medium text-emerald-700 hover:underline dark:text-emerald-300">
+                            <Mail size={14} /> {revealedContacts[match.worker_profile_id].email}
+                          </a>
+                        ) : (
+                          <span className="text-xs text-slate-400 dark:text-slate-500">No email on file</span>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="mt-3">
+                        <button
+                          type="button"
+                          disabled={revealingContactId === match.worker_profile_id}
+                          onClick={() => selectedJobId && void handleRevealContact(selectedJobId, match.worker_profile_id)}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:opacity-60 dark:border-emerald-800 dark:bg-slate-900 dark:text-emerald-300"
+                        >
+                          {revealingContactId === match.worker_profile_id ? <Loader2 size={13} className="animate-spin" /> : <Phone size={13} />}
+                          Show contact
+                        </button>
+                        {contactErrors[match.worker_profile_id] && (
+                          <p className="mt-1 text-xs text-rose-500">{contactErrors[match.worker_profile_id]}</p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ))}</div>
               </div>}

@@ -19,7 +19,7 @@ Full picture: docs/architecture.md.
 | Path | What | Memory |
 |---|---|---|
 | `gleska-website/` | Next.js 16 + React 19 + TS + Tailwind 4; all web roles | gleska-website/CLAUDE.md |
-| `gleska-website/supabase/migrations/` | **The** DB schema (001–112 SQL files) | gleska-website/supabase/CLAUDE.md |
+| `gleska-website/supabase/migrations/` | **The** DB schema (001–113 SQL files) | gleska-website/supabase/CLAUDE.md |
 | `gleska-backend-f/` | FastAPI + Pydantic v2; sole writer to the DB | gleska-backend-f/CLAUDE.md |
 | `mobile/` | Vite + React + Capacitor 8; two Android apps from one source | mobile/CLAUDE.md |
 | `docs/` | Architecture, status, known issues, ADRs, open questions | — |
@@ -41,7 +41,7 @@ Baselines (2026-10-31): backend 586 pass / 43 fail / 4 errors; website lint 110 
 88 warnings; vitest 3 failing (worker location). All failures pre-existing — **compare, don't chase**.
 
 ## 4. Database rules
-- Schema lives only in `gleska-website/supabase/migrations/NNN_name.sql`; next free number = 113.
+- Schema lives only in `gleska-website/supabase/migrations/NNN_name.sql`; next free number = 114.
   (`gleska-backend-f/migrations/connectors_setup.sql` is a legacy exception — don't add more there.)
 - Forward-only: never edit or delete an applied migration; add a new one. Idempotent DDL
   (`IF NOT EXISTS`, `DROP POLICY IF EXISTS`), wrapped in `BEGIN; … COMMIT;`.
