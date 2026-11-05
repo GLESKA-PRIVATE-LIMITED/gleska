@@ -83,3 +83,38 @@ SEARCH_WORKERS_TOOL = ToolDefinition(
     required_roles=("EMPLOYER",),
     required_permissions=("job:read",),
 )
+
+
+LIST_MY_WORKERS_TOOL = ToolDefinition(
+    name="hiring.list_my_workers",
+    description=(
+        "List the workers THIS employer has already selected (or completed work with) on their own "
+        "jobs — the same people shown on the employer's Workers page. Use this when the employer asks "
+        "about 'my workers', 'the workers I selected/hired', how many workers they have, or names a "
+        "worker they already selected (e.g. before sending an interview invite). Returns each worker's "
+        "worker_profile_id, name, trade, skills, experience, expected daily wage, city, availability, "
+        "verification and the jobs they were selected for. It does NOT contain phone or email; to "
+        "reach a worker use hiring.send_interview_invite with the returned worker_profile_id. "
+        "Read-only."
+    ),
+    domain="hiring",
+    agent_id="hiring",
+    input_schema={
+        "type": "object",
+        "properties": {
+            "limit": {"type": "integer", "minimum": 1, "maximum": 100, "description": "Max workers to return (default 50)."},
+        },
+        "additionalProperties": False,
+    },
+    output_schema={
+        "type": "object",
+        "properties": {
+            "status": {"type": "string", "enum": ["FOUND", "NONE_SELECTED"]},
+            "returned_count": {"type": "integer", "minimum": 0},
+            "workers": {"type": "array", "items": {"type": "object"}},
+        },
+        "required": ["status", "returned_count", "workers"],
+    },
+    required_roles=("EMPLOYER",),
+    required_permissions=("job:read",),
+)

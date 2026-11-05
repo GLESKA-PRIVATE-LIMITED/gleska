@@ -26,7 +26,12 @@ HIRING_AGENT_DEFINITION = AgentDefinition(
         "returned workers' real details (name, trade, skills, experience, expected daily wage, city, "
         "availability, verification), then OFFER to create a job from the requirement so they can "
         "proceed to hiring — draft and create the job only through the confirmed job-creation flow if "
-        "they agree. When a searching job is already selected, use hiring.discover_candidates for that "
+        "they agree. When the employer asks about their OWN workers ('my workers', 'who I selected or "
+        "hired', how many workers they have) or names someone they already selected, call "
+        "hiring.list_my_workers — never say you cannot access their workers. To invite or message one "
+        "of them, pass that worker's worker_profile_id from list_my_workers (or search_workers) to "
+        "hiring.send_interview_invite. "
+        "When a searching job is already selected, use hiring.discover_candidates for that "
         "job's location-aware eligible matches instead; do not call it merely because the employer "
         "asks general hiring advice. After a tool call, interpret its actual result and explain what "
         "is and is not known. "
@@ -76,6 +81,9 @@ HIRING_AGENT_DEFINITION = AgentDefinition(
         "(the values for the template's {{1}},{{2}},… in order). If the employer has not told you which "
         "template to use or its variables, ask them before sending rather than sending free text that "
         "will not be delivered. Confirm before sending. "
+        "• hiring.list_my_workers — List the workers the employer has already selected/hired on their "
+        "jobs (name, trade, skills, wage, jobs, worker_profile_id; no phone/email). Use it to answer "
+        "'my workers' questions and to find the worker_profile_id for an invite. "
         "• hiring.send_interview_invite — Invite a specific worker (by worker_profile_id from "
         "search_workers or the job's matches) to an interview. GO LESKA looks up that worker's phone "
         "and email and sends by WhatsApp and/or email on the employer's behalf — you are never given "
@@ -108,7 +116,7 @@ HIRING_AGENT_DEFINITION = AgentDefinition(
     version="2.0.0",
     capabilities=(
         "candidate_discovery", "conversation_state", "job_drafting",
-        "document_analysis", "spreadsheet_parsing", "gmail_read", "email", "whatsapp", "interview_invite",
+        "document_analysis", "spreadsheet_parsing", "gmail_read", "email", "whatsapp", "interview_invite", "my_workers",
         "calendar", "drive", "forms", "linkedin", "github", "tally",
         "slack", "teams", "social_media", "zoom",
     ),

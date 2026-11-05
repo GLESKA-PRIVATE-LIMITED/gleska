@@ -23,6 +23,9 @@ Last verified: 2026-11-02, commit 401e135+. Update at the end of every task.
     ACCEPTED-gated) and the "Show contact" button on selected-worker cards. The manual job form
     also now captures a Required Trade (falls back to the title) so matching filters by trade.
     Service `app/services/interview_invite_service.py`; tests `tests/test_interview_invite.py`.
+    `hiring.list_my_workers` (2026-11-05) lists the workers the employer already selected/completed
+    (ACCEPTED/COMPLETED; no phone/email) so the agent can answer "my workers" questions and pick a
+    `worker_profile_id` for an invite. `EmployerWorkerService.list_selected_workers`.
   - 16 connector tools (incl. Gmail list/read) wired in
     `gleska-backend-f/app/agents/hiring/connector_tools.py`
     and registered per-request in `_build_tooling` of `hiring_agent_service.py`.

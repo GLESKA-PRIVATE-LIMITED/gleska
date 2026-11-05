@@ -305,3 +305,30 @@ def test_non_name_sorts_keep_database_order_and_requested_page(monkeypatch, sort
         "order", column, {"foreign_table": "worker_profiles", "desc": descending, "nullsfirst": False}
     ) in fake.match_query.filters
     assert fake.match_query.execution_ranges == [(24, 35)]
+
+def test_list_selected_workers_dedupes_and_excludes_contact(monkeypatch):
+    # Same worker selected on two jobs -> one entry listing both jobs; no phone/email keys.
+    fake = FakeSupabase([
+        history_row("job-a", "Panel installation"),
+        history_row("job-b", "Factory wiring"),
+    ])
+    monkeypatch.setattr(employer_worker_service, "supabase", fake)
+
+    result = employer_worker_service.EmployerWorkerService.list_selected_workers(employer_id="employer-a")
+
+    assert result["status"] == "FOUND"
+    assert result["returned_count"] == 1
+    worker = result["workers"][0]
+    assert worker["worker_profile_id"] == "worker-a"
+    assert worker["name"] == "Worker A"
+    assert [j["job_title"] for j in worker["jobs"]] == ["Panel installation", "Factory wiring"]
+    assert not {"mobile", "phone", "email"} & set(worker)
+    assert ("eq", "jobs.employer_id", "employer-a") in fake.match_query.filters
+    in_filters = [f for f in fake.match_query.filters if f[0] == "in_" and f[1] == "status"]
+    assert set(in_filters[0][2]) == {"ACCEPTED", "COMPLETED"}
+
+
+def test_list_selected_workers_reports_none(monkeypatch):
+    monkeypatch.setattr(employer_worker_service, "supabase", FakeSupabase([]))
+    result = employer_worker_service.EmployerWorkerService.list_selected_workers(employer_id="employer-a")
+    assert result == {"status": "NONE_SELECTED", "returned_count": 0, "workers": []}

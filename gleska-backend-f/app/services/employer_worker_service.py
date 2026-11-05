@@ -186,6 +186,58 @@ class EmployerWorkerService:
         }
 
     @classmethod
+    def list_selected_workers(cls, *, employer_id: str, limit: int = 50) -> dict[str, Any]:
+        """The employer's own workers: those selected (ACCEPTED) or finished (COMPLETED) on one of
+        the employer's jobs. One entry per worker, listing the jobs they were selected for. Contains
+        no phone/email — contact is reached through hiring.send_interview_invite or the hire-gated
+        contact endpoint."""
+        capped = max(1, min(int(limit or 50), 100))
+        response = (
+            supabase.table("job_matches")
+            .select(
+                "status,created_at,"
+                "worker_profiles!inner(id,trade_id,skills,experience_years,expected_daily_wage,"
+                "availability_status,city,state,is_verified,users!inner(name)),"
+                "jobs!inner(id,title,employer_id)"
+            )
+            .eq("jobs.employer_id", employer_id)
+            .in_("status", list(cls.ENGAGED_MATCH_STATUSES))
+            .order("created_at", desc=True)
+            .limit(capped * 3)
+            .execute()
+        )
+        workers: dict[str, dict[str, Any]] = {}
+        for row in response.data or []:
+            profile = row.get("worker_profiles") or {}
+            worker_id = str(profile.get("id") or "")
+            if not worker_id:
+                continue
+            job = row.get("jobs") or {}
+            entry = workers.get(worker_id)
+            if entry is None:
+                wage = profile.get("expected_daily_wage")
+                entry = workers[worker_id] = {
+                    "worker_profile_id": worker_id,
+                    "name": ((profile.get("users") or {}).get("name")) or "Worker",
+                    "trade": profile.get("trade_id"),
+                    "skills": profile.get("skills") or [],
+                    "experience_years": profile.get("experience_years"),
+                    "expected_daily_wage": float(wage) if wage is not None else None,
+                    "availability_status": profile.get("availability_status") or "OFFLINE",
+                    "city": profile.get("city"),
+                    "state": profile.get("state"),
+                    "is_verified": bool(profile.get("is_verified")),
+                    "jobs": [],
+                }
+            entry["jobs"].append({"job_id": job.get("id"), "job_title": job.get("title"), "match_status": row.get("status")})
+        items = list(workers.values())[:capped]
+        return {
+            "status": "FOUND" if items else "NONE_SELECTED",
+            "returned_count": len(items),
+            "workers": items,
+        }
+
+    @classmethod
     def _item(cls, row: dict[str, Any]) -> EmployerWorkerResponse:
         profile = row.get("worker_profiles") or {}
         user = profile.get("users") or {}

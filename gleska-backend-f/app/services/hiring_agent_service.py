@@ -13,7 +13,7 @@ from uuid import UUID, uuid4
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from app.ai_gateway.context import billed_entry
-from app.agents.hiring.tools import DISCOVER_CANDIDATES_TOOL, SEARCH_WORKERS_TOOL
+from app.agents.hiring.tools import DISCOVER_CANDIDATES_TOOL, LIST_MY_WORKERS_TOOL, SEARCH_WORKERS_TOOL
 from app.agents.hiring.connector_tools import (
     ANALYZE_DOCUMENT_TOOL,
     PARSE_SPREADSHEET_TOOL,
@@ -542,6 +542,18 @@ class HiringAgentService:
             )
 
         executor.register_handler(SEARCH_WORKERS_TOOL.name, search_workers)
+
+        # ── The employer's own selected workers ─────────────────────────
+        registry.register(LIST_MY_WORKERS_TOOL)
+
+        async def list_my_workers(arguments: dict[str, Any], context: AgentExecutionContext) -> dict[str, Any]:
+            from app.services.employer_worker_service import EmployerWorkerService
+            return EmployerWorkerService.list_selected_workers(
+                employer_id=eid,
+                limit=arguments.get("limit", 50),
+            )
+
+        executor.register_handler(LIST_MY_WORKERS_TOOL.name, list_my_workers)
 
         # ── 1. OCR & Document Intelligence ──────────────────────────────
         registry.register(ANALYZE_DOCUMENT_TOOL)
