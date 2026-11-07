@@ -107,6 +107,8 @@ Last verified: 2026-11-02, commit 401e135+. Update at the end of every task.
 ## In progress / partial
 - Logistics agent: listings/rental requests persist server-side (migration 107, applied); the fleet
   search pool is still a hard-coded demo list.
+- Hiring chat UI: compacted toolbar, increased chat area height and width ratio (7:5 vs 6:6),
+  shortened status banners — more space for messages and input (2026-11-07).
 
 ## Planned / not started
 - Tender filing & tracking backends (UI placeholders only).

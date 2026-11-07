@@ -2011,36 +2011,52 @@ export default function EmployerDashboard() {
                 className="p-4 sm:p-6"
               >
                 <div className="grid min-h-0 items-stretch gap-5 lg:grid-cols-12">
-                  <section className="flex h-[380px] sm:h-[480px] lg:h-[500px] min-h-0 flex-col rounded-2xl border border-slate-200 bg-white p-3.5 sm:p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900 lg:col-span-6">
+                  <section className="flex h-[460px] sm:h-[540px] lg:h-[600px] min-h-0 flex-col rounded-2xl border border-slate-200 bg-white p-3.5 sm:p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900 lg:col-span-7">
                     {/* Header Toolbar */}
-                    <div className="flex flex-none flex-col gap-2.5 border-b border-slate-100 pb-3 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950/60 dark:text-blue-400">
-                          <Sparkles size={16} />
-                        </div>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate">
-                              AI Assistant
-                            </h3>
-                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
-                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                              Active
-                            </span>
+                    <div className="flex flex-none flex-col gap-2 border-b border-slate-100 pb-2.5 dark:border-slate-800">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600 dark:bg-blue-950/60 dark:text-blue-400">
+                            <Sparkles size={14} />
                           </div>
-                          <p className="text-[11px] text-slate-500 dark:text-slate-400 hidden sm:block truncate">
-                            Chat naturally to draft jobs and discover matching workers
-                          </p>
+                          <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate">
+                            AI Assistant
+                          </h3>
+                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
+                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                            Active
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={startNewHiringConversation}
+                            disabled={isHiringAgentSending || isHiringConversationLoading}
+                            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 transition hover:bg-slate-50 hover:text-slate-900 active:scale-95 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 cursor-pointer"
+                            title="Start new conversation"
+                          >
+                            <RotateCcw size={11} />
+                            <span className="hidden sm:inline">New chat</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => router.push("/employer/connectors")}
+                            className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2 py-1 text-[11px] font-semibold text-blue-700 transition hover:bg-blue-100 active:scale-95 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300 cursor-pointer"
+                            title="Manage AI connectors"
+                          >
+                            <Plug size={11} />
+                            <span className="hidden sm:inline">Connectors</span>
+                          </button>
                         </div>
                       </div>
 
-                      <div className="flex flex-wrap items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-1.5">
                         <select
                           value={hiringJobId}
                           disabled={isHiringAgentSending || isHiringConversationLoading || isHiringJobsLoading || Boolean(hiringJobsError)}
                           onChange={(event) => handleHiringJobSelection(event.target.value)}
                           aria-label="Select a searching job for candidate discovery"
-                          className="h-8 min-w-0 flex-1 sm:flex-none max-w-full sm:max-w-[210px] truncate rounded-lg border border-slate-200 bg-slate-50 px-2 text-xs font-semibold text-slate-700 focus:border-blue-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                          className="h-7 min-w-0 flex-1 max-w-full sm:max-w-[200px] truncate rounded-lg border border-slate-200 bg-slate-50 px-2 text-[11px] font-semibold text-slate-700 focus:border-blue-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
                         >
                           <option value="">Draft a new job</option>
                           {hiringEligibleJobs.map((job) => (
@@ -2052,9 +2068,8 @@ export default function EmployerDashboard() {
                             </option>
                           )}
                         </select>
-                        {/* Work Site Selector Pill */}
                         <div className="relative flex min-w-0 flex-1 sm:flex-none items-center">
-                          <MapPin size={13} className="pointer-events-none absolute left-2.5 text-blue-600 dark:text-blue-400" />
+                          <MapPin size={12} className="pointer-events-none absolute left-2 text-blue-600 dark:text-blue-400" />
                           <select
                             value={hiringSelectedJobSiteId}
                             disabled={isHiringAgentSending || isHiringConversationLoading}
@@ -2073,85 +2088,62 @@ export default function EmployerDashboard() {
                               }
                             }}
                             aria-label="Select Work Site"
-                            className="h-8 w-full sm:max-w-[190px] truncate rounded-lg border border-slate-200 bg-slate-50 pl-7 pr-6 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 focus:border-blue-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 cursor-pointer"
+                            className="h-7 w-full sm:max-w-[180px] truncate rounded-lg border border-slate-200 bg-slate-50 pl-6 pr-5 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-100 focus:border-blue-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 cursor-pointer"
                           >
                             <option value="">Select work site</option>
                             {jobSites.map((site) => (
                               <option key={site.id} value={site.id}>{site.name}</option>
                             ))}
                           </select>
-                          <ChevronDown size={12} className="pointer-events-none absolute right-2 text-slate-400" />
+                          <ChevronDown size={11} className="pointer-events-none absolute right-1.5 text-slate-400" />
                         </div>
-
-                        {/* New conversation button */}
-                        <button
-                          type="button"
-                          onClick={startNewHiringConversation}
-                          disabled={isHiringAgentSending || isHiringConversationLoading}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 hover:text-slate-900 active:scale-95 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 cursor-pointer"
-                          title="Start new conversation"
-                        >
-                          <RotateCcw size={12} />
-                          <span className="hidden sm:inline">New chat</span>
-                        </button>
-
-                        {/* Connectors link */}
-                        <button
-                          type="button"
-                          onClick={() => router.push("/employer/connectors")}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-xs font-semibold text-blue-700 transition hover:bg-blue-100 active:scale-95 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300 cursor-pointer"
-                          title="Manage AI connectors"
-                        >
-                          <Plug size={12} />
-                          <span className="hidden sm:inline">Connectors</span>
-                        </button>
                       </div>
                     </div>
 
                     {hiringJobsError && (
-                      <div role="alert" className="mt-3 flex-none rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-200">
+                      <div role="alert" className="mt-2 flex-none rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] text-rose-800 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-200">
                         <p>{hiringJobsError}</p>
-                        <button type="button" onClick={() => setDashboardReloadToken((current) => current + 1)} className="mt-1.5 font-semibold underline">
+                        <button type="button" onClick={() => setDashboardReloadToken((current) => current + 1)} className="mt-1 font-semibold underline">
                           Retry loading jobs
                         </button>
                       </div>
                     )}
                     {isHiringJobsLoading && !hiringJobsError ? (
-                      <p className="mt-3 flex-none text-xs text-slate-500 dark:text-slate-400">Loading your searching jobs…</p>
+                      <p className="mt-2 flex-none text-[11px] text-slate-500 dark:text-slate-400">Loading your searching jobs…</p>
                     ) : hiringJobId ? (
-                      <div className="mt-3 flex-none rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs text-blue-800 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-200">
+                      <div className="mt-2 flex-none rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-[11px] text-blue-800 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-200">
                         <div className="flex flex-wrap items-center justify-between gap-2">
-                          <span>
+                          <span className="flex-1 min-w-0">
                             {hiringSelectedJobIsEligible
-                              ? `Candidate discovery is scoped to “${hiringSelectedJob?.title}”. Ask the assistant about available candidates.`
-                              : "The selected job is not currently eligible for candidate discovery. Select a searching job in a new chat."}
+                              ? `Scoped to "${hiringSelectedJob?.title}". Ask about available candidates.`
+                              : "Job not eligible for discovery. Select a searching job."}
                           </span>
                           <button
                             type="button"
                             onClick={() => void handleFindHiringCandidates()}
                             disabled={!hiringSelectedJobIsEligible || isHiringJobsLoading || Boolean(hiringJobsError) || isHiringAgentSending || isHiringConversationLoading}
-                            className="shrink-0 rounded-lg bg-blue-600 px-3 py-1.5 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                            className="shrink-0 rounded-lg bg-blue-600 px-2.5 py-1 text-[11px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
                           >
-                            Find matching candidates
+                            Find candidates
                           </button>
                         </div>
                       </div>
                     ) : (
-                      <p className="mt-3 flex-none text-xs text-slate-500 dark:text-slate-400">
+                      <p className="mt-2 flex-none text-[11px] text-slate-500 dark:text-slate-400">
                         {hiringEligibleJobs.length
-                          ? "Select one of your searching jobs to ask the Hiring Agent for its current eligible matches. Candidate discovery does not create a job."
-                          : "You have no searching jobs available for candidate discovery. Create a job first; it will appear here while it is searching for workers."}
+                          ? "Select a searching job to discover eligible matches."
+                          : "No searching jobs yet. Create one first."}
                       </p>
                     )}
 
                     {hiringConversationError && (
-                      <div role="alert" className="mt-3 flex-none rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-200">
+                      <div role="alert" className="mt-2 flex-none rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] text-rose-800 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-200">
                         <p>{hiringConversationError}</p>
                         <button
                           type="button"
                           onClick={() => void restoreHiringConversation()}
                           disabled={isHiringConversationLoading || !hiringConversationId}
-                          className="mt-1.5 font-semibold underline disabled:opacity-50 cursor-pointer"
+                          className="mt-1 font-semibold underline disabled:opacity-50 cursor-pointer"
                         >
                           Reload saved conversation
                         </button>
@@ -2161,7 +2153,7 @@ export default function EmployerDashboard() {
                     {/* Messages Thread */}
                     <div
                       ref={hiringMessagesRef}
-                      className="my-3 min-h-0 flex-1 space-y-3.5 overflow-y-auto overscroll-contain pr-1.5 custom-scrollbar"
+                      className="my-2 min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain pr-1 custom-scrollbar"
                       aria-live="polite"
                     >
                       {hiringHistory.map((message, index) => (
@@ -2195,7 +2187,7 @@ export default function EmployerDashboard() {
                     </div>
 
                     {/* Chat Input Bar */}
-                    <div className="mt-auto flex-none border-t border-slate-100 pt-3 dark:border-slate-800">
+                    <div className="mt-auto flex-none border-t border-slate-100 pt-2 dark:border-slate-800">
                       {/* Attached files preview */}
                       {hiringAttachedFiles.length > 0 && (
                         <div className="mb-2 flex flex-wrap gap-1.5">
@@ -2292,7 +2284,7 @@ export default function EmployerDashboard() {
                   </section>
 
                   {/* Right Column: Live Job Draft Preview & Candidate Matches */}
-                  <aside className="flex h-[380px] sm:h-[480px] lg:h-[500px] min-h-0 flex-col justify-between rounded-2xl border border-slate-200 bg-white p-3.5 sm:p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900 lg:col-span-6">
+                  <aside className="flex h-[380px] sm:h-[440px] lg:h-[600px] min-h-0 flex-col justify-between rounded-2xl border border-slate-200 bg-white p-3.5 sm:p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900 lg:col-span-5">
                     <div className="flex flex-none items-center justify-between gap-2 border-b border-slate-100 pb-3 dark:border-slate-800">
                       <div className="flex items-center gap-2.5">
                         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950/60 dark:text-blue-400">
@@ -2477,7 +2469,7 @@ export default function EmployerDashboard() {
                         )}
                         {hiringCandidateStatus === "FAILED" && (
                           <p className="mt-3 rounded-xl bg-rose-50 p-3 text-xs text-rose-700 dark:bg-rose-950/30 dark:text-rose-200">
-                            Couldn’t retrieve worker matches. Please try again.
+                            Couldn't retrieve worker matches. Please try again.
                           </p>
                         )}
                         {hiringCandidateNote && (
