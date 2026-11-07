@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class HiringAgentJobDraft(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     title: str | None = Field(default=None, max_length=120)
     headcount_required: int | None = Field(default=None, ge=1, le=1000)

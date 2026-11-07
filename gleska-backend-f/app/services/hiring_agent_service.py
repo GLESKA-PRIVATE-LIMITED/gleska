@@ -75,7 +75,7 @@ logger = logging.getLogger(__name__)
 
 
 class _HiringConversationContext(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     summary: str = Field(default="", max_length=1200)
     stated_needs: list[Annotated[str, Field(max_length=300)]] = Field(default_factory=list, max_length=12)

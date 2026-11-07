@@ -133,6 +133,44 @@ class GeminiLLMProvider:
             parsed = json.loads(raw_text)
             if not isinstance(parsed, dict):
                 raise ValueError("Structured response must be an object")
-            return StructuredAgentResponse.model_validate(parsed)
+            filtered = _strip_llm_extras(parsed)
+            return StructuredAgentResponse.model_validate(filtered)
         except (ValueError, KeyError, IndexError, TypeError, ValidationError) as exc:
             raise LLMProviderError("LLM_INVALID_RESPONSE") from exc
+
+
+_RESPONSE_KEYS = frozenset({
+    "assistant_message", "conversation_id", "task_id", "task", "task_state",
+    "tool_calls", "tool_results", "pending_action", "confirmation", "completed", "error",
+})
+_TASK_STATE_KEYS = frozenset({
+    "data", "missing_information", "pending_action", "current_step",
+    "revision", "execution", "confirmation", "result", "error",
+})
+_TASK_KEYS = frozenset({
+    "task_id", "task_type", "status", "revision",
+    "created_at", "updated_at", "metadata",
+})
+_TOOL_CALL_KEYS = frozenset({"call_id", "tool_name", "arguments"})
+
+
+def _strip_llm_extras(parsed: dict[str, Any]) -> dict[str, Any]:
+    """Drop keys the LLM added that aren't in our response/state models.
+
+    LLMs often return extra fields (reasoning, status, action, etc.) that cause
+    pydantic ``extra="forbid"`` to reject the entire response."""
+    extra = set(parsed) - _RESPONSE_KEYS
+    if extra:
+        logger.debug("Stripped extra LLM response keys: %s", extra)
+    filtered: dict[str, Any] = {k: parsed[k] for k in parsed if k in _RESPONSE_KEYS}
+    if isinstance(filtered.get("task_state"), dict):
+        filtered["task_state"] = {k: v for k, v in filtered["task_state"].items() if k in _TASK_STATE_KEYS}
+    if isinstance(filtered.get("task"), dict):
+        filtered["task"] = {k: v for k, v in filtered["task"].items() if k in _TASK_KEYS}
+    if isinstance(filtered.get("tool_calls"), list):
+        filtered["tool_calls"] = [
+            {k: v for k, v in tc.items() if k in _TOOL_CALL_KEYS}
+            for tc in filtered["tool_calls"]
+            if isinstance(tc, dict)
+        ]
+    return filtered
