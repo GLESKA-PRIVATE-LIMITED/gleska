@@ -109,6 +109,10 @@ Last verified: 2026-11-02, commit 401e135+. Update at the end of every task.
   search pool is still a hard-coded demo list.
 - Hiring chat UI: compacted toolbar, increased chat area height and width ratio (7:5 vs 6:6),
   shortened status banners — more space for messages and input (2026-11-07).
+- Hiring agent prompt: clarified job creation flow so the LLM collects missing draft fields
+  instead of looping on "review step" language. The server auto-generates a confirmation button
+  once all required fields are filled; the LLM now tells the employer which fields are missing
+  and directs them to the button when the draft is complete (2026-11-07).
 
 ## Planned / not started
 - Tender filing & tracking backends (UI placeholders only).
