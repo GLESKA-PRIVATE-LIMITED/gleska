@@ -474,7 +474,11 @@ $$;
 
 -- ============================================================
 -- 5. find_available_jobs_for_worker — worker-side job discovery.
+--    DROP required because the return type differs from the
+--    version currently in production (42P13 on CREATE OR REPLACE).
 -- ============================================================
+DROP FUNCTION IF EXISTS public.find_available_jobs_for_worker(UUID, INTEGER);
+
 CREATE OR REPLACE FUNCTION public.find_available_jobs_for_worker(
   p_worker_id UUID,
   p_max_radius INTEGER DEFAULT 30000
