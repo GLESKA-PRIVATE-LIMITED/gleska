@@ -43,6 +43,8 @@ class HiringAgentMessageRequest(BaseModel):
     job_id: UUID | None = None
     selected_job_site_id: UUID | None = None
     state_revision: int | None = Field(default=None, ge=0)
+    confirmed_action_id: str | None = None
+    cancel_action_id: str | None = None
 
     @field_validator("message")
     @classmethod
@@ -100,6 +102,7 @@ class HiringAgentResponse(BaseModel):
     job_site_name: str | None = None
     job_confirmation_token: str | None = None
     created_job_id: str | None = None
+    pending_action: dict | None = None
 
 
 class HiringAgentConversationResponse(BaseModel):

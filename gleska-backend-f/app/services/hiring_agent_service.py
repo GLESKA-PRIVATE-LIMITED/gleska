@@ -43,7 +43,7 @@ from app.agents.shared.runtime import (
     AgentRuntimeRequest,
     StructuredAgentResponse,
 )
-from app.agents.shared.task import AgentTask, TaskState
+from app.agents.shared.task import AgentTask, ConfirmationState, ConfirmationStatus, TaskState
 from app.core.config import settings
 from app.core.supabase import supabase
 from app.llm.providers import GeminiLLMProvider, LLMProviderError
@@ -936,13 +936,29 @@ class HiringAgentService:
             llm_provider=_GroundedHiringProvider(),
             max_iterations=4,
         )
-        result = await runtime.run(AgentRuntimeRequest(
-            context=context,
-            message=request.message,
-            task=task,
-            task_state=task_state,
-            history=history,
-        ))
+        trusted_confirmation: ConfirmationState | None = None
+        if request.confirmed_action_id:
+            trusted_confirmation = ConfirmationState(
+                status=ConfirmationStatus.CONFIRMED,
+                action_id=request.confirmed_action_id,
+                resolved_by=str(user.id),
+            )
+        elif request.cancel_action_id:
+            trusted_confirmation = ConfirmationState(
+                status=ConfirmationStatus.REJECTED,
+                action_id=request.cancel_action_id,
+                resolved_by=str(user.id),
+            )
+        result = await runtime.run(
+            AgentRuntimeRequest(
+                context=context,
+                message=request.message,
+                task=task,
+                task_state=task_state,
+                history=history,
+            ),
+            trusted_confirmation=trusted_confirmation,
+        )
 
         now = datetime.now(timezone.utc).isoformat()
         next_history = [*history, AgentConversationMessage(role="user", content=request.message)]
@@ -1064,6 +1080,7 @@ class HiringAgentService:
             job_site_name=site_name,
             job_confirmation_token=confirmation_token,
             created_job_id=updated_state.get("created_job_id"),
+            pending_action=result.pending_action.model_dump(mode="json") if result.pending_action else None,
         )
 
     @classmethod

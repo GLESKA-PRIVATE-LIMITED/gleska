@@ -245,7 +245,7 @@ SEND_EMAIL_TOOL = ToolDefinition(
     required_roles=("EMPLOYER",),
     required_permissions=("assistant:message",),
     metadata=CONNECTOR_TOOL_METADATA,
-    confirmation_required=False,
+    confirmation_required=True,
 )
 
 # ── 4. WhatsApp (via MSG91) ─────────────────────────────────────────────────
@@ -298,7 +298,7 @@ SEND_WHATSAPP_TOOL = ToolDefinition(
     required_roles=("EMPLOYER",),
     required_permissions=("assistant:message",),
     metadata=CONNECTOR_TOOL_METADATA,
-    confirmation_required=False,
+    confirmation_required=True,
 )
 
 # ── 4b. Interview invite (relay — worker contact resolved server-side) ───────
@@ -378,7 +378,7 @@ SEND_INTERVIEW_INVITE_TOOL = ToolDefinition(
     required_roles=("EMPLOYER",),
     required_permissions=("assistant:message",),
     metadata=CONNECTOR_TOOL_METADATA,
-    confirmation_required=False,
+    confirmation_required=True,
 )
 
 # ── 5. Google Calendar ──────────────────────────────────────────────────────

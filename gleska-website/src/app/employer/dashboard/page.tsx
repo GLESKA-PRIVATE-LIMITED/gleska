@@ -163,6 +163,14 @@ interface HiringAgentJobDraft {
   required_skills: string[];
 }
 
+interface HiringPendingAction {
+  action_id: string;
+  action_name: string;
+  input: Record<string, unknown>;
+  reason: string;
+  expires_at: string | null;
+}
+
 interface HiringAgentConversation {
   conversation_id: string;
   job_id: string | null;
@@ -178,6 +186,7 @@ interface HiringAgentConversation {
   job_site_name?: string | null;
   job_confirmation_token?: string | null;
   created_job_id?: string | null;
+  pending_action?: HiringPendingAction | null;
 }
 
 interface ManualJobFormState {
@@ -351,6 +360,7 @@ export default function EmployerDashboard() {
   const [hiringJobSiteName, setHiringJobSiteName] = React.useState<string | null>(null);
   const [hiringConfirmationToken, setHiringConfirmationToken] = React.useState<string | null>(null);
   const [hiringCreatedJobId, setHiringCreatedJobId] = React.useState<string | null>(null);
+  const [hiringPendingAction, setHiringPendingAction] = React.useState<HiringPendingAction | null>(null);
   const [hiringConversationError, setHiringConversationError] = React.useState("");
   const [isHiringConversationLoading, setIsHiringConversationLoading] = React.useState(true);
   const hiringSendInFlightRef = React.useRef(false);
@@ -375,6 +385,7 @@ export default function EmployerDashboard() {
     setHiringJobSiteName(data.job_site_name || null);
     setHiringConfirmationToken(data.job_confirmation_token || null);
     setHiringCreatedJobId(data.created_job_id || null);
+    setHiringPendingAction(data.pending_action || null);
   }, []);
 
   const refreshHiringCandidateDecisionStatuses = React.useCallback(async (jobId: string) => {
@@ -1188,16 +1199,20 @@ export default function EmployerDashboard() {
   };
 
   async function handleRevealContact(jobId: string, workerProfileId: string) {
-    setRevealingContactId(workerProfileId);
-    setContactErrors((prev) => ({ ...prev, [workerProfileId]: "" }));
+    const contactKey = `${jobId}:${workerProfileId}`;
+    setRevealingContactId(contactKey);
+    setContactErrors((prev) => ({ ...prev, [contactKey]: "" }));
     try {
       const { data } = await apiClient.get<{ worker_profile_id: string; name?: string | null; mobile?: string | null; email?: string | null }>(
         `/api/v1/jobs/${jobId}/workers/${workerProfileId}/contact`,
         { withCredentials: true },
       );
-      setRevealedContacts((prev) => ({ ...prev, [workerProfileId]: { name: data.name, mobile: data.mobile, email: data.email } }));
-    } catch {
-      setContactErrors((prev) => ({ ...prev, [workerProfileId]: "Could not load contact. Only selected workers have contact details." }));
+      setRevealedContacts((prev) => ({ ...prev, [contactKey]: { name: data.name, mobile: data.mobile, email: data.email } }));
+    } catch (error) {
+      const message = isAxiosError(error) && error.response
+        ? "Could not load contact. Only selected workers have contact details."
+        : "Could not load contact. Please check your connection and try again.";
+      setContactErrors((prev) => ({ ...prev, [contactKey]: message }));
     } finally {
       setRevealingContactId(null);
     }
@@ -1278,6 +1293,7 @@ export default function EmployerDashboard() {
     setHiringJobSiteName(null);
     setHiringConfirmationToken(null);
     setHiringCreatedJobId(null);
+    setHiringPendingAction(null);
     setHiringConversationError("");
     setHiringHistory([{
       role: "assistant",
@@ -1330,7 +1346,10 @@ export default function EmployerDashboard() {
     setCreateJobTab("manual");
   };
 
-  const handleSendHiringAgentMessage = async (messageText = hiringAgentInput) => {
+  const handleSendHiringAgentMessage = async (
+    messageText = hiringAgentInput,
+    options?: { confirmed_action_id?: string; cancel_action_id?: string }
+  ) => {
     const text = messageText.trim();
     const hasAttachments = hiringAttachedFiles.length > 0;
     if ((!text && !hasAttachments) || hiringSendInFlightRef.current || isHiringConversationLoading) return;
@@ -1382,6 +1401,8 @@ export default function EmployerDashboard() {
           job_id: hiringJobId || undefined,
           selected_job_site_id: hiringSelectedJobSiteId || undefined,
           state_revision: hiringConversationId ? hiringStateRevision : undefined,
+          confirmed_action_id: options?.confirmed_action_id ?? undefined,
+          cancel_action_id: options?.cancel_action_id ?? undefined,
         },
         { withCredentials: true },
       );
@@ -1445,6 +1466,20 @@ export default function EmployerDashboard() {
       setIsHiringAgentSending(false);
       hiringSendInFlightRef.current = false;
     }
+  };
+
+  const handleApproveAction = async () => {
+    if (!hiringPendingAction) return;
+    const actionId = hiringPendingAction.action_id;
+    setHiringPendingAction(null);
+    await handleSendHiringAgentMessage("Approve", { confirmed_action_id: actionId });
+  };
+
+  const handleCancelAction = async () => {
+    if (!hiringPendingAction) return;
+    const actionId = hiringPendingAction.action_id;
+    setHiringPendingAction(null);
+    await handleSendHiringAgentMessage("Cancel", { cancel_action_id: actionId });
   };
 
   const HIRING_ACCEPTED_FILE_TYPES = ".pdf,.png,.jpg,.jpeg,.gif,.webp,.mp4,.mov,.webm,.xlsx,.xls,.csv,.pptx,.ppt,.doc,.docx,.txt";
@@ -2177,6 +2212,32 @@ export default function EmployerDashboard() {
                           </div>
                         </div>
                       ))}
+
+                      {hiringPendingAction && !isHiringAgentSending && (
+                        <div className="ml-9 flex flex-col gap-2 mt-1">
+                          <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                            Waiting for your approval to proceed:
+                          </p>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => void handleApproveAction()}
+                              disabled={hiringSendInFlightRef.current || isHiringConversationLoading}
+                              className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 transition cursor-pointer"
+                            >
+                              <CheckCircle2 size={13} /> Approve
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleCancelAction()}
+                              disabled={hiringSendInFlightRef.current || isHiringConversationLoading}
+                              className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 transition dark:border-rose-800 dark:text-rose-300 dark:hover:bg-rose-950/30 cursor-pointer"
+                            >
+                              <X size={13} /> Cancel
+                            </button>
+                          </div>
+                        </div>
+                      )}
 
                       {isHiringAgentSending && (
                         <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/40 p-2.5 rounded-xl w-fit">
@@ -3241,37 +3302,41 @@ export default function EmployerDashboard() {
                       </div>
                       <span className="shrink-0 rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300">Selected</span>
                     </div>
-                    {revealedContacts[match.worker_profile_id] ? (
-                      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-emerald-200/70 pt-2.5 text-sm dark:border-emerald-900/70">
-                        {revealedContacts[match.worker_profile_id].mobile && (
-                          <a href={`tel:${revealedContacts[match.worker_profile_id].mobile}`} className="inline-flex items-center gap-1.5 font-medium text-emerald-700 hover:underline dark:text-emerald-300">
-                            <Phone size={14} /> {revealedContacts[match.worker_profile_id].mobile}
-                          </a>
-                        )}
-                        {revealedContacts[match.worker_profile_id].email ? (
-                          <a href={`mailto:${revealedContacts[match.worker_profile_id].email}`} className="inline-flex items-center gap-1.5 font-medium text-emerald-700 hover:underline dark:text-emerald-300">
-                            <Mail size={14} /> {revealedContacts[match.worker_profile_id].email}
-                          </a>
-                        ) : (
-                          <span className="text-xs text-slate-400 dark:text-slate-500">No email on file</span>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="mt-3">
-                        <button
-                          type="button"
-                          disabled={revealingContactId === match.worker_profile_id}
-                          onClick={() => selectedJobId && void handleRevealContact(selectedJobId, match.worker_profile_id)}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:opacity-60 dark:border-emerald-800 dark:bg-slate-900 dark:text-emerald-300"
-                        >
-                          {revealingContactId === match.worker_profile_id ? <Loader2 size={13} className="animate-spin" /> : <Phone size={13} />}
-                          Show contact
-                        </button>
-                        {contactErrors[match.worker_profile_id] && (
-                          <p className="mt-1 text-xs text-rose-500">{contactErrors[match.worker_profile_id]}</p>
-                        )}
-                      </div>
-                    )}
+                    {(() => {
+                      const contactKey = `${selectedJobId ?? ""}:${match.worker_profile_id}`;
+                      const contact = revealedContacts[contactKey];
+                      return contact ? (
+                        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-emerald-200/70 pt-2.5 text-sm dark:border-emerald-900/70">
+                          {contact.mobile && (
+                            <a href={`tel:${contact.mobile}`} className="inline-flex items-center gap-1.5 font-medium text-emerald-700 hover:underline dark:text-emerald-300">
+                              <Phone size={14} /> {contact.mobile}
+                            </a>
+                          )}
+                          {contact.email ? (
+                            <a href={`mailto:${contact.email}`} className="inline-flex items-center gap-1.5 font-medium text-emerald-700 hover:underline dark:text-emerald-300">
+                              <Mail size={14} /> {contact.email}
+                            </a>
+                          ) : (
+                            <span className="text-xs text-slate-400 dark:text-slate-500">No email on file</span>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="mt-3">
+                          <button
+                            type="button"
+                            disabled={revealingContactId === contactKey}
+                            onClick={() => selectedJobId && void handleRevealContact(selectedJobId, match.worker_profile_id)}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:opacity-60 dark:border-emerald-800 dark:bg-slate-900 dark:text-emerald-300"
+                          >
+                            {revealingContactId === contactKey ? <Loader2 size={13} className="animate-spin" /> : <Phone size={13} />}
+                            Show contact
+                          </button>
+                          {contactErrors[contactKey] && (
+                            <p className="mt-1 text-xs text-rose-500">{contactErrors[contactKey]}</p>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                 ))}</div>
               </div>}
@@ -3318,7 +3383,7 @@ export default function EmployerDashboard() {
                       type="button"
                       disabled={disabled}
                       onClick={() => selectedJobId && void handleSelectWorker(selectedJobId, match.worker_profile_id)}
-                      className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed ${isAccepted ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300" : "bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"}`}
+                      className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${isAccepted ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300" : "bg-blue-600 text-white hover:bg-blue-700"}`}
                     >
                       {isBusy ? <Loader2 size={15} className="animate-spin" /> : null}
                       {isAccepted ? "Selected" : "Select Worker"}
