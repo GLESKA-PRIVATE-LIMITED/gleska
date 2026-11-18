@@ -3,7 +3,7 @@
 Rules are in root CLAUDE.md §4. This file holds the facts you need to apply them.
 
 ## Facts
-- Migrations: `migrations/001…114`, applied in filename order; next free number **115**.
+- Migrations: `migrations/001…115`, applied in filename order; next free number **116**.
   Duplicate numbers exist (031, 044, 058, 068, 069) — never reuse a number.
 - Applying is manual (Supabase SQL editor or `supabase db push`); there is no migration-tracking
   table in the repo [?] — whether a given file ran in production is unknown (docs/open-questions.md).

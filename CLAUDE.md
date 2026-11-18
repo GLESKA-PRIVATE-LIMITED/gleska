@@ -41,7 +41,7 @@ Baselines (2026-10-31): backend 586 pass / 43 fail / 4 errors; website lint 110 
 88 warnings; vitest 3 failing (worker location). All failures pre-existing — **compare, don't chase**.
 
 ## 4. Database rules
-- Schema lives only in `gleska-website/supabase/migrations/NNN_name.sql`; next free number = 115.
+- Schema lives only in `gleska-website/supabase/migrations/NNN_name.sql`; next free number = 116.
   (`gleska-backend-f/migrations/connectors_setup.sql` is a legacy exception — don't add more there.)
 - Forward-only: never edit or delete an applied migration; add a new one. Idempotent DDL
   (`IF NOT EXISTS`, `DROP POLICY IF EXISTS`), wrapped in `BEGIN; … COMMIT;`.
@@ -105,12 +105,8 @@ Baselines (2026-10-31): backend 586 pass / 43 fail / 4 errors; website lint 110 
 - Default branch `main`; work on the branch you are given. Commit/push/deploy/apply production
   migrations **only with explicit user approval**. No force-push, no history rewrite without approval.
 - Commit messages: imperative summary + why. No secrets in messages.
-- Commit identity: author and committer `gleskapvtltd-oss <gleska.pvt.ltd@gmail.com>`
-  (`git -c user.name=gleskapvtltd-oss -c user.email=gleska.pvt.ltd@gmail.com commit …`).
-  No `Co-Authored-By: Claude` or session trailers — the owner's explicit instruction overrides defaults.
-  This holds even though GitHub then shows commits as "Unverified" and a stop hook suggests
-  re-authoring as Claude: don't (owner confirmed 2026-10-31). "Verified" as Gleska would need a
-  signing key on the gleskapvtltd-oss account.
+- Commit identity: use the default git config (the user's own identity). Do not override
+  with `-c user.name` or `-c user.email`. No `Co-Authored-By: Claude` trailers.
 - Review the impact of DB, auth and API changes with the user **before** implementing them.
 - Never run destructive production operations (DROP, TRUNCATE, mass DELETE/UPDATE, db reset,
   deleting buckets/users) without explicit approval.
