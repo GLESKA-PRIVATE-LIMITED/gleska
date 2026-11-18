@@ -361,6 +361,7 @@ export default function EmployerDashboard() {
   const [hiringConfirmationToken, setHiringConfirmationToken] = React.useState<string | null>(null);
   const [hiringCreatedJobId, setHiringCreatedJobId] = React.useState<string | null>(null);
   const [hiringPendingAction, setHiringPendingAction] = React.useState<HiringPendingAction | null>(null);
+  const [hiringLastUserMessage, setHiringLastUserMessage] = React.useState<string>("");
   const [hiringConversationError, setHiringConversationError] = React.useState("");
   const [isHiringConversationLoading, setIsHiringConversationLoading] = React.useState(true);
   const hiringSendInFlightRef = React.useRef(false);
@@ -1294,6 +1295,7 @@ export default function EmployerDashboard() {
     setHiringConfirmationToken(null);
     setHiringCreatedJobId(null);
     setHiringPendingAction(null);
+    setHiringLastUserMessage("");
     setHiringConversationError("");
     setHiringHistory([{
       role: "assistant",
@@ -1390,6 +1392,7 @@ export default function EmployerDashboard() {
     const finalMessage = (text || "Please analyze the attached file(s).") + fileContext;
 
     const displayText = text + (uploadedFileKeys.length ? ` (${uploadedFileKeys.length} file${uploadedFileKeys.length === 1 ? "" : "s"} attached)` : "");
+    setHiringLastUserMessage(text);
     setHiringHistory((current) => [...current, { role: "user", content: displayText }]);
     setIsHiringAgentSending(true);
     try {
@@ -1407,6 +1410,9 @@ export default function EmployerDashboard() {
         { withCredentials: true },
       );
       const data = response.data;
+      const isErrorResponse = data.assistant_message === "I couldn't complete that request just now. Please try again."
+        || (data.assistant_message?.includes("temporarily at its usage limit") ?? false);
+      if (!isErrorResponse) setHiringLastUserMessage("");
       applyHiringConversation(data);
       if (user?.id) {
         window.localStorage.setItem(
@@ -2238,6 +2244,26 @@ export default function EmployerDashboard() {
                           </div>
                         </div>
                       )}
+
+                      {(() => {
+                        const last = hiringHistory[hiringHistory.length - 1];
+                        const isRetryable = !isHiringAgentSending
+                          && last?.role === "assistant"
+                          && hiringLastUserMessage
+                          && (last.content.includes("Please try again") || last.content.includes("try again later") || last.content.includes("Couldn't reach the AI Assistant"));
+                        return isRetryable ? (
+                          <div className="ml-9 mt-1">
+                            <button
+                              type="button"
+                              onClick={() => void handleSendHiringAgentMessage(hiringLastUserMessage)}
+                              disabled={hiringSendInFlightRef.current || isHiringConversationLoading}
+                              className="inline-flex items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 transition dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-300 dark:hover:bg-blue-900/40 cursor-pointer"
+                            >
+                              <RotateCcw size={12} /> Try again
+                            </button>
+                          </div>
+                        ) : null;
+                      })()}
 
                       {isHiringAgentSending && (
                         <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/40 p-2.5 rounded-xl w-fit">

@@ -41,7 +41,7 @@ async def _ok_email(to=None, subject=None, body=None, purpose=None, employer_id=
 
 @pytest.mark.asyncio
 async def test_invite_resolves_contact_and_sends_both_channels(monkeypatch):
-    fake = _FakeSupabase([{"name": "Suresh", "mobile": "9999900002", "email": "s@demo.test"}])
+    fake = _FakeSupabase([{"name": "Suresh", "mobile": "9999900002", "email": "suresh@example.com"}])
     monkeypatch.setattr(invite_mod, "supabase", fake)
     monkeypatch.setattr(invite_mod.WhatsAppService, "send_message", _ok_wa)
     monkeypatch.setattr(invite_mod.EmailConnectorService, "send_email", _ok_email)
@@ -60,12 +60,33 @@ async def test_invite_resolves_contact_and_sends_both_channels(monkeypatch):
     # Sent to the resolved phone/email — the caller never supplied them.
     assert _ok_wa.seen["phone"] == "9999900002"
     assert _ok_wa.seen["template_name"] == "interview_invite"
-    assert _ok_email.seen["to"] == "s@demo.test"
+    assert _ok_email.seen["to"] == "suresh@example.com"
     assert _ok_email.seen["purpose"] == "interview_invite"
     assert result["sent_any"] is True
     assert set(result["channels_delivered"]) == {"whatsapp", "email"}
     # Raw contact is NOT leaked at the top level of the tool result.
     assert "mobile" not in result and "email_address" not in result
+
+
+@pytest.mark.asyncio
+async def test_invite_blocks_reserved_tld_email(monkeypatch):
+    """Emails with reserved/test TLDs must not be attempted and are reported clearly."""
+    fake = _FakeSupabase([{"name": "Demo", "mobile": "9999900002", "email": "demo@gleska.test"}])
+    monkeypatch.setattr(invite_mod, "supabase", fake)
+    monkeypatch.setattr(invite_mod.WhatsAppService, "send_message", _ok_wa)
+    monkeypatch.setattr(invite_mod.EmailConnectorService, "send_email", _ok_email)
+
+    result = await InterviewInviteService.send_invite(
+        employer_id="emp1",
+        worker_profile_id="wp1",
+        channel="both",
+    )
+
+    assert result["email"]["attempted"] is False
+    assert result["email"]["reason"] == "TEST_EMAIL_NOT_DELIVERABLE"
+    # WhatsApp still attempted; email not attempted so not in channels_attempted.
+    assert "email" not in result["channels_attempted"]
+    assert "email" not in result["channels_delivered"]
 
 
 @pytest.mark.asyncio

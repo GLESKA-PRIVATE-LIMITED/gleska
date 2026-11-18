@@ -14,6 +14,16 @@ from app.services.connectors.email_connector_service import EmailConnectorServic
 
 logger = logging.getLogger(__name__)
 
+# Reserved/non-deliverable TLDs per RFC 2606 — emails to these will never be received.
+_NON_DELIVERABLE_TLDS = (".test", ".local", ".localhost", ".example", ".invalid")
+
+
+def _is_deliverable_email(email: str) -> bool:
+    if "@" not in email:
+        return False
+    domain = email.rsplit("@", 1)[-1].lower()
+    return not any(domain.endswith(tld) for tld in _NON_DELIVERABLE_TLDS)
+
 
 class InterviewInviteError(Exception):
     """The invite could not be prepared (e.g. worker not found)."""
@@ -87,20 +97,27 @@ class InterviewInviteService:
         # ── Email (best-effort; many workers have no email) ──
         if channel in ("both", "email"):
             if contact["email"]:
-                subject = (
-                    f"Interview invitation — {job_title}" if job_title else "Interview invitation"
-                )
-                body = message or cls._default_email_body(
-                    contact["name"], job_title, interview_time, location
-                )
-                em = await EmailConnectorService.send_email(
-                    to=contact["email"],
-                    subject=subject,
-                    body=body,
-                    purpose="interview_invite",
-                    employer_id=employer_id,
-                )
-                results["email"] = {"attempted": True, **em}
+                if not _is_deliverable_email(contact["email"]):
+                    results["email"] = {
+                        "attempted": False,
+                        "reason": "TEST_EMAIL_NOT_DELIVERABLE",
+                        "detail": "This email address uses a reserved/test domain and cannot receive mail.",
+                    }
+                else:
+                    subject = (
+                        f"Interview invitation — {job_title}" if job_title else "Interview invitation"
+                    )
+                    body = message or cls._default_email_body(
+                        contact["name"], job_title, interview_time, location
+                    )
+                    em = await EmailConnectorService.send_email(
+                        to=contact["email"],
+                        subject=subject,
+                        body=body,
+                        purpose="interview_invite",
+                        employer_id=employer_id,
+                    )
+                    results["email"] = {"attempted": True, **em}
             else:
                 results["email"] = {"attempted": False, "reason": "NO_EMAIL_ON_FILE"}
 
